@@ -1,0 +1,712 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第8阶段：Slice Evaluation：Risk Type、行业、地区、难度、Hard Case</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第8阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>OverallScore ≠ SliceReliability。总体平均不能证明所有关键场景都可靠。</li><li>Average 会隐藏 Heterogeneity。不同子群性能可能差异巨大。</li><li>Difficulty ≠ LengthOnly。真正难度来自语义边界、结构、证据、噪声和稀有度。</li></ul></div><h1 id="第九课-第-8-阶段">第九课 · 第 8 阶段</h1>
+<h1 id="slice-evaluationrisk-type行业地区难度hard-case-1">Slice
+Evaluation：Risk Type、行业、地区、难度、Hard Case</h1>
+<h2
+id="为什么总体分数很好系统仍然可能在最关键的采购场景里失败怎样把平均成绩拆成真正能指导上线决策的风险切片">为什么总体分数很好，系统仍然可能在最关键的采购场景里失败？怎样把平均成绩拆成真正能指导上线决策的风险切片？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-7">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-7">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>OverallScore ≠
+SliceReliability。总体平均不能证明所有关键场景都可靠。</strong></li>
+<li><strong>Average 会隐藏
+Heterogeneity。不同子群性能可能差异巨大。</strong></li>
+<li><strong>Difficulty ≠
+LengthOnly。真正难度来自语义边界、结构、证据、噪声和稀有度。</strong></li>
+<li><strong>SingleSlice 可能遗漏
+InteractionFailure，交叉切片是生产评测的重要补充。</strong></li>
+<li><strong>PointEstimate ≠ Certainty。Slice 指标必须结合 Support
+和不确定性。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-7">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>OCR</code></td>
+<td>OCR：把扫描图像中的文字转换成机器可读文本</td>
+</tr>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="odd">
+<td><code>Accuracy</code></td>
+<td>准确率：全部样本中判断正确的比例</td>
+</tr>
+<tr class="even">
+<td><code>Confidence Interval</code></td>
+<td>置信区间：表示有限样本指标的不确定范围</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-7">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 7 阶段，我们已经分别学会：</p>
+<pre class="text"><code>分类评测
+生成评测
+RAG评测
+Agent评测</code></pre>
+<p>但现在会遇到一个非常危险的问题：</p>
+<blockquote>
+<p><strong>总体指标可能很好看，但关键场景可能已经崩了。</strong></p>
+</blockquote>
+<p>假设一个系统：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mo>=</mo><mn>93</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+OverallAccuracy=93\%
+</annotation></semantics></math></p>
+<p>如果进一步拆开：</p>
+<pre class="text"><code>普通公告：97%
+
+简单采购需求：95%
+
+高风险限制性条款：61%
+
+OCR噪声文档：58%
+
+跨章节复杂案例：54%</code></pre>
+<p>那么 93% 并不能说明：</p>
+<blockquote>
+<p>“系统很可靠。”</p>
+</blockquote>
+<p>所以本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OverallScore
+\neq
+SliceReliability
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementsliceevalpolicy_v0.1-1"><code>ProcurementSliceEvalPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一slice-到底是什么">一、Slice 到底是什么？</h1>
+<h1 id="slice">Slice</h1>
+<h2 id="评测切片">评测切片</h2>
+<p>指：</p>
+<blockquote>
+<p>按某种业务属性，把 Benchmark 切成一个有明确含义的子集。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Risk Type
+风险类型
+
+Industry
+行业
+
+Region
+地区
+
+Document Type
+文档类型
+
+Difficulty
+难度
+
+Document Length
+文档长度
+
+OCR Quality
+OCR质量
+
+Answerability
+可回答性
+
+Rare Case
+稀有案例</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>S</mi><mi>u</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Slice
+=
+SemanticallyMeaningfulSubset
+}
+</annotation></semantics></math></p>
+<p>不是任意分组。</p>
+<hr />
+<h1 id="二核心心智模型-①-5">二、核心心智模型 ①</h1>
+<h1 id="average-会隐藏-heterogeneity"><code>Average</code> 会隐藏
+<code>Heterogeneity</code></h1>
+<p>不同场景的难度和风险并不相同。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>可</mi><mi>以</mi><mi>掩</mi><mi>盖</mi><mi>S</mi><mi>u</mi><mi>b</mi><mi>g</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>p</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AveragePerformance
+可以掩盖
+SubgroupFailure
+}
+</annotation></semantics></math></p>
+<p>这和统计学里：</p>
+<blockquote>
+<p>总体平均不等于每个子群都稳定，</p>
+</blockquote>
+<p>是同一个问题。</p>
+<hr />
+<h1 id="三risk-type-slice按风险类型切">三、Risk Type
+Slice：按风险类型切</h1>
+<p>例如：</p>
+<pre class="text"><code>地域限制
+
+所有制限制
+
+注册资本要求
+
+特定资质
+
+业绩要求
+
+评分倾向
+
+品牌指向
+
+本地化服务
+
+中小企业政策</code></pre>
+<p>每个风险类型都应该有：</p>
+<pre class="text"><code>support
+precision
+recall
+f1
+critical_fn</code></pre>
+<p>这样才能发现：</p>
+<blockquote>
+<p>哪些风险类型系统最容易漏。</p>
+</blockquote>
+<hr />
+<h1 id="四industry-slice按行业切">四、Industry Slice：按行业切</h1>
+<p>采购语言在不同行业可能差异很大：</p>
+<pre class="text"><code>IT
+医疗
+工程
+物业
+检测
+咨询
+教育
+交通</code></pre>
+<p>一个在 IT 数据上训练很多的模型，</p>
+<p>可能：</p>
+<blockquote>
+<p>医疗和工程明显更弱。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>必</mi><mi>须</mi><mi>被</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>验</mi><mi>证</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DomainCoverage
+必须被
+SliceMetric
+验证
+}
+</annotation></semantics></math></p>
+<p>不能只看 Corpus 里“有这个行业”。</p>
+<hr />
+<h1 id="五region-slice地区切片为什么重要">五、Region
+Slice：地区切片为什么重要？</h1>
+<p>不同地区可能存在：</p>
+<pre class="text"><code>文书格式差异
+政策表达差异
+项目规模差异
+公开文本质量差异</code></pre>
+<p>Region Slice 不是为了：</p>
+<blockquote>
+<p>比较地区优劣。</p>
+</blockquote>
+<p>而是为了：</p>
+<blockquote>
+<p>检查系统是否在特定地区分布上明显失效。</p>
+</blockquote>
+<hr />
+<h1 id="六difficulty-slice难度必须显式化">六、Difficulty
+Slice：难度必须显式化</h1>
+<p>可以定义：</p>
+<pre class="text"><code>Easy
+明确关键词、短文本、单一条件
+
+Medium
+多个条件、需要局部上下文
+
+Hard
+跨章节、隐含约束、多个规则冲突
+
+Extreme
+证据不完整、OCR噪声、边界案例</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>不</mi><mi>能</mi><mi>只</mi><mi>有</mi><mi>I</mi><mi>I</mi><mi>D</mi><mi>E</mi><mi>a</mi><mi>s</mi><mi>y</mi><mi>C</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Benchmark
+不能只有
+IID Easy Cases
+}
+</annotation></semantics></math></p>
+<p>必须有真正困难样本。</p>
+<hr />
+<h1 id="七核心心智模型-②-1">七、核心心智模型 ②</h1>
+<h1 id="hard-case-不是更长而是更容易暴露错误边界"><code>Hard Case</code>
+不是“更长”，而是“更容易暴露错误边界”</h1>
+<p>真正的 Hard Case 可能：</p>
+<pre class="text"><code>文本很短
+但语义边界极细</code></pre>
+<p>例如只改一个限定词，</p>
+<p>结论就不同。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Difficulty
+\neq
+LengthOnly
+}
+</annotation></semantics></math></p>
+<p>难度应该来自：</p>
+<pre class="text"><code>语义
+结构
+证据
+上下文
+稀有度
+噪声
+决策边界</code></pre>
+<hr />
+<h1 id="八intersection-slice为什么单维切片还不够">八、Intersection
+Slice：为什么单维切片还不够？</h1>
+<p>假设：</p>
+<pre class="text"><code>医疗总体 F1 = 0.86
+OCR总体 F1 = 0.84</code></pre>
+<p>但：</p>
+<pre class="text"><code>医疗 × OCR差
+F1 = 0.52</code></pre>
+<p>单维平均会把问题藏住。</p>
+<p>这叫：</p>
+<h1 id="intersection-slice">Intersection Slice</h1>
+<h2 id="交叉切片">交叉切片</h2>
+<p>例如：</p>
+<pre class="text"><code>医疗 × OCR差
+工程 × 长文档
+高风险 × 稀有类型
+地区A × 特定文档类型</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>可</mi><mi>能</mi><mi>遗</mi><mi>漏</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SingleSlice
+可能遗漏
+InteractionFailure
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九核心心智模型-③-2">九、核心心智模型 ③</h1>
+<h1
+id="intersection-failure-往往是真实生产事故来源"><code>Intersection Failure</code>
+往往是真实生产事故来源</h1>
+<p>生产问题经常不是：</p>
+<blockquote>
+<p>单一条件。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>多个困难因素叠加。</p>
+</blockquote>
+<p>所以 Release Gate 不能只看单维 Slice。</p>
+<hr />
+<h1 id="十slice-support切片样本数太小怎么办">十、Slice
+Support：切片样本数太小怎么办？</h1>
+<p>如果某个 Slice：</p>
+<pre class="text"><code>只有5条</code></pre>
+<p>即使：</p>
+<pre class="text"><code>Accuracy = 40%</code></pre>
+<p>统计不确定性也很大。</p>
+<p>所以每个 Slice 要记录：</p>
+<h1 id="support">Support</h1>
+<h2 id="样本量">样本量</h2>
+<p>并设：</p>
+<pre class="text"><code>minimum_support</code></pre>
+<p>如果样本太少：</p>
+<blockquote>
+<p>应标记为 Low Confidence Slice，</p>
+</blockquote>
+<p>而不是直接做强结论。</p>
+<hr />
+<h1
+id="十一confidence-interval为什么-slice-指标需要不确定性">十一、Confidence
+Interval：为什么 Slice 指标需要不确定性？</h1>
+<p>样本数有限时，</p>
+<p>Metric 本身有波动。</p>
+<p>可以通过：</p>
+<pre class="text"><code>Bootstrap
+自助法
+
+Binomial Interval
+二项区间</code></pre>
+<p>估计置信区间。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>E</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>C</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PointEstimate
+\neq
+Certainty
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>Recall = 0.80</code></pre>
+<p>没有样本量和区间，</p>
+<p>信息是不完整的。</p>
+<hr />
+<h1 id="十二核心心智模型-④-3">十二、核心心智模型 ④</h1>
+<h1 id="small-slice-的价值高但结论要更谨慎"><code>Small Slice</code>
+的价值高，但结论要更谨慎</h1>
+<p>稀有高风险场景：</p>
+<blockquote>
+<p>样本本来就少。</p>
+</blockquote>
+<p>不能因为少就不评。</p>
+<p>但也不能把 3/5：</p>
+<blockquote>
+<p>当成稳定的 60%。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>U</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RareCriticalSlice
+=
+HighImportance
++
+HighUncertainty
+}
+</annotation></semantics></math></p>
+<p>两者要同时处理。</p>
+<hr />
+<h1 id="十三worst-slice-metric为什么要看最差切片">十三、Worst-slice
+Metric：为什么要看最差切片？</h1>
+<p>可以记录：</p>
+<h1 id="worst-slice-score">Worst Slice Score</h1>
+<h2 id="最差切片表现">最差切片表现</h2>
+<p>它告诉我们：</p>
+<blockquote>
+<p>系统最弱的已知区域在哪里。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>s</mi><mi>t</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AverageScore
++
+WorstSliceScore
+}
+</annotation></semantics></math></p>
+<p>通常比只看平均分更有意义。</p>
+<hr />
+<h1 id="十四critical-slice-gate关键切片必须有硬门槛">十四、Critical
+Slice Gate：关键切片必须有硬门槛</h1>
+<p>例如：</p>
+<pre class="text"><code>高风险漏检 Recall &gt;= threshold
+
+伪造政策 Slice critical_error = 0
+
+不可回答样本 Abstention &gt;= threshold</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>需</mi><mi>要</mi><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CriticalSlice
+需要
+HardGate
+}
+</annotation></semantics></math></p>
+<p>不是让它被综合分平均掉。</p>
+<hr />
+<h1 id="十五核心心智模型-⑤-2">十五、核心心智模型 ⑤</h1>
+<h1
+id="highaverage-criticalslicefailure-releasefail"><code>HighAverage + CriticalSliceFailure = ReleaseFail</code></h1>
+<p>这是 Slice Evaluation 最重要的工程结论之一。</p>
+<p>如果关键业务切片失败：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><mi>F</mi><mi>a</mi><mi>l</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseGate=False
+}
+</annotation></semantics></math></p>
+<p>即使平均分很漂亮。</p>
+<hr />
+<h1 id="十六slice-registry切片定义必须版本化">十六、Slice
+Registry：切片定义必须版本化</h1>
+<p>不要临时：</p>
+<blockquote>
+<p>“这次我们看一下医疗。”</p>
+</blockquote>
+<p>而应该维护：</p>
+<h1 id="slice-registry">Slice Registry</h1>
+<h2 id="切片注册表">切片注册表</h2>
+<p>至少记录：</p>
+<pre class="text"><code>slice_id
+
+slice_name
+
+definition
+
+filter_rule
+
+business_reason
+
+criticality
+
+minimum_support
+
+metric_set
+
+owner
+
+version</code></pre>
+<p>这样同一个 Slice 在多个版本间才可比较。</p>
+<hr />
+<h1 id="十七slice-driftbenchmark-更新后切片占比变化怎么办">十七、Slice
+Drift：Benchmark 更新后切片占比变化怎么办？</h1>
+<p>例如：</p>
+<pre class="text"><code>V1.0
+医疗占10%
+
+V1.1
+医疗占25%</code></pre>
+<p>总体分数变化可能来自：</p>
+<blockquote>
+<p>Benchmark Composition 变了。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>可</mi><mi>能</mi><mi>来</mi><mi>自</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>i</mi><mi>x</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OverallScoreChange
+可能来自
+SliceMixChange
+}
+</annotation></semantics></math></p>
+<p>这就是为什么：</p>
+<blockquote>
+<p>Benchmark Versioning 后面要记录分布变化。</p>
+</blockquote>
+<hr />
+<h1 id="十八核心心智模型-⑥-1">十八、核心心智模型 ⑥</h1>
+<h1 id="score-change-不一定是-model-change"><code>Score Change</code>
+不一定是 <code>Model Change</code></h1>
+<p>如果 Benchmark Slice Mix 变了，</p>
+<p>即使模型完全没变，</p>
+<p>总分也可能变。</p>
+<p>所以比较时必须确认：</p>
+<pre class="text"><code>same benchmark version
+same slice composition
+same protocol</code></pre>
+<hr />
+<h1 id="十九hard-case-registry困难案例要不要单独维护">十九、Hard Case
+Registry：困难案例要不要单独维护？</h1>
+<p>建议维护：</p>
+<h1 id="hard-case-registry">Hard Case Registry</h1>
+<h2 id="难例注册表">难例注册表</h2>
+<p>来源可以是：</p>
+<pre class="text"><code>生产事故
+专家争议
+模型历史失败
+Red Team
+Synthetic Hard Case
+边界案例</code></pre>
+<p>每条难例要记录：</p>
+<pre class="text"><code>why_hard
+failure_mode
+gold_reason
+criticality</code></pre>
+<p>这样 Hard Case 不只是：</p>
+<blockquote>
+<p>“比较难的题”。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>已知模型能力边界的证据。</p>
+</blockquote>
+<hr />
+<h1 id="二十slice-与-error-taxonomy-怎样结合">二十、Slice 与 Error
+Taxonomy 怎样结合？</h1>
+<p>最有价值的分析往往是：</p>
+<pre class="text"><code>Slice × Error Type</code></pre>
+<p>例如：</p>
+<pre class="text"><code>医疗 × Retrieval Miss
+工程 × Wrong Citation
+OCR差 × Extraction Error
+高风险 × Failed Abstention</code></pre>
+<p>这比：</p>
+<blockquote>
+<p>“医疗分数低”</p>
+</blockquote>
+<p>更容易指导工程修复。</p>
+<hr />
+<h1 id="二十一核心心智模型-⑦">二十一、核心心智模型 ⑦</h1>
+<h1
+id="slice-告诉你哪里坏error-taxonomy-告诉你怎么坏"><code>Slice</code>
+告诉你“哪里坏”，<code>Error Taxonomy</code> 告诉你“怎么坏”</h1>
+<p>两者结合：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>=</mo><mi>W</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>H</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FailureDiagnosis
+=
+Where
++
+How
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十二本阶段正式工程产物-1">二十二、本阶段正式工程产物</h1>
+<h1
+id="procurementsliceevalpolicy_v0.1-2"><code>ProcurementSliceEvalPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>slice_policy_version
+
+slice_registry
+
+risk_type_slices
+
+industry_slices
+
+region_slices
+
+document_type_slices
+
+difficulty_slices
+
+length_slices
+
+ocr_quality_slices
+
+answerability_slices
+
+rare_case_slices
+
+intersection_slice_policy
+
+minimum_support
+
+confidence_interval_policy
+
+worst_slice_metric
+
+critical_slice_gate
+
+slice_drift_monitoring
+
+hard_case_registry
+
+slice_error_cross_analysis
+
+release_gate</code></pre>
+<p>每个 Slice 至少记录：</p>
+<pre class="text"><code>slice_id
+
+definition
+
+support
+
+metrics
+
+confidence_interval
+
+criticality
+
+error_distribution
+
+historical_baseline
+
+current_score
+
+delta
+
+release_status</code></pre>
+<hr />
+<h1 id="二十三本阶段最重要的-9-个核心心智模型-1">二十三、本阶段最重要的
+9 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>OverallScore ≠ SliceReliability</code>。总体平均不能证明所有关键场景都可靠。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ②：<code>Average</code> 会隐藏
+<code>Heterogeneity</code>。不同子群性能可能差异巨大。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>Difficulty ≠ LengthOnly</code>。真正难度来自语义边界、结构、证据、噪声和稀有度。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ④：<code>SingleSlice</code> 可能遗漏
+<code>InteractionFailure</code>，交叉切片是生产评测的重要补充。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑤：<code>PointEstimate ≠ Certainty</code>。Slice
+指标必须结合 Support 和不确定性。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>HighAverage + CriticalSliceFailure = ReleaseFail</code>。关键切片不能被平均分洗掉。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>ScoreChange</code> 可能来自 Slice Mix
+变化，不一定来自模型变化。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑧：<code>HardCaseRegistry</code>
+是能力边界资产，不只是难题集合。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>Slice + ErrorTaxonomy = Where + How</code>。两者结合才能真正定位失败。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四下一阶段第九课-第-9-阶段">二十四、下一阶段：第九课 · 第 9
+阶段</h1>
+<h1
+id="calibrationabstentionood-与-risk-coverage">Calibration、Abstention、OOD
+与 Risk-Coverage</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>O</mi><mi>f</mi><mi>B</mi><mi>e</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ConfidenceScore
+\neq
+ProbabilityOfBeingCorrect
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementcalibrationabstentionpolicy_v0.1"><code>ProcurementCalibrationAbstentionPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage07.html">← 第 7 阶段</a><a class="btn" href="stage09.html">第 9 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

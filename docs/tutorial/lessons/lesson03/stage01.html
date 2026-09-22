@@ -1,0 +1,1311 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第1阶段：CPU、GPU、内存、显存、CUDA</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第1阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>Compute Capacity ≠ Memory Capacity。GPU 算得快，不代表显存一定装得下模型和上下文。</li><li>RAM ≠ VRAM。系统内存与 GPU 显存位置、带宽和用途不同，不能用硬盘/内存数字替代显存预算。</li><li>Inference ≠ Training。训练除了权重，还需要梯度、优化器状态和激活，因此显存需求通常远高于推理。</li></ul></div><h1 id="第三课-第-1-阶段cpugpu内存显存cuda">第三课 · 第 1
+阶段：CPU、GPU、内存、显存、CUDA</h1>
+<h2
+id="为什么电脑很强不等于能跑大模型为什么能跑模型又不等于能训练模型">为什么“电脑很强”不等于“能跑大模型”？为什么“能跑模型”又不等于“能训练模型”？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Compute Capacity ≠ Memory Capacity。GPU
+算得快，不代表显存一定装得下模型和上下文。</strong></li>
+<li><strong>RAM ≠ VRAM。系统内存与 GPU
+显存位置、带宽和用途不同，不能用硬盘/内存数字替代显存预算。</strong></li>
+<li><strong>Inference ≠
+Training。训练除了权重，还需要梯度、优化器状态和激活，因此显存需求通常远高于推理。</strong></li>
+<li><strong>GPU Speed 依赖并行算子、数据搬运和 Kernel；不是所有工作都比
+CPU 快。</strong></li>
+<li><strong>“模型权重能装下”只是第一道门，真正可用还要给 KV
+Cache、Batch、Context 和运行时 Workspace 留余量。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="even">
+<td><code>CPU</code></td>
+<td>CPU：负责通用控制、数据准备和部分算子</td>
+</tr>
+<tr class="odd">
+<td><code>CUDA</code></td>
+<td>CUDA：NVIDIA GPU 通用并行计算平台与软件生态</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="odd">
+<td><code>BF16</code></td>
+<td>BF16：保留较大指数范围的 16 位浮点，常用于大模型</td>
+</tr>
+<tr class="even">
+<td><code>QLoRA</code></td>
+<td>QLoRA：量化基座模型并训练 LoRA，以降低显存成本</td>
+</tr>
+<tr class="odd">
+<td><code>VRAM</code></td>
+<td>显存：GPU 上存放权重、激活和 KV Cache 等的高速内存</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="even">
+<td><code>KV Cache</code></td>
+<td>KV 缓存：生成时缓存历史 Key/Value 以减少重复计算</td>
+</tr>
+<tr class="odd">
+<td><code>PyTorch</code></td>
+<td>PyTorch：张量计算、自动求导和训练/推理框架</td>
+</tr>
+<tr class="even">
+<td><code>Driver</code></td>
+<td>驱动：操作系统与 GPU 硬件之间的底层接口</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>这一阶段我会明显换一种讲法。</p>
+<p>先不堆公式，也先不讲 CUDA
+安装命令。我们先建立一张<strong>脑内地图</strong>。只要这张图真正形成，以后看到“24GB
+显存”“8 张 GPU”“CUDA OOM”“14B
+模型”“BF16”“QLoRA”，你都会知道它们在整套系统里的位置。</p>
+<p>这一阶段真正需要带走 <strong>5 个核心心智模型</strong>：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>①</mi><mi>C</mi><mi>P</mi><mi>U</mi><mo>=</mo><mi>总</mi><mi>调</mi><mi>度</mi><mi>员</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+① CPU=总调度员
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>②</mi><mi>G</mi><mi>P</mi><mi>U</mi><mo>=</mo><mi>大</mi><mi>规</mi><mi>模</mi><mi>并</mi><mi>行</mi><mi>计</mi><mi>算</mi><mi>工</mi><mi>厂</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+② GPU=大规模并行计算工厂
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>③</mi><mi>R</mi><mi>A</mi><mi>M</mi><mo>=</mo><mi>电</mi><mi>脑</mi><mi>的</mi><mi>公</mi><mi>共</mi><mi>工</mi><mi>作</mi><mi>区</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+③ RAM=电脑的公共工作区
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>④</mi><mi>V</mi><mi>R</mi><mi>A</mi><mi>M</mi><mo>=</mo><mi>G</mi><mi>P</mi><mi>U</mi><mi>身</mi><mi>边</mi><mi>的</mi><mi>高</mi><mi>速</mi><mi>工</mi><mi>作</mi><mi>台</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+④ VRAM=GPU身边的高速工作台
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mtext mathvariant="normal">⑤ 能推理</mtext><mo>≠</mo><mtext mathvariant="normal">能训练</mtext></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\text{⑤ 能推理}\neq\text{能训练}
+}
+</annotation></semantics></math></p>
+<p>先把这五根柱子立起来。</p>
+<hr />
+<h1 id="一先看整台电脑llm-到底跑在哪里">一、先看整台电脑：LLM
+到底跑在哪里？</h1>
+<p>假设你下载了一个开源模型：</p>
+<pre class="text"><code>Qwen / Llama / Mistral / DeepSeek ...</code></pre>
+<p>它最开始在哪里？</p>
+<p>答案非常朴素：</p>
+<blockquote>
+<p><strong>硬盘。</strong></p>
+</blockquote>
+<p>比如：</p>
+<pre class="text"><code>SSD / HDD
+    │
+    │ 读取模型文件
+    ▼
+RAM（内存）
+    │
+    │ 把需要 GPU 计算的数据搬过去
+    ▼
+VRAM（显存）
+    │
+    │ GPU直接高速读取
+    ▼
+GPU
+    │
+    │ 矩阵计算
+    ▼
+模型输出</code></pre>
+<p>先把这张图记住：</p>
+<pre class="text"><code>┌──────────┐
+│ SSD/硬盘 │  ← 长期仓库
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│ RAM/内存 │  ← 电脑公共工作区
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│ VRAM显存 │  ← GPU高速工作台
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│   GPU    │  ← 大规模并行计算
+└──────────┘</code></pre>
+<p>模型文件虽然“存在硬盘里”，但<strong>硬盘里的模型不会自己计算</strong>。</p>
+<p>要真正运行：</p>
+<blockquote>
+<p>必须把参数加载到计算设备能够高效读取的位置。</p>
+</blockquote>
+<hr />
+<h1 id="二第一个核心心智模型cpu-是总调度员">二、第一个核心心智模型：CPU
+是总调度员</h1>
+<h2 id="cpu-是什么">1. CPU 是什么？</h2>
+<p>CPU：</p>
+<h1 id="central-processing-unit">Central Processing Unit</h1>
+<p>中央处理器。</p>
+<p>日常电脑里的：</p>
+<ul>
+<li>Windows；</li>
+<li>浏览器；</li>
+<li>Python；</li>
+<li>PDF 解析；</li>
+<li>文件读写；</li>
+<li>数据库程序；</li>
+</ul>
+<p>大量工作首先都由 CPU 控制。</p>
+<hr />
+<h2 id="cpu-最大的优势不是数量多">2. CPU 最大的优势不是“数量多”</h2>
+<p>而是：</p>
+<blockquote>
+<p><strong>单个核心非常灵活。</strong></p>
+</blockquote>
+<p>CPU 很适合处理：</p>
+<ul>
+<li>条件判断；</li>
+<li>程序控制；</li>
+<li>文件操作；</li>
+<li>操作系统；</li>
+<li>各种不同类型的逻辑任务。</li>
+</ul>
+<hr />
+<h2 id="可以把-cpu-想成什么">3. 可以把 CPU 想成什么？</h2>
+<p>想象一个政府采购项目办公室。</p>
+<p>CPU 像：</p>
+<blockquote>
+<p><strong>项目总负责人。</strong></p>
+</blockquote>
+<p>他会：</p>
+<ul>
+<li>接收文件；</li>
+<li>判断下一步干什么；</li>
+<li>调度各个部门；</li>
+<li>发起任务；</li>
+<li>管理程序流程。</li>
+</ul>
+<hr />
+<h2 id="但是有一天你让这个负责人做什么">4.
+但是有一天你让这个负责人做什么？</h2>
+<p>你给他：</p>
+<blockquote>
+<p>40 亿个乘法。</p>
+</blockquote>
+<p>然后说：</p>
+<blockquote>
+<p>“一个一个帮我算。”</p>
+</blockquote>
+<p>这就麻烦了。</p>
+<hr />
+<h1 id="三gpu-为什么出现">三、GPU 为什么出现？</h1>
+<p>GPU：</p>
+<h1 id="graphics-processing-unit">Graphics Processing Unit</h1>
+<p>图形处理器。</p>
+<p>它最早的重要任务之一，就是：</p>
+<blockquote>
+<p>计算大量像素。</p>
+</blockquote>
+<hr />
+<h2 id="一张图有多少像素">5. 一张图有多少像素？</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3840</mn><mo>×</mo><mn>2160</mn></mrow><annotation encoding="application/x-tex">
+3840\times2160
+</annotation></semantics></math></p>
+<p>也就是大约：</p>
+<blockquote>
+<p>830 万个像素。</p>
+</blockquote>
+<p>每一帧都要处理大量相似计算。</p>
+<hr />
+<h2 id="gpu-的设计哲学因此非常不一样">6. GPU
+的设计哲学因此非常不一样</h2>
+<p>CPU 更像：</p>
+<blockquote>
+<p>几个特别聪明、特别灵活的专家。</p>
+</blockquote>
+<p>GPU 更像：</p>
+<blockquote>
+<p><strong>成千上万个可以同时干相似工作的工人。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四最重要的一张对比图">四、最重要的一张对比图</h1>
+<pre class="text"><code>CPU
+━━━━━━━━━━━━━━━━━━━━━━
+少量强力核心
+│
+├─ 工人A：处理文件
+├─ 工人B：判断条件
+├─ 工人C：运行系统
+└─ 工人D：执行复杂程序
+
+擅长：复杂、分支多、灵活任务
+
+
+GPU
+━━━━━━━━━━━━━━━━━━━━━━
+大量并行计算单元
+│
+├─ 计算1
+├─ 计算2
+├─ 计算3
+├─ 计算4
+├─ ...
+└─ 计算几万/几十万个
+
+擅长：大量相似数学运算</code></pre>
+<p>这就是第一层直觉。</p>
+<hr />
+<h1 id="五第二个核心心智模型">五、第二个核心心智模型</h1>
+<h2 id="gpu-大规模并行计算工厂">GPU = 大规模并行计算工厂</h2>
+<p>不是简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>P</mi><mi>U</mi><mi>比</mi><mi>C</mi><mi>P</mi><mi>U</mi><mi>快</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GPU比CPU快
+}
+</annotation></semantics></math></p>
+<p>这句话太粗糙。</p>
+<p>更准确的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>P</mi><mi>U</mi><mi>特</mi><mi>别</mi><mi>擅</mi><mi>长</mi><mi>可</mi><mi>以</mi><mi>大</mi><mi>量</mi><mi>并</mi><mi>行</mi><mi>的</mi><mi>数</mi><mi>值</mi><mi>计</mi><mi>算</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GPU特别擅长可以大量并行的数值计算
+}
+</annotation></semantics></math></p>
+<p>有些工作：</p>
+<blockquote>
+<p>GPU 非常快。</p>
+</blockquote>
+<p>有些工作：</p>
+<blockquote>
+<p>CPU 反而更合适。</p>
+</blockquote>
+<hr />
+<h1 id="六为什么神经网络刚好特别适合-gpu">六、为什么神经网络刚好特别适合
+GPU？</h1>
+<p>第二课我们已经看到，大模型里面反复出现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+XW
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+QK^T
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>V</mi></mrow><annotation encoding="application/x-tex">
+AV
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><msub><mi>W</mi><mrow><mi>u</mi><mi>p</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+XW_{up}
+</annotation></semantics></math></p>
+<p>本质上大量都是：</p>
+<blockquote>
+<p><strong>矩阵乘法。</strong></p>
+</blockquote>
+<p>先不管公式。</p>
+<p>你只要把矩阵理解成：</p>
+<blockquote>
+<p>一大堆数字排成表格。</p>
+</blockquote>
+<hr />
+<h2 id="一个很小的矩阵">7. 一个很小的矩阵</h2>
+<p>比如：</p>
+<pre class="text"><code>1  2  3
+4  5  6</code></pre>
+<p>真正的大模型可能是：</p>
+<pre class="text"><code>4096 × 4096</code></pre>
+<p>甚至更大。</p>
+<hr />
+<h2 id="一次矩阵乘法意味着什么">8. 一次矩阵乘法意味着什么？</h2>
+<p>里面有：</p>
+<blockquote>
+<p>海量小乘法和加法。</p>
+</blockquote>
+<p>而这些小计算中：</p>
+<blockquote>
+<p>很多可以同时做。</p>
+</blockquote>
+<p>这正好就是 GPU 喜欢的工作。</p>
+<hr />
+<h1 id="七一个施工队类比">七、一个施工队类比</h1>
+<p>假设你有：</p>
+<blockquote>
+<p>10 万块砖。</p>
+</blockquote>
+<p>CPU 像：</p>
+<blockquote>
+<p>8 个非常熟练的高级工人。</p>
+</blockquote>
+<p>他们会干各种活。</p>
+<p>GPU 像：</p>
+<blockquote>
+<p>5000 个只负责搬砖和砌砖的工人。</p>
+</blockquote>
+<p>如果任务是：</p>
+<blockquote>
+<p>写采购方案、接电话、判断异常。</p>
+</blockquote>
+<p>高级工人更合适。</p>
+<p>但如果任务是：</p>
+<blockquote>
+<p>把 10 万块砖同时搬到指定位置。</p>
+</blockquote>
+<p>那 5000 个工人就很吓人了。</p>
+<p>LLM 里的巨大矩阵计算：</p>
+<blockquote>
+<p>很像后一种任务。</p>
+</blockquote>
+<hr />
+<h1 id="八政府采购系统里-cpu-和-gpu-怎么分工">八、政府采购系统里 CPU 和
+GPU 怎么分工？</h1>
+<p>假设用户上传：</p>
+<blockquote>
+<p>一份 300 页政府采购招标文件。</p>
+</blockquote>
+<p>整个系统可能大致是：</p>
+<pre class="text"><code>PDF文件
+   ↓
+CPU
+解析PDF
+提取文本
+解析表格
+处理文件
+   ↓
+Tokenizer
+文字变Token
+   ↓
+GPU
+运行大语言模型
+   ↓
+CPU / GPU
+后处理
+   ↓
+输出风险报告</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>做</mi><mi>A</mi><mi>I</mi><mi>系</mi><mi>统</mi><mo>≠</mo><mi>所</mi><mi>有</mi><mi>事</mi><mi>情</mi><mi>全</mi><mi>部</mi><mi>丢</mi><mi>给</mi><mi>G</mi><mi>P</mi><mi>U</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+做AI系统
+\neq
+所有事情全部丢给GPU
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九一个非常实用的-procurementai-分工例子">九、一个非常实用的
+ProcurementAI 分工例子</h1>
+<table>
+<thead>
+<tr class="header">
+<th>工作</th>
+<th>通常主要依赖</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>读取 PDF</td>
+<td>CPU / RAM</td>
+</tr>
+<tr class="even">
+<td>解压文件</td>
+<td>CPU</td>
+</tr>
+<tr class="odd">
+<td>解析 Word / HTML</td>
+<td>CPU</td>
+</tr>
+<tr class="even">
+<td>数据清洗</td>
+<td>CPU</td>
+</tr>
+<tr class="odd">
+<td>Tokenization</td>
+<td>通常 CPU</td>
+</tr>
+<tr class="even">
+<td>大模型 Forward</td>
+<td>GPU</td>
+</tr>
+<tr class="odd">
+<td>LoRA 训练</td>
+<td>GPU</td>
+</tr>
+<tr class="even">
+<td>向量 Embedding</td>
+<td>CPU 或 GPU</td>
+</tr>
+<tr class="odd">
+<td>Vector Search</td>
+<td>CPU/GPU 都可能</td>
+</tr>
+<tr class="even">
+<td>写 JSON 文件</td>
+<td>CPU</td>
+</tr>
+<tr class="odd">
+<td>数据库存取</td>
+<td>CPU / RAM / Storage</td>
+</tr>
+</tbody>
+</table>
+<p>所以以后不要产生一种印象：</p>
+<blockquote>
+<p>“AI 项目 = GPU 项目。”</p>
+</blockquote>
+<p>更准确是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>I</mi><mi>系</mi><mi>统</mi><mo>=</mo><mi>C</mi><mi>P</mi><mi>U</mi><mi>系</mi><mi>统</mi><mo>+</mo><mi>内</mi><mi>存</mi><mo>+</mo><mi>存</mi><mi>储</mi><mo>+</mo><mi>G</mi><mi>P</mi><mi>U</mi><mi>计</mi><mi>算</mi><mo>+</mo><mi>软</mi><mi>件</mi><mi>栈</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AI系统
+=
+CPU系统
++
+内存
++
+存储
++
+GPU计算
++
+软件栈
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十现在进入-ram内存">十、现在进入 RAM：内存</h1>
+<p>RAM：</p>
+<h1 id="random-access-memory">Random Access Memory</h1>
+<p>我们日常说：</p>
+<blockquote>
+<p>32GB 内存。</p>
+</blockquote>
+<blockquote>
+<p>64GB 内存。</p>
+</blockquote>
+<p>一般就是 RAM。</p>
+<hr />
+<h2 id="ram-可以理解成什么">10. RAM 可以理解成什么？</h2>
+<p>还是用办公室类比。</p>
+<p>硬盘：</p>
+<blockquote>
+<p>档案仓库。</p>
+</blockquote>
+<p>RAM：</p>
+<blockquote>
+<p><strong>办公室桌面。</strong></p>
+</blockquote>
+<hr />
+<h2 id="为什么不能所有东西直接从硬盘操作">11.
+为什么不能所有东西直接从硬盘操作？</h2>
+<p>因为硬盘：</p>
+<blockquote>
+<p>相对慢。</p>
+</blockquote>
+<p>工作时如果每看一行文件都跑去地下档案室取一次：</p>
+<blockquote>
+<p>效率会非常差。</p>
+</blockquote>
+<hr />
+<h2 id="所以电脑会把正在使用的东西放进-ram">12.
+所以电脑会把正在使用的东西放进 RAM</h2>
+<p>例如：</p>
+<ul>
+<li>Python 程序；</li>
+<li>数据集；</li>
+<li>PDF 内容；</li>
+<li>模型文件的一部分；</li>
+<li>当前运行程序的数据。</li>
+</ul>
+<hr />
+<h1 id="十一非常重要硬盘容量-内存容量">十一、非常重要：硬盘容量 ≠
+内存容量</h1>
+<p>例如：</p>
+<p>你的电脑：</p>
+<pre class="text"><code>SSD：2TB
+RAM：32GB</code></pre>
+<p>并不意味着：</p>
+<blockquote>
+<p>你能同时在内存里放 2TB 数据。</p>
+</blockquote>
+<hr />
+<h2 id="一个仓库可以很大">13. 一个仓库可以很大</h2>
+<p>但桌子：</p>
+<blockquote>
+<p>只有那么大。</p>
+</blockquote>
+<p>这是非常好的心智模型。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>S</mi><mi>D</mi><mo>=</mo><mi>仓</mi><mi>库</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SSD=仓库
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>M</mi><mo>=</mo><mi>工</mi><mi>作</mi><mi>桌</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAM=工作桌
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二那显存-vram-又是什么">十二、那显存 VRAM 又是什么？</h1>
+<p>VRAM：</p>
+<h1 id="video-random-access-memory">Video Random Access Memory</h1>
+<p>简单说：</p>
+<blockquote>
+<p>GPU 自己旁边的高速内存。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-gpu-还要自己有一块内存">14. 为什么 GPU
+还要自己有一块内存？</h2>
+<p>因为 GPU 做计算特别快。</p>
+<p>如果它每算一个数字：</p>
+<blockquote>
+<p>都去很远的普通 RAM 取数据，</p>
+</blockquote>
+<p>GPU 会经常：</p>
+<blockquote>
+<p>等数据。</p>
+</blockquote>
+<hr />
+<h2 id="所以需要把它正在大量使用的数据">15.
+所以需要把它正在大量使用的数据</h2>
+<p>放在 GPU 附近。</p>
+<p>这个地方就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>R</mi><mi>A</mi><mi>M</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VRAM
+}
+</annotation></semantics></math></p>
+<p>显存。</p>
+<hr />
+<h1 id="十三第三个与第四个心智模型">十三、第三个与第四个心智模型</h1>
+<p>可以这样记：</p>
+<pre class="text"><code>硬盘 SSD
+= 仓库
+
+RAM
+= 总办公室工作桌
+
+VRAM
+= GPU车间里的高速工作台
+
+GPU
+= 车间工人</code></pre>
+<p>这四者关系非常重要。</p>
+<hr />
+<h1 id="十四为什么大家买-gpu-总问显存多少">十四、为什么大家买 GPU
+总问“显存多少”？</h1>
+<p>因为大模型首先面临一个非常现实的问题：</p>
+<blockquote>
+<p><strong>模型装不装得进去？</strong></p>
+</blockquote>
+<p>假设：</p>
+<blockquote>
+<p>GPU 很快。</p>
+</blockquote>
+<p>但是显存只有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>8</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+8GB
+</annotation></semantics></math></p>
+<p>而模型运行需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>20</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+20GB
+</annotation></semantics></math></p>
+<p>会发生什么？</p>
+<hr />
+<h2 id="很简单">16. 很简单</h2>
+<p>就像：</p>
+<blockquote>
+<p>你有一个速度极快的厨师，</p>
+</blockquote>
+<p>但厨房操作台：</p>
+<blockquote>
+<p>只有 30 厘米宽。</p>
+</blockquote>
+<p>菜、锅、原料：</p>
+<blockquote>
+<p>根本摆不开。</p>
+</blockquote>
+<p>厨师快也没有意义。</p>
+<hr />
+<h1 id="十五所以-gpu-有两个完全不同的指标">十五、所以 GPU
+有两个完全不同的指标</h1>
+<p>以后看 GPU，不要只看：</p>
+<blockquote>
+<p>“性能强不强。”</p>
+</blockquote>
+<p>至少要区分：</p>
+<h3 id="计算能力">计算能力</h3>
+<p>GPU：</p>
+<blockquote>
+<p>算得多快。</p>
+</blockquote>
+<h3 id="显存容量">显存容量</h3>
+<p>VRAM：</p>
+<blockquote>
+<p>能放多少东西。</p>
+</blockquote>
+<hr />
+<h2 id="这两件事情不是一回事">17. 这两件事情不是一回事</h2>
+<p>一个 GPU：</p>
+<blockquote>
+<p>算力强。</p>
+</blockquote>
+<p>但显存：</p>
+<blockquote>
+<p>小。</p>
+</blockquote>
+<p>仍然可能：</p>
+<blockquote>
+<p>装不下大模型。</p>
+</blockquote>
+<hr />
+<h1 id="十六模型到底在显存里放什么">十六、模型到底在显存里放什么？</h1>
+<p>我们先不展开复杂显存公式。</p>
+<p>只看最重要的几个东西。</p>
+<p>推理时，显存里通常至少需要考虑：</p>
+<pre class="text"><code>┌────────────────────┐
+│ 模型 Weights       │
+├────────────────────┤
+│ KV Cache           │
+├────────────────────┤
+│ Activations        │
+├────────────────────┤
+│ 临时计算空间       │
+└────────────────────┘</code></pre>
+<hr />
+<h2 id="第一大块weights">18. 第一大块：Weights</h2>
+<p>也就是：</p>
+<blockquote>
+<p>模型参数。</p>
+</blockquote>
+<p>第二课里的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mi>Q</mi></msub><annotation encoding="application/x-tex">
+W_Q
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mi>K</mi></msub><annotation encoding="application/x-tex">
+W_K
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mi>V</mi></msub><annotation encoding="application/x-tex">
+W_V
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mi>O</mi></msub><annotation encoding="application/x-tex">
+W_O
+</annotation></semantics></math></p>
+<p>MLP Matrix 等等。</p>
+<hr />
+<h2 id="模型写着-7b-是什么意思">19. 模型写着 7B 是什么意思？</h2>
+<p>大致意味着：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn><mi>B</mi><mo>=</mo><mn>70</mn><mi>亿</mi></mrow><annotation encoding="application/x-tex">
+7B
+=
+70亿
+</annotation></semantics></math></p>
+<p>个 Parameter。</p>
+<hr />
+<h2 id="每个参数都需要空间存储">20. 每个参数都需要空间存储</h2>
+<p>先用一个非常粗的例子。</p>
+<p>如果每个 Parameter 使用：</p>
+<blockquote>
+<p>2 Bytes</p>
+</blockquote>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>70</mn><mi>亿</mi><mo>×</mo><mn>2</mn><mi>B</mi><mi>y</mi><mi>t</mi><mi>e</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+70亿\times2Bytes
+</annotation></semantics></math></p>
+<p>大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>14</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+14GB
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这一阶段不用背公式">21. 这一阶段不用背公式</h2>
+<p>只记住这个直觉：</p>
+<blockquote>
+<p><strong>参数越多，每个参数用的字节越多，模型 Weight
+就越占显存。</strong></p>
+</blockquote>
+<p>后面第 6、7 阶段我们再真正拆：</p>
+<ul>
+<li>FP32；</li>
+<li>FP16；</li>
+<li>BF16；</li>
+<li>INT8；</li>
+<li>INT4；</li>
+<li>Quantization。</li>
+</ul>
+<hr />
+<h1 id="十七一个非常重要的案例">十七、一个非常重要的案例</h1>
+<p>假设你有：</p>
+<h1 id="gb-gpu">16GB GPU</h1>
+<p>你下载一个：</p>
+<h1 id="b-bf16-模型">7B BF16 模型</h1>
+<p>仅 Weight 就大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>14</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+14GB
+</annotation></semantics></math></p>
+<p>你可能想：</p>
+<blockquote>
+<p>“16GB &gt; 14GB，那不是刚好吗？”</p>
+</blockquote>
+<p>不一定。</p>
+<hr />
+<h2 id="因为显存不只装-weight">22. 因为显存不只装 Weight</h2>
+<p>还需要：</p>
+<ul>
+<li>KV Cache；</li>
+<li>Temporary Buffer；</li>
+<li>Framework overhead；</li>
+<li>Activations。</li>
+</ul>
+<p>所以：</p>
+<blockquote>
+<p>14GB Weight 不意味着 16GB 卡一定舒服运行。</p>
+</blockquote>
+<hr />
+<h2 id="这就是以后最常见的一句话">23. 这就是以后最常见的一句话</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mi>权</mi><mi>重</mi><mi>大</mi><mi>小</mi><mo>≠</mo><mi>实</mi><mi>际</mi><mi>显</mi><mi>存</mi><mi>需</mi><mi>求</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+模型权重大小
+\neq
+实际显存需求
+}
+</annotation></semantics></math></p>
+<p>非常重要。</p>
+<hr />
+<h1 id="十八什么是-oom">十八、什么是 OOM？</h1>
+<p>你以后一定会见到：</p>
+<h1 id="cuda-out-of-memory">CUDA Out Of Memory</h1>
+<p>简称：</p>
+<h1 id="oom">OOM</h1>
+<hr />
+<h2 id="它不一定意味着-gpu-坏了">24. 它不一定意味着 GPU 坏了</h2>
+<p>通常只是：</p>
+<blockquote>
+<p><strong>显存装不下了。</strong></p>
+</blockquote>
+<hr />
+<h2 id="就像桌子已经摆满">25. 就像桌子已经摆满</h2>
+<p>你还要再放一摞文件。</p>
+<p>电脑说：</p>
+<blockquote>
+<p>没地方了。</p>
+</blockquote>
+<hr />
+<h2 id="常见原因可能包括">26. 常见原因可能包括</h2>
+<ul>
+<li>模型太大；</li>
+<li>Batch 太大；</li>
+<li>Context 太长；</li>
+<li>KV Cache 太大；</li>
+<li>Training Activation 太多；</li>
+<li>Precision 太高。</li>
+</ul>
+<p>后面每一个我们都会单独拆。</p>
+<hr />
+<h1 id="十九为什么-context-越长也越吃显存">十九、为什么 Context
+越长也越吃显存？</h1>
+<p>假设：</p>
+<blockquote>
+<p>用户只问一句话。</p>
+</blockquote>
+<p>模型只需要记：</p>
+<blockquote>
+<p>少量 Context。</p>
+</blockquote>
+<hr />
+<h2 id="但如果输入一份">27. 但如果输入一份</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>100</mn><mo>,</mo><mn>000</mn></mrow><annotation encoding="application/x-tex">
+100,000
+</annotation></semantics></math></p>
+<p>Token 的采购文件，</p>
+<p>模型为了生成后续内容：</p>
+<blockquote>
+<p>必须保存大量过去 Token 的 K/V 信息。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="kv-cache">KV Cache</h1>
+<hr />
+<h2 id="可以把-kv-cache-想成什么">28. 可以把 KV Cache 想成什么？</h2>
+<p>模型在读长文件时：</p>
+<blockquote>
+<p>不想每生成一个 Token，就把过去 10 万 Token 全部重新整理一次。</p>
+</blockquote>
+<p>于是提前把一些中间结果：</p>
+<blockquote>
+<p>存下来。</p>
+</blockquote>
+<hr />
+<h2 id="很像会议秘书">29. 很像会议秘书</h2>
+<p>已经整理过：</p>
+<blockquote>
+<p>第 1～100 页笔记。</p>
+</blockquote>
+<p>到了第 101 页：</p>
+<blockquote>
+<p>不需要从第 1 页重新做全部笔记。</p>
+</blockquote>
+<p>把过去笔记：</p>
+<blockquote>
+<p>存着继续使用。</p>
+</blockquote>
+<p>这就是 KV Cache 的第一层直觉。</p>
+<hr />
+<h1 id="二十context-长度增加时发生什么">二十、Context
+长度增加时发生什么？</h1>
+<pre class="text"><code>短问题
+↓
+小 KV Cache
+
+
+长文档
+↓
+大 KV Cache
+
+
+超长文档
+↓
+更大的 KV Cache
+↓
+显存压力增加</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>大</mi><mi>模</mi><mi>型</mi><mi>显</mi><mi>存</mi><mi>问</mi><mi>题</mi><mi>不</mi><mi>只</mi><mi>是</mi><mi>参</mi><mi>数</mi><mi>量</mi><mi>问</mi><mi>题</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+大模型显存问题
+不只是参数量问题
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十一现在进入本阶段最重要的区别">二十一、现在进入本阶段最重要的区别</h1>
+<h1 id="推理-训练">推理 ≠ 训练</h1>
+<p>这是第三课必须建立的第五个核心心智模型。</p>
+<hr />
+<h1 id="二十二什么叫推理-inference">二十二、什么叫推理 Inference？</h1>
+<p>你打开一个已经训练好的模型：</p>
+<blockquote>
+<p>给它问题。</p>
+</blockquote>
+<p>它：</p>
+<blockquote>
+<p>给你答案。</p>
+</blockquote>
+<p>例如：</p>
+<blockquote>
+<p>“审查以下资格条件是否存在潜在竞争限制。”</p>
+</blockquote>
+<p>模型回答：</p>
+<blockquote>
+<p>风险分析……</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="inference">Inference</h1>
+<hr />
+<h2 id="inference-最核心的事情">30. Inference 最核心的事情</h2>
+<p>主要是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward
+}
+</annotation></semantics></math></p>
+<p>第二课第 4 阶段已经学过。</p>
+<hr />
+<h2 id="它使用已经存在的-weight">31. 它使用已经存在的 Weight</h2>
+<p>计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Input
+\rightarrow
+Output
+</annotation></semantics></math></p>
+<hr />
+<h2 id="weight-通常不更新">32. Weight 通常不更新</h2>
+<p>也就是说：</p>
+<pre class="text"><code>模型参数
+   │
+   │ 读取使用
+   ▼
+Forward
+   ▼
+答案</code></pre>
+<hr />
+<h1 id="二十三训练是什么">二十三、训练是什么？</h1>
+<p>Training：</p>
+<blockquote>
+<p>模型答完以后，我们告诉它“答案错在哪里”。</p>
+</blockquote>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Forward
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Loss
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Backward
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Optimizer
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+WeightUpdate
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以训练需要比推理更多东西">33. 所以训练需要比推理更多东西</h2>
+<p>推理：</p>
+<pre class="text"><code>Weights
++
+当前计算
++
+KV Cache</code></pre>
+<p>训练：</p>
+<pre class="text"><code>Weights
++
+Forward Activations
++
+Gradients
++
+Optimizer States
++
+临时计算空间</code></pre>
+<hr />
+<h1 id="二十四用一个学生类比">二十四、用一个学生类比</h1>
+<h2 id="推理">推理</h2>
+<p>相当于：</p>
+<blockquote>
+<p>已经毕业的学生参加考试。</p>
+</blockquote>
+<p>需要：</p>
+<ul>
+<li>大脑；</li>
+<li>试卷；</li>
+<li>草稿纸。</li>
+</ul>
+<hr />
+<h2 id="训练">训练</h2>
+<p>相当于：</p>
+<blockquote>
+<p>学生一边考试，一边老师逐题批改，还要保存错误记录、调整学习方法。</p>
+</blockquote>
+<p>需要：</p>
+<ul>
+<li>大脑；</li>
+<li>试卷；</li>
+<li>草稿纸；</li>
+<li>批改记录；</li>
+<li>错题本；</li>
+<li>学习状态。</li>
+</ul>
+<p>所以自然：</p>
+<blockquote>
+<p>更占资源。</p>
+</blockquote>
+<hr />
+<h1 id="二十五非常重要的一句话">二十五、非常重要的一句话</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>能</mi><mi>把</mi><mi>模</mi><mi>型</mi><mi>加</mi><mi>载</mi><mi>进</mi><mi>G</mi><mi>P</mi><mi>U</mi><mo>≠</mo><mi>能</mi><mi>训</mi><mi>练</mi><mi>这</mi><mi>个</mi><mi>模</mi><mi>型</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+能把模型加载进GPU
+\neq
+能训练这个模型
+}
+</annotation></semantics></math></p>
+<p>以后看到某人说：</p>
+<blockquote>
+<p>“我的 24GB 显卡可以跑 14B。”</p>
+</blockquote>
+<p>不要立刻得出：</p>
+<blockquote>
+<p>“那就可以训练 14B。”</p>
+</blockquote>
+<p>这两个问题：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="二十六一个很实际的例子">二十六、一个很实际的例子</h1>
+<p>假设：</p>
+<blockquote>
+<p>某个经过压缩/量化的 14B 模型能够塞进 24GB 显存并推理。</p>
+</blockquote>
+<p>这并不意味着：</p>
+<blockquote>
+<p>14B Full Fine-tuning 也能在 24GB 上完成。</p>
+</blockquote>
+<hr />
+<h2 id="为什么">34. 为什么？</h2>
+<p>Full Fine-tuning 需要额外保存：</p>
+<ul>
+<li>Gradient；</li>
+<li>Optimizer State；</li>
+<li>Activations。</li>
+</ul>
+<p>显存需求：</p>
+<blockquote>
+<p>会比纯推理大很多。</p>
+</blockquote>
+<hr />
+<h2 id="那-lora-为什么有价值">35. 那 LoRA 为什么有价值？</h2>
+<p>后面我们会详细学。</p>
+<p>现在只需要有一个印象：</p>
+<p>LoRA 的目的之一，就是：</p>
+<blockquote>
+<p><strong>减少真正需要训练和保存训练状态的参数。</strong></p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p>原本全量训练非常困难，</p>
+</blockquote>
+<p>变成：</p>
+<blockquote>
+<p>参数高效微调。</p>
+</blockquote>
+<hr />
+<h1
+id="二十七采购项目中的三个不同目标">二十七、采购项目中的三个不同目标</h1>
+<p>以后买 GPU 前先问：</p>
+<h3 id="a.-我只是要跑模型吗">A. 我只是要跑模型吗？</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Inference
+</annotation></semantics></math></p>
+<h3 id="b.-我要-lora-qlora-吗">B. 我要 LoRA / QLoRA 吗？</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>u</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+ParameterEfficientFineTuning
+</annotation></semantics></math></p>
+<h3 id="c.-我要-full-fine-tuning-cpt-吗">C. 我要 Full Fine-tuning / CPT
+吗？</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>e</mi><mi>a</mi><mi>v</mi><mi>y</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+HeavyTraining
+</annotation></semantics></math></p>
+<hr />
+<h2 id="三种需求的硬件要求完全不同">36. 三种需求的硬件要求完全不同</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>先</mi><mi>定</mi><mi>义</mi><mi>任</mi><mi>务</mi><mi>再</mi><mi>选</mi><mi>G</mi><mi>P</mi><mi>U</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+先定义任务
+再选GPU
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>先</mi><mi>买</mi><mi>G</mi><mi>P</mi><mi>U</mi><mi>再</mi><mi>想</mi><mi>干</mi><mi>什</mi><mi>么</mi></mrow><annotation encoding="application/x-tex">
+先买GPU
+再想干什么
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十八再认识-cuda">二十八、再认识 CUDA</h1>
+<p>现在才进入 CUDA。</p>
+<p>CUDA：</p>
+<h1 id="compute-unified-device-architecture">Compute Unified Device
+Architecture</h1>
+<p>由 NVIDIA 建立的一套 GPU 计算平台/软件生态。</p>
+<hr />
+<h2 id="最重要的一个误区">37. 最重要的一个误区</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>U</mi><mi>D</mi><mi>A</mi><mo>≠</mo><mi>G</mi><mi>P</mi><mi>U</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CUDA
+\neq
+GPU
+}
+</annotation></semantics></math></p>
+<p>GPU 是：</p>
+<blockquote>
+<p>硬件。</p>
+</blockquote>
+<p>CUDA 是：</p>
+<blockquote>
+<p>让软件能够利用 NVIDIA GPU 做通用计算的重要平台/软件栈。</p>
+</blockquote>
+<hr />
+<h1 id="二十九还是用工厂类比">二十九、还是用工厂类比</h1>
+<p>GPU：</p>
+<blockquote>
+<p>工厂。</p>
+</blockquote>
+<p>CUDA：</p>
+<blockquote>
+<p><strong>让程序能够指挥工厂干活的一套规则、工具和通道。</strong></p>
+</blockquote>
+<hr />
+<h2 id="你的-python-不会天然知道怎么让-gpu-算矩阵">38. 你的 Python
+不会天然知道怎么让 GPU 算矩阵</h2>
+<p>需要：</p>
+<blockquote>
+<p>软件层连接。</p>
+</blockquote>
+<hr />
+<h1 id="三十pytorch-又是什么">三十、PyTorch 又是什么？</h1>
+<p>PyTorch：</p>
+<blockquote>
+<p>深度学习框架。</p>
+</blockquote>
+<p>我们通常写：</p>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>model(x)</span></code></pre></div>
+<p>而不是自己控制：</p>
+<blockquote>
+<p>每一个 CUDA 核心。</p>
+</blockquote>
+<hr />
+<h2 id="pytorch-帮我们做什么">39. PyTorch 帮我们做什么？</h2>
+<p>它帮你把：</p>
+<pre class="text"><code>矩阵乘法</code></pre>
+<p>这样的高级操作，</p>
+<p>转化成：</p>
+<blockquote>
+<p>GPU 可以高效执行的计算。</p>
+</blockquote>
+<hr />
+<h1 id="三十一整个软件链第一次出现">三十一、整个软件链第一次出现</h1>
+<p>以后你会经常看到这张图：</p>
+<pre class="text"><code>你的 Python 代码
+      ↓
+   PyTorch
+      ↓
+ CUDA Runtime / Libraries
+      ↓
+ NVIDIA Driver
+      ↓
+ NVIDIA GPU</code></pre>
+<hr />
+<h2 id="这张图非常重要">40. 这张图非常重要</h2>
+<p>因为以后你会遇到：</p>
+<blockquote>
+<p>“为什么我明明有 NVIDIA GPU，PyTorch 却检测不到？”</p>
+</blockquote>
+<p>问题可能不在：</p>
+<blockquote>
+<p>GPU。</p>
+</blockquote>
+<p>而在这条链上的其它地方。</p>
+<hr />
+<h1 id="三十二第六个辅助心智模型">三十二、第六个辅助心智模型</h1>
+<p>虽然本阶段只要求记 5 个核心模型，但这里送一个很实用的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>e</mi><mo>→</mo><mi>D</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>C</mi><mi>U</mi><mi>D</mi><mi>A</mi><mo>→</mo><mi>F</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>k</mi><mo>→</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Hardware
+\rightarrow
+Driver
+\rightarrow
+CUDA
+\rightarrow
+Framework
+\rightarrow
+Model
+}
+</annotation></semantics></math></p>
+<p>其中任何一层出问题：</p>
+<blockquote>
+<p>整个 GPU 计算链都可能不工作。</p>
+</blockquote>
+<hr />
+<h1 id="三十三driver-是什么">三十三、Driver 是什么？</h1>
+<p>Driver：</p>
+<h1 id="驱动程序">驱动程序</h1>
+<p>简单理解：</p>
+<blockquote>
+<p>操作系统和 GPU 硬件之间的沟通层。</p>
+</blockquote>
+<hr />
+<h2 id="没有合适-driver">41. 没有合适 Driver</h2>
+<p>你的系统可能：</p>
+<blockquote>
+<p>知道插了一块 GPU，</p>
+</blockquote>
+<p>但很多 CUDA 工作：</p>
+<blockquote>
+<p>不能正常进行。</p>
+</blockquote>
+<hr />
+<h1 id="三十四cuda-toolkit-又是什么">三十四、CUDA Toolkit
+又是什么？</h1>
+<p>你以后会看到：</p>
+<pre class="text"><code>CUDA 12.x
+CUDA Toolkit
+nvcc
+cuBLAS
+cuDNN</code></pre>
+<p>现在先不要背。</p>
+<hr />
+<h2 id="只需要知道">42. 只需要知道</h2>
+<p>CUDA 生态里包含：</p>
+<blockquote>
+<p>很多让 GPU 做高性能计算的组件。</p>
+</blockquote>
+<p>例如矩阵计算库。</p>
+<hr />
+<h2 id="pytorch-往往会调用这些底层能力">43. PyTorch
+往往会调用这些底层能力</h2>
+<p>你不需要自己写：</p>
+<blockquote>
+<p>GPU 汇编代码。</p>
+</blockquote>
+<hr />
+<h1 id="三十五为什么-ai-工程师经常被-cuda-折磨">三十五、为什么 AI
+工程师经常被 CUDA 折磨？</h1>
+<p>因为：</p>
+<blockquote>
+<p>软件版本必须兼容。</p>
+</blockquote>
+<p>例如可能涉及：</p>
+<pre class="text"><code>GPU型号
+↓
+Driver版本
+↓
+CUDA兼容性
+↓
+PyTorch版本
+↓
+Transformers版本
+↓
+模型实现</code></pre>
+<p>其中某个组合：</p>
+<blockquote>
+<p>不兼容。</p>
+</blockquote>
+<p>就可能报错。</p>
+<hr />
+<h1
+id="三十六但是这一阶段不要进入版本地狱">三十六、但是这一阶段不要进入“版本地狱”</h1>
+<p>这一阶段只建立认知。</p>
+<p>下一阶段：</p><div class="nav"><a class="btn" href="../lesson02/stage12.html">← 第 2 课最后阶段</a><a class="btn" href="stage02.html">第 2 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

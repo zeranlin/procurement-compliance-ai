@@ -1,0 +1,500 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第7阶段：Serving Architecture：把 Model + RAG + Agent 接成真实 API 服务</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第7阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>Deployment ≠ ModelLoading。</li><li>ProductionAI = ModelSystem + DistributedSystem。</li><li>Traceability 从统一 Request ID 开始。</li></ul></div><h1 id="第十课-第-7-阶段">第十课 · 第 7 阶段</h1>
+<h1
+id="serving-architecture把-model-rag-agent-接成真实-api-服务-1">Serving
+Architecture：把 Model + RAG + Agent 接成真实 API 服务</h1>
+<h2
+id="模型能启动不代表系统能上线怎样把-gatewaymodel-serverretrieveragenttoolstatequeueauth-和-trace-真正接成生产服务">模型能启动，不代表系统能上线。怎样把
+Gateway、Model Server、Retriever、Agent、Tool、State、Queue、Auth 和
+Trace 真正接成生产服务？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-6">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-6">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Deployment ≠ ModelLoading。</strong></li>
+<li><strong>ProductionAI = ModelSystem +
+DistributedSystem。</strong></li>
+<li><strong>Traceability 从统一 Request ID 开始。</strong></li>
+<li><strong>AgentControlPlane ≠ ModelExecutionPlane。</strong></li>
+<li><strong>Decision ≠ Authorization。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-6">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="even">
+<td><code>Serving</code></td>
+<td>服务化：把模型包装成可扩展、可观测、可治理的在线服务</td>
+</tr>
+<tr class="odd">
+<td><code>Idempotency</code></td>
+<td>幂等：重复执行不会产生不可控重复副作用</td>
+</tr>
+<tr class="even">
+<td><code>Observability</code></td>
+<td>可观测性：通过指标、日志、追踪理解系统内部状态</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-6">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 6 阶段，我们已经解决：</p>
+<pre class="text"><code>显存
+Batch
+Inference Engine
+多GPU</code></pre>
+<p>但生产系统不是：</p>
+<pre class="text"><code>python model.generate()</code></pre>
+<p>它还必须面对：</p>
+<pre class="text"><code>鉴权
+限流
+排队
+超时
+重试
+RAG
+Agent
+Tool
+状态
+日志
+审计</code></pre>
+<p>所以本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>L</mi><mi>o</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Deployment
+\neq
+ModelLoading
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementservingarchitecture_v0.1-1"><code>ProcurementServingArchitecture_V0.1</code></h1>
+<hr />
+<h1 id="一完整生产链">一、完整生产链</h1>
+<pre class="text"><code>Client
+↓
+API Gateway
+↓
+Auth / Rate Limit
+↓
+Request Router
+↓
+RAG / Agent Orchestrator
+↓
+Model Server
+↓
+Tool Services
+↓
+State / DB / Cache
+↓
+Response Stream</code></pre>
+<p>每一层都可能成为：</p>
+<blockquote>
+<p>性能瓶颈、故障点或安全边界。</p>
+</blockquote>
+<hr />
+<h1 id="二核心心智模型-①-1">二、核心心智模型 ①</h1>
+<h1
+id="productionai-modelsystem-distributedsystem"><code>ProductionAI = ModelSystem + DistributedSystem</code></h1>
+<p>模型只是其中一个组件。</p>
+<p>真正上线后，</p>
+<p>我们面对的是：</p>
+<blockquote>
+<p>分布式系统问题。</p>
+</blockquote>
+<hr />
+<h1 id="三api-gateway">三、API Gateway</h1>
+<p>至少负责：</p>
+<pre class="text"><code>Authentication
+鉴权
+
+Authorization
+授权
+
+Rate Limiting
+限流
+
+Routing
+路由
+
+Quota
+配额
+
+TLS
+加密传输</code></pre>
+<p>它是外部流量进入系统的第一层控制面。</p>
+<hr />
+<h1 id="四request-id">四、Request ID</h1>
+<p>每个请求创建：</p>
+<pre class="text"><code>request_id</code></pre>
+<p>并贯穿：</p>
+<pre class="text"><code>Gateway
+RAG
+Model
+Agent
+Tool
+Database</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>从</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>I</mi><mi>D</mi><mi>开</mi><mi>始</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Traceability
+从
+RequestID
+开始
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五核心心智模型-②">五、核心心智模型 ②</h1>
+<h1 id="没有统一-request-id就没有真正端到端追踪">没有统一 Request
+ID，就没有真正端到端追踪</h1>
+<p>日志再多，</p>
+<p>如果无法串成同一个请求：</p>
+<blockquote>
+<p>排障仍然很困难。</p>
+</blockquote>
+<hr />
+<h1 id="六rag-service">六、RAG Service</h1>
+<p>RAG 可以独立：</p>
+<pre class="text"><code>Retriever
+Reranker
+Context Builder</code></pre>
+<p>好处：</p>
+<pre class="text"><code>独立扩容
+独立版本化
+独立回滚</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGVersion
+\neq
+ModelVersion
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七agent-orchestrator">七、Agent Orchestrator</h1>
+<p>它负责：</p>
+<pre class="text"><code>Goal
+Plan
+Tool Routing
+State
+Retry
+Human Escalation
+Completion</code></pre>
+<p>而 Model Server：</p>
+<blockquote>
+<p>负责推理执行。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>e</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentControlPlane
+\neq
+ModelExecutionPlane
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八tool-service">八、Tool Service</h1>
+<p>工具可能：</p>
+<pre class="text"><code>查预算
+写数据库
+提交审批
+发送消息</code></pre>
+<p>所以必须有：</p>
+<pre class="text"><code>权限
+超时
+幂等
+审计
+重试策略</code></pre>
+<p>模型可以决定：</p>
+<blockquote>
+<p>想调用什么。</p>
+</blockquote>
+<p>但系统策略决定：</p>
+<blockquote>
+<p>能不能调用。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Decision
+\neq
+Authorization
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九timeout-budget">九、Timeout Budget</h1>
+<p>整个请求：</p>
+<blockquote>
+<p>应有总超时预算。</p>
+</blockquote>
+<p>内部组件：</p>
+<pre class="text"><code>RAG
+Model
+Tool
+Database</code></pre>
+<p>也要有分层 Timeout。</p>
+<p>否则一个依赖卡住：</p>
+<blockquote>
+<p>整条链都会无限等待。</p>
+</blockquote>
+<hr />
+<h1 id="十retry-与-idempotency">十、Retry 与 Idempotency</h1>
+<p>读请求：</p>
+<blockquote>
+<p>通常更容易安全重试。</p>
+</blockquote>
+<p>写请求：</p>
+<blockquote>
+<p>可能产生重复副作用。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>感</mi><mi>知</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetryPolicy
+必须感知
+Idempotency
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一circuit-breaker">十一、Circuit Breaker</h1>
+<p>如果某个依赖持续失败，</p>
+<p>继续调用会放大故障。</p>
+<p>所以：</p>
+<h1 id="circuit-breaker">Circuit Breaker</h1>
+<h2 id="熔断器">熔断器</h2>
+<p>在达到阈值时：</p>
+<blockquote>
+<p>暂停调用、降级或转人工。</p>
+</blockquote>
+<hr />
+<h1 id="十二核心心智模型-③">十二、核心心智模型 ③</h1>
+<h1
+id="retryeverything-会把局部故障变成雪崩"><code>RetryEverything</code>
+会把局部故障变成雪崩</h1>
+<p>成熟 Retry 必须考虑：</p>
+<pre class="text"><code>上限
+Backoff
+Jitter
+Idempotency
+Circuit Breaker</code></pre>
+<hr />
+<h1 id="十三backpressure">十三、Backpressure</h1>
+<p>下游模型满载时，</p>
+<p>上游不能无限灌请求。</p>
+<p>需要：</p>
+<h1 id="backpressure">Backpressure</h1>
+<h2 id="背压">背压</h2>
+<p>可以通过：</p>
+<pre class="text"><code>限流
+排队
+降级
+拒绝</code></pre>
+<p>保护下游。</p>
+<hr />
+<h1 id="十四业务-state-不能只存在-prompt-里">十四、业务 State 不能只存在
+Prompt 里</h1>
+<p>真实状态应该存：</p>
+<pre class="text"><code>Database
+Durable Store
+State Service</code></pre>
+<p>模型上下文只是：</p>
+<h1 id="working-context">Working Context</h1>
+<h2 id="工作上下文">工作上下文</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BusinessState
+\neq
+PromptMemory
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五streaming-与-cancellation">十五、Streaming 与
+Cancellation</h1>
+<p>流式服务还要处理：</p>
+<pre class="text"><code>连接保持
+客户端取消
+断线
+中途超时</code></pre>
+<p>如果用户取消：</p>
+<blockquote>
+<p>后端应该尽快停止 Decode。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>l</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>l</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClientCancellation
+\rightarrow
+ComputeCancellation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六observability-与-privacy">十六、Observability 与
+Privacy</h1>
+<p>更多日志：</p>
+<blockquote>
+<p>更容易排障。</p>
+</blockquote>
+<p>但也带来：</p>
+<pre class="text"><code>隐私
+敏感数据
+留存
+访问风险</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>和</mi><mi>P</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>c</mi><mi>y</mi><mi>一</mi><mi>起</mi><mi>设</mi><mi>计</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Observability
+必须和
+Privacy
+一起设计
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十七system-version">十七、System Version</h1>
+<p>生产版本不能只记：</p>
+<pre class="text"><code>model=v0.2</code></pre>
+<p>还要记：</p>
+<pre class="text"><code>rag_index_version
+retriever_version
+reranker_version
+agent_policy_version
+tool_registry_version
+prompt_version
+gateway_version
+serving_engine_version</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>&gt;</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SystemVersion
+&gt;
+ModelVersion
+}
+</annotation></semantics></math></p>
+<p>这里表示：</p>
+<blockquote>
+<p>系统版本包含更多依赖。</p>
+</blockquote>
+<hr />
+<h1 id="十八本阶段正式工程产物">十八、本阶段正式工程产物</h1>
+<h1
+id="procurementservingarchitecture_v0.1-2"><code>ProcurementServingArchitecture_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>serving_architecture_version
+api_gateway
+auth_policy
+authorization_policy
+rate_limit
+request_id_policy
+router
+model_server_version
+rag_service_version
+retriever_version
+reranker_version
+agent_orchestrator_version
+tool_registry_version
+tool_auth_policy
+state_store
+cache
+timeout_budget
+retry_policy
+idempotency_policy
+circuit_breaker
+backpressure
+queue_policy
+streaming
+cancellation
+privacy_logging_policy
+trace_context
+release_gate</code></pre>
+<hr />
+<h1 id="十九本阶段最重要的-9-个核心心智模型">十九、本阶段最重要的 9
+个核心心智模型</h1>
+<blockquote>
+<p><strong>① <code>Deployment ≠ ModelLoading</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>②
+<code>ProductionAI = ModelSystem + DistributedSystem</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③ Traceability 从统一 Request ID 开始。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④
+<code>AgentControlPlane ≠ ModelExecutionPlane</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤ <code>Decision ≠ Authorization</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥ Retry 必须与 Idempotency、Backoff、Circuit Breaker
+联动。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦ <code>BusinessState ≠ PromptMemory</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧ Client Cancellation 应传播到计算层。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑨ <code>SystemVersion &gt; ModelVersion</code>。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第十课-第-8-阶段">下一阶段：第十课 · 第 8 阶段</h1>
+<h1
+id="observabilitymetricslogstracinggpu-与业务监控">Observability：Metrics、Logs、Tracing、GPU
+与业务监控</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>≠</mo><mi>G</mi><mi>P</mi><mi>U</mi><mi>U</mi><mi>t</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Monitoring
+\neq
+GPUUtilizationOnly
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementobservabilitypolicy_v0.1"><code>ProcurementObservabilityPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage06.html">← 第 6 阶段</a><a class="btn" href="stage08.html">第 8 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

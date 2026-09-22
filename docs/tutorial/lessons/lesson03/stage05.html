@@ -1,0 +1,2438 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第5阶段：第一次真正让一个开源 LLM 从“文字输入”走到“文字输出”</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>完整生成链是 Text → Token IDs → Tensor → Forward → Logits → Decode，不应把“文字直接进入神经网络”当作真实过程。</li><li>generate() 本质是 Autoregressive Loop：反复 Forward、选择下一个 Token、追加到序列再继续。</li><li>Tokenizer / Chat Template 是输入协议的一部分；协议不一致会让同一模型表现明显变化。</li></ul></div><h1
+id="第三课-第-5-阶段第一次真正让一个开源-llm-从文字输入走到文字输出">第三课
+· 第 5 阶段：第一次真正让一个开源 LLM 从“文字输入”走到“文字输出”</h1>
+<h2
+id="一条政府采购条款究竟怎样变成-tokentensorlogits再重新变成中文回答">一条政府采购条款，究竟怎样变成
+Token、Tensor、Logits，再重新变成中文回答？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>完整生成链是 Text → Token IDs → Tensor → Forward → Logits →
+Decode，不应把“文字直接进入神经网络”当作真实过程。</strong></li>
+<li><strong>generate() 本质是 Autoregressive Loop：反复
+Forward、选择下一个 Token、追加到序列再继续。</strong></li>
+<li><strong>Tokenizer / Chat Template
+是输入协议的一部分；协议不一致会让同一模型表现明显变化。</strong></li>
+<li><strong>Logits ≠ Final Text。Logits 只是下一 Token
+的分数，解码策略决定如何从分数得到实际 Token。</strong></li>
+<li><strong>推理时要区分 eval()/no_grad()
+与训练状态，避免无谓梯度和随机层行为影响结果与显存。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="odd">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="odd">
+<td><code>CPU</code></td>
+<td>CPU：负责通用控制、数据准备和部分算子</td>
+</tr>
+<tr class="even">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="odd">
+<td><code>CUDA</code></td>
+<td>CUDA：NVIDIA GPU 通用并行计算平台与软件生态</td>
+</tr>
+<tr class="even">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="odd">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="even">
+<td><code>Block</code></td>
+<td>版面块：文档解析后保留布局和位置的基本块</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前四个阶段，我们一直在准备“发动机”。</p>
+<p>第三课第 1 阶段，我们知道了：</p>
+<pre class="text"><code>SSD → RAM → VRAM → GPU</code></pre>
+<p>第 2 阶段，我们知道了：</p>
+<pre class="text"><code>Transformers
+↓
+PyTorch
+↓
+CUDA
+↓
+Driver
+↓
+GPU</code></pre>
+<p>第 3 阶段，我们打开了模型文件夹：</p>
+<pre class="text"><code>config
++
+tokenizer
++
+weights</code></pre>
+<p>第 4 阶段，我们终于知道：</p>
+<div class="sourceCode" id="cb360"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb360-1"><a href="#cb360-1" aria-hidden="true" tabindex="-1"></a>from_pretrained(...)</span></code></pre></div>
+<p>背后实际上是在做一场大型搬家。</p>
+<p>现在模型已经：</p>
+<blockquote>
+<p><strong>真正装进电脑里了。</strong></p>
+</blockquote>
+<p>这一阶段我们只解决一个问题：</p>
+<blockquote>
+<p><strong>用户输入一句中文以后，这句话到底经历了什么，最后才变成模型回答？</strong></p>
+</blockquote>
+<p>这次不先讲代码。</p>
+<p>先把整个过程变成一部“流水线电影”。</p>
+<hr />
+<h1 id="一先看最终总图">一、先看最终总图</h1>
+<p>假设用户输入：</p>
+<blockquote>
+<p><strong>“请审查：供应商注册资本不得低于5000万元。”</strong></p>
+</blockquote>
+<p>它不会直接进入 Transformer。</p>
+<p>真正发生的是：</p>
+<pre class="text"><code>用户中文
+   │
+   ▼
+Tokenizer
+   │
+   ▼
+Token IDs
+   │
+   ▼
+PyTorch Tensor
+   │
+   │ 搬到GPU
+   ▼
+Transformer
+   │
+   ▼
+Logits
+   │
+   ▼
+选择下一个Token
+   │
+   ▼
+把新Token接到原序列后面
+   │
+   ▼
+再次运行模型
+   │
+   ▼
+继续生成
+   │
+   ▼
+一串Token IDs
+   │
+   ▼
+Tokenizer Decode
+   │
+   ▼
+中文回答</code></pre>
+<p>这一阶段真正要留下 <strong>5 个核心心智模型</strong>。</p>
+<hr />
+<h1 id="二本阶段的-5-个核心心智模型">二、本阶段的 5 个核心心智模型</h1>
+<h3 id="心智模型-①">心智模型 ①</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mi>从</mi><mi>来</mi><mi>没</mi><mi>有</mi><mi>直</mi><mi>接</mi><mi>看</mi><mi>到</mi><mo>“</mo><mi>文</mi><mi>字</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+模型从来没有直接看到“文字”
+}
+</annotation></semantics></math></p>
+<p>它真正收到的是：</p>
+<blockquote>
+<p><strong>Token ID Tensor。</strong></p>
+</blockquote>
+<hr />
+<h3 id="心智模型-②">心智模型 ②</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>负</mi><mi>责</mi><mi>翻</mi><mi>译</mi><mi>，</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>s</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>e</mi><mi>r</mi><mi>负</mi><mi>责</mi><mi>计</mi><mi>算</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenizer负责翻译，
+Transformer负责计算
+}
+</annotation></semantics></math></p>
+<p>一个解决：</p>
+<blockquote>
+<p>“文字怎么编码？”</p>
+</blockquote>
+<p>另一个解决：</p>
+<blockquote>
+<p>“这些编码之间怎么计算？”</p>
+</blockquote>
+<hr />
+<h3 id="心智模型-③">心智模型 ③</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mi>输</mi><mi>出</mi><mi>的</mi><mi>不</mi><mi>是</mi><mi>中</mi><mi>文</mi><mi>，</mi><mi>而</mi><mi>是</mi><mi>一</mi><mi>整</mi><mi>张</mi><mo>“</mo><mi>下</mi><mi>一</mi><mi>个</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>候</mi><mi>选</mi><mi>评</mi><mi>分</mi><mi>表</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+模型输出的不是中文，
+而是一整张“下一个Token候选评分表”
+}
+</annotation></semantics></math></p>
+<p>这个评分表就是：</p>
+<h1 id="logits">Logits</h1>
+<hr />
+<h3 id="心智模型-④">心智模型 ④</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>g</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mo stretchy="true" form="postfix">)</mo></mrow><mi>不</mi><mi>是</mi><mi>一</mi><mi>次</mi><mi>生</mi><mi>成</mi><mi>整</mi><mi>段</mi><mi>答</mi><mi>案</mi><mi>，</mi><mi>而</mi><mi>是</mi><mi>反</mi><mi>复</mi><mi>执</mi><mi>行</mi><mi>：</mi><mi>预</mi><mi>测</mi><mi>一</mi><mi>个</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mo>→</mo><mi>接</mi><mi>回</mi><mi>去</mi><mo>→</mo><mi>再</mi><mi>预</mi><mi>测</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+generate()
+不是一次生成整段答案，
+而是反复执行：
+预测一个Token → 接回去 → 再预测
+}
+</annotation></semantics></math></p>
+<hr />
+<h3 id="心智模型-⑤">心智模型 ⑤</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>n</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>和</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>是</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>的</mi><mi>两</mi><mi>个</mi><mi>方</mi><mi>向</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Encode和Decode是Tokenizer的两个方向
+}
+</annotation></semantics></math></p>
+<pre class="text"><code>文字 → Token IDs
+叫 Encode
+
+Token IDs → 文字
+叫 Decode</code></pre>
+<p>先把这五根柱子立起来。</p>
+<hr />
+<h1
+id="三第一步用户输入的其实只是一个普通字符串">三、第一步：用户输入的其实只是一个普通字符串</h1>
+<h2 id="最开始模型还没有参与">1. 最开始，模型还没有参与</h2>
+<p>用户输入：</p>
+<pre class="text"><code>请审查以下资格条件：
+供应商注册资本不得低于5000万元。</code></pre>
+<p>在 Python 中，它一开始只是：</p>
+<div class="sourceCode" id="cb364"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb364-1"><a href="#cb364-1" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> <span class="st">&quot;请审查以下资格条件：供应商注册资本不得低于5000万元。&quot;</span></span></code></pre></div>
+<p>这时候它通常存在：</p>
+<blockquote>
+<p>CPU 侧的普通内存。</p>
+</blockquote>
+<p>也就是：</p>
+<h1 id="ram-1">RAM</h1>
+<hr />
+<h2 id="gpu-现在还不知道这句话是什么">2. GPU
+现在还不知道这句话是什么</h2>
+<p>GPU 不理解：</p>
+<blockquote>
+<p>“供应商”</p>
+</blockquote>
+<p>也不理解：</p>
+<blockquote>
+<p>“注册资本”</p>
+</blockquote>
+<p>甚至不理解：</p>
+<blockquote>
+<p>汉字是什么。</p>
+</blockquote>
+<p>GPU 擅长的是：</p>
+<blockquote>
+<p>数字计算。</p>
+</blockquote>
+<p>所以第一件事必须是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>文</mi><mi>字</mi><mo>→</mo><mi>数</mi><mi>字</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+文字
+\rightarrow
+数字
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四tokenizer-出场">四、Tokenizer 出场</h1>
+<p>第二课已经学过 Tokenizer。</p>
+<p>这里不再重新推 BPE。</p>
+<p>今天只问：</p>
+<blockquote>
+<p><strong>实际运行时它到底干什么？</strong></p>
+</blockquote>
+<hr />
+<h2 id="tokenizer-拿到字符串">3. Tokenizer 拿到字符串</h2>
+<p>例如：</p>
+<pre class="text"><code>供应商注册资本不得低于5000万元</code></pre>
+<p>可能切成若干 Token。</p>
+<p>为了方便理解，我们用完全虚构的示意：</p>
+<pre class="text"><code>供应商
+注册资本
+不得
+低于
+5000
+万元</code></pre>
+<p>真实模型怎么切：</p>
+<blockquote>
+<p>由它自己的 Tokenizer 决定。</p>
+</blockquote>
+<hr />
+<h2 id="然后每个-token-对应一个-id">4. 然后每个 Token 对应一个 ID</h2>
+<p>例如仍然只是示意：</p>
+<pre class="text"><code>供应商   →  18452
+注册资本 →  76103
+不得     →  9321
+低于     →  4178
+5000     →  550
+万元     →  23891</code></pre>
+<p>于是：</p>
+<pre class="text"><code>“供应商注册资本不得低于5000万元”</code></pre>
+<p>变成：</p>
+<pre class="text"><code>[18452, 76103, 9321, 4178, 550, 23891]</code></pre>
+<hr />
+<h1
+id="五这里必须建立一个非常牢固的直觉">五、这里必须建立一个非常牢固的直觉</h1>
+<h2 id="token-id-本身没有语义">5. Token ID 本身没有语义</h2>
+<p>例如：</p>
+<pre class="text"><code>18452</code></pre>
+<p>不是：</p>
+<blockquote>
+<p>“供应商的数学意义”。</p>
+</blockquote>
+<p>它只是：</p>
+<blockquote>
+<p><strong>词表里的地址。</strong></p>
+</blockquote>
+<p>第二课第 8 阶段那句话仍然成立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mo>=</mo><mi>A</mi><mi>d</mi><mi>d</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenID=Address
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="真正有连续数值意义的是下一步">6.
+真正有连续数值意义的是下一步</h2>
+<p>模型用这个 ID：</p>
+<blockquote>
+<p>去 Embedding Matrix 中取对应向量。</p>
+</blockquote>
+<p>例如概念上：</p>
+<pre class="text"><code>Token ID 18452
+        ↓
+Embedding表第18452行
+        ↓
+一个几千维向量</code></pre>
+<hr />
+<h1 id="六tokenizer-实际返回的不只是-id-列表">六、Tokenizer
+实际返回的不只是 ID 列表</h1>
+<p>以后你会经常写：</p>
+<div class="sourceCode" id="cb372"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb372-1"><a href="#cb372-1" aria-hidden="true" tabindex="-1"></a>inputs <span class="op">=</span> tokenizer(text, return_tensors<span class="op">=</span><span class="st">&quot;pt&quot;</span>)</span></code></pre></div>
+<p>你可能看到结果里有：</p>
+<pre class="text"><code>input_ids
+attention_mask</code></pre>
+<p>今天重点理解这两个。</p>
+<hr />
+<h1 id="七input_ids-是什么">七、<code>input_ids</code> 是什么？</h1>
+<h2 id="它就是刚才那些-token-id">7. 它就是刚才那些 Token ID</h2>
+<p>但是现在被整理成：</p>
+<h1 id="tensor">Tensor</h1>
+<p>例如概念上：</p>
+<pre class="text"><code>input_ids =
+[[18452, 76103, 9321, 4178, 550, 23891]]</code></pre>
+<p>注意外面还有一层：</p>
+<pre class="text"><code>[ [ ... ] ]</code></pre>
+<hr />
+<h2 id="为什么-5">8. 为什么？</h2>
+<p>因为神经网络通常支持：</p>
+<h1 id="batch">Batch</h1>
+<p>也就是：</p>
+<blockquote>
+<p>一次处理多个样本。</p>
+</blockquote>
+<hr />
+<h2 id="如果只有一个样本">9. 如果只有一个样本</h2>
+<p>Shape 可能是：</p>
+<pre class="text"><code>(1, 6)</code></pre>
+<p>可以理解成：</p>
+<pre class="text"><code>Batch Size = 1
+Sequence Length = 6</code></pre>
+<hr />
+<h1 id="八第一次用盒子理解-shape">八、第一次用“盒子”理解 Shape</h1>
+<p>不要先想数学。</p>
+<p>想一张表：</p>
+<pre class="text"><code>             Token位置
+          1   2   3   4   5   6
+
+样本1    184  761  932  417  550  238</code></pre>
+<p>所以：</p>
+<pre class="text"><code>1 行
+6 列</code></pre>
+<p>就是：</p>
+<pre class="text"><code>(1, 6)</code></pre>
+<hr />
+<h1
+id="九如果一次处理三条采购条款呢">九、如果一次处理三条采购条款呢？</h1>
+<p>例如：</p>
+<pre class="text"><code>样本A：注册资本条件……
+样本B：本地网点条件……
+样本C：业绩条件……</code></pre>
+<p>那么可能是：</p>
+<pre class="text"><code>Batch Size = 3</code></pre>
+<p>于是：</p>
+<pre class="text"><code>input_ids.shape
+=
+(3, S)</code></pre>
+<hr />
+<h1
+id="十问题来了三句话长度不一样怎么办">十、问题来了：三句话长度不一样怎么办？</h1>
+<p>例如：</p>
+<pre class="text"><code>A：6个Token
+
+B：9个Token
+
+C：5个Token</code></pre>
+<p>Tensor 通常喜欢整齐矩形。</p>
+<p>于是可能需要：</p>
+<h1 id="padding">Padding</h1>
+<hr />
+<h2 id="变成">10. 变成</h2>
+<pre class="text"><code>A  x x x x x x PAD PAD PAD
+B  x x x x x x x   x   x
+C  x x x x x   PAD PAD PAD PAD</code></pre>
+<p>每一行：</p>
+<blockquote>
+<p>长度统一为 9。</p>
+</blockquote>
+<hr />
+<h1 id="十一但是模型怎么知道-pad-不是正文">十一、但是模型怎么知道 PAD
+不是正文？</h1>
+<p>这就需要：</p>
+<h1 id="attention_mask"><code>attention_mask</code></h1>
+<hr />
+<h2 id="可以把它理解成座位使用表">11. 可以把它理解成“座位使用表”</h2>
+<p>比如：</p>
+<pre class="text"><code>input_ids
+
+A：x x x x x x PAD PAD PAD
+B：x x x x x x x   x   x
+C：x x x x x PAD PAD PAD PAD</code></pre>
+<p>对应：</p>
+<pre class="text"><code>attention_mask
+
+A：1 1 1 1 1 1 0 0 0
+B：1 1 1 1 1 1 1 1 1
+C：1 1 1 1 1 0 0 0 0</code></pre>
+<hr />
+<h2 id="可以先理解成">12. <code>1</code> 可以先理解成</h2>
+<blockquote>
+<p>这是有效 Token。</p>
+</blockquote>
+<p><code>0</code>：</p>
+<blockquote>
+<p>这是为了补齐 Shape 放进去的 Padding。</p>
+</blockquote>
+<hr />
+<h1 id="十二不要把两种-mask-混起来">十二、不要把两种 Mask 混起来</h1>
+<p>第二课学过：</p>
+<h1 id="causal-mask">Causal Mask</h1>
+<p>控制：</p>
+<blockquote>
+<p>当前 Token 能不能看到未来 Token。</p>
+</blockquote>
+<p>这里的：</p>
+<h1 id="padding-attention-mask">Padding Attention Mask</h1>
+<p>主要告诉模型：</p>
+<blockquote>
+<p>哪些位置只是 PAD。</p>
+</blockquote>
+<p>它们解决：</p>
+<blockquote>
+<p>不同问题。</p>
+</blockquote>
+<hr />
+<h1 id="十三到这里第一段流水线完成">十三、到这里，第一段流水线完成</h1>
+<pre class="text"><code>中文字符串
+     │
+     ▼
+Tokenizer
+     │
+     ├── input_ids
+     │
+     └── attention_mask
+     │
+     ▼
+PyTorch Tensor</code></pre>
+<p>模型终于开始能“接货”。</p>
+<hr />
+<h1 id="十四但是现在-tensor-在哪里">十四、但是现在 Tensor 在哪里？</h1>
+<p>通常 Tokenizer：</p>
+<blockquote>
+<p>主要在 CPU 上执行。</p>
+</blockquote>
+<p>所以产生的 Tensor 一开始很可能：</p>
+<pre class="text"><code>device = cpu</code></pre>
+<hr />
+<h2 id="而我们的模型-weight-在哪里">13. 而我们的模型 Weight
+在哪里？</h2>
+<p>假设前面已经放到：</p>
+<pre class="text"><code>cuda:0</code></pre>
+<p>于是出现：</p>
+<pre class="text"><code>Input Tensor → CPU
+
+Model Weight → GPU</code></pre>
+<p>不能直接正常一起计算。</p>
+<hr />
+<h1 id="十五所以需要把输入搬过去">十五、所以需要把输入搬过去</h1>
+<p>概念代码：</p>
+<div class="sourceCode" id="cb392"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb392-1"><a href="#cb392-1" aria-hidden="true" tabindex="-1"></a>inputs <span class="op">=</span> inputs.to(<span class="st">&quot;cuda&quot;</span>)</span></code></pre></div>
+<p>或者对里面的 Tensor：</p>
+<div class="sourceCode" id="cb393"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb393-1"><a href="#cb393-1" aria-hidden="true" tabindex="-1"></a>input_ids <span class="op">=</span> input_ids.to(<span class="st">&quot;cuda&quot;</span>)</span></code></pre></div>
+<hr />
+<h2 id="从硬件角度发生什么">14. 从硬件角度发生什么？</h2>
+<pre class="text"><code>RAM
+ │
+ │ Host-to-Device Transfer
+ ▼
+VRAM</code></pre>
+<p>于是现在：</p>
+<pre class="text"><code>Model Weight
++
+Input Tensor</code></pre>
+<p>都在 GPU。</p>
+<hr />
+<h1 id="十六用采购会议类比">十六、用采购会议类比</h1>
+<p>模型专家团队：</p>
+<blockquote>
+<p>已经坐在 GPU 办公室。</p>
+</blockquote>
+<p>用户材料：</p>
+<blockquote>
+<p>还在 CPU 办公室。</p>
+</blockquote>
+<p>你不能说：</p>
+<blockquote>
+<p>“开始审查！”</p>
+</blockquote>
+<p>材料得先：</p>
+<pre class="text"><code>CPU办公室
+    ↓
+送文件
+    ↓
+GPU办公室</code></pre>
+<p>专家才能真正工作。</p>
+<hr />
+<h1 id="十七现在真正进入-transformer">十七、现在真正进入
+Transformer</h1>
+<h2 id="input_ids-进入-embedding">15. <code>input_ids</code> 进入
+Embedding</h2>
+<p>例如：</p>
+<pre class="text"><code>18452</code></pre>
+<p>会找到：</p>
+<blockquote>
+<p>Embedding Matrix 对应 Row。</p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>Token ID
+↓
+Vector</code></pre>
+<hr />
+<h2 id="假设-hidden-size-是-4096">16. 假设 Hidden Size 是 4096</h2>
+<p>原来的：</p>
+<pre class="text"><code>input_ids
+shape:
+(1, 6)</code></pre>
+<p>经过 Embedding 以后：</p>
+<pre class="text"><code>Hidden States
+shape:
+(1, 6, 4096)</code></pre>
+<hr />
+<h1 id="十八别被-shape-吓到">十八、别被 Shape 吓到</h1>
+<p>它只是说：</p>
+<pre class="text"><code>1个样本
+
+6个Token
+
+每个Token
+拥有4096维表示</code></pre>
+<p>就是：</p>
+<pre class="text"><code>Batch
+×
+Sequence
+×
+Hidden Size</code></pre>
+<hr />
+<h1 id="十九然后进入几十层-transformer-block">十九、然后进入几十层
+Transformer Block</h1>
+<p>脑内画面：</p>
+<pre class="text"><code>Token Embeddings
+      ↓
+Block 1
+      ↓
+Block 2
+      ↓
+Block 3
+      ↓
+...
+      ↓
+Block 32
+      ↓
+Final Norm</code></pre>
+<p>每一层都会：</p>
+<blockquote>
+<p>改写 Token Representation。</p>
+</blockquote>
+<hr />
+<h1 id="二十这里不要再重新推-attention">二十、这里不要再重新推
+Attention</h1>
+<p>第二课已经学过。</p>
+<p>现在只记运行意义：</p>
+<pre class="text"><code>输入Token
+↓
+互相读取上下文
+↓
+MLP加工
+↓
+形成新的上下文化表示</code></pre>
+<hr />
+<h1 id="二十一到最后会得到什么">二十一、到最后会得到什么？</h1>
+<p>不是文字。</p>
+<p>还不是 Token ID。</p>
+<p>而是：</p>
+<blockquote>
+<p>每个位置最终的 Hidden State。</p>
+</blockquote>
+<p>然后进入：</p>
+<h1 id="lm-head">LM Head</h1>
+<hr />
+<h1 id="二十二lm-head-做什么">二十二、LM Head 做什么？</h1>
+<p>假设词表一共有：</p>
+<pre class="text"><code>100,000 个 Token</code></pre>
+<p>模型必须回答：</p>
+<blockquote>
+<p>“下一个 Token 应该是哪一个？”</p>
+</blockquote>
+<hr />
+<h2 id="所以最后一个位置会得到">17. 所以最后一个位置会得到</h2>
+<p>大概：</p>
+<pre class="text"><code>100,000 个分数</code></pre>
+<p>例如：</p>
+<pre class="text"><code>Token A → 8.7
+Token B → 2.1
+Token C → -1.4
+Token D → 6.3
+...</code></pre>
+<hr />
+<h1
+id="二十三这就是第三个核心心智模型">二十三、这就是第三个核心心智模型</h1>
+<h2 id="模型不会直接输出">模型不会直接输出：</h2>
+<blockquote>
+<p>“该条款可能存在风险。”</p>
+</blockquote>
+<p>它先输出：</p>
+<h1 id="logits-1">Logits</h1>
+<p>可以理解成：</p>
+<blockquote>
+<p><strong>给词表里所有候选 Token 打分。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四用采购专家打分表理解-logits">二十四、用采购专家打分表理解
+Logits</h1>
+<p>假设模型现在要生成回答的第一个 Token。</p>
+<p>候选可能概念上有：</p>
+<pre class="text"><code>“该”      8.7
+
+“存在”    7.9
+
+“根据”    6.2
+
+“未”      3.4
+
+“采购人”  1.7
+
+……</code></pre>
+<p>模型不是先“写完一整句话”。</p>
+<p>它只是：</p>
+<blockquote>
+<p>对下一步所有候选 Token 打分。</p>
+</blockquote>
+<hr />
+<h1 id="二十五这里最值得记的一句话">二十五、这里最值得记的一句话</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mi>每</mi><mi>一</mi><mi>步</mi><mi>面</mi><mi>对</mi><mi>的</mi><mi>核</mi><mi>心</mi><mi>问</mi><mi>题</mi><mi>不</mi><mi>是</mi><mo>“</mo><mi>整</mi><mi>段</mi><mi>答</mi><mi>案</mi><mi>是</mi><mi>什</mi><mi>么</mi><mi>？</mi><mo>”</mo><mi>而</mi><mi>是</mi><mo>“</mo><mi>下</mi><mi>一</mi><mi>个</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>是</mi><mi>什</mi><mi>么</mi><mi>？</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLM每一步面对的核心问题不是
+“整段答案是什么？”
+而是
+“下一个Token是什么？”
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十六为什么输出-shape-很大">二十六、为什么输出 Shape
+很大？</h1>
+<p>假设：</p>
+<pre class="text"><code>Batch = 1
+
+Sequence = 20
+
+Vocabulary = 100000</code></pre>
+<p>那么 Logits 概念 Shape：</p>
+<pre class="text"><code>(1, 20, 100000)</code></pre>
+<hr />
+<h2 id="为什么每个位置都有-10-万个分数">18. 为什么每个位置都有 10
+万个分数？</h2>
+<p>因为训练语言模型时：</p>
+<blockquote>
+<p>每个位置都曾经学习预测它的下一个 Token。</p>
+</blockquote>
+<hr />
+<h1
+id="二十七推理时真正最关心哪个位置">二十七、推理时真正最关心哪个位置？</h1>
+<p>在普通自回归生成中，</p>
+<p>我们要继续当前序列：</p>
+<blockquote>
+<p>最关心最后一个有效位置。</p>
+</blockquote>
+<hr />
+<h2 id="可以想成">19. 可以想成</h2>
+<p>Prompt：</p>
+<pre class="text"><code>请 审 查 这 个 条 款
+                   ↑
+               最后位置</code></pre>
+<p>模型问：</p>
+<blockquote>
+<p>“在整个 Prompt 后面，下一 Token 最可能是什么？”</p>
+</blockquote>
+<hr />
+<h1
+id="二十八所以会取最后一个位置的-logits">二十八、所以会取“最后一个位置”的
+Logits</h1>
+<p>概念上：</p>
+<pre class="text"><code>所有位置Logits
+      ↓
+取最后位置
+      ↓
+Vocabulary候选分数</code></pre>
+<p>例如：</p>
+<pre class="text"><code>100000个分数</code></pre>
+<hr />
+<h1
+id="二十九然后怎样从分数变成一个-token">二十九、然后怎样从分数变成一个
+Token？</h1>
+<p>这里会涉及：</p>
+<ul>
+<li>Greedy；</li>
+<li>Temperature；</li>
+<li>Top-k；</li>
+<li>Top-p。</li>
+</ul>
+<p>但这些是第 8 阶段重点。</p>
+<p>今天只抓一个总概念：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>负</mi><mi>责</mi><mi>打</mi><mi>分</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Model负责打分
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>负</mi><mi>责</mi><mi>从</mi><mi>分</mi><mi>数</mi><mi>里</mi><mi>选</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DecodingPolicy负责从分数里选Token
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十一个非常好用的类比">三十、一个非常好用的类比</h1>
+<p>模型像：</p>
+<blockquote>
+<p>专家评委。</p>
+</blockquote>
+<p>他给 10 万个候选答案：</p>
+<blockquote>
+<p>全部打分。</p>
+</blockquote>
+<hr />
+<h2 id="decoding-strategy-像">20. Decoding Strategy 像</h2>
+<blockquote>
+<p>最后的选人规则。</p>
+</blockquote>
+<p>可能是：</p>
+<blockquote>
+<p>最高分直接录取。</p>
+</blockquote>
+<p>也可能：</p>
+<blockquote>
+<p>在高分候选中随机抽取。</p>
+</blockquote>
+<hr />
+<h2 id="所以-2">21. 所以</h2>
+<pre class="text"><code>Model
+=
+评分系统
+
+Sampling
+=
+录取规则</code></pre>
+<p>这个区别后面特别重要。</p>
+<hr />
+<h1 id="三十一假设选中了一个-token">三十一、假设选中了一个 Token</h1>
+<p>例如：</p>
+<pre class="text"><code>Token ID = 4321</code></pre>
+<p>它对应文字：</p>
+<blockquote>
+<p>“该”</p>
+</blockquote>
+<hr />
+<h2 id="是不是生成结束了">22. 是不是生成结束了？</h2>
+<p>当然不是。</p>
+<p>现在答案只有：</p>
+<pre class="text"><code>该</code></pre>
+<hr />
+<h1 id="三十二下一步才是-llm-最关键的循环">三十二、下一步才是 LLM
+最关键的循环</h1>
+<p>把刚生成的 Token：</p>
+<blockquote>
+<p>接到原 Prompt 后面。</p>
+</blockquote>
+<p>原来：</p>
+<pre class="text"><code>[Prompt Tokens]</code></pre>
+<p>现在：</p>
+<pre class="text"><code>[Prompt Tokens] + [该]</code></pre>
+<hr />
+<h2 id="再送进模型">23. 再送进模型</h2>
+<p>模型再次问：</p>
+<blockquote>
+<p>“现在下一个 Token 是什么？”</p>
+</blockquote>
+<p>可能选：</p>
+<blockquote>
+<p>“条款”。</p>
+</blockquote>
+<hr />
+<h2 id="然后变成">24. 然后变成</h2>
+<pre class="text"><code>[Prompt Tokens]
++
+[该]
++
+[条款]</code></pre>
+<hr />
+<h2 id="再来">25. 再来</h2>
+<p>可能：</p>
+<blockquote>
+<p>“可能”。</p>
+</blockquote>
+<hr />
+<h2 id="再来-1">26. 再来</h2>
+<p>可能：</p>
+<blockquote>
+<p>“存在”。</p>
+</blockquote>
+<hr />
+<h1
+id="三十三于是整段回答实际上这样长出来">三十三、于是整段回答实际上这样长出来</h1>
+<pre class="text"><code>第1步：
+该
+
+第2步：
+该 条款
+
+第3步：
+该 条款 可能
+
+第4步：
+该 条款 可能 存在
+
+第5步：
+该 条款 可能 存在 ...
+
+...</code></pre>
+<p>这就是：</p>
+<h1 id="autoregressive-generation">Autoregressive Generation</h1>
+<hr />
+<h1 id="三十四第四个核心心智模型">三十四、第四个核心心智模型</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>生</mi><mi>成</mi><mi>文</mi><mi>本</mi><mo>=</mo><mi>不</mi><mi>断</mi><mi>把</mi><mi>自</mi><mi>己</mi><mi>刚</mi><mi>刚</mi><mi>生</mi><mi>成</mi><mi>的</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>重</mi><mi>新</mi><mi>作</mi><mi>为</mi><mi>下</mi><mi>一</mi><mi>步</mi><mi>输</mi><mi>入</mi><mi>的</mi><mi>一</mi><mi>部</mi><mi>分</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+生成文本
+=
+不断把自己刚刚生成的Token
+重新作为下一步输入的一部分
+}
+</annotation></semantics></math></p>
+<p>这句话必须真正理解。</p>
+<hr />
+<h1 id="三十五所以-generate-到底干了什么">三十五、所以
+<code>generate()</code> 到底干了什么？</h1>
+<p>你以后可能只写：</p>
+<div class="sourceCode" id="cb421"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb421-1"><a href="#cb421-1" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> model.generate(...)</span></code></pre></div>
+<p>看起来：</p>
+<blockquote>
+<p>一行代码生成整段回答。</p>
+</blockquote>
+<hr />
+<h2 id="但它背后可以想成">27. 但它背后可以想成</h2>
+<pre class="text"><code>while 没有结束：
+
+    1. 看当前序列
+
+    2. 模型计算下一Token的Logits
+
+    3. 选择一个Token
+
+    4. 接到序列尾部
+
+    5. 再继续</code></pre>
+<hr />
+<h1 id="三十六用伪代码表示">三十六、用伪代码表示</h1>
+<div class="sourceCode" id="cb423"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb423-1"><a href="#cb423-1" aria-hidden="true" tabindex="-1"></a>tokens <span class="op">=</span> prompt_tokens</span>
+<span id="cb423-2"><a href="#cb423-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb423-3"><a href="#cb423-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> <span class="kw">not</span> finished:</span>
+<span id="cb423-4"><a href="#cb423-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb423-5"><a href="#cb423-5" aria-hidden="true" tabindex="-1"></a>    logits <span class="op">=</span> model(tokens)</span>
+<span id="cb423-6"><a href="#cb423-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb423-7"><a href="#cb423-7" aria-hidden="true" tabindex="-1"></a>    next_token <span class="op">=</span> choose(logits)</span>
+<span id="cb423-8"><a href="#cb423-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb423-9"><a href="#cb423-9" aria-hidden="true" tabindex="-1"></a>    tokens.append(next_token)</span></code></pre></div>
+<p>这就是最核心的思想。</p>
+<p>真实实现：</p>
+<blockquote>
+<p>会高效得多。</p>
+</blockquote>
+<hr />
+<h1
+id="三十七但是这里出现一个严重效率问题">三十七、但是这里出现一个严重效率问题</h1>
+<p>假设 Prompt 有：</p>
+<pre class="text"><code>10,000 Token</code></pre>
+<p>第一次预测：</p>
+<blockquote>
+<p>读 10,000 个。</p>
+</blockquote>
+<hr />
+<h2 id="生成一个新-token-后">28. 生成一个新 Token 后</h2>
+<p>现在：</p>
+<pre class="text"><code>10,001 Token</code></pre>
+<p>难道又要：</p>
+<blockquote>
+<p>从头把前 10,000 个 Token 所有 Attention 计算完全重做一遍？</p>
+</blockquote>
+<p>如果这样：</p>
+<blockquote>
+<p>非常浪费。</p>
+</blockquote>
+<hr />
+<h1 id="三十八这就是-kv-cache-又回来">三十八、这就是 KV Cache
+又回来</h1>
+<p>第二课、第三课第 1 阶段都已经见过它。</p>
+<p>现在终于看到它为什么存在。</p>
+<hr />
+<h2 id="第一次处理整个-prompt">29. 第一次处理整个 Prompt</h2>
+<p>模型会计算过去 Token 的：</p>
+<pre class="text"><code>K
+V</code></pre>
+<hr />
+<h2 id="然后把它们存下来">30. 然后把它们存下来</h2>
+<pre class="text"><code>KV Cache</code></pre>
+<hr />
+<h2 id="下一步只生成一个新-token">31. 下一步只生成一个新 Token</h2>
+<p>模型主要需要：</p>
+<blockquote>
+<p>计算新 Token 的新 Q/K/V。</p>
+</blockquote>
+<p>过去大量 K/V：</p>
+<blockquote>
+<p>可以直接复用。</p>
+</blockquote>
+<hr />
+<h1 id="三十九用会议秘书类比">三十九、用会议秘书类比</h1>
+<p>第一次读 300 页采购文件：</p>
+<blockquote>
+<p>秘书做了 300 页结构化笔记。</p>
+</blockquote>
+<hr />
+<h2 id="后面你问第二个问题时">32. 后面你问第二个问题时</h2>
+<p>不用让秘书：</p>
+<blockquote>
+<p>再从第 1 页开始重新抄一遍。</p>
+</blockquote>
+<p>可以利用：</p>
+<blockquote>
+<p>已经整理好的笔记。</p>
+</blockquote>
+<p>这就是 KV Cache 的直觉。</p>
+<hr />
+<h1 id="四十prefill-与-decode-现在终于落地">四十、Prefill 与 Decode
+现在终于落地</h1>
+<p>第三课前面提过这两个词。</p>
+<p>现在可以真正理解。</p>
+<hr />
+<h2 id="prefill">33. Prefill</h2>
+<p>第一次处理：</p>
+<blockquote>
+<p>整个 Prompt。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>5000 Token</code></pre>
+<p>一次进入模型。</p>
+<p>这一阶段：</p>
+<blockquote>
+<p>创建大量 KV Cache。</p>
+</blockquote>
+<hr />
+<h2 id="decode">34. Decode</h2>
+<p>后面开始：</p>
+<blockquote>
+<p>一个 Token 一个 Token 生成。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>第5001个
+第5002个
+第5003个
+...</code></pre>
+<p>利用：</p>
+<blockquote>
+<p>已经存在的 KV Cache。</p>
+</blockquote>
+<hr />
+<h1 id="四十一一张非常重要的图">四十一、一张非常重要的图</h1>
+<pre class="text"><code>           Prompt
+      5000个Token
+            │
+            ▼
+        PREFILL
+一次处理整个Prompt
+            │
+            ├── 建立KV Cache
+            │
+            ▼
+      生成第1个新Token
+            │
+            ▼
+          DECODE
+            │
+      ┌─────┴─────┐
+      ▼           ▼
+复用旧KV      计算新Token
+      │           │
+      └─────┬─────┘
+            ▼
+      生成第2个Token
+            │
+            ▼
+          重复……</code></pre>
+<hr />
+<h1 id="四十二为什么长-prompt-会让第一字等待时间变长">四十二、为什么长
+Prompt 会让“第一字等待时间”变长？</h1>
+<p>因为 Prefill 要先处理：</p>
+<blockquote>
+<p>整个 Prompt。</p>
+</blockquote>
+<hr />
+<h2 id="一句话">35. 一句话</h2>
+<p>可能：</p>
+<pre class="text"><code>30 Token</code></pre>
+<hr />
+<h2 id="一份长采购文件">36. 一份长采购文件</h2>
+<p>可能：</p>
+<pre class="text"><code>30,000 Token</code></pre>
+<p>甚至更多。</p>
+<p>模型吐出第一个回答 Token 前：</p>
+<blockquote>
+<p>必须先完成大量 Prompt 计算。</p>
+</blockquote>
+<hr />
+<h1 id="四十三这就是-ttft">四十三、这就是 TTFT</h1>
+<h1 id="time-to-first-token">Time To First Token</h1>
+<p>也就是：</p>
+<blockquote>
+<p>用户提交问题以后，等多久才看到第一个生成 Token。</p>
+</blockquote>
+<hr />
+<h2 id="长采购文档">37. 长采购文档</h2>
+<p>往往会增加：</p>
+<blockquote>
+<p>Prefill 工作量。</p>
+</blockquote>
+<p>所以 TTFT：</p>
+<blockquote>
+<p>可能升高。</p>
+</blockquote>
+<hr />
+<h1 id="四十四第一-token-出来以后又进入另一种体验">四十四、第一 Token
+出来以后，又进入另一种体验</h1>
+<p>模型开始：</p>
+<pre class="text"><code>一个Token
+一个Token
+一个Token</code></pre>
+<p>往外吐。</p>
+<p>这时你感受到：</p>
+<blockquote>
+<p>每秒生成多少 Token。</p>
+</blockquote>
+<hr />
+<h1
+id="四十五所以用户体验至少有两个速度">四十五、所以用户体验至少有两个速度</h1>
+<pre class="text"><code>提交问题
+   │
+   ├─────────────► 第一个字出现
+   │                 ↑
+   │                TTFT
+   │
+   ▼
+后续不断生成
+   │
+   ▼
+Tokens Per Second</code></pre>
+<hr />
+<h1
+id="四十六为什么感觉快不快不能只看一个数字">四十六、为什么“感觉快不快”不能只看一个数字？</h1>
+<p>假设模型 A：</p>
+<blockquote>
+<p>2 秒出第一个 Token。</p>
+</blockquote>
+<p>之后：</p>
+<blockquote>
+<p>20 token/s。</p>
+</blockquote>
+<hr />
+<h2 id="模型-b">38. 模型 B</h2>
+<blockquote>
+<p>8 秒才出第一个 Token。</p>
+</blockquote>
+<p>但之后：</p>
+<blockquote>
+<p>80 token/s。</p>
+</blockquote>
+<hr />
+<h2 id="哪个体验更好">39. 哪个体验更好？</h2>
+<p>取决于：</p>
+<ul>
+<li>Prompt 多长；</li>
+<li>输出多长；</li>
+<li>业务要求。</li>
+</ul>
+<p>所以后面第 9 阶段会专门做：</p>
+<h1 id="performance-benchmark">Performance Benchmark</h1>
+<hr />
+<h1 id="四十七现在回到-generate">四十七、现在回到
+<code>generate()</code></h1>
+<p>一个常见概念代码可能是：</p>
+<div class="sourceCode" id="cb435"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb435-1"><a href="#cb435-1" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> model.generate(</span>
+<span id="cb435-2"><a href="#cb435-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>inputs,</span>
+<span id="cb435-3"><a href="#cb435-3" aria-hidden="true" tabindex="-1"></a>    max_new_tokens<span class="op">=</span><span class="dv">200</span></span>
+<span id="cb435-4"><a href="#cb435-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>这一行里第一个特别重要的参数：</p>
+<h1 id="max_new_tokens"><code>max_new_tokens</code></h1>
+<hr />
+<h1
+id="四十八max_new_tokens200-是-200-个汉字吗">四十八、<code>max_new_tokens=200</code>
+是 200 个汉字吗？</h1>
+<p>不是。</p>
+<p>它表示：</p>
+<blockquote>
+<p>最多再生成 200 个新 Token。</p>
+</blockquote>
+<hr />
+<h2 id="token-不等于汉字">40. Token 不等于汉字</h2>
+<p>一个 Token：</p>
+<blockquote>
+<p>可能对应一个字。</p>
+</blockquote>
+<p>也可能：</p>
+<blockquote>
+<p>多个字。</p>
+</blockquote>
+<p>也可能：</p>
+<blockquote>
+<p>半个词、数字片段、标点等。</p>
+</blockquote>
+<hr />
+<h2 id="所以-3">41. 所以</h2>
+<pre class="text"><code>200 Token
+≠
+固定200字</code></pre>
+<p>这是一个非常重要的实务区别。</p>
+<hr />
+<h1 id="四十九它限制的是-prompt-吗">四十九、它限制的是 Prompt 吗？</h1>
+<p>也不是。</p>
+<p>假设：</p>
+<pre class="text"><code>Prompt = 1000 Token</code></pre>
+<p>然后：</p>
+<pre class="text"><code>max_new_tokens = 200</code></pre>
+<hr />
+<h2 id="最长生成序列大概可能达到">42. 最长生成序列大概可能达到</h2>
+<pre class="text"><code>1000 Prompt Token
++
+最多200 Output Token</code></pre>
+<p>也就是：</p>
+<pre class="text"><code>约1200 Token</code></pre>
+<p>还要考虑特殊 Token 等具体实现。</p>
+<hr />
+<h1 id="五十所以最好把两个概念分开">五十、所以最好把两个概念分开</h1>
+<pre class="text"><code>Input Tokens
+=
+用户给模型看的东西
+
+Output Tokens
+=
+模型新生成的东西</code></pre>
+<hr />
+<h1 id="五十一什么是-context">五十一、什么是 Context？</h1>
+<p>很多人会把：</p>
+<blockquote>
+<p>Prompt 长度</p>
+</blockquote>
+<p>等于：</p>
+<blockquote>
+<p>Context。</p>
+</blockquote>
+<p>但生成过程中，Context 其实会不断增长。</p>
+<hr />
+<h2 id="刚开始">43. 刚开始</h2>
+<pre class="text"><code>Context
+=
+Prompt</code></pre>
+<hr />
+<h2 id="生成-100-token-后">44. 生成 100 Token 后</h2>
+<pre class="text"><code>Context
+=
+Prompt
++
+已生成100个Token</code></pre>
+<p>因为模型后面预测时：</p>
+<blockquote>
+<p>也要看到自己前面生成的内容。</p>
+</blockquote>
+<hr />
+<h1
+id="五十二一个极其重要的上下文预算概念">五十二、一个极其重要的“上下文预算”概念</h1>
+<p>假设模型最大上下文窗口：</p>
+<pre class="text"><code>32768 Token</code></pre>
+<p>你不能简单认为：</p>
+<blockquote>
+<p>Prompt 可以永远塞满 32768。</p>
+</blockquote>
+<hr />
+<h2 id="如果-prompt-已经用了">45. 如果 Prompt 已经用了</h2>
+<pre class="text"><code>32000</code></pre>
+<p>你又希望模型回答：</p>
+<pre class="text"><code>2000 Token</code></pre>
+<p>那总需求：</p>
+<pre class="text"><code>34000</code></pre>
+<p>已经超过窗口。</p>
+<hr />
+<h1 id="五十三所以-context-window-像一间会议室">五十三、所以 Context
+Window 像一间会议室</h1>
+<p>会议室最大：</p>
+<blockquote>
+<p>32,768 个座位。</p>
+</blockquote>
+<hr />
+<h2 id="用户材料先占">46. 用户材料先占</h2>
+<blockquote>
+<p>30,000 个座位。</p>
+</blockquote>
+<p>系统提示占：</p>
+<blockquote>
+<p>1,000 个。</p>
+</blockquote>
+<p>RAG 证据占：</p>
+<blockquote>
+<p>1,000 个。</p>
+</blockquote>
+<hr />
+<h2 id="已经用了">47. 已经用了</h2>
+<blockquote>
+<p>32,000。</p>
+</blockquote>
+<p>留给回答：</p>
+<blockquote>
+<p>只剩不多。</p>
+</blockquote>
+<hr />
+<h1 id="五十四这是未来-procurementrag-极其重要的一件事">五十四、这是未来
+ProcurementRAG 极其重要的一件事</h1>
+<p>Context Budget 不是无限的。</p>
+<p>你要在里面安排：</p>
+<pre class="text"><code>System Prompt
++
+User Question
++
+采购文件
++
+法规证据
++
+示例
++
+模型回答</code></pre>
+<hr />
+<h2 id="所以以后做-rag-不是">48. 所以以后做 RAG 不是：</h2>
+<blockquote>
+<p>检索越多越好。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>最有价值的信息应该进入有限 Context。</strong></p>
+</blockquote>
+<hr />
+<h1 id="五十五现在说-eos">五十五、现在说 EOS</h1>
+<p>模型什么时候知道：</p>
+<blockquote>
+<p>“我回答完了”？</p>
+</blockquote>
+<p>其中一个重要机制是：</p>
+<h1 id="eos-token">EOS Token</h1>
+<p>End Of Sequence。</p>
+<hr />
+<h2 id="模型可以生成一个特殊-token">49. 模型可以生成一个特殊 Token</h2>
+<p>概念上：</p>
+<pre class="text"><code>&lt;EOS&gt;</code></pre>
+<p>表示：</p>
+<blockquote>
+<p>序列结束。</p>
+</blockquote>
+<hr />
+<h2 id="generate-检测到停止条件">50. <code>generate()</code>
+检测到停止条件</h2>
+<p>就可以：</p>
+<blockquote>
+<p>停止继续生成。</p>
+</blockquote>
+<hr />
+<h1 id="五十六如果模型一直不生成-eos-怎么办">五十六、如果模型一直不生成
+EOS 怎么办？</h1>
+<p>还需要其它限制，例如：</p>
+<pre class="text"><code>max_new_tokens</code></pre>
+<p>否则理论上：</p>
+<blockquote>
+<p>可能一直生成到其它长度限制。</p>
+</blockquote>
+<hr />
+<h1
+id="五十七所以生成停止可以来自不同原因">五十七、所以生成停止可以来自不同原因</h1>
+<pre class="text"><code>生成EOS
+     │
+     ├── 停止
+     │
+达到max_new_tokens
+     │
+     ├── 停止
+     │
+达到Context限制
+     │
+     └── 不能再继续</code></pre>
+<p>真实框架还可能支持：</p>
+<blockquote>
+<p>更多停止条件。</p>
+</blockquote>
+<hr />
+<h1
+id="五十八生成完以后为什么还是-token-ids">五十八、生成完以后为什么还是
+Token IDs？</h1>
+<p>假设模型最终生成：</p>
+<pre class="text"><code>[4321, 7188, 332, 981, ...]</code></pre>
+<p>用户看不懂。</p>
+<hr />
+<h2 id="所以-tokenizer-再次登场">51. 所以 Tokenizer 再次登场</h2>
+<p>这次方向反过来：</p>
+<pre class="text"><code>Token IDs
+↓
+Tokenizer Decode
+↓
+字符串</code></pre>
+<hr />
+<h1
+id="五十九第五个核心心智模型正式闭环">五十九、第五个核心心智模型正式闭环</h1>
+<p>Tokenizer 有两种方向：</p>
+<pre class="text"><code>ENCODE
+
+Text
+↓
+Token IDs</code></pre>
+<p>和：</p>
+<pre class="text"><code>DECODE
+
+Token IDs
+↓
+Text</code></pre>
+<hr />
+<h1 id="六十所以-tokenizer-在整个系统头尾各出现一次">六十、所以
+Tokenizer 在整个系统头尾各出现一次</h1>
+<pre class="text"><code>           ENCODE
+中文 ─────────────► Token IDs
+                       │
+                       ▼
+                     LLM
+                       │
+                       ▼
+                    New IDs
+                       │
+           DECODE      │
+中文 ◄─────────────────┘</code></pre>
+<p>这个图非常值得记。</p>
+<hr />
+<h1
+id="六十一一个容易困惑的问题generate-返回的只有新-token-吗">六十一、一个容易困惑的问题：<code>generate()</code>
+返回的只有新 Token 吗？</h1>
+<p>很多 Decoder-only 模型/接口中，</p>
+<p>返回序列可能包含：</p>
+<pre class="text"><code>原Prompt Token
++
+新生成Token</code></pre>
+<hr />
+<h2 id="例如输入">52. 例如输入</h2>
+<pre class="text"><code>[10, 20, 30]</code></pre>
+<p>生成：</p>
+<pre class="text"><code>[40, 50]</code></pre>
+<p>返回可能是：</p>
+<pre class="text"><code>[10, 20, 30, 40, 50]</code></pre>
+<hr />
+<h1
+id="六十二那我们只想看回答怎么办">六十二、那我们只想看回答怎么办？</h1>
+<p>可以根据：</p>
+<blockquote>
+<p>输入长度</p>
+</blockquote>
+<p>把前面的 Prompt Token 切掉。</p>
+<p>概念上：</p>
+<pre class="text"><code>完整输出：
+[PROMPT][ANSWER]
+
+切掉PROMPT：
+          [ANSWER]</code></pre>
+<hr />
+<h1
+id="六十三这就是为什么以后代码里可能看到">六十三、这就是为什么以后代码里可能看到</h1>
+<p>概念形式：</p>
+<div class="sourceCode" id="cb462"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb462-1"><a href="#cb462-1" aria-hidden="true" tabindex="-1"></a>generated <span class="op">=</span> outputs[:, input_length:]</span></code></pre></div>
+<p>不是神秘技巧。</p>
+<p>它只是：</p>
+<blockquote>
+<p><strong>把原输入部分去掉，只留下新生成部分。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六十四chat-模型比普通字符串还多一步">六十四、Chat
+模型比普通字符串还多一步</h1>
+<p>假设用户写：</p>
+<blockquote>
+<p>“请审查这个采购条款。”</p>
+</blockquote>
+<p>真正送进模型之前，通常还会有：</p>
+<h1 id="chat-template">Chat Template</h1>
+<hr />
+<h2 id="屏幕上看起来是">53. 屏幕上看起来是</h2>
+<pre class="text"><code>System:
+你是政府采购审查助手
+
+User:
+请审查……</code></pre>
+<hr />
+<h2 id="模型真正看到的-token-sequence">54. 模型真正看到的 Token
+Sequence</h2>
+<p>可能包含：</p>
+<blockquote>
+<p>特殊角色标记。</p>
+</blockquote>
+<p>概念上：</p>
+<pre class="text"><code>&lt;System&gt;
+你是政府采购审查助手
+&lt;User&gt;
+请审查……
+&lt;Assistant&gt;</code></pre>
+<p>不同模型：</p>
+<blockquote>
+<p>格式不同。</p>
+</blockquote>
+<hr />
+<h1
+id="六十五所以真实输入流水线更完整地应该画成">六十五、所以真实输入流水线更完整地应该画成</h1>
+<pre class="text"><code>聊天消息
+   │
+   ▼
+Chat Template
+   │
+   ▼
+一个模型熟悉的字符串/Token结构
+   │
+   ▼
+Tokenizer
+   │
+   ▼
+input_ids</code></pre>
+<hr />
+<h1 id="六十六为什么用错-chat-template-会伤害模型">六十六、为什么用错
+Chat Template 会伤害模型？</h1>
+<p>假设一个采购办要求所有文件格式是：</p>
+<pre class="text"><code>项目编号
+采购人
+供应商
+风险类型</code></pre>
+<hr />
+<h2 id="结果你提交">55. 结果你提交：</h2>
+<pre class="text"><code>供应商
+然后项目编号
+再混进其它标记</code></pre>
+<p>虽然内容：</p>
+<blockquote>
+<p>都存在。</p>
+</blockquote>
+<p>但工作流程：</p>
+<blockquote>
+<p>被打乱。</p>
+</blockquote>
+<p>Chat 模型也类似。</p>
+<hr />
+<h2 id="它在-sft-时已经习惯某种角色结构">56. 它在 SFT
+时已经习惯某种角色结构</h2>
+<p>如果推理时格式完全不同：</p>
+<blockquote>
+<p>模型行为可能明显变差。</p>
+</blockquote>
+<hr />
+<h1
+id="六十七所以prompt并不只是用户那句话">六十七、所以“Prompt”并不只是用户那句话</h1>
+<p>真实 Prompt 可能包括：</p>
+<pre class="text"><code>System Prompt
++
+Conversation History
++
+User Message
++
+RAG Documents
++
+Tool Results
++
+Chat Template Tokens</code></pre>
+<p>全部合起来：</p>
+<blockquote>
+<p>才是模型当前真正看到的 Context。</p>
+</blockquote>
+<hr />
+<h1 id="六十八procurementai-的完整案例开始">六十八、ProcurementAI
+的完整案例开始</h1>
+<p>现在我们真正走一遍。</p>
+<p>用户输入：</p>
+<blockquote>
+<p><strong>“请审查以下资格条件：供应商注册资本不得低于5000万元。”</strong></p>
+</blockquote>
+<p>为了教学，我们假设系统提示：</p>
+<blockquote>
+<p>“你是政府采购文件风险审查助手。请指出潜在风险、理由和需要核验的依据。”</p>
+</blockquote>
+<hr />
+<h1 id="六十九step-1形成聊天消息">六十九、Step 1：形成聊天消息</h1>
+<p>概念上：</p>
+<pre class="text"><code>SYSTEM
+你是政府采购文件风险审查助手……
+
+USER
+请审查以下资格条件：
+供应商注册资本不得低于5000万元。</code></pre>
+<hr />
+<h1 id="七十step-2应用-chat-template">七十、Step 2：应用 Chat
+Template</h1>
+<p>变成模型训练时熟悉的结构。</p>
+<p>概念上：</p>
+<pre class="text"><code>&lt;SYSTEM&gt;
+你是政府采购文件风险审查助手……
+&lt;USER&gt;
+请审查……
+&lt;ASSISTANT&gt;</code></pre>
+<hr />
+<h1 id="七十一step-3tokenizer-encode">七十一、Step 3：Tokenizer
+Encode</h1>
+<p>变成：</p>
+<pre class="text"><code>[151643, 894, 2311, 9928, ...]</code></pre>
+<p>这些数字只是：</p>
+<blockquote>
+<p>示意。</p>
+</blockquote>
+<p>不是任何具体模型的真实 Token ID。</p>
+<hr />
+<h1 id="七十二step-4创建-tensor">七十二、Step 4：创建 Tensor</h1>
+<p>例如：</p>
+<pre class="text"><code>input_ids.shape
+=
+(1, 48)</code></pre>
+<p>意思：</p>
+<pre class="text"><code>1个样本
+
+48个Token</code></pre>
+<hr />
+<h1 id="七十三step-5搬到-gpu">七十三、Step 5：搬到 GPU</h1>
+<pre class="text"><code>RAM
+↓
+VRAM</code></pre>
+<p>现在：</p>
+<pre class="text"><code>input_ids
+→ cuda:0</code></pre>
+<p>模型：</p>
+<pre class="text"><code>weights
+→ cuda:0</code></pre>
+<hr />
+<h1 id="七十四step-6prefill">七十四、Step 6：Prefill</h1>
+<p>48 个 Prompt Token：</p>
+<blockquote>
+<p>一次经过 Transformer。</p>
+</blockquote>
+<hr />
+<h2 id="内部发生">57. 内部发生</h2>
+<pre class="text"><code>Token Embedding
+↓
+RoPE
+↓
+Attention
+↓
+MLP
+↓
+几十层Block
+↓
+Final Hidden State
+↓
+LM Head</code></pre>
+<p>同时：</p>
+<blockquote>
+<p>建立 KV Cache。</p>
+</blockquote>
+<hr />
+<h1 id="七十五step-7产生第一个回答-token-的-logits">七十五、Step
+7：产生第一个回答 Token 的 Logits</h1>
+<p>例如模型可能给出：</p>
+<pre class="text"><code>“该”       高分
+
+“此”       高分
+
+“存在”     较高分
+
+“未”       较低分
+
+……</code></pre>
+<hr />
+<h1 id="七十六step-8decoding-policy-选出一个">七十六、Step 8：Decoding
+Policy 选出一个</h1>
+<p>假设选：</p>
+<blockquote>
+<p>“该”。</p>
+</blockquote>
+<p>把它：</p>
+<blockquote>
+<p>接回 Context。</p>
+</blockquote>
+<hr />
+<h1 id="七十七step-9进入-decode">七十七、Step 9：进入 Decode</h1>
+<p>利用：</p>
+<blockquote>
+<p>Prompt 的 KV Cache。</p>
+</blockquote>
+<p>只处理：</p>
+<blockquote>
+<p>新增 Token 所需的新计算。</p>
+</blockquote>
+<p>然后生成：</p>
+<blockquote>
+<p>“条件”。</p>
+</blockquote>
+<hr />
+<h1 id="七十八继续循环">七十八、继续循环</h1>
+<pre class="text"><code>该
+
+该 条件
+
+该 条件 可能
+
+该 条件 可能 涉及
+
+……</code></pre>
+<hr />
+<h1 id="七十九最终可能形成">七十九、最终可能形成</h1>
+<p>例如：</p>
+<blockquote>
+<p>“该条件可能涉及对供应商设置与采购项目实际需要无直接关联的规模性资格要求，应结合项目特点、履约需求及现行法规进一步核验其必要性与合法性……”</p>
+</blockquote>
+<p>这里只是：</p>
+<blockquote>
+<p>教学示意。</p>
+</blockquote>
+<p>不是对真实项目作正式法律结论。</p>
+<hr />
+<h1
+id="八十为什么我这里故意没有直接说违法">八十、为什么我这里故意没有直接说“违法”？</h1>
+<p>因为这正好体现未来 ProcurementLM 的要求。</p>
+<p>模型不能只学：</p>
+<pre class="text"><code>注册资本
+↓
+违法</code></pre>
+<hr />
+<h2 id="真正专业系统需要结合">58. 真正专业系统需要结合</h2>
+<ul>
+<li>完整上下文；</li>
+<li>采购项目性质；</li>
+<li>实际履约需要；</li>
+<li>适用法规；</li>
+<li>当前有效版本；</li>
+<li>专家复核。</li>
+</ul>
+<p>所以未来我们追求的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EvidenceBasedJudgment
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>e</mi><mi>y</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KeywordTrigger
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="八十一现在看一段最小概念代码">八十一、现在看一段最小概念代码</h1>
+<p>先看，不要求现在运行：</p>
+<div class="sourceCode" id="cb481"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb481-1"><a href="#cb481-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer, AutoModelForCausalLM</span>
+<span id="cb481-2"><a href="#cb481-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb481-3"><a href="#cb481-3" aria-hidden="true" tabindex="-1"></a>tokenizer <span class="op">=</span> AutoTokenizer.from_pretrained(model_path)</span>
+<span id="cb481-4"><a href="#cb481-4" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> AutoModelForCausalLM.from_pretrained(model_path)</span>
+<span id="cb481-5"><a href="#cb481-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb481-6"><a href="#cb481-6" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> <span class="st">&quot;请审查：供应商注册资本不得低于5000万元。&quot;</span></span>
+<span id="cb481-7"><a href="#cb481-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb481-8"><a href="#cb481-8" aria-hidden="true" tabindex="-1"></a>inputs <span class="op">=</span> tokenizer(text, return_tensors<span class="op">=</span><span class="st">&quot;pt&quot;</span>)</span>
+<span id="cb481-9"><a href="#cb481-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb481-10"><a href="#cb481-10" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> model.generate(</span>
+<span id="cb481-11"><a href="#cb481-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>inputs,</span>
+<span id="cb481-12"><a href="#cb481-12" aria-hidden="true" tabindex="-1"></a>    max_new_tokens<span class="op">=</span><span class="dv">200</span></span>
+<span id="cb481-13"><a href="#cb481-13" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb481-14"><a href="#cb481-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb481-15"><a href="#cb481-15" aria-hidden="true" tabindex="-1"></a>answer <span class="op">=</span> tokenizer.decode(</span>
+<span id="cb481-16"><a href="#cb481-16" aria-hidden="true" tabindex="-1"></a>    outputs[<span class="dv">0</span>],</span>
+<span id="cb481-17"><a href="#cb481-17" aria-hidden="true" tabindex="-1"></a>    skip_special_tokens<span class="op">=</span><span class="va">True</span></span>
+<span id="cb481-18"><a href="#cb481-18" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb481-19"><a href="#cb481-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb481-20"><a href="#cb481-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(answer)</span></code></pre></div>
+<hr />
+<h1 id="八十二不要背代码逐行翻译">八十二、不要背代码，逐行翻译</h1>
+<h2 id="section">59.</h2>
+<div class="sourceCode" id="cb482"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb482-1"><a href="#cb482-1" aria-hidden="true" tabindex="-1"></a>AutoTokenizer.from_pretrained(...)</span></code></pre></div>
+<p>意思：</p>
+<blockquote>
+<p>把模型配套的语言编码系统加载起来。</p>
+</blockquote>
+<hr />
+<h2 id="section-1">60.</h2>
+<div class="sourceCode" id="cb483"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb483-1"><a href="#cb483-1" aria-hidden="true" tabindex="-1"></a>AutoModelForCausalLM.from_pretrained(...)</span></code></pre></div>
+<p>意思：</p>
+<blockquote>
+<p>按第四阶段的流程，把模型真正装起来。</p>
+</blockquote>
+<hr />
+<h2 id="section-2">61.</h2>
+<div class="sourceCode" id="cb484"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb484-1"><a href="#cb484-1" aria-hidden="true" tabindex="-1"></a>tokenizer(text)</span></code></pre></div>
+<p>意思：</p>
+<pre class="text"><code>Text
+↓
+Token IDs
+↓
+Tensor</code></pre>
+<hr />
+<h2 id="section-3">62.</h2>
+<div class="sourceCode" id="cb486"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb486-1"><a href="#cb486-1" aria-hidden="true" tabindex="-1"></a>model.generate(...)</span></code></pre></div>
+<p>不是：</p>
+<blockquote>
+<p>“神奇地写文章。”</p>
+</blockquote>
+<p>而是：</p>
+<pre class="text"><code>Forward
+↓
+Logits
+↓
+选Token
+↓
+接回去
+↓
+继续Forward
+↓
+……</code></pre>
+<hr />
+<h2 id="section-4">63.</h2>
+<div class="sourceCode" id="cb488"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb488-1"><a href="#cb488-1" aria-hidden="true" tabindex="-1"></a>tokenizer.decode(...)</span></code></pre></div>
+<p>就是：</p>
+<pre class="text"><code>Token IDs
+↓
+Human-readable Text</code></pre>
+<hr />
+<h1 id="八十三这段代码还有一个问题">八十三、这段代码还有一个问题</h1>
+<p>如果模型在 GPU：</p>
+<blockquote>
+<p>inputs 也需要到正确 Device。</p>
+</blockquote>
+<p>所以实际代码还需要处理：</p>
+<blockquote>
+<p>Device Placement。</p>
+</blockquote>
+<hr />
+<h2 id="这正好连接第-24-阶段">64. 这正好连接第 2、4 阶段</h2>
+<pre class="text"><code>模型在哪？
+↓
+输入也必须去相应计算设备</code></pre>
+<hr />
+<h1
+id="八十四完整一点的脑内执行顺序">八十四、完整一点的脑内执行顺序</h1>
+<p>以后看到推理代码，先别看语法。</p>
+<p>问这 8 个问题：</p>
+<pre class="text"><code>1. Tokenizer加载了吗？
+
+2. Model加载了吗？
+
+3. Prompt格式对吗？
+
+4. Tokenize以后有多少Token？
+
+5. Tensor在哪里？
+
+6. Model在哪里？
+
+7. generate怎样停止？
+
+8. 输出怎么Decode？</code></pre>
+<p>这个 checklist 比背 API 更重要。</p>
+<hr />
+<h1 id="八十五为什么模型会重复">八十五、为什么模型会重复？</h1>
+<p>比如生成：</p>
+<blockquote>
+<p>“该条款存在风险，该条款存在风险，该条款……”</p>
+</blockquote>
+<p>可能涉及：</p>
+<ul>
+<li>Decoding 参数；</li>
+<li>Chat Template；</li>
+<li>EOS 设置；</li>
+<li>模型本身；</li>
+<li>Prompt；</li>
+<li>重复惩罚策略；</li>
+</ul>
+<p>等等。</p>
+<hr />
+<h2 id="所以看到生成问题">65. 所以看到生成问题</h2>
+<p>不要马上得出：</p>
+<blockquote>
+<p>“模型训练坏了。”</p>
+</blockquote>
+<p>先区分：</p>
+<pre class="text"><code>Input问题？
+
+Template问题？
+
+Generation问题？
+
+Model能力问题？</code></pre>
+<hr />
+<h1 id="八十六为什么输出为空">八十六、为什么输出为空？</h1>
+<p>也可能有多种原因。</p>
+<p>比如：</p>
+<ul>
+<li>立即生成 EOS；</li>
+<li>Prompt Template 不对；</li>
+<li>截取输出方式错；</li>
+<li><code>max_new_tokens</code> 太小；</li>
+<li>Decode 方法有问题。</li>
+</ul>
+<hr />
+<h1 id="八十七为什么乱码或奇怪字符">八十七、为什么乱码或奇怪字符？</h1>
+<p>优先想到之一：</p>
+<blockquote>
+<p>Tokenizer 是否匹配。</p>
+</blockquote>
+<p>第三阶段的知识又回来。</p>
+<hr />
+<h1 id="八十八为什么报-device-error">八十八、为什么报 Device
+Error？</h1>
+<p>优先问：</p>
+<pre class="text"><code>Model在哪？
+
+input_ids在哪？
+
+attention_mask在哪？</code></pre>
+<p>第二阶段又回来。</p>
+<hr />
+<h1 id="八十九为什么-cuda-oom">八十九、为什么 CUDA OOM？</h1>
+<p>优先问：</p>
+<ul>
+<li>Weight 多大；</li>
+<li>Prompt 多长；</li>
+<li>KV Cache 多大；</li>
+<li>Batch 多大；</li>
+<li>Precision 是什么。</li>
+</ul>
+<p>第一阶段又回来。</p>
+<hr />
+<h1
+id="九十第三课已经开始形成故障树">九十、第三课已经开始形成“故障树”</h1>
+<pre class="text"><code>模型跑不起来
+│
+├─ 文件问题
+│   └─ Stage 3
+│
+├─ 加载问题
+│   └─ Stage 4
+│
+├─ CUDA / Device问题
+│   └─ Stage 1~2
+│
+├─ Tokenizer / Template问题
+│   └─ Stage 3 / Stage 5
+│
+└─ Generation问题
+    └─ Stage 5 / Stage 8</code></pre>
+<p>以后我们不靠猜。</p>
+<hr />
+<h1 id="九十一核心心智模型-①-再看一次">九十一、核心心智模型 ①
+再看一次</h1>
+<h2 id="模型从没直接看到文字">模型从没直接看到文字</h2>
+<p>用户：</p>
+<pre class="text"><code>供应商注册资本不得低于5000万元</code></pre>
+<p>模型：</p>
+<pre class="text"><code>18452 76103 9321 4178 550 23891 ...</code></pre>
+<p>然后才进入：</p>
+<blockquote>
+<p>Embedding。</p>
+</blockquote>
+<hr />
+<h1 id="九十二核心心智模型-②">九十二、核心心智模型 ②</h1>
+<h2 id="tokenizer-和-transformer-分工不同">Tokenizer 和 Transformer
+分工不同</h2>
+<pre class="text"><code>Tokenizer
+=
+语言编码接口
+
+Transformer
+=
+上下文计算引擎</code></pre>
+<p>Tokenizer：</p>
+<blockquote>
+<p>不负责专业推理。</p>
+</blockquote>
+<p>Transformer：</p>
+<blockquote>
+<p>也不会直接解析原始 Unicode 字符串。</p>
+</blockquote>
+<hr />
+<h1 id="九十三核心心智模型-③">九十三、核心心智模型 ③</h1>
+<h2
+id="模型输出的是候选评分不是文字">模型输出的是候选评分，不是文字</h2>
+<pre class="text"><code>Hidden State
+↓
+LM Head
+↓
+Vocabulary Logits
+↓
+“下一个Token选谁？”</code></pre>
+<hr />
+<h1 id="九十四核心心智模型-④">九十四、核心心智模型 ④</h1>
+<h2 id="generate-是循环不是一次写完"><code>generate()</code>
+是循环，不是一次写完</h2>
+<pre class="text"><code>预测
+↓
+追加
+↓
+预测
+↓
+追加
+↓
+预测
+↓
+追加</code></pre>
+<p>直到：</p>
+<blockquote>
+<p>停止条件。</p>
+</blockquote>
+<hr />
+<h1 id="九十五核心心智模型-⑤">九十五、核心心智模型 ⑤</h1>
+<h2 id="tokenizer-是入口也是出口">Tokenizer 是入口，也是出口</h2>
+<pre class="text"><code>Text
+  │
+  │ Encode
+  ▼
+Token IDs
+  │
+  │ LLM
+  ▼
+New Token IDs
+  │
+  │ Decode
+  ▼
+Text</code></pre>
+<hr />
+<h1
+id="九十六把五个心智模型装进一个采购审查流水线">九十六、把五个心智模型装进一个“采购审查流水线”</h1>
+<pre class="text"><code>用户采购条款
+      │
+      ▼
+Chat Template
+      │
+      ▼
+Tokenizer Encode
+      │
+      ▼
+input_ids
+attention_mask
+      │
+      ▼
+Tensor搬到GPU
+      │
+      ▼
+Transformer Prefill
+      │
+      ▼
+KV Cache
+      │
+      ▼
+最后位置Logits
+      │
+      ▼
+选择Next Token
+      │
+      ▼
+加入Context
+      │
+      ▼
+Transformer Decode
+      │
+      ▼
+重复生成
+      │
+      ▼
+EOS / 达到停止条件
+      │
+      ▼
+Tokenizer Decode
+      │
+      ▼
+最终中文风险分析</code></pre>
+<p>这就是第三课第 5 阶段最值得保存的一张图。</p>
+<hr />
+<h1
+id="九十七这一阶段暂时不需要深挖什么">九十七、这一阶段暂时不需要深挖什么？</h1>
+<p>暂时不要把精力花在：</p>
+<ul>
+<li>Temperature 数学；</li>
+<li>Top-k 算法；</li>
+<li>Top-p 算法；</li>
+<li>Beam Search；</li>
+<li>Sampling 理论；</li>
+<li>Quantization；</li>
+<li>KV Cache 精确显存公式；</li>
+<li>vLLM；</li>
+<li>PagedAttention。</li>
+</ul>
+<p>后面都有专门阶段。</p>
+<hr />
+<h1 id="九十八为什么不现在全部讲">九十八、为什么不现在全部讲？</h1>
+<p>因为目前最重要的是：</p>
+<blockquote>
+<p><strong>把一条推理链完整跑通。</strong></p>
+</blockquote>
+<p>也就是：</p>
+<pre class="text"><code>文字进去
+↓
+数字
+↓
+模型
+↓
+分数
+↓
+数字
+↓
+文字出来</code></pre>
+<p>脑内路线先形成。</p>
+<hr />
+<h1 id="九十九思维实验-a">九十九、思维实验 A</h1>
+<p>用户输入：</p>
+<blockquote>
+<p>“供应商应具有5年以上成立年限。”</p>
+</blockquote>
+<p>Tokenizer 完成后：</p>
+<blockquote>
+<p>程序突然删除了原始字符串。</p>
+</blockquote>
+<p>模型还能继续 Forward 吗？</p>
+<p><strong>可以。</strong></p>
+<p>只要：</p>
+<blockquote>
+<p>必要的 Token Tensor 已经形成。</p>
+</blockquote>
+<p>因为 Transformer 真正使用的是：</p>
+<blockquote>
+<p>Token ID / 后续 Tensor 表示。</p>
+</blockquote>
+<hr />
+<h1 id="一百思维实验-b">一百、思维实验 B</h1>
+<p>Tokenizer 正确。</p>
+<p>模型正确。</p>
+<p>但是：</p>
+<pre class="text"><code>input_ids → CPU
+
+model → GPU</code></pre>
+<p>能正常 Forward 吗？</p>
+<p>通常：</p>
+<blockquote>
+<p><strong>不行。</strong></p>
+</blockquote>
+<p>需要处理：</p>
+<blockquote>
+<p>Device 一致性。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一思维实验-c">一百零一、思维实验 C</h1>
+<p>模型已经产生一整张 Vocabulary Logit 表。</p>
+<p>是不是说明：</p>
+<blockquote>
+<p>中文答案已经存在某个隐藏字符串里？</p>
+</blockquote>
+<p>不是。</p>
+<p>此时只是：</p>
+<blockquote>
+<p>候选 Token 的分数。</p>
+</blockquote>
+<p>还必须：</p>
+<blockquote>
+<p>选择 Token。</p>
+</blockquote>
+<hr />
+<h1 id="一百零二思维实验-d">一百零二、思维实验 D</h1>
+<p>如果每次都选择最高分 Token，</p>
+<p>还是在做：</p>
+<blockquote>
+<p>自回归生成。</p>
+</blockquote>
+<p>是的。</p>
+<p>区别只在：</p>
+<blockquote>
+<p>Next Token 的选择规则。</p>
+</blockquote>
+<hr />
+<h1 id="一百零三思维实验-e">一百零三、思维实验 E</h1>
+<p>Prompt 有：</p>
+<pre class="text"><code>30,000 Token</code></pre>
+<p><code>max_new_tokens=5</code></p>
+<p>模型需要生成多少新 Token？</p>
+<p>最多：</p>
+<blockquote>
+<p>5 个。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>总共 5 个。</p>
+</blockquote>
+<hr />
+<h1 id="一百零四思维实验-f">一百零四、思维实验 F</h1>
+<p><code>max_new_tokens=500</code></p>
+<p>是否代表：</p>
+<blockquote>
+<p>一定输出 500 Token？</p>
+</blockquote>
+<p>不一定。</p>
+<p>因为模型可能：</p>
+<blockquote>
+<p>提前生成 EOS。</p>
+</blockquote>
+<hr />
+<h1 id="一百零五思维实验-g">一百零五、思维实验 G</h1>
+<p>模型回答：</p>
+<blockquote>
+<p>一开头很好。</p>
+</blockquote>
+<p>后面逐渐跑偏。</p>
+<p>为什么前面的生成会影响后面的生成？</p>
+<p>因为：</p>
+<blockquote>
+<p><strong>刚刚生成的 Token 会被加入后续 Context。</strong></p>
+</blockquote>
+<p>所以后面模型一直在读取：</p>
+<blockquote>
+<p>自己前面写出的内容。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零六这也是自回归模型一个非常深的特点">一百零六、这也是自回归模型一个非常深的特点</h1>
+<p>错误一旦进入 Context：</p>
+<blockquote>
+<p>后面有可能围绕这个错误继续发展。</p>
+</blockquote>
+<p>比如一开始错误写：</p>
+<blockquote>
+<p>“根据某不存在的第27条……”</p>
+</blockquote>
+<p>后面模型可能继续：</p>
+<blockquote>
+<p>围绕这个错误引用组织论证。</p>
+</blockquote>
+<hr />
+<h2 id="所以政府采购模型为什么需要-citation-validation">66.
+所以政府采购模型为什么需要 Citation Validation？</h2>
+<p>因为：</p>
+<blockquote>
+<p>生成得流畅不代表第一步引用就是对的。</p>
+</blockquote>
+<hr />
+<h1 id="一百零七这又连接未来-rag">一百零七、这又连接未来 RAG</h1>
+<p>理想流程可能变成：</p>
+<pre class="text"><code>用户问题
+↓
+先检索真实法规证据
+↓
+把证据放进Prompt
+↓
+LLM生成分析
+↓
+再验证Citation</code></pre>
+<p>而不是让模型：</p>
+<blockquote>
+<p>凭 Weight 自己猜法规。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零八我们现在终于能定义跑通第一个模型是什么意思">一百零八、我们现在终于能定义“跑通第一个模型”是什么意思</h1>
+<p>它不是：</p>
+<blockquote>
+<p>Python 没报错。</p>
+</blockquote>
+<p>真正至少要验证：</p>
+<pre class="text"><code>Tokenizer 正常
+
+Prompt格式正确
+
+Tensor Device正确
+
+Model Forward正常
+
+能产生Logits
+
+能生成Token
+
+能Decode成中文
+
+EOS正常
+
+输出基本符合模型预期</code></pre>
+<p>这才叫：</p>
+<h1 id="end-to-end-inference-works">End-to-End Inference Works</h1>
+<hr />
+<h1 id="一百零九第-5-阶段掌握标准">一百零九、第 5 阶段掌握标准</h1>
+<p>这一阶段结束以后，你应该能用自己的话解释：</p>
+<blockquote>
+<p>用户输入的中文最开始存在哪里？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Transformer 不直接接收字符串？</p>
+</blockquote>
+<blockquote>
+<p>Tokenizer Encode 做什么？</p>
+</blockquote>
+<blockquote>
+<p><code>input_ids</code> 到底是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>input_ids</code> 通常是二维的？</p>
+</blockquote>
+<blockquote>
+<p>Batch 和 Sequence Length 分别是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么不同长度样本需要 Padding？</p>
+</blockquote>
+<blockquote>
+<p><code>attention_mask</code> 的直觉是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 CPU 上的 Tensor 要搬到 GPU？</p>
+</blockquote>
+<blockquote>
+<p>Token ID 经过模型后为什么会变成 Hidden State？</p>
+</blockquote>
+<blockquote>
+<p>LM Head 在做什么？</p>
+</blockquote>
+<blockquote>
+<p>Logit 为什么不是中文？</p>
+</blockquote>
+<blockquote>
+<p>为什么一个位置会有整个 Vocabulary 的 Logits？</p>
+</blockquote>
+<blockquote>
+<p>自回归生成是什么意思？</p>
+</blockquote>
+<blockquote>
+<p><code>generate()</code> 为什么不是一次写完整篇答案？</p>
+</blockquote>
+<blockquote>
+<p>为什么刚生成的 Token 要重新进入 Context？</p>
+</blockquote>
+<blockquote>
+<p>KV Cache 为什么能避免重复计算大量过去信息？</p>
+</blockquote>
+<blockquote>
+<p>Prefill 和 Decode 分别是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么长 Prompt 会影响 TTFT？</p>
+</blockquote>
+<blockquote>
+<p><code>max_new_tokens</code> 是字数还是 Token 数？</p>
+</blockquote>
+<blockquote>
+<p>Prompt Token 和新生成 Token 为什么要区分？</p>
+</blockquote>
+<blockquote>
+<p>Context Window 为什么要给答案预留空间？</p>
+</blockquote>
+<blockquote>
+<p>EOS Token 是做什么的？</p>
+</blockquote>
+<blockquote>
+<p>Tokenizer Decode 在整个流程哪个位置发生？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Chat Template 也属于模型输入协议的一部分？</p>
+</blockquote>
+<p>如果这些都能自己解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>三</mi><mi>课</mi><mi>第</mi><mn>5</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第三课第5阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百一十本阶段最终只记一句话">一百一十、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>一个 LLM
+并不是“读一句中文，然后一次想出一段回答”；真实过程是：Tokenizer
+把文字变成 Token Tensor，Transformer 给下一个 Token
+的所有候选打分，生成器选出一个
+Token、把它接回上下文，再重复这个过程，最后由 Tokenizer 把生成出的 Token
+IDs 翻译回文字。</strong></p>
+</blockquote>
+<p>最后把整条链压成一张图：</p>
+<pre class="text"><code>               用户中文
+                  │
+                  ▼
+             Chat Template
+                  │
+                  ▼
+          Tokenizer Encode
+                  │
+                  ▼
+            input_ids
+                  │
+             CPU → GPU
+                  │
+                  ▼
+               Prefill
+                  │
+                  ▼
+              KV Cache
+                  │
+                  ▼
+               Logits
+                  │
+                  ▼
+          选择Next Token
+                  │
+          ┌───────┴────────┐
+          │                │
+          ▼                │
+      新Token加入Context    │
+          │                │
+          ▼                │
+        Decode循环 ─────────┘
+          │
+          ▼
+       EOS / Stop
+          │
+          ▼
+      Tokenizer Decode
+          │
+          ▼
+          中文回答</code></pre>
+<hr />
+<h1 id="下一阶段第三课-第-6-阶段">下一阶段：第三课 · 第 6 阶段</h1>
+<h2
+id="fp32fp16bf16int8int4-到底是什么为什么同一个-7b-模型可以是-28gb也可以只有几-gb">FP32、FP16、BF16、INT8、INT4
+到底是什么？为什么同一个 7B 模型可以是 28GB，也可以只有几 GB？</h2>
+<p>下一阶段我们会继续保持“先直觉、后数字”的方式，不先讲浮点数编码格式。</p>
+<p>先解决一个生活化问题：</p>
+<pre class="text"><code>同样是70亿个参数，
+
+如果每个参数用：
+4个字节
+2个字节
+1个字节
+半个字节
+
+模型要占多少空间？</code></pre>
+<p>然后才进入：</p>
+<pre class="text"><code>FP32
+   ↓
+FP16 / BF16
+   ↓
+INT8
+   ↓
+INT4
+   ↓
+Quantization</code></pre>
+<p>重点不是背名字，而是建立三个非常重要的判断能力：</p>
+<blockquote>
+<p><strong>精度降低到底省了什么？</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>为什么 BF16 和 FP16 都是 16-bit，却不是一回事？</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>为什么 4-bit 模型能让一张显存较小的 GPU 跑更大的
+LLM，却不等于“模型免费缩小而能力完全不变”？</strong></p>
+</blockquote>
+<p>这一阶段会直接为第 7 阶段的<strong>显存预算</strong>铺路。</p>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

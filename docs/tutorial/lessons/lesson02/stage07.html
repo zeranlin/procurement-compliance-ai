@@ -1,0 +1,3139 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第2课 · 第7阶段：Initialization、Normalization 与 Residual Connection</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第2课 · 第7阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>解释 Transformer/LLM 内部机制，定位 Attention、Token、KV Cache 等架构问题。<ul><li>Deep Network 需要 Signal Stability。深度增加以后，激活和梯度的尺度必须被主动控制。</li><li>Initialization 决定训练从什么数值尺度起步；坏初始化可能让信号一开始就爆炸或衰减。</li><li>Normalization ≠ Data Cleaning。它是在网络内部稳定表示尺度，不是对原始采购数据做清洗。</li></ul></div><h1
+id="第二课-第-7-阶段initializationnormalization-与-residual-connection">第二课
+· 第 7 阶段：Initialization、Normalization 与 Residual Connection</h1>
+<h2
+id="为什么-2-层网络随便也能训练几十层上百层网络却必须建立一整套信号稳定系统">为什么
+2
+层网络随便也能训练，几十层、上百层网络却必须建立一整套“信号稳定系统”？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-6">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-6">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Deep Network 需要 Signal
+Stability。深度增加以后，激活和梯度的尺度必须被主动控制。</strong></li>
+<li><strong>Initialization
+决定训练从什么数值尺度起步；坏初始化可能让信号一开始就爆炸或衰减。</strong></li>
+<li><strong>Normalization ≠ Data
+Cleaning。它是在网络内部稳定表示尺度，不是对原始采购数据做清洗。</strong></li>
+<li><strong>Residual Connection 提供 Identity
+Path，让信息和梯度可以跨层直接传播，是深层 Transformer
+可训练的重要条件。</strong></li>
+<li><strong>Initialization + Normalization + Residual
+是一套协同稳定机制，但它们只能让深网络更容易训练，不保证数据和任务本身正确。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-6">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Normalization</code></td>
+<td>规范化：稳定中间激活与训练过程</td>
+</tr>
+<tr class="even">
+<td><code>Initialization</code></td>
+<td>初始化：训练开始前设置参数初值</td>
+</tr>
+<tr class="odd">
+<td><code>Residual Connection</code></td>
+<td>残差连接：让信息跨层直接传递、改善深层优化</td>
+</tr>
+<tr class="even">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="odd">
+<td><code>Optimizer</code></td>
+<td>优化器：依据梯度规则更新参数</td>
+</tr>
+<tr class="even">
+<td><code>Backpropagation</code></td>
+<td>反向传播：把最终损失沿计算图反向分配到参数</td>
+</tr>
+<tr class="odd">
+<td><code>Hidden Layer</code></td>
+<td>隐藏层：逐层形成内部表示的中间网络层</td>
+</tr>
+<tr class="even">
+<td><code>Neuron</code></td>
+<td>神经元：加权、偏置和非线性变换的最小计算单元</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-6">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 6 阶段为止，我们已经完整理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward
+\rightarrow
+Loss
+\rightarrow
+Backward
+\rightarrow
+Optimizer
+\rightarrow
+ParameterUpdate
+}
+</annotation></semantics></math></p>
+<p>乍看之下，训练神经网络似乎已经没什么问题了。</p>
+<p>那么我们现在问一个非常关键的问题：</p>
+<blockquote>
+<p>既然 Backpropagation 可以给所有参数算梯度，为什么不直接把网络堆到
+1000 层？</p>
+</blockquote>
+<p>答案是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>数</mi><mi>学</mi><mi>上</mi><mi>能</mi><mi>算</mi><mi>梯</mi><mi>度</mi><mo>≠</mo><mi>工</mi><mi>程</mi><mi>上</mi><mi>能</mi><mi>稳</mi><mi>定</mi><mi>训</mi><mi>练</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+数学上能算梯度
+\neq
+工程上能稳定训练
+}
+</annotation></semantics></math></p>
+<p>深层网络真正困难的地方，是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>a</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Signal\ Propagation
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>前向的数值能不能稳定传下去，反向的梯度能不能稳定传回来。</p>
+</blockquote>
+<p>今天我们要把四件看起来分散的东西放到同一个框架中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Initialization
++
+Normalization
++
+Residual
++
+GradientFlow
+}
+</annotation></semantics></math></p>
+<p>它们其实都在解决同一个问题：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>让</mi><mi>深</mi><mi>层</mi><mi>网</mi><mi>络</mi><mi>里</mi><mi>的</mi><mi>信</mi><mi>息</mi><mi>和</mi><mi>梯</mi><mi>度</mi><mi>保</mi><mi>持</mi><mi>在</mi><mo>“</mo><mi>可</mi><mi>训</mi><mi>练</mi><mi>区</mi><mi>域</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+让深层网络里的信息和梯度保持在“可训练区域”
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="先把问题放进一个-100-层网络">1. 先把问题放进一个 100 层网络</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=f(W_1x)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>2</mn></msub><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>h</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_2=f(W_2h_1)
+</annotation></semantics></math></p>
+<p>一直到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>100</mn></msub><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>100</mn></msub><msub><mi>h</mi><mn>99</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_{100}=f(W_{100}h_{99})
+</annotation></semantics></math></p>
+<p>Forward 时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>→</mo><msub><mi>h</mi><mn>1</mn></msub><mo>→</mo><msub><mi>h</mi><mn>2</mn></msub><mo>→</mo><mi>⋯</mi><mo>→</mo><msub><mi>h</mi><mn>100</mn></msub></mrow><annotation encoding="application/x-tex">
+x
+\rightarrow
+h_1
+\rightarrow
+h_2
+\rightarrow
+\cdots
+\rightarrow
+h_{100}
+</annotation></semantics></math></p>
+<p>Backward 时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>→</mo><msub><mi>h</mi><mn>100</mn></msub><mo>→</mo><msub><mi>h</mi><mn>99</mn></msub><mo>→</mo><mi>⋯</mi><mo>→</mo><msub><mi>h</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+L
+\rightarrow
+h_{100}
+\rightarrow
+h_{99}
+\rightarrow
+\cdots
+\rightarrow
+h_1
+</annotation></semantics></math></p>
+<p>问题来了。</p>
+<p>每经过一层：</p>
+<blockquote>
+<p>数值都会变化。</p>
+</blockquote>
+<p>100 层以后：</p>
+<blockquote>
+<p>会变成什么？</p>
+</blockquote>
+<hr />
+<h2 id="一个极端例子">2. 一个极端例子</h2>
+<p>假设先完全忽略 Activation。</p>
+<p>每一层只是乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.5</mn><annotation encoding="application/x-tex">
+0.5
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mn>0.5</mn><mi>x</mi></mrow><annotation encoding="application/x-tex">
+h_1=0.5x
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>2</mn></msub><mo>=</mo><mn>0.5</mn><msub><mi>h</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+h_2=0.5h_1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>100</mn></msub><mo>=</mo><msup><mn>0.5</mn><mn>100</mn></msup><mi>x</mi></mrow><annotation encoding="application/x-tex">
+h_{100}=0.5^{100}x
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>0.5</mn><mn>100</mn></msup><annotation encoding="application/x-tex">
+0.5^{100}
+</annotation></semantics></math></p>
+<p>大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7.9</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>31</mn></mrow></msup></mrow><annotation encoding="application/x-tex">
+7.9\times10^{-31}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>信</mi><mi>号</mi><mi>几</mi><mi>乎</mi><mi>消</mi><mi>失</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+信号几乎消失
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果每层乘-2-呢">3. 如果每层乘 2 呢？</h2>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>100</mn></msub><mo>=</mo><msup><mn>2</mn><mn>100</mn></msup><mi>x</mi></mrow><annotation encoding="application/x-tex">
+h_{100}=2^{100}x
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>2</mn><mn>100</mn></msup><mo>≈</mo><mn>1.27</mn><mo>×</mo><msup><mn>10</mn><mn>30</mn></msup></mrow><annotation encoding="application/x-tex">
+2^{100}
+\approx1.27\times10^{30}
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>信</mi><mi>号</mi><mi>爆</mi><mi>炸</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+信号爆炸
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这就是深度带来的第一个基本问题">4.
+这就是深度带来的第一个基本问题</h2>
+<p>如果每层把信号：</p>
+<blockquote>
+<p>稍微缩小一点，</p>
+</blockquote>
+<p>几十层以后：</p>
+<blockquote>
+<p>消失。</p>
+</blockquote>
+<p>如果每层：</p>
+<blockquote>
+<p>稍微放大一点，</p>
+</blockquote>
+<p>几十层以后：</p>
+<blockquote>
+<p>爆炸。</p>
+</blockquote>
+<p>所以深层模型需要尽可能让：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SignalScale
+}
+</annotation></semantics></math></p>
+<p>在层与层之间保持合理。</p>
+<hr />
+<h2 id="第一个核心心智模型-6">5. 第一个核心心智模型</h2>
+<h3 id="心智模型-①深度网络首先是一个信号传播系统">心智模型
+①：深度网络首先是一个“信号传播系统”</h3>
+<p>学习神经网络不要只看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+LayerCount
+</annotation></semantics></math></p>
+<p>而应该问：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>前</mi><mi>向</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>能</mi><mi>走</mi><mi>多</mi><mi>远</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+前向Signal能走多远？
+}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>反</mi><mi>向</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>能</mi><mi>走</mi><mi>多</mi><mi>远</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+反向Gradient能走多远？
+}
+</annotation></semantics></math></p>
+<p>今天所有技术几乎都围绕这两个问题展开。</p>
+<hr />
+<h2 id="为什么随机初始化不能随便随机">6.
+为什么随机初始化不能随便随机？</h2>
+<p>模型训练开始时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>还没学到任何知识。</p>
+<p>所以通常需要：</p>
+<h1 id="random-initialization">Random Initialization</h1>
+<p>随机初始化。</p>
+<p>但“随机”不等于：</p>
+<blockquote>
+<p>随便从
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mi>−</mi><mn>100</mn><mo>,</mo><mn>100</mn><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">[-100,100]</annotation></semantics></math>
+抽。</p>
+</blockquote>
+<p>关键问题是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>随</mi><mi>机</mi><mi>数</mi><mi>的</mi><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>是</mi><mi>多</mi><mi>少</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+随机数的Scale是多少？
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="假设一个神经元">7. 假设一个神经元</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>w</mi><mi>i</mi></msub><msub><mi>x</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">
+z=
+\sum_{i=1}^{n}w_ix_i
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">
+n
+</annotation></semantics></math></p>
+<p>越来越大，而每个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>w</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+w_i
+</annotation></semantics></math></p>
+<p>尺度保持不变，</p>
+<p>那么总和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">
+z
+</annotation></semantics></math></p>
+<p>通常也会越来越大。</p>
+<hr />
+<h2 id="一个简单概率直觉">8. 一个简单概率直觉</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+x_i
+</annotation></semantics></math></p>
+<p>均值为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>方差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><msubsup><mi>σ</mi><mi>x</mi><mn>2</mn></msubsup></mrow><annotation encoding="application/x-tex">
+Var(x_i)=\sigma_x^2
+</annotation></semantics></math></p>
+<p>权重：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>w</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><msubsup><mi>σ</mi><mi>w</mi><mn>2</mn></msubsup></mrow><annotation encoding="application/x-tex">
+Var(w_i)=\sigma_w^2
+</annotation></semantics></math></p>
+<p>并做一些简化独立性假设。</p>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mi>n</mi><msubsup><mi>σ</mi><mi>w</mi><mn>2</mn></msubsup><msubsup><mi>σ</mi><mi>x</mi><mn>2</mn></msubsup></mrow><annotation encoding="application/x-tex">
+Var(z)
+\approx
+n\sigma_w^2\sigma_x^2
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这意味着什么-2">9. 这意味着什么？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msubsup><mi>σ</mi><mi>w</mi><mn>2</mn></msubsup><annotation encoding="application/x-tex">
+\sigma_w^2
+</annotation></semantics></math></p>
+<p>不随：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">
+n
+</annotation></semantics></math></p>
+<p>变化，</p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>∝</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Var(z)
+\propto n
+</annotation></semantics></math></p>
+<p>输入维度越高：</p>
+<blockquote>
+<p>输出数值越来越大。</p>
+</blockquote>
+<p>所以我们希望：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msubsup><mi>σ</mi><mi>w</mi><mn>2</mn></msubsup><annotation encoding="application/x-tex">
+\sigma_w^2
+</annotation></semantics></math></p>
+<p>随着：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">
+n
+</annotation></semantics></math></p>
+<p>减小。</p>
+<hr />
+<h2 id="最简单目标">10. 最简单目标</h2>
+<p>如果希望：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Var(z)\approx Var(x)
+</annotation></semantics></math></p>
+<p>那么大致希望：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><msubsup><mi>σ</mi><mi>w</mi><mn>2</mn></msubsup><mo>≈</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+n\sigma_w^2\approx1
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msubsup><mi>σ</mi><mi>w</mi><mn>2</mn></msubsup><mo>≈</mo><mfrac><mn>1</mn><mi>n</mi></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\sigma_w^2
+\approx
+\frac1n
+}
+</annotation></semantics></math></p>
+<p>因此标准差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>σ</mi><mi>w</mi></msub><mo>≈</mo><mfrac><mn>1</mn><msqrt><mi>n</mi></msqrt></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\sigma_w
+\approx
+\frac1{\sqrt n}
+}
+</annotation></semantics></math></p>
+<p>现在你第一次看到了：</p>
+<blockquote>
+<p>为什么权重初始化里经常出现
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi>/</mi><msqrt><mi>n</mi></msqrt></mrow><annotation encoding="application/x-tex">1/\sqrt n</annotation></semantics></math>。</p>
+</blockquote>
+<hr />
+<h2 id="这不是神秘经验值">11. 这不是神秘经验值</h2>
+<p>它来自一个非常基础的目标：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>别</mi><mi>让</mi><mi>一</mi><mi>层</mi><mi>之</mi><mi>后</mi><mi>的</mi><mi>方</mi><mi>差</mi><mi>突</mi><mi>然</mi><mi>变</mi><mi>大</mi><mi>或</mi><mi>变</mi><mi>小</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+别让一层之后的方差突然变大或变小
+}
+</annotation></semantics></math></p>
+<p>这就是：</p>
+<h1 id="variance-preservation">Variance Preservation</h1>
+<p>方差保持。</p>
+<hr />
+<h2 id="什么是-fan-in">12. 什么是 fan-in？</h2>
+<p>如果一个神经元接收：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">
+n
+</annotation></semantics></math></p>
+<p>个输入，</p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>=</mo><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+fan_{in}=n
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<div class="sourceCode" id="cb140"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb140-1"><a href="#cb140-1" aria-hidden="true" tabindex="-1"></a>Linear(<span class="dv">768</span>,<span class="dv">3072</span>)</span></code></pre></div>
+<p>每个输出神经元读取：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>768</mn><annotation encoding="application/x-tex">
+768
+</annotation></semantics></math></p>
+<p>个输入。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>=</mo><mn>768</mn></mrow><annotation encoding="application/x-tex">
+fan_{in}=768
+</annotation></semantics></math></p>
+<hr />
+<h2 id="什么是-fan-out">13. 什么是 fan-out？</h2>
+<p>同一个 Linear：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>768</mn><mo>→</mo><mn>3072</mn></mrow><annotation encoding="application/x-tex">
+768\rightarrow3072
+</annotation></semantics></math></p>
+<p>输出有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3072</mn><annotation encoding="application/x-tex">
+3072
+</annotation></semantics></math></p>
+<p>个单元。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>=</mo><mn>3072</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+fan_{out}=3072
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="xavier-initialization-1">14. Xavier Initialization</h2>
+<p>经典的：</p>
+<h1 id="xavier-initialization-2">Xavier Initialization</h1>
+<p>又叫：</p>
+<h1 id="glorot-initialization">Glorot Initialization</h1>
+<p>其中一种常见形式希望同时兼顾：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+fan_{in}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+fan_{out}
+</annotation></semantics></math></p>
+<p>例如方差大致：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mn>2</mn><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Var(W)
+=
+\frac{2}
+{fan_{in}+fan_{out}}
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么同时考虑-fan-in-和-fan-out">15. 为什么同时考虑 fan-in 和
+fan-out？</h2>
+<p>因为我们不仅希望：</p>
+<blockquote>
+<p>Forward 信号稳定。</p>
+</blockquote>
+<p>还希望：</p>
+<blockquote>
+<p>Backward Gradient 也不要剧烈改变尺度。</p>
+</blockquote>
+<p>所以 Xavier 是一种：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>/</mi><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>i</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward/Backward\ Scale\ Compromise
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="xavier-特别适合什么直觉">16. Xavier 特别适合什么直觉？</h2>
+<p>对于像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>a</mi><mi>n</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+Tanh
+</annotation></semantics></math></p>
+<p>这类相对对称 Activation，</p>
+<p>Xavier 是经典选择之一。</p>
+<p>但现在不要形成：</p>
+<blockquote>
+<p>Tanh 必须 Xavier。</p>
+</blockquote>
+<p>真正理解它背后的原则：</p>
+<blockquote>
+<p>保持信号尺度。</p>
+</blockquote>
+<hr />
+<h2 id="relu-出现以后为什么要修改">17. ReLU 出现以后为什么要修改？</h2>
+<p>ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>max</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+ReLU(x)=\max(0,x)
+</annotation></semantics></math></p>
+<p>对于大致对称、均值接近 0 的输入：</p>
+<blockquote>
+<p>大约一部分负值会被变成 0。</p>
+</blockquote>
+<p>也就是说：</p>
+<blockquote>
+<p>一部分信号能量被删掉。</p>
+</blockquote>
+<hr />
+<h2 id="如果还用原来的尺度会怎样">18. 如果还用原来的尺度会怎样？</h2>
+<p>每经过 ReLU：</p>
+<blockquote>
+<p>方差可能逐层减小。</p>
+</blockquote>
+<p>于是网络越深：</p>
+<blockquote>
+<p>Activation 越来越弱。</p>
+</blockquote>
+<p>所以需要：</p>
+<blockquote>
+<p>稍微更大的初始化尺度进行补偿。</p>
+</blockquote>
+<hr />
+<h2 id="he-initialization-1">19. He Initialization</h2>
+<p>针对 ReLU 类网络的经典初始化：</p>
+<h1 id="he-initialization-2">He Initialization</h1>
+<p>常见方差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mn>2</mn><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Var(W)
+=
+\frac{2}{fan_{in}}
+}
+</annotation></semantics></math></p>
+<p>因此标准差大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><msqrt><mfrac><mn>2</mn><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></mfrac></msqrt></menclose><annotation encoding="application/x-tex">
+\boxed{
+\sqrt{\frac{2}{fan_{in}}}
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么有这个-2">20. 为什么有这个 2？</h2>
+<p>粗略直觉：</p>
+<blockquote>
+<p>ReLU 大约砍掉了一部分输入，</p>
+</blockquote>
+<p>所以初始化时：</p>
+<blockquote>
+<p>适当增加 Weight 方差进行补偿。</p>
+</blockquote>
+<p>严格推导会更细，但现在这个直觉已经够用。</p>
+<hr />
+<h2 id="第二个核心心智模型-6">21. 第二个核心心智模型</h2>
+<h3
+id="心智模型-②好的初始化不是为了给模型好答案而是为了让模型从一个好训练的位置开始">心智模型
+②：好的初始化不是为了给模型“好答案”，而是为了让模型从一个“好训练的位置”开始</h3>
+<p>Initialization 并不是：</p>
+<blockquote>
+<p>提前塞业务知识。</p>
+</blockquote>
+<p>而是在训练 Step 0 时确保：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>过</mi><mi>大</mi><mi>不</mi><mi>过</mi><mi>小</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Activation不过大不过小
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>不</mi><mi>过</mi><mi>大</mi><mi>不</mi><mi>过</mi><mi>小</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gradient不过大不过小
+}
+</annotation></semantics></math></p>
+<p>让 Optimizer 有机会真正工作。</p>
+<hr />
+<h2 id="为什么不能全部初始化成-0">22. 为什么不能全部初始化成 0？</h2>
+<p>这是经典问题。</p>
+<p>假设一个 Hidden Layer 有两个神经元。</p>
+<p>所有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+W=0
+</annotation></semantics></math></p>
+<p>Bias：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+b=0
+</annotation></semantics></math></p>
+<p>那么两个神经元：</p>
+<blockquote>
+<p>Forward 输出完全一样。</p>
+</blockquote>
+<hr />
+<h2 id="backward-会怎样">23. Backward 会怎样？</h2>
+<p>因为：</p>
+<blockquote>
+<p>它们输入一样、参数一样、输出一样，</p>
+</blockquote>
+<p>所以得到的：</p>
+<blockquote>
+<p>Gradient 也完全一样。</p>
+</blockquote>
+<p>更新以后：</p>
+<blockquote>
+<p>仍然一样。</p>
+</blockquote>
+<p>于是永远学不出不同 Feature。</p>
+<hr />
+<h2 id="这叫-symmetry-problem">24. 这叫 Symmetry Problem</h2>
+<h1 id="对称性问题">对称性问题</h1>
+<p>神经元之间必须在初始化阶段：</p>
+<blockquote>
+<p>有一点不同。</p>
+</blockquote>
+<p>随机初始化：</p>
+<blockquote>
+<p>打破对称。</p>
+</blockquote>
+<p>于是不同 Neuron 可以逐渐学习不同方向。</p>
+<hr />
+<h2 id="bias-可以初始化为-0-吗">25. Bias 可以初始化为 0 吗？</h2>
+<p>通常很多层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+b=0
+</annotation></semantics></math></p>
+<p>完全没问题。</p>
+<p>为什么？</p>
+<p>因为 Weight 已经随机：</p>
+<blockquote>
+<p>神经元之间的对称性已经被打破。</p>
+</blockquote>
+<hr />
+<h2 id="初始化太大会发生什么">26. 初始化太大会发生什么？</h2>
+<p>例如 Sigmoid：</p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mn>20</mn></mrow><annotation encoding="application/x-tex">
+z=20
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\sigma(z)\approx1
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>−</mi><mn>20</mn></mrow><annotation encoding="application/x-tex">
+z=-20
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\sigma(z)\approx0
+</annotation></semantics></math></p>
+<p>进入：</p>
+<h1 id="saturation-1">Saturation</h1>
+<hr />
+<h2 id="saturation-的后果">27. Saturation 的后果</h2>
+<p>Sigmoid 导数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\sigma(z)(1-\sigma(z))
+</annotation></semantics></math></p>
+<p>在两边都：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\approx0
+</annotation></semantics></math></p>
+<p>所以模型刚开始：</p>
+<blockquote>
+<p>梯度就可能很弱。</p>
+</blockquote>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>d</mi><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>d</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BadInitialization
+\rightarrow
+BadGradientFlow
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="relu-初始化太大会怎样">28. ReLU 初始化太大会怎样？</h2>
+<p>Activation：</p>
+<blockquote>
+<p>可能变得非常大。</p>
+</blockquote>
+<p>下一层再乘 Weight：</p>
+<blockquote>
+<p>更大。</p>
+</blockquote>
+<p>最终：</p>
+<ul>
+<li>Activation 爆炸；</li>
+<li>Gradient 爆炸；</li>
+<li>Loss 不稳定；</li>
+<li>NaN。</li>
+</ul>
+<hr />
+<h2 id="初始化太小呢">29. 初始化太小呢？</h2>
+<p>信号：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.01</mn><annotation encoding="application/x-tex">
+0.01
+</annotation></semantics></math></p>
+<p>乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.01</mn><annotation encoding="application/x-tex">
+0.01
+</annotation></semantics></math></p>
+<p>再乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.01</mn><annotation encoding="application/x-tex">
+0.01
+</annotation></semantics></math></p>
+<p>深层以后：</p>
+<blockquote>
+<p>几乎为 0。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>就</mi><mi>是</mi><mi>在</mi><mi>控</mi><mi>制</mi><mi>深</mi><mi>层</mi><mi>信</mi><mi>号</mi><mi>的</mi><mi>第</mi><mi>一</mi><mi>口</mi><mi>气</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Initialization
+就是在控制深层信号的第一口气
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="可初始化解决所有深层问题吗">30.
+可初始化解决所有深层问题吗？</h2>
+<p>不能。</p>
+<p>假设训练刚开始尺度很好。</p>
+<p>训练：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>10000</mn><annotation encoding="application/x-tex">
+10000
+</annotation></semantics></math></p>
+<p>个 Step 后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>已经改变。</p>
+<p>原来的初始化保证：</p>
+<blockquote>
+<p>不再自动成立。</p>
+</blockquote>
+<p>所以需要第二种机制：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Normalization
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="什么叫-normalization">31. 什么叫 Normalization？</h2>
+<p>非常粗略地说：</p>
+<blockquote>
+<p>对中间表示的尺度进行重新标准化。</p>
+</blockquote>
+<p>例如某层输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>100</mn><mo>,</mo><mi>−</mi><mn>70</mn><mo>,</mo><mn>300</mn><mo>,</mo><mn>45</mn><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+x=
+[100,-70,300,45]
+</annotation></semantics></math></p>
+<p>可能非常难训练。</p>
+<p>Normalization 希望把它：</p>
+<blockquote>
+<p>调回比较稳定的范围。</p>
+</blockquote>
+<hr />
+<h2 id="为什么尺度稳定有利于训练">32. 为什么尺度稳定有利于训练？</h2>
+<p>因为下一层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx
+</annotation></semantics></math></p>
+<p>的数值尺度直接由：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<p>决定。</p>
+<p>如果某层输出今天：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>5</mn></mrow></msup><annotation encoding="application/x-tex">
+10^{-5}
+</annotation></semantics></math></p>
+<p>明天：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mn>5</mn></msup><annotation encoding="application/x-tex">
+10^5
+</annotation></semantics></math></p>
+<p>Optimizer 要处理的环境：</p>
+<blockquote>
+<p>极其不稳定。</p>
+</blockquote>
+<hr />
+<h2 id="第三个核心心智模型-6">33. 第三个核心心智模型</h2>
+<h3
+id="心智模型-③normalization-的核心不是把数字变漂亮而是控制网络内部的运行尺度">心智模型
+③：Normalization
+的核心不是“把数字变漂亮”，而是控制网络内部的运行尺度</h3>
+<p>可以把它理解成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>N</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Internal\ Numerical\ Stabilizer
+}
+</annotation></semantics></math></p>
+<p>使各层尽量工作在：</p>
+<blockquote>
+<p>合理数值范围。</p>
+</blockquote>
+<hr />
+<h2 id="先理解均值和方差">34. 先理解均值和方差</h2>
+<p>一组数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>1</mn></msub><mo>,</mo><msub><mi>x</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>x</mi><mi>n</mi></msub></mrow><annotation encoding="application/x-tex">
+x_1,x_2,\ldots,x_n
+</annotation></semantics></math></p>
+<p>均值：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>μ</mi><mo>=</mo><mfrac><mn>1</mn><mi>n</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><msub><mi>x</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">
+\mu
+=
+\frac1n
+\sum_i x_i
+</annotation></semantics></math></p>
+<p>方差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>σ</mi><mn>2</mn></msup><mo>=</mo><mfrac><mn>1</mn><mi>n</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><msup><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo>−</mo><mi>μ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+\sigma^2
+=
+\frac1n
+\sum_i(x_i-\mu)^2
+</annotation></semantics></math></p>
+<hr />
+<h2 id="standardization">35. Standardization</h2>
+<p>经典标准化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mover><mi>x</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><mo>=</mo><mfrac><mrow><msub><mi>x</mi><mi>i</mi></msub><mo>−</mo><mi>μ</mi></mrow><msqrt><mrow><msup><mi>σ</mi><mn>2</mn></msup><mo>+</mo><mi>ϵ</mi></mrow></msqrt></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\hat x_i
+=
+\frac{x_i-\mu}
+{\sqrt{\sigma^2+\epsilon}}
+}
+</annotation></semantics></math></p>
+<p>结果大致：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Mean\approx0
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≈</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+Variance\approx1
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么有-epsilon">36. 为什么有
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ϵ</mi><annotation encoding="application/x-tex">\epsilon</annotation></semantics></math>？</h2>
+<p>避免：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>σ</mi><mn>2</mn></msup><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\sigma^2=0
+</annotation></semantics></math></p>
+<p>导致除以 0。</p>
+<p>同时：</p>
+<blockquote>
+<p>增强数值稳定性。</p>
+</blockquote>
+<hr />
+<h2 id="但如果永远强行均值-0方差-1会不会限制模型">37. 但如果永远强行均值
+0、方差 1，会不会限制模型？</h2>
+<p>会。</p>
+<p>因此 Normalization 后经常加入可训练参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>γ</mi><annotation encoding="application/x-tex">
+\gamma
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">
+\beta
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>γ</mi><mover><mi>x</mi><mo accent="true">̂</mo></mover><mo>+</mo><mi>β</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y
+=
+\gamma\hat x+\beta
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="gamma-做什么">38.
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>γ</mi><annotation encoding="application/x-tex">\gamma</annotation></semantics></math>
+做什么？</h2>
+<p>控制：</p>
+<blockquote>
+<p>Scale。</p>
+</blockquote>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>γ</mi><annotation encoding="application/x-tex">
+\gamma
+</annotation></semantics></math></p>
+<p>可以让网络重新：</p>
+<blockquote>
+<p>放大或缩小。</p>
+</blockquote>
+<hr />
+<h2 id="beta-做什么">39.
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>
+做什么？</h2>
+<p>控制：</p>
+<blockquote>
+<p>Shift。</p>
+</blockquote>
+<p>可以重新：</p>
+<blockquote>
+<p>平移均值。</p>
+</blockquote>
+<hr />
+<h2 id="所以-normalization-不是强制所有层永远标准正态">40. 所以
+Normalization 不是强制所有层永远标准正态</h2>
+<p>更准确是：</p>
+<ol type="1">
+<li>先把输入变成稳定标准尺度；</li>
+<li>再允许模型通过
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi><mo>,</mo><mi>β</mi></mrow><annotation encoding="application/x-tex">\gamma,\beta</annotation></semantics></math>
+学合适变换。</li>
+</ol>
+<hr />
+<h2 id="最经典的-batchnorm">41. 最经典的 BatchNorm</h2>
+<h1 id="batch-normalization">Batch Normalization</h1>
+<p>曾经在 CNN 等模型中非常重要。</p>
+<p>它通常沿：</p>
+<blockquote>
+<p>Batch 统计均值和方差。</p>
+</blockquote>
+<hr />
+<h2 id="一个简单例子">42. 一个简单例子</h2>
+<p>某个 Feature 在 Batch 中有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>3</mn><mo>,</mo><mn>5</mn><mo>,</mo><mn>7</mn><mo>,</mo><mn>9</mn><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[3,5,7,9]
+</annotation></semantics></math></p>
+<p>BatchNorm 会根据：</p>
+<blockquote>
+<p>这 4 个样本的统计量</p>
+</blockquote>
+<p>进行标准化。</p>
+<p>所以一个样本的结果：</p>
+<blockquote>
+<p>会受到其它 Batch 样本影响。</p>
+</blockquote>
+<hr />
+<h2 id="为什么这对-nlptransformer-不理想">43. 为什么这对 NLP/Transformer
+不理想？</h2>
+<p>语言模型经常：</p>
+<ul>
+<li>Batch 大小变化；</li>
+<li>Sequence Length 变化；</li>
+<li>在线推理可能 Batch=1；</li>
+<li>Token 结构复杂。</li>
+</ul>
+<p>如果归一化严重依赖 Batch：</p>
+<blockquote>
+<p>很不方便。</p>
+</blockquote>
+<p>于是 Transformer 更常使用：</p>
+<h1 id="layer-normalization">Layer Normalization</h1>
+<hr />
+<h2 id="layernorm-的关键区别">44. LayerNorm 的关键区别</h2>
+<p>LayerNorm 对：</p>
+<blockquote>
+<p>单个样本当前 Hidden Vector 内部</p>
+</blockquote>
+<p>进行标准化。</p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>h</mi><mn>1</mn></msub><mo>,</mo><msub><mi>h</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>h</mi><mi>d</mi></msub><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+h=
+[h_1,h_2,\ldots,h_d]
+</annotation></semantics></math></p>
+<p>计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>μ</mi><mi>h</mi></msub><annotation encoding="application/x-tex">
+\mu_h
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msubsup><mi>σ</mi><mi>h</mi><mn>2</mn></msubsup><annotation encoding="application/x-tex">
+\sigma_h^2
+</annotation></semantics></math></p>
+<p>沿 Hidden Dimension 归一化。</p>
+<hr />
+<h2 id="假设-hidden-size-4">45. 假设 Hidden Size = 4</h2>
+<p>一个 Token：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>2</mn><mo>,</mo><mn>4</mn><mo>,</mo><mn>6</mn><mo>,</mo><mn>8</mn><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+h=[2,4,6,8]
+</annotation></semantics></math></p>
+<p>LayerNorm 只使用：</p>
+<blockquote>
+<p>这一个 Token 自己的 4 个 Hidden Dimension。</p>
+</blockquote>
+<p>并不需要其它 Batch 样本。</p>
+<hr />
+<h2 id="这为什么特别适合-transformer">46. 这为什么特别适合
+Transformer？</h2>
+<p>因为每个 Token：</p>
+<blockquote>
+<p>都有自己的 Hidden State。</p>
+</blockquote>
+<p>LayerNorm 可以：</p>
+<blockquote>
+<p>独立稳定每个 Token 的 Hidden Representation。</p>
+</blockquote>
+<p>因此不依赖：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+BatchSize
+</annotation></semantics></math></p>
+<hr />
+<h2 id="transformer-shape-下怎么理解">47. Transformer Shape
+下怎么理解？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>.</mi><mi>s</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><mi>S</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+H.shape
+=
+(B,S,D)
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>8</mn><mo>,</mo><mn>2048</mn><mo>,</mo><mn>4096</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(8,2048,4096)
+</annotation></semantics></math></p>
+<p>LayerNorm 通常对最后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mo>=</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+D=4096
+</annotation></semantics></math></p>
+<p>维做归一化。</p>
+<hr />
+<h2 id="也就是说">48. 也就是说</h2>
+<p>对于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>8</mn><mo>×</mo><mn>2048</mn></mrow><annotation encoding="application/x-tex">
+8\times2048
+</annotation></semantics></math></p>
+<p>个 Token 位置，</p>
+<p>每一个位置：</p>
+<blockquote>
+<p>分别对自己的 4096 维向量归一化。</p>
+</blockquote>
+<hr />
+<h2 id="这又回到-shape-思维">49. 这又回到 Shape 思维</h2>
+<p>看到：</p>
+<div class="sourceCode" id="cb141"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb141-1"><a href="#cb141-1" aria-hidden="true" tabindex="-1"></a>LayerNorm(<span class="dv">4096</span>)</span></code></pre></div>
+<p>你应该想到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>h</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>d</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Normalize\ last\ hidden\ dimension
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>把整个 Batch 所有数字混起来。</p>
+</blockquote>
+<hr />
+<h2 id="layernorm-公式">50. LayerNorm 公式</h2>
+<p>设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">
+x\in\mathbb R^d
+</annotation></semantics></math></p>
+<p>均值：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>μ</mi><mo>=</mo><mfrac><mn>1</mn><mi>d</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>d</mi></munderover><msub><mi>x</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">
+\mu
+=
+\frac1d\sum_{i=1}^d x_i
+</annotation></semantics></math></p>
+<p>方差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>σ</mi><mn>2</mn></msup><mo>=</mo><mfrac><mn>1</mn><mi>d</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><msup><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo>−</mo><mi>μ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+\sigma^2
+=
+\frac1d\sum_i(x_i-\mu)^2
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>γ</mi><mo>⊙</mo><mfrac><mrow><mi>x</mi><mo>−</mo><mi>μ</mi></mrow><msqrt><mrow><msup><mi>σ</mi><mn>2</mn></msup><mo>+</mo><mi>ϵ</mi></mrow></msqrt></mfrac><mo>+</mo><mi>β</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LN(x)
+=
+\gamma
+\odot
+\frac{x-\mu}
+{\sqrt{\sigma^2+\epsilon}}
++
+\beta
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="layernorm-自己也有参数吗">51. LayerNorm 自己也有参数吗？</h2>
+<p>有。</p>
+<p>通常：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">
+\gamma\in\mathbb R^d
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">
+\beta\in\mathbb R^d
+</annotation></semantics></math></p>
+<p>所以：</p>
+<div class="sourceCode" id="cb142"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb142-1"><a href="#cb142-1" aria-hidden="true" tabindex="-1"></a>LayerNorm(<span class="dv">4096</span>)</span></code></pre></div>
+<p>通常还存在：</p>
+<blockquote>
+<p>可训练 Scale 和 Bias。</p>
+</blockquote>
+<hr />
+<h2 id="那些参数多吗">52. 那些参数多吗？</h2>
+<p>Hidden Size：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>4096</mn><annotation encoding="application/x-tex">
+4096
+</annotation></semantics></math></p>
+<p>LayerNorm 参数约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>+</mo><mn>4096</mn><mo>=</mo><mn>8192</mn></mrow><annotation encoding="application/x-tex">
+4096+4096
+=
+8192
+</annotation></semantics></math></p>
+<p>相比一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+4096\times4096
+</annotation></semantics></math></p>
+<p>的大矩阵：</p>
+<blockquote>
+<p>非常少。</p>
+</blockquote>
+<hr />
+<h2 id="什么是-rmsnorm">53. 什么是 RMSNorm？</h2>
+<p>现代 LLM 经常看到：</p>
+<h1 id="rmsnorm">RMSNorm</h1>
+<p>例如一些现代 Transformer 架构中很常见。</p>
+<hr />
+<h2 id="rmsnorm-与-layernorm-的核心差别">54. RMSNorm 与 LayerNorm
+的核心差别</h2>
+<p>LayerNorm：</p>
+<blockquote>
+<p>减均值，再除标准差。</p>
+</blockquote>
+<p>RMSNorm：</p>
+<blockquote>
+<p>通常不减均值。</p>
+</blockquote>
+<p>主要按 Root Mean Square：</p>
+<blockquote>
+<p>调整尺度。</p>
+</blockquote>
+<hr />
+<h2 id="rms-是什么">55. RMS 是什么？</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>M</mi><mi>S</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><msqrt><mrow><mfrac><mn>1</mn><mi>d</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><msubsup><mi>x</mi><mi>i</mi><mn>2</mn></msubsup></mrow></msqrt></mrow><annotation encoding="application/x-tex">
+RMS(x)
+=
+\sqrt{
+\frac1d
+\sum_i x_i^2
+}
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>M</mi><mi>S</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>γ</mi><mo>⊙</mo><mfrac><mi>x</mi><msqrt><mrow><mfrac><mn>1</mn><mi>d</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><msubsup><mi>x</mi><mi>i</mi><mn>2</mn></msubsup><mo>+</mo><mi>ϵ</mi></mrow></msqrt></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RMSNorm(x)
+=
+\gamma
+\odot
+\frac{x}
+{\sqrt{
+\frac1d\sum_i x_i^2+\epsilon
+}}
+}
+</annotation></semantics></math></p>
+<p>一种常见形式就是这样。</p>
+<hr />
+<h2 id="少掉了什么">56. 少掉了什么？</h2>
+<p>相比 LayerNorm：</p>
+<blockquote>
+<p>不需要显式减均值。</p>
+</blockquote>
+<p>有些实现也没有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">
+\beta
+</annotation></semantics></math></p>
+<p>所以结构更简单。</p>
+<hr />
+<h2 id="为什么-rmsnorm-能工作">57. 为什么 RMSNorm 能工作？</h2>
+<p>核心思想是：</p>
+<blockquote>
+<p>对很多深层 Transformer
+来说，控制表示的整体尺度本身已经非常有价值。</p>
+</blockquote>
+<p>不一定每次都必须：</p>
+<blockquote>
+<p>强制中心化到均值 0。</p>
+</blockquote>
+<hr />
+<h2 id="layernorm-和-rmsnorm-谁更好">58. LayerNorm 和 RMSNorm
+谁更好？</h2>
+<p>不能抽象地说：</p>
+<blockquote>
+<p>一个绝对更好。</p>
+</blockquote>
+<p>架构设计是整体系统。</p>
+<p>现代不同 LLM：</p>
+<blockquote>
+<p>可能选择不同 Norm。</p>
+</blockquote>
+<p>真正要掌握的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>两</mi><mi>者</mi><mi>都</mi><mi>在</mi><mi>帮</mi><mi>助</mi><mi>稳</mi><mi>定</mi><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>尺</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+两者都在帮助稳定HiddenState尺度
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="normalization-能不能改变模型表达能力">59. Normalization
+能不能改变模型表达能力？</h2>
+<p>它不仅是：</p>
+<blockquote>
+<p>单纯数值预处理。</p>
+</blockquote>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi><mo>,</mo><mi>β</mi></mrow><annotation encoding="application/x-tex">
+\gamma,\beta
+</annotation></semantics></math></p>
+<p>可训练，而且 Norm 被放置在网络计算图中。</p>
+<p>所以它会参与：</p>
+<blockquote>
+<p>网络实际函数。</p>
+</blockquote>
+<hr />
+<h2 id="normalization-也会影响-gradient-flow">60. Normalization 也会影响
+Gradient Flow</h2>
+<p>Backward 会穿过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+LayerNorm
+</annotation></semantics></math></p>
+<p>所以它不仅改变 Forward Distribution。</p>
+<p>也改变：</p>
+<blockquote>
+<p>Gradient 的尺度和耦合。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>同</mi><mi>时</mi><mi>影</mi><mi>响</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>和</mi><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Normalization
+同时影响Forward和Backward
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但是现在还有一个问题">61. 但是现在还有一个问题</h2>
+<p>即使：</p>
+<blockquote>
+<p>Initialization 好。</p>
+</blockquote>
+<p>即使：</p>
+<blockquote>
+<p>每层都有 Normalization。</p>
+</blockquote>
+<p>如果网络有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>100</mn><annotation encoding="application/x-tex">
+100
+</annotation></semantics></math></p>
+<p>层，</p>
+<p>信息还是必须：</p>
+<blockquote>
+<p>连续穿过 100 个复杂变换。</p>
+</blockquote>
+<p>如果某一层学坏：</p>
+<blockquote>
+<p>前面的信息怎么办？</p>
+</blockquote>
+<hr />
+<h2 id="这就是-residual-connection-出场的地方">62. 这就是 Residual
+Connection 出场的地方</h2>
+<p>普通网络：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>→</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>→</mo><mi>y</mi></mrow><annotation encoding="application/x-tex">
+x
+\rightarrow
+F(x)
+\rightarrow
+y
+</annotation></semantics></math></p>
+<p>Residual：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y=x+F(x)
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>原输入直接绕过复杂模块，加到输出。</p>
+</blockquote>
+<hr />
+<h2 id="为什么叫-residual">63. 为什么叫 Residual？</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+F(x)
+</annotation></semantics></math></p>
+<p>不必学习：</p>
+<blockquote>
+<p>完整的新映射。</p>
+</blockquote>
+<p>可以只学习：</p>
+<blockquote>
+<p>在原来
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>
+上应该增加什么“修正量”。</p>
+</blockquote>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Residual
+=
+Correction
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个直觉">64. 一个直觉</h2>
+<p>不使用 Residual：</p>
+<blockquote>
+<p>每层都必须重新构造完整 Representation。</p>
+</blockquote>
+<p>使用 Residual：</p>
+<blockquote>
+<p>每层只需要说：</p>
+</blockquote>
+<blockquote>
+<p>“基于原来表示，我修改一点什么？”</p>
+</blockquote>
+<p>这通常容易得多。</p>
+<hr />
+<h2 id="政府采购专家类比">65. 政府采购专家类比</h2>
+<p>假设上一层 Representation 已经表示：</p>
+<blockquote>
+<p>“这是一个供应商资格条件。”</p>
+</blockquote>
+<p>下一模块不一定需要：</p>
+<blockquote>
+<p>把这个事实从零重新建立。</p>
+</blockquote>
+<p>它可以只增加：</p>
+<blockquote>
+<p>“存在地域性要求。”</p>
+</blockquote>
+<p>下一层再增加：</p>
+<blockquote>
+<p>“业务必要性证据不足。”</p>
+</blockquote>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExistingRepresentation
++
+Update
+}
+</annotation></semantics></math></p>
+<p>这只是帮助理解，并不代表网络逐层真的使用这些中文标签。</p>
+<hr />
+<h2 id="residual-最核心的数学价值之一在-backward">66. Residual
+最核心的数学价值之一在 Backward</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=x+F(x)
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>y</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac><mo>=</mo><mn>1</mn><mo>+</mo><mfrac><mrow><mi>∂</mi><mi>F</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\frac{\partial y}{\partial x}
+=
+1+
+\frac{\partial F}{\partial x}
+</annotation></semantics></math></p>
+<p>注意这里有一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mn>1</mn></menclose><annotation encoding="application/x-tex">
+\boxed{
+1
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这意味着什么-3">67. 这意味着什么？</h2>
+<p>即使：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>F</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial F}{\partial x}
+</annotation></semantics></math></p>
+<p>很小，</p>
+<p>仍然存在一条：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>的直接 Gradient Path。</p>
+<p>于是：</p>
+<blockquote>
+<p>梯度更容易向前层传播。</p>
+</blockquote>
+<hr />
+<h2 id="第四个核心心智模型-6">68. 第四个核心心智模型</h2>
+<h3
+id="心智模型-④residual-connection-给信息和梯度都修了一条高速公路">心智模型
+④：Residual Connection 给信息和梯度都修了一条“高速公路”</h3>
+<p>正常路径：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>→</mo><mi>复</mi><mi>杂</mi><mi>模</mi><mi>块</mi><mo>→</mo><mi>y</mi></mrow><annotation encoding="application/x-tex">
+x
+\rightarrow
+复杂模块
+\rightarrow
+y
+</annotation></semantics></math></p>
+<p>Residual 增加：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>→</mo><mi>y</mi></mrow><annotation encoding="application/x-tex">
+x
+\longrightarrow
+y
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>w</mi><mi>a</mi><mi>y</mi><mo>+</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>w</mi><mi>a</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Information\ Highway
++
+Gradient\ Highway
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果-fx0-会怎样">69. 如果
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">F(x)=0</annotation></semantics></math>
+会怎样？</h2>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y=x
+</annotation></semantics></math></p>
+<p>这一层退化成：</p>
+<h1 id="identity-mapping">Identity Mapping</h1>
+<p>恒等映射。</p>
+<hr />
+<h2 id="为什么这很重要">70. 为什么这很重要？</h2>
+<p>如果某一层：</p>
+<blockquote>
+<p>暂时不知道应该学什么，</p>
+</blockquote>
+<p>它至少可以：</p>
+<blockquote>
+<p>接近什么都不做。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>被迫对表示进行巨大破坏。</p>
+</blockquote>
+<hr />
+<h2 id="所以深层网络可以从接近浅层网络开始">71.
+所以深层网络可以从“接近浅层网络”开始</h2>
+<p>这是一种很强的思想。</p>
+<p>新增一层：</p>
+<blockquote>
+<p>不一定立即改变整个函数。</p>
+</blockquote>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+F(x)\approx0
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>≈</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y\approx x
+</annotation></semantics></math></p>
+<p>所以增加深度：</p>
+<blockquote>
+<p>不再那么危险。</p>
+</blockquote>
+<hr />
+<h2 id="residual-为什么让几百层网络成为可能">72. Residual
+为什么让几百层网络成为可能？</h2>
+<p>因为每一层都有：</p>
+<blockquote>
+<p>Identity Path。</p>
+</blockquote>
+<p>信息可以：</p>
+<blockquote>
+<p>跨越很多 Block。</p>
+</blockquote>
+<p>梯度也可以：</p>
+<blockquote>
+<p>通过残差路径传播。</p>
+</blockquote>
+<p>这极大改善：</p>
+<h1 id="trainability">Trainability</h1>
+<hr />
+<h2 id="resnet-是这一思想的经典代表">73. ResNet
+是这一思想的经典代表</h2>
+<p>图像领域中的 ResNet：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>→</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+x
+\rightarrow
+F(x)
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+x+F(x)
+</annotation></semantics></math></p>
+<p>让非常深的 CNN：</p>
+<blockquote>
+<p>更容易训练。</p>
+</blockquote>
+<p>后来 Transformer：</p>
+<blockquote>
+<p>也大量依赖残差。</p>
+</blockquote>
+<hr />
+<h2 id="transformer-block-的骨架开始出现了">74. Transformer Block
+的骨架开始出现了</h2>
+<p>你以后会看到类似：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>→</mo><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>+</mi></mrow><annotation encoding="application/x-tex">
+x
+\rightarrow
+Attention
+\rightarrow
++
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>→</mo><mi>M</mi><mi>L</mi><mi>P</mi><mo>→</mo><mi>+</mi></mrow><annotation encoding="application/x-tex">
+x
+\rightarrow
+MLP
+\rightarrow
++
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ResidualAroundAttention
+}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>F</mi><mi>F</mi><mi>N</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ResidualAroundFFN
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个非常简化的-transformer-block">75. 一个非常简化的 Transformer
+Block</h2>
+<p>可以先想成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>1</mn></msub><mo>=</mo><mi>x</mi><mo>+</mo><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+x_1
+=
+x+Attention(x)
+</annotation></semantics></math></p>
+<p>再：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>2</mn></msub><mo>=</mo><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><mi>M</mi><mi>L</mi><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+x_2
+=
+x_1+MLP(x_1)
+</annotation></semantics></math></p>
+<p>这已经非常接近 Transformer 核心结构。</p>
+<hr />
+<h2 id="但还缺-norm">76. 但还缺 Norm</h2>
+<p>现实里经常是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+Norm
+</annotation></semantics></math></p>
+<p>与：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>/</mi><mi>M</mi><mi>L</mi><mi>P</mi></mrow><annotation encoding="application/x-tex">
+Attention/MLP
+</annotation></semantics></math></p>
+<p>配合。</p>
+<p>于是出现两种重要结构：</p>
+<h1 id="post-norm">Post-Norm</h1>
+<p>和：</p>
+<h1 id="pre-norm">Pre-Norm</h1>
+<hr />
+<h2 id="post-norm-直觉">77. Post-Norm 直觉</h2>
+<p>经典原始 Transformer 风格可以抽象成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y
+=
+Norm(x+F(x))
+}
+</annotation></semantics></math></p>
+<p>先：</p>
+<blockquote>
+<p>Residual Add。</p>
+</blockquote>
+<p>再：</p>
+<blockquote>
+<p>Normalization。</p>
+</blockquote>
+<hr />
+<h2 id="pre-norm-呢">78. Pre-Norm 呢？</h2>
+<p>Pre-Norm：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y
+=
+x+F(Norm(x))
+}
+</annotation></semantics></math></p>
+<p>先对模块输入：</p>
+<blockquote>
+<p>Normalization。</p>
+</blockquote>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>F</mi><annotation encoding="application/x-tex">
+F
+</annotation></semantics></math></p>
+<p>最后加回：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<hr />
+<h2 id="两者看起来只换了顺序">79. 两者看起来只换了顺序</h2>
+<p>但训练深层网络时：</p>
+<blockquote>
+<p>Gradient Flow 会明显不同。</p>
+</blockquote>
+<p>现代很多大型语言模型：</p>
+<blockquote>
+<p>常见 Pre-Norm 或其变体。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-pre-norm-深层训练通常更稳定">80. 为什么 Pre-Norm
+深层训练通常更稳定？</h2>
+<p>看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=x+F(Norm(x))
+</annotation></semantics></math></p>
+<p>从：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<p>到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>y</mi><annotation encoding="application/x-tex">
+y
+</annotation></semantics></math></p>
+<p>有一条非常直接的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>P</mi><mi>a</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+IdentityPath
+}
+</annotation></semantics></math></p>
+<p>Norm 没有挡在这条主 Residual Path 后面。</p>
+<hr />
+<h2 id="backward-的直觉">81. Backward 的直觉</h2>
+<p>梯度可以直接通过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>→</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y\rightarrow x
+</annotation></semantics></math></p>
+<p>沿残差主干传播。</p>
+<p>因此：</p>
+<blockquote>
+<p>很深的模型更容易训练。</p>
+</blockquote>
+<p>严格理论更复杂，但这个直觉非常重要。</p>
+<hr />
+<h2 id="post-norm-一定不好吗">82. Post-Norm 一定不好吗？</h2>
+<p>不是。</p>
+<p>它有自己的特点，也有优秀模型使用。</p>
+<p>但随着模型越来越深：</p>
+<blockquote>
+<p>Pre-Norm 在训练稳定性方面非常有吸引力。</p>
+</blockquote>
+<p>不要把架构历史演变理解成：</p>
+<blockquote>
+<p>老结构错误，新结构真理。</p>
+</blockquote>
+<hr />
+<h2 id="现在把三个组件组合起来">83. 现在把三个组件组合起来</h2>
+<p>一个现代深层 Block 可以抽象为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>x</mi><mo>→</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mo>→</mo><mi>F</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>d</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+x
+\rightarrow
+Norm
+\rightarrow
+F
+\rightarrow
+ResidualAdd
+}
+</annotation></semantics></math></p>
+<p>这三个部分分别在做：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+Norm
+</annotation></semantics></math></p>
+<p>控制尺度。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>F</mi><annotation encoding="application/x-tex">
+F
+</annotation></semantics></math></p>
+<p>学习新变换。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi></mrow><annotation encoding="application/x-tex">
+Residual
+</annotation></semantics></math></p>
+<p>保留主信息路径。</p>
+<hr />
+<h2 id="第五个核心心智模型-6">84. 第五个核心心智模型</h2>
+<h3
+id="心智模型-⑤现代深层网络不是靠单个技巧稳定而是靠初始化-norm-residual-optimizer共同形成稳定系统">心智模型
+⑤：现代深层网络不是靠单个技巧稳定，而是靠“初始化 + Norm + Residual +
+Optimizer”共同形成稳定系统</h3>
+<p>所以不要问：</p>
+<blockquote>
+<p>“Residual 和 LayerNorm 到底哪个更重要？”</p>
+</blockquote>
+<p>更准确的问题是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>整</mi><mi>个</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>a</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>是</mi><mi>否</mi><mi>健</mi><mi>康</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+整个SignalPropagationSystem是否健康？
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么我们第-6-阶段学-warmup现在又有关系了">85. 为什么我们第 6
+阶段学 Warmup，现在又有关系了？</h2>
+<p>即使：</p>
+<ul>
+<li>Initialization 合理；</li>
+<li>Norm 合理；</li>
+<li>Residual 合理；</li>
+</ul>
+<p>训练第一步如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>R</mi></mrow><annotation encoding="application/x-tex">
+LR
+</annotation></semantics></math></p>
+<p>过大，</p>
+<p>仍然可能迅速破坏这些良好尺度。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>a</mi><mi>r</mi><mi>m</mi><mi>u</mi><mi>p</mi></mrow><annotation encoding="application/x-tex">
+Warmup
+</annotation></semantics></math></p>
+<p>让训练初期：</p>
+<blockquote>
+<p>温和进入稳定区。</p>
+</blockquote>
+<hr />
+<h2 id="这就是系统思维">86. 这就是系统思维</h2>
+<p>深层训练稳定性不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Initialization
+</annotation></semantics></math></p>
+<p>一个变量决定。</p>
+<p>而更像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mo>×</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>×</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Initialization
+\times
+Normalization
+\times
+Residual
+\times
+Activation
+\times
+Optimizer
+\times
+LearningRate
+}
+</annotation></semantics></math></p>
+<p>任何一部分严重异常：</p>
+<blockquote>
+<p>都可能训练失败。</p>
+</blockquote>
+<hr />
+<h2 id="现在看-gradient-vanishing-的完整来源">87. 现在看 Gradient
+Vanishing 的完整来源</h2>
+<p>它可能来自：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>&lt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+ActivationDerivative&lt;1
+</annotation></semantics></math></p>
+<p>也可能来自：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mo>&lt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+WeightScale&lt;1
+</annotation></semantics></math></p>
+<p>也可能来自：</p>
+<blockquote>
+<p>深度太大。</p>
+</blockquote>
+<p>还可能来自：</p>
+<blockquote>
+<p>不合适的网络结构。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+VanishingGradient
+</annotation></semantics></math></p>
+<p>不是 Sigmoid 独有现象。</p>
+<hr />
+<h2 id="gradient-explosion-也一样">88. Gradient Explosion 也一样</h2>
+<p>可能来自：</p>
+<ul>
+<li>Weight Scale 太大；</li>
+<li>多层 Jacobian 放大；</li>
+<li>Learning Rate 太高；</li>
+<li>Loss 异常；</li>
+<li>Numerical instability。</li>
+</ul>
+<p>因此专家不会：</p>
+<blockquote>
+<p>看见梯度爆炸就只调 Gradient Clipping。</p>
+</blockquote>
+<hr />
+<h2 id="jacobian-是什么">89. Jacobian 是什么？</h2>
+<p>我们现在第一次轻轻碰一下这个词。</p>
+<p>如果一个向量函数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=f(x)
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>y</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial y}{\partial x}
+</annotation></semantics></math></p>
+<p>形成一个矩阵：</p>
+<h1 id="jacobian">Jacobian</h1>
+<hr />
+<h2 id="深层-backprop-本质在发生什么">90. 深层 Backprop
+本质在发生什么？</h2>
+<p>梯度连续乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>J</mi><mi>L</mi></msub><msub><mi>J</mi><mrow><mi>L</mi><mo>−</mo><mn>1</mn></mrow></msub><mi>⋯</mi><msub><mi>J</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+J_LJ_{L-1}\cdots J_1
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>J</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+J_i
+</annotation></semantics></math></p>
+<p>是每层的局部 Jacobian。</p>
+<hr />
+<h2 id="为什么会梯度消失">91. 为什么会梯度消失？</h2>
+<p>如果这些 Jacobian 的典型放大比例：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+&lt;1
+</annotation></semantics></math></p>
+<p>连续相乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>→</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\rightarrow0
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么会梯度爆炸">92. 为什么会梯度爆炸？</h2>
+<p>如果典型比例：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+&gt;1
+</annotation></semantics></math></p>
+<p>连续相乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>→</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">
+\rightarrow\infty
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以初始化本质上也在影响-jacobian">93. 所以初始化本质上也在影响
+Jacobian</h2>
+<p>Weight Scale：</p>
+<blockquote>
+<p>直接进入局部导数。</p>
+</blockquote>
+<p>Activation：</p>
+<blockquote>
+<p>也进入局部导数。</p>
+</blockquote>
+<p>Norm：</p>
+<blockquote>
+<p>改变状态尺度和梯度结构。</p>
+</blockquote>
+<p>Residual：</p>
+<blockquote>
+<p>引入 Identity Jacobian。</p>
+</blockquote>
+<p>于是四者终于完全统一起来了。</p>
+<hr />
+<h2 id="一个很深的统一公式">94. 一个很深的统一公式</h2>
+<p>残差层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mrow><mi>l</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mi>h</mi><mi>l</mi></msub><mo>+</mo><msub><mi>F</mi><mi>l</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>h</mi><mi>l</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_{l+1}
+=
+h_l+F_l(h_l)
+</annotation></semantics></math></p>
+<p>对应 Jacobian：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><msub><mi>h</mi><mrow><mi>l</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><mrow><mi>∂</mi><msub><mi>h</mi><mi>l</mi></msub></mrow></mfrac><mo>=</mo><mi>I</mi><mo>+</mo><msub><mi>J</mi><msub><mi>F</mi><mi>l</mi></msub></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial h_{l+1}}
+{\partial h_l}
+=
+I+
+J_{F_l}
+}
+</annotation></semantics></math></p>
+<p>这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>I</mi><annotation encoding="application/x-tex">
+I
+</annotation></semantics></math></p>
+<p>是 Identity Matrix。</p>
+<hr />
+<h2 id="这个-i-为什么这么珍贵">95. 这个
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>I</mi><annotation encoding="application/x-tex">I</annotation></semantics></math>
+为什么这么珍贵？</h2>
+<p>普通网络只有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>J</mi><mi>F</mi></msub><annotation encoding="application/x-tex">
+J_F
+</annotation></semantics></math></p>
+<p>Residual 网络有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mo>+</mo><msub><mi>J</mi><mi>F</mi></msub></mrow><annotation encoding="application/x-tex">
+I+J_F
+</annotation></semantics></math></p>
+<p>所以梯度传播时：</p>
+<blockquote>
+<p>永远多了一条不经过复杂
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>F</mi><annotation encoding="application/x-tex">F</annotation></semantics></math>
+的基础路径。</p>
+</blockquote>
+<p>这就是 Residual 在数学上的深层意义。</p>
+<hr />
+<h2 id="这和模型只是不断做小修正也一致">96.
+这和“模型只是不断做小修正”也一致</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>J</mi><mi>F</mi></msub><annotation encoding="application/x-tex">
+J_F
+</annotation></semantics></math></p>
+<p>比较小，</p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mo>+</mo><msub><mi>J</mi><mi>F</mi></msub></mrow><annotation encoding="application/x-tex">
+I+J_F
+</annotation></semantics></math></p>
+<p>接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>I</mi><annotation encoding="application/x-tex">
+I
+</annotation></semantics></math></p>
+<p>信息：</p>
+<blockquote>
+<p>不会被某一层突然完全扭曲。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-residual-branch-也不能无限大">97. 为什么 Residual Branch
+也不能无限大？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+F(x)
+</annotation></semantics></math></p>
+<p>一层就加：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1000</mn><mi>x</mi></mrow><annotation encoding="application/x-tex">
+1000x
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+x+F(x)
+</annotation></semantics></math></p>
+<p>仍然会爆炸。</p>
+<p>所以 Residual 并不意味着：</p>
+<blockquote>
+<p>可以完全不管 Scale。</p>
+</blockquote>
+<hr />
+<h2 id="这就是-residual-scaling-的思想">98. 这就是 Residual Scaling
+的思想</h2>
+<p>某些架构可能使用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>α</mi><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=x+\alpha F(x)
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">
+\alpha
+</annotation></semantics></math></p>
+<p>控制：</p>
+<blockquote>
+<p>Residual Branch 的更新幅度。</p>
+</blockquote>
+<hr />
+<h2 id="如果-alpha-很小">99. 如果
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math>
+很小</h2>
+<p>网络一开始更接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y=x
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>Identity Mapping。</p>
+</blockquote>
+<p>训练再逐渐学：</p>
+<blockquote>
+<p>应该添加什么修正。</p>
+</blockquote>
+<hr />
+<h2 id="这和-fine-tuning-有一个很漂亮的类比">100. 这和 Fine-tuning
+有一个很漂亮的类比</h2>
+<p>预训练模型已经有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<p>这样的成熟 Representation。</p>
+<p>LoRA/Adapter 很多时候也是在做：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>F</mi><mi>u</mi><mi>n</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExistingFunction
++
+SmallLearnedUpdate
+}
+</annotation></semantics></math></p>
+<p>虽然数学结构不完全等同于 Residual Block，但思维非常相似：</p>
+<blockquote>
+<p><strong>保留已有能力，在其上学习增量。</strong></p>
+</blockquote>
+<hr />
+<h2 id="为什么这对-procurementlm-特别有价值">101. 为什么这对
+ProcurementLM 特别有价值？</h2>
+<p>我们有一个通用基础模型。</p>
+<p>它已经知道：</p>
+<ul>
+<li>中文；</li>
+<li>基础推理；</li>
+<li>文本结构；</li>
+<li>通用知识。</li>
+</ul>
+<p>我们真正希望：</p>
+<blockquote>
+<p>增加政府采购专业能力。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>把原有模型重新洗掉。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>D</mi><mi>e</mi><mi>l</mi><mi>t</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PreserveBase
++
+LearnDelta
+}
+</annotation></semantics></math></p>
+<p>是后面领域模型设计很重要的思想。</p>
+<hr />
+<h2 id="现在回到-layernorm-的政府采购直觉">102. 现在回到 LayerNorm
+的政府采购直觉</h2>
+<p>假设某个 Token Hidden State：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>0.1</mn><mo>,</mo><mn>80</mn><mo>,</mo><mi>−</mi><mn>30</mn><mo>,</mo><mn>0.002</mn><mo>,</mo><mi>…</mi><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[0.1,80,-30,0.002,\ldots]
+</annotation></semantics></math></p>
+<p>某些维度绝对值异常大。</p>
+<p>下一层点积：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+W h
+</annotation></semantics></math></p>
+<p>可能过度被这些尺度主导。</p>
+<p>Norm 会先：</p>
+<blockquote>
+<p>把整体向量尺度稳定下来。</p>
+</blockquote>
+<hr />
+<h2 id="但-norm-会不会把重要信息洗掉">103. 但 Norm
+会不会把重要信息洗掉？</h2>
+<p>这是个很好的问题。</p>
+<p>标准化确实会改变：</p>
+<blockquote>
+<p>均值和尺度。</p>
+</blockquote>
+<p>但不同维度之间的：</p>
+<blockquote>
+<p>相对结构仍然保留很多信息。</p>
+</blockquote>
+<p>同时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi><mo>,</mo><mi>β</mi></mrow><annotation encoding="application/x-tex">
+\gamma,\beta
+</annotation></semantics></math></p>
+<p>还能学习重新缩放。</p>
+<hr />
+<h2 id="对-rmsnorm-来说">104. 对 RMSNorm 来说</h2>
+<p>它更专注：</p>
+<blockquote>
+<p>控制整体 RMS Scale。</p>
+</blockquote>
+<p>方向信息：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mi>x</mi><mrow><mo stretchy="false" form="postfix">∥</mo><mi>x</mi><mo stretchy="false" form="postfix">∥</mo></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{x}{\|x\|}
+</annotation></semantics></math></p>
+<p>大体仍然保留。</p>
+<p>所以可以粗略理解成：</p>
+<blockquote>
+<p>把向量“长度”调到合理区间，而让“方向”继续携带语义。</p>
+</blockquote>
+<hr />
+<h2 id="这个方向以后会非常重要">105. 这个“方向”以后会非常重要</h2>
+<p>因为 Attention 会大量依赖：</p>
+<blockquote>
+<p>向量之间的点积关系。</p>
+</blockquote>
+<p>Embedding 相似度也和：</p>
+<blockquote>
+<p>向量方向密切相关。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>M</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>u</mi><mi>d</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VectorMagnitude
+}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>D</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VectorDirection
+}
+</annotation></semantics></math></p>
+<p>要开始分开理解。</p>
+<hr />
+<h2 id="为什么模型训练中经常监控-activation-statistics">106.
+为什么模型训练中经常监控 Activation Statistics？</h2>
+<p>因为我们想知道：</p>
+<p>某一层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Mean
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>t</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Std
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>a</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Max
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>i</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Min
+</annotation></semantics></math></p>
+<p>有没有逐层异常。</p>
+<p>如果某层开始：</p>
+<blockquote>
+<p>数值巨大，</p>
+</blockquote>
+<p>后面往往很快出问题。</p>
+<hr />
+<h2 id="还可以监控-gradient-statistics">107. 还可以监控 Gradient
+Statistics</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+GradientNorm
+</annotation></semantics></math></p>
+<p>逐层分布。</p>
+<p>如果 Layer 1：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>12</mn></mrow></msup><annotation encoding="application/x-tex">
+10^{-12}
+</annotation></semantics></math></p>
+<p>而 Layer 30：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>说明：</p>
+<blockquote>
+<p>前层梯度可能已经严重衰减。</p>
+</blockquote>
+<hr />
+<h2 id="这就是为什么只看最终-loss-不够">108. 这就是为什么只看最终 Loss
+不够</h2>
+<p>Loss：</p>
+<blockquote>
+<p>只告诉你最终结果。</p>
+</blockquote>
+<p>但训练系统内部可能已经出现：</p>
+<ul>
+<li>Activation 爆炸；</li>
+<li>Gradient 消失；</li>
+<li>某些层死亡；</li>
+<li>Norm 异常。</li>
+</ul>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Observability
+}
+</annotation></semantics></math></p>
+<p>非常重要。</p>
+<hr />
+<h2 id="一个专业的训练诊断视角">109. 一个专业的训练诊断视角</h2>
+<p>如果 Loss 变 NaN，不是立刻说：</p>
+<blockquote>
+<p>数据坏了。</p>
+</blockquote>
+<p>可以沿系统检查：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mi>s</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Input
+\rightarrow
+Activation
+\rightarrow
+Norm
+\rightarrow
+Logits
+\rightarrow
+Loss
+\rightarrow
+Gradient
+\rightarrow
+Optimizer
+</annotation></semantics></math></p>
+<p>到底从哪一步：</p>
+<blockquote>
+<p>第一次出现 Inf/NaN。</p>
+</blockquote>
+<hr />
+<h2 id="这就叫找-first-failure">110. 这就叫找 First Failure</h2>
+<p>不要只看：</p>
+<blockquote>
+<p>最终哪里崩了。</p>
+</blockquote>
+<p>要找：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>一</mi><mi>个</mi><mi>开</mi><mi>始</mi><mi>异</mi><mi>常</mi><mi>的</mi><mi>节</mi><mi>点</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第一个开始异常的节点
+}
+</annotation></semantics></math></p>
+<p>这是非常强的工程诊断心智模型。</p>
+<hr />
+<h2 id="初始化也不是模型参数固定规则">111.
+初始化也不是“模型参数固定规则”</h2>
+<p>不同 Activation：</p>
+<blockquote>
+<p>需要不同 Scale 思考。</p>
+</blockquote>
+<p>不同残差结构：</p>
+<blockquote>
+<p>也会改变初始化要求。</p>
+</blockquote>
+<p>不同深度：</p>
+<blockquote>
+<p>也可能需要特殊处理。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>必</mi><mi>须</mi><mi>与</mi><mi>A</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>匹</mi><mi>配</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Initialization
+必须与Architecture匹配
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="xavier-与-he-不要死记成表格题">112. Xavier 与 He
+不要死记成表格题</h2>
+<p>真正应该理解：</p>
+<p>Xavier：</p>
+<blockquote>
+<p>希望层间方差在前向/反向相对稳定。</p>
+</blockquote>
+<p>He：</p>
+<blockquote>
+<p>对 ReLU 丢失部分信号做了额外补偿。</p>
+</blockquote>
+<p>只要掌握这个机制：</p>
+<blockquote>
+<p>忘了公式也能重新推理。</p>
+</blockquote>
+<hr />
+<h2 id="batchnorm-与-layernorm-也不要死背名称">113. BatchNorm 与
+LayerNorm 也不要死背名称</h2>
+<p>真正区别首先问：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>到</mi><mi>底</mi><mi>沿</mi><mi>哪</mi><mi>个</mi><mi>维</mi><mi>度</mi><mi>算</mi><mi>统</mi><mi>计</mi><mi>量</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+到底沿哪个维度算统计量？
+}
+</annotation></semantics></math></p>
+<p>BatchNorm：</p>
+<blockquote>
+<p>借 Batch 信息。</p>
+</blockquote>
+<p>LayerNorm：</p>
+<blockquote>
+<p>在单样本/Token 的 Hidden Dimension 内归一化。</p>
+</blockquote>
+<hr />
+<h2 id="以后遇到任何-norm-都问四件事">114. 以后遇到任何 Norm
+都问四件事</h2>
+<p>第一：</p>
+<blockquote>
+<p>对哪些维度算统计量？</p>
+</blockquote>
+<p>第二：</p>
+<blockquote>
+<p>减不减 Mean？</p>
+</blockquote>
+<p>第三：</p>
+<blockquote>
+<p>用什么 Scale？</p>
+</blockquote>
+<p>第四：</p>
+<blockquote>
+<p>有没有可训练参数？</p>
+</blockquote>
+<p>用这四个问题：</p>
+<blockquote>
+<p>很多新 Norm 都能拆懂。</p>
+</blockquote>
+<hr />
+<h2 id="同理遇到任何-residual-结构问什么">115. 同理，遇到任何 Residual
+结构问什么？</h2>
+<p>问：</p>
+<blockquote>
+<p>主路径是谁？</p>
+</blockquote>
+<blockquote>
+<p>Residual Branch 是谁？</p>
+</blockquote>
+<blockquote>
+<p>两边 Shape 是否相同？</p>
+</blockquote>
+<blockquote>
+<p>加法发生在哪里？</p>
+</blockquote>
+<blockquote>
+<p>Norm 在加法之前还是之后？</p>
+</blockquote>
+<p>这样读架构图会快很多。</p>
+<hr />
+<h2 id="为什么-residual-两边-shape-通常要一致">116. 为什么 Residual 两边
+Shape 通常要一致？</h2>
+<p>因为要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+x+F(x)
+</annotation></semantics></math></p>
+<p>逐元素相加。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>S</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Shape(x)
+=
+Shape(F(x))
+</annotation></semantics></math></p>
+<p>必须兼容。</p>
+<hr />
+<h2 id="transformer-为什么常保持-hidden-size-不变">117. Transformer
+为什么常保持 Hidden Size 不变？</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>→</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+4096
+\rightarrow
+4096
+</annotation></semantics></math></p>
+<p>Attention 输出仍：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>4096</mn><annotation encoding="application/x-tex">
+4096
+</annotation></semantics></math></p>
+<p>这样可以直接：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>d</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+ResidualAdd
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但-ffn-中间为什么能变成-11008">118. 但 FFN 中间为什么能变成
+11008？</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>→</mo><mn>11008</mn><mo>→</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+4096
+\rightarrow
+11008
+\rightarrow
+4096
+</annotation></semantics></math></p>
+<p>FFN 最终：</p>
+<blockquote>
+<p>又投影回 4096。</p>
+</blockquote>
+<p>所以最后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+F(x)
+</annotation></semantics></math></p>
+<p>Shape 与：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<p>一致。</p>
+<p>才能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+x+F(x)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="现在你第一次能够理解-ffn-为什么升维再降维">119.
+现在你第一次能够理解 FFN 为什么“升维再降维”</h2>
+<p>中间宽：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>f</mi><mi>f</mi></mrow></msub><annotation encoding="application/x-tex">
+d_{ff}
+</annotation></semantics></math></p>
+<p>提供：</p>
+<blockquote>
+<p>更大的非线性处理空间。</p>
+</blockquote>
+<p>最后回到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>m</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></msub><annotation encoding="application/x-tex">
+d_{model}
+</annotation></semantics></math></p>
+<p>确保：</p>
+<blockquote>
+<p>Residual Connection 可以相加。</p>
+</blockquote>
+<p>以后 Transformer FFN 会正式展开。</p>
+<hr />
+<h2 id="一个简化-transformer-pre-norm-block">120. 一个简化 Transformer
+Pre-Norm Block</h2>
+<p>先看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>u</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>R</mi><mi>M</mi><mi>S</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+u
+=
+x+
+Attention(RMSNorm(x))
+</annotation></semantics></math></p>
+<p>再：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>u</mi><mo>+</mo><mi>M</mi><mi>L</mi><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>R</mi><mi>M</mi><mi>S</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>u</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y
+=
+u+
+MLP(RMSNorm(u))
+}
+</annotation></semantics></math></p>
+<p>你现在已经能认出三个组件：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>M</mi><mi>S</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+RMSNorm
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>/</mi><mi>M</mi><mi>L</mi><mi>P</mi></mrow><annotation encoding="application/x-tex">
+Attention/MLP
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>d</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+ResidualAdd
+</annotation></semantics></math></p>
+<hr />
+<h2 id="注意attention-我们还没学">121. 注意：Attention 我们还没学</h2>
+<p>但这已经不妨碍你理解：</p>
+<blockquote>
+<p>Transformer 为什么能堆几十层。</p>
+</blockquote>
+<p>因为：</p>
+<blockquote>
+<p>每个 Block 都有 Norm 稳尺度，有 Residual 保主路径。</p>
+</blockquote>
+<hr />
+<h2 id="transformer-为什么不用纯-mlp-一层接一层">122. Transformer
+为什么不用纯 MLP 一层接一层？</h2>
+<p>如果纯粹：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>l</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mi>M</mi><mi>L</mi><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>H</mi><mi>l</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+H_{l+1}=MLP(H_l)
+</annotation></semantics></math></p>
+<p>几十层以后：</p>
+<blockquote>
+<p>优化会困难很多。</p>
+</blockquote>
+<p>Residual：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>l</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mi>H</mi><mi>l</mi></msub><mo>+</mo><mi>M</mi><mi>L</mi><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>⋅</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+H_{l+1}
+=
+H_l+MLP(\cdot)
+</annotation></semantics></math></p>
+<p>让深度模型：</p>
+<blockquote>
+<p>更像对表示进行连续小更新。</p>
+</blockquote>
+<hr />
+<h2 id="一个非常有价值的宏观视角">123. 一个非常有价值的宏观视角</h2>
+<p>可以把 Transformer 的层级计算理解成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>H</mi><mn>0</mn></msub><annotation encoding="application/x-tex">
+H_0
+</annotation></semantics></math></p>
+<p>是初始表示。</p>
+<p>Layer 1：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mn>1</mn></msub><mo>=</mo><msub><mi>H</mi><mn>0</mn></msub><mo>+</mo><mi>Δ</mi><msub><mi>H</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+H_1
+=
+H_0+\Delta H_1
+</annotation></semantics></math></p>
+<p>Layer 2：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mn>2</mn></msub><mo>=</mo><msub><mi>H</mi><mn>1</mn></msub><mo>+</mo><mi>Δ</mi><msub><mi>H</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+H_2
+=
+H_1+\Delta H_2
+</annotation></semantics></math></p>
+<p>……</p>
+<p>最终：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mi>L</mi></msub><mo>=</mo><msub><mi>H</mi><mn>0</mn></msub><mo>+</mo><munderover><mo>∑</mo><mrow><mi>l</mi><mo>=</mo><mn>1</mn></mrow><mi>L</mi></munderover><mi>Δ</mi><msub><mi>H</mi><mi>l</mi></msub></mrow><annotation encoding="application/x-tex">
+H_L
+=
+H_0+
+\sum_{l=1}^{L}\Delta H_l
+</annotation></semantics></math></p>
+<p>这只是概念化表达，但非常有帮助。</p>
+<hr />
+<h2 id="模型可以被看成表示逐步修正器">124.
+模型可以被看成“表示逐步修正器”</h2>
+<p>不是：</p>
+<blockquote>
+<p>每层把前一层全部推翻。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Representation
+\rightarrow
+Refinement
+\rightarrow
+Refinement
+\rightarrow
+Refinement
+}
+</annotation></semantics></math></p>
+<p>这和专家逐步阅读上下文的直觉很相似。</p>
+<hr />
+<h2 id="但不要把-residual-简化成每层贡献独立知识">125. 但不要把 Residual
+简化成“每层贡献独立知识”</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><msub><mi>H</mi><mi>l</mi></msub></mrow><annotation encoding="application/x-tex">
+\Delta H_l
+</annotation></semantics></math></p>
+<p>依赖：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>H</mi><mi>l</mi></msub><annotation encoding="application/x-tex">
+H_l
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>H</mi><mi>l</mi></msub><annotation encoding="application/x-tex">
+H_l
+</annotation></semantics></math></p>
+<p>已经包含前面所有计算结果。</p>
+<p>所以这些修正：</p>
+<blockquote>
+<p>高度互相依赖。</p>
+</blockquote>
+<hr />
+<h2 id="gradient-也可以沿很多路径传播">126. Gradient
+也可以沿很多路径传播</h2>
+<p>Residual Network 中：</p>
+<blockquote>
+<p>从输出回到早期层不只有一条长链。</p>
+</blockquote>
+<p>而存在：</p>
+<blockquote>
+<p>多种短路径和长路径组合。</p>
+</blockquote>
+<p>这也是残差网络优化优势的一部分直觉。</p>
+<hr />
+<h2 id="为什么更深仍然不是无限免费">127.
+为什么更深仍然不是无限免费？</h2>
+<p>即使有 Residual：</p>
+<ul>
+<li>计算量增加；</li>
+<li>Activation Memory 增加；</li>
+<li>参数增加；</li>
+<li>通信增加；</li>
+<li>训练稳定性仍变难。</li>
+</ul>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>h</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+Depth\uparrow
+</annotation></semantics></math></p>
+<p>不是没有成本。</p>
+<hr />
+<h2 id="norm-也不是免费">128. Norm 也不是免费</h2>
+<p>每个 Norm：</p>
+<blockquote>
+<p>都需要额外计算。</p>
+</blockquote>
+<p>并且架构选择：</p>
+<blockquote>
+<p>会影响模型行为。</p>
+</blockquote>
+<p>所以系统设计仍然需要权衡。</p>
+<hr />
+<h2 id="一个常见误区有-layernorm-就不会梯度爆炸">129. 一个常见误区：有
+LayerNorm 就不会梯度爆炸</h2>
+<p>错误。</p>
+<p>LayerNorm：</p>
+<blockquote>
+<p>有助于稳定。</p>
+</blockquote>
+<p>但如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>R</mi></mrow><annotation encoding="application/x-tex">
+LR
+</annotation></semantics></math></p>
+<p>巨大，</p>
+<p>或者：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Loss
+</annotation></semantics></math></p>
+<p>异常，</p>
+<p>或者：</p>
+<blockquote>
+<p>数值溢出，</p>
+</blockquote>
+<p>依然可以爆炸。</p>
+<hr />
+<h2 id="另一个误区residual-一定保证梯度不消失">130. 另一个误区：Residual
+一定保证梯度不消失</h2>
+<p>也不准确。</p>
+<p>Residual：</p>
+<blockquote>
+<p>显著改善梯度路径。</p>
+</blockquote>
+<p>但深层训练仍可能受到：</p>
+<ul>
+<li>Scale；</li>
+<li>Norm；</li>
+<li>Optimizer；</li>
+<li>Activation；</li>
+<li>精度；</li>
+</ul>
+<p>等因素影响。</p>
+<hr />
+<h2 id="专家不会寻找单个救世主">131. 专家不会寻找“单个救世主”</h2>
+<p>不是：</p>
+<blockquote>
+<p>“用了 RMSNorm 就稳定了。”</p>
+</blockquote>
+<p>也不是：</p>
+<blockquote>
+<p>“用了 Residual 就万事大吉。”</p>
+</blockquote>
+<p>更好的心智模型是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+StableTraining
+=
+SystemProperty
+}
+</annotation></semantics></math></p>
+<p>训练稳定：</p>
+<blockquote>
+<p>是整个系统涌现出来的属性。</p>
+</blockquote>
+<hr />
+<h2 id="这和政府采购-ai-架构也非常像">132. 这和政府采购 AI
+架构也非常像</h2>
+<p>最终质量不是：</p>
+<blockquote>
+<p>“有 LLM 就行。”</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mo>+</mo><mi>R</mi><mi>A</mi><mi>G</mi><mo>+</mo><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>s</mi><mo>+</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>e</mi><mi>w</mi></mrow><annotation encoding="application/x-tex">
+LLM
++
+RAG
++
+Rules
++
+Parser
++
+Evaluation
++
+HumanReview
+</annotation></semantics></math></p>
+<p>共同决定。</p>
+<p>同样：</p>
+<blockquote>
+<p>神经网络内部稳定性也依赖多个组件共同工作。</p>
+</blockquote>
+<hr />
+<h2 id="第六个核心心智模型-2">133. 第六个核心心智模型</h2>
+<h3
+id="心智模型-⑥强系统通常不是靠某个组件解决问题而是靠多层机制互相兜底">心智模型
+⑥：强系统通常不是靠某个组件“解决问题”，而是靠多层机制互相兜底</h3>
+<p>内部训练：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Initialization
+</annotation></semantics></math></p>
+<p>保证起点。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Normalization
+</annotation></semantics></math></p>
+<p>控制运行尺度。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi></mrow><annotation encoding="application/x-tex">
+Residual
+</annotation></semantics></math></p>
+<p>保证信息通道。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Optimizer
+</annotation></semantics></math></p>
+<p>控制更新。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>l</mi><mi>i</mi><mi>p</mi><mi>p</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+GradientClipping
+</annotation></semantics></math></p>
+<p>提供异常保护。</p>
+<hr />
+<h2 id="这其实就是-defense-in-depth">134. 这其实就是 Defense in
+Depth</h2>
+<p>第一课我们讲生产风险控制时用了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>D</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+DefenseInDepth
+</annotation></semantics></math></p>
+<p>现在神经网络内部也是类似思想。</p>
+<p>没有任何一个机制：</p>
+<blockquote>
+<p>绝对可靠。</p>
+</blockquote>
+<p>多个机制组合：</p>
+<blockquote>
+<p>提高稳定性。</p>
+</blockquote>
+<hr />
+<h2 id="回到具体训练你应该看哪些信号">135.
+回到具体训练：你应该看哪些信号？</h2>
+<p>以后训练 ProcurementLM 时，至少逐渐形成意识：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+TrainLoss
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+ValidationLoss
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+LearningRate
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+GradientNorm
+</annotation></semantics></math></p>
+<p>以及必要时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+ActivationStatistics
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果第一步-loss-就-nan">136. 如果第一步 Loss 就 NaN</h2>
+<p>优先怀疑：</p>
+<blockquote>
+<p>Forward 数值问题。</p>
+</blockquote>
+<p>例如：</p>
+<ul>
+<li>Input 有 NaN；</li>
+<li>Logits 爆炸；</li>
+<li>Loss 数值不稳定；</li>
+<li>FP16 Overflow。</li>
+</ul>
+<p>这时还没必要讨论：</p>
+<blockquote>
+<p>Overfitting。</p>
+</blockquote>
+<hr />
+<h2 id="如果前几十步正常突然爆炸">137. 如果前几十步正常，突然爆炸</h2>
+<p>可以看：</p>
+<blockquote>
+<p>LR 当前位置。</p>
+</blockquote>
+<blockquote>
+<p>Gradient Norm 是否提前升高。</p>
+</blockquote>
+<blockquote>
+<p>某个 Batch 是否异常。</p>
+</blockquote>
+<blockquote>
+<p>Optimizer State 是否异常。</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TimelineDiagnosis
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果-deep-layer-有梯度early-layer-没有">138. 如果 Deep Layer
+有梯度，Early Layer 没有</h2>
+<p>强烈提示：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+GradientFlowProblem
+</annotation></semantics></math></p>
+<p>可能需要检查：</p>
+<ul>
+<li>Activation；</li>
+<li>Initialization；</li>
+<li>Residual；</li>
+<li>Norm；</li>
+<li>架构。</li>
+</ul>
+<hr />
+<h2 id="如果所有-gradient-都接近-0">139. 如果所有 Gradient 都接近 0</h2>
+<p>也可能不是网络太深。</p>
+<p>还有可能：</p>
+<blockquote>
+<p>参数全被冻结。</p>
+</blockquote>
+<p>或者：</p>
+<blockquote>
+<p>Loss 与模型输出计算图断开。</p>
+</blockquote>
+<p>所以再次：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>i</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>&gt;</mo><mi>G</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+Diagnosis
+&gt;
+Guessing
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么-detach-会导致梯度突然断掉">140. 为什么
+<code>detach()</code> 会导致梯度突然断掉？</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>c</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+detach
+</annotation></semantics></math></p>
+<p>人为告诉 Autograd：</p>
+<blockquote>
+<p>从这里不要再往前追。</p>
+</blockquote>
+<p>所以某个错误的 <code>.detach()</code>：</p>
+<blockquote>
+<p>可以直接让前面网络不学习。</p>
+</blockquote>
+<hr />
+<h2 id="residual-也必须在计算图里保持可微">141. Residual
+也必须在计算图里保持可微</h2>
+<p>正常：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=x+F(x)
+</annotation></semantics></math></p>
+<p>Autograd 可以沿：</p>
+<blockquote>
+<p>两条路径反向。</p>
+</blockquote>
+<p>如果某一条路径被错误截断：</p>
+<blockquote>
+<p>Gradient Behavior 就会改变。</p>
+</blockquote>
+<hr />
+<h2 id="现在把第二课-17-阶段串成一个完整网络">142. 现在把第二课 1～7
+阶段串成一个完整网络</h2>
+<p>第 1 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+WX+b
+</annotation></semantics></math></p>
+<p>第 2 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Activation
+</annotation></semantics></math></p>
+<p>第 3 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+HiddenRepresentation
+</annotation></semantics></math></p>
+<p>第 4 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Forward
+</annotation></semantics></math></p>
+<p>第 5 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Backward
+</annotation></semantics></math></p>
+<p>第 6 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Optimizer
+</annotation></semantics></math></p>
+<p>第 7 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SignalStability
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="到这里神经网络为什么能够变深终于补齐">143.
+到这里，“神经网络为什么能够变深”终于补齐</h2>
+<p>只有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi></mrow><annotation encoding="application/x-tex">
+Backprop
+</annotation></semantics></math></p>
+<p>还不够。</p>
+<p>真正能训练现代深网络，还需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mo>+</mo><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>n</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backprop
++
+GoodInitialization
++
+Normalization
++
+ResidualConnections
++
+StableOptimization
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="本阶段最重要的五个专家心智模型">144.
+本阶段最重要的五个专家心智模型</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>心智模型</th>
+<th>核心认知</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① 深度网络首先是信号传播系统</strong></td>
+<td>前向 Activation 和反向 Gradient 都必须能跨很多层稳定传播</td>
+</tr>
+<tr class="even">
+<td><strong>② 初始化的目标是创造“可训练起点”</strong></td>
+<td>Xavier/He 的本质是控制初始方差，而不是给模型先验答案</td>
+</tr>
+<tr class="odd">
+<td><strong>③ Normalization 是网络内部尺度稳定器</strong></td>
+<td>LayerNorm/RMSNorm 让 Hidden State 工作在更稳定范围</td>
+</tr>
+<tr class="even">
+<td><strong>④ Residual 是信息与梯度高速公路</strong></td>
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">y=x+F(x)</annotation></semantics></math>
+保留 Identity Path，让深层模型更容易训练</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ 深层稳定性是系统属性</strong></td>
+<td>Initialization、Norm、Residual、Activation、Optimizer、LR
+必须协同</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="如果只记四个公式">145. 如果只记四个公式</h2>
+<p>初始化的方差直觉：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>∝</mo><mfrac><mn>1</mn><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Var(W)
+\propto
+\frac1{fan_{in}}
+}
+</annotation></semantics></math></p>
+<p>He：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mfrac><mn>2</mn><mrow><mi>f</mi><mi>a</mi><msub><mi>n</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Var(W)
+\approx
+\frac2{fan_{in}}
+}
+</annotation></semantics></math></p>
+<p>LayerNorm：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>γ</mi><mo>⊙</mo><mfrac><mrow><mi>x</mi><mo>−</mo><mi>μ</mi></mrow><msqrt><mrow><msup><mi>σ</mi><mn>2</mn></msup><mo>+</mo><mi>ϵ</mi></mrow></msqrt></mfrac><mo>+</mo><mi>β</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LN(x)
+=
+\gamma
+\odot
+\frac{x-\mu}
+{\sqrt{\sigma^2+\epsilon}}
++
+\beta
+}
+</annotation></semantics></math></p>
+<p>Residual：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y=x+F(x)
+}
+</annotation></semantics></math></p>
+<p>这四个公式已经覆盖今天绝大多数思想。</p>
+<hr />
+<h2 id="如果只记一句话-2">146. 如果只记一句话</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>深</mi><mi>度</mi><mi>模</mi><mi>型</mi><mi>真</mi><mi>正</mi><mi>困</mi><mi>难</mi><mi>的</mi><mi>不</mi><mi>是</mi><mo>“</mo><mi>层</mi><mi>数</mi><mi>够</mi><mi>不</mi><mi>够</mi><mi>多</mi><mo>”</mo><mi>，</mi><mi>而</mi><mi>是</mi><mi>让</mi><mi>信</mi><mi>息</mi><mi>向</mi><mi>前</mi><mi>走</mi><mi>几</mi><mi>百</mi><mi>层</mi><mi>、</mi><mi>梯</mi><mi>度</mi><mi>向</mi><mi>后</mi><mi>走</mi><mi>几</mi><mi>百</mi><mi>层</mi><mi>以</mi><mi>后</mi><mi>，</mi><mi>仍</mi><mi>然</mi><mi>保</mi><mi>持</mi><mi>在</mi><mi>一</mi><mi>个</mi><mi>可</mi><mi>用</mi><mi>、</mi><mi>可</mi><mi>训</mi><mi>练</mi><mi>的</mi><mi>尺</mi><mi>度</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+深度模型真正困难的不是“层数够不够多”，
+而是让信息向前走几百层、梯度向后走几百层以后，
+仍然保持在一个可用、可训练的尺度。
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个采购-ai-小思维实验">147. 一个采购 AI 小思维实验</h2>
+<p>假设一个 80 层模型处理：</p>
+<blockquote>
+<p>“供应商须在合同签订前于采购人所在地设立服务机构。”</p>
+</blockquote>
+<p>模型需要保持的信息可能包括：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>地</mi><mi>域</mi><mi>实</mi><mi>体</mi></mrow><annotation encoding="application/x-tex">
+地域实体
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>时</mi><mi>间</mi><mi>条</mi><mi>件</mi></mrow><annotation encoding="application/x-tex">
+时间条件
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>约</mi><mi>束</mi><mi>对</mi><mi>象</mi></mrow><annotation encoding="application/x-tex">
+约束对象
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>履</mi><mi>约</mi><mi>阶</mi><mi>段</mi></mrow><annotation encoding="application/x-tex">
+履约阶段
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>必</mi><mi>要</mi><mi>性</mi><mi>上</mi><mi>下</mi><mi>文</mi></mrow><annotation encoding="application/x-tex">
+必要性上下文
+</annotation></semantics></math></p>
+<p>这些信息不能：</p>
+<blockquote>
+<p>在前 10 层以后就数值衰减到消失。</p>
+</blockquote>
+<p>Residual：</p>
+<blockquote>
+<p>帮助已有表示继续存在。</p>
+</blockquote>
+<p>Norm：</p>
+<blockquote>
+<p>控制表示尺度。</p>
+</blockquote>
+<p>Attention/MLP：</p>
+<blockquote>
+<p>再不断补充、修改表示。</p>
+</blockquote>
+<p>这就是现代 Transformer 的工作底座。</p>
+<hr />
+<h2 id="再做一个架构识别练习">148. 再做一个架构识别练习</h2>
+<p>以后看到：</p>
+<pre class="text"><code>x
+│
+├───────────────┐
+│               │
+RMSNorm         │
+│               │
+Attention       │
+│               │
+└────── + ──────┘
+        │
+        h</code></pre>
+<p>你应该立刻认出：</p>
+<blockquote>
+<p>Pre-Norm。</p>
+</blockquote>
+<blockquote>
+<p>Residual Connection。</p>
+</blockquote>
+<blockquote>
+<p>Attention Branch。</p>
+</blockquote>
+<blockquote>
+<p>Identity Path。</p>
+</blockquote>
+<hr />
+<h2 id="再看到">149. 再看到</h2>
+<pre class="text"><code>h
+│
+├───────────────┐
+│               │
+RMSNorm         │
+│               │
+MLP             │
+│               │
+└────── + ──────┘
+        │
+        y</code></pre>
+<p>你应该知道：</p>
+<blockquote>
+<p>第二个 Residual Sub-layer。</p>
+</blockquote>
+<p>于是完整 Transformer Block 已经几乎出现。</p>
+<hr />
+<h2 id="第二课-第-7-阶段掌握标准">150. 第二课 · 第 7 阶段掌握标准</h2>
+<p>学完以后，你应该能够自然回答这些问题：</p>
+<blockquote>
+<p>为什么所有 Weight 不能初始化为 0？</p>
+</blockquote>
+<blockquote>
+<p>为什么随机初始化的 Scale 很重要？</p>
+</blockquote>
+<blockquote>
+<p>fan-in 与 fan-out 是什么？</p>
+</blockquote>
+<blockquote>
+<p>Xavier 与 He 初始化分别在解决什么问题？</p>
+</blockquote>
+<blockquote>
+<p>为什么 ReLU 对初始化尺度有特殊要求？</p>
+</blockquote>
+<blockquote>
+<p>Normalization 真正稳定的是什么？</p>
+</blockquote>
+<blockquote>
+<p>BatchNorm 与 LayerNorm 最根本区别是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Transformer 更偏好 LayerNorm/RMSNorm？</p>
+</blockquote>
+<blockquote>
+<p>RMSNorm 与 LayerNorm 的核心差别是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Norm 后还需要可训练 Scale？</p>
+</blockquote>
+<blockquote>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">y=x+F(x)</annotation></semantics></math>
+为什么对 Gradient Flow 有帮助？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Identity Path？</p>
+</blockquote>
+<blockquote>
+<p>为什么深层 Residual Network 比纯层叠 MLP 更容易训练？</p>
+</blockquote>
+<blockquote>
+<p>Pre-Norm 与 Post-Norm 区别在哪里？</p>
+</blockquote>
+<blockquote>
+<p>为什么现代 LLM 很多使用 Pre-Norm 风格？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>4096 → 11008 → 4096</code> 最终还要回到 4096？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Transformer 的 Attention 和 FFN 都被 Residual 包围？</p>
+</blockquote>
+<blockquote>
+<p>为什么“训练稳定性”应该看成系统属性，而不是某个单独 Trick？</p>
+</blockquote>
+<p>如果这些问题你已经能够从机制上解释，而不是只背名字：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>二</mi><mi>课</mi><mi>第</mi><mn>7</mn><mi>阶</mi><mi>段</mi><mi>就</mi><mi>真</mi><mi>正</mi><mi>学</mi><mi>会</mi><mi>了</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第二课第7阶段就真正学会了
+}
+</annotation></semantics></math></p>
+<hr />
+<p>接下来第二课会发生一个非常关键的转折。</p>
+<p>前 7 个阶段主要在回答：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>一</mi><mi>个</mi><mi>D</mi><mi>e</mi><mi>e</mi><mi>p</mi><mi>N</mi><mi>e</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>N</mi><mi>e</mi><mi>t</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>究</mi><mi>竟</mi><mi>是</mi><mi>怎</mi><mi>么</mi><mi>构</mi><mi>造</mi><mi>、</mi><mi>计</mi><mi>算</mi><mi>和</mi><mi>训</mi><mi>练</mi><mi>的</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+一个DeepNeuralNetwork
+究竟是怎么构造、计算和训练的？
+}
+</annotation></semantics></math></p>
+<p>下一阶段开始，我们要进入：</p>
+<h1 id="第二课-第-8-阶段embedding-与高维向量空间"><strong>第二课 · 第 8
+阶段：Embedding 与高维向量空间</strong></h1>
+<p>也就是正式回答那个迟早必须解决的问题：</p>
+<blockquote>
+<p><strong>神经网络只能处理数字，那么“供应商”“注册资本”“本市”“不得低于5000万元”这些文字，究竟怎样变成模型能计算的数字？</strong></p>
+</blockquote>
+<p>我们将从最原始的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>H</mi><mi>o</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+OneHot
+</annotation></semantics></math></p>
+<p>开始，一步步走到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>M</mi><mi>a</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>x</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EmbeddingMatrix
+}
+</annotation></semantics></math></p>
+<p>再到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>S</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SemanticVectorSpace
+}
+</annotation></semantics></math></p>
+<p>并真正推导出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>L</mi><mi>o</mi><mi>o</mi><mi>k</mi><mi>u</mi><mi>p</mi><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+TokenID
+\rightarrow
+EmbeddingLookup
+\rightarrow
+HiddenVector
+</annotation></semantics></math></p>
+<p>那一阶段开始，我们就会正式从“通用神经网络原理”跨进 <strong>NLP 与 LLM
+的核心地带</strong>。</p>
+<hr /><div class="nav"><a class="btn" href="stage06.html">← 第 6 阶段</a><a class="btn" href="stage08.html">第 8 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

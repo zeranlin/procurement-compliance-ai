@@ -1,0 +1,2180 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第十一课 · 第10阶段：采购文件数据工程</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:38px 32px 100px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:48px 54px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:30px}
+.nav{display:flex;justify-content:space-between;gap:10px;margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
+@media(max-width:800px){main{padding:16px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第十一课 · 第 10 阶段</strong><a class="btn" href="index.html">课程首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note">中文释义增强 canonical：英文工程字段、Schema、状态、公式、核心心智模型和流程均保留，并紧邻补充中国政府采购业务中文解释。本阶段重点是把PDF、Word、扫描页、表格、附件和版本变化恢复成可计算、可定位、可审计的结构化事实。</div><h1 id="第十一课-第-10-阶段">第十一课 · 第 10 阶段</h1>
+<h1
+id="采购文件数据工程pdfword表格ocr章节树clause-id-与-evidence-span">采购文件数据工程：PDF、Word、表格、OCR、章节树、Clause
+ID 与 Evidence Span</h1>
+<h2
+id="怎样把真实采购文件变成可可靠计算可定位可追溯的结构化事实">怎样把真实采购文件变成可可靠计算、可定位、可追溯的结构化事实？</h2>
+<p>第 9 阶段我们已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>M</mi><mi>e</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>d</mi><mi>L</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>+</mo><mi>A</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CompetitionCompliance
+=
+MethodLegality
++
+RealCompetition
++
+PriceReasonableness
++
+Auditability
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 竞争合规 = 采购方式合法 +
+竞争真实充分 + 报价合理性正确审查 + 全流程可审计。</p>
+<p>但到这里会遇到一个非常现实的问题：</p>
+<blockquote>
+<p>前 9
+个阶段建立的规则、法规、评分、技术、政策和竞争模型，全部默认系统能够“看懂真实采购文件”。</p>
+</blockquote>
+<p>而生产环境里的采购文件可能是：</p>
+<pre class="text"><code>born_digital_pdf    # 中文：原生电子PDF，通常存在可提取文字层
+
+scanned_pdf    # 中文：扫描PDF，本质上是页面图片
+
+hybrid_pdf    # 中文：部分页面有文字层、部分页面是扫描图片的混合PDF
+
+docx    # 中文：Word文档，包含段落、样式、编号、表格、页眉页脚等结构
+
+table_heavy_document    # 中文：大量技术参数表、评分表、资格审查表的文档
+
+image_attachment    # 中文：以图片形式嵌入的证明、图表、扫描附件
+
+supplementary_attachment    # 中文：采购文件附件、图纸、清单、补充文件
+
+clarification_or_amendment    # 中文：澄清、更正、补充、变更文件</code></pre>
+<p>如果底层数据工程错了：</p>
+<blockquote>
+<p>上层合规判断再聪明也没有意义。</p>
+</blockquote>
+<p>所以本阶段第一条核心边界正式锁定为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ParsedText
+\neq
+ReliableComplianceFact
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 从 PDF / Word 中成功提取出文字 ≠
+已经得到可以直接用于政府采购合规判断的可靠业务事实。</p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementcompliancedataset_v1"><code>ProcurementComplianceDataset_V1</code></h1>
+<p>它不是单纯的“文本语料库”，而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>s</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Source
++
+Structure
++
+BusinessSemantics
++
+Evidence
++
+Version
++
+QualityState
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 原始来源 + 文档结构 +
+政府采购业务语义 + 原文证据 + 版本关系 + 数据质量状态。</p>
+<hr />
+<h1 id="一为什么-stage-10-不是把-pdf-转成-txt">一、为什么 Stage 10
+不是“把 PDF 转成 txt”？</h1>
+<p>很多 AI 项目的文档处理流程是：</p>
+<pre class="text"><code>PDF    # 中文：采购文件PDF
+→
+Extract Text    # 中文：提取文字
+→
+Chunk    # 中文：切成检索文本块
+→
+Embedding    # 中文：生成向量表示
+→
+LLM    # 中文：交给大语言模型处理</code></pre>
+<p>看起来很完整。</p>
+<p>但政府采购合规检查里，这条链远远不够。</p>
+<p>因为真实问题不是：</p>
+<blockquote>
+<p>“这一页写了什么字？”</p>
+</blockquote>
+<p>而是：</p>
+<pre class="text"><code>这句话属于哪个采购项目？    # 中文：项目身份
+
+属于哪个版本？    # 中文：初版、澄清版、更正版还是最终版
+
+属于哪一章？    # 中文：资格、采购需求、评分、合同还是其他章节
+
+是哪一个条款？    # 中文：业务条款边界
+
+一个条款里有几个独立要求？    # 中文：Requirement拆分
+
+它在表格里的行列语义是什么？    # 中文：参数名称、要求值、评分值等
+
+是否被后续澄清文件修改？    # 中文：版本覆盖关系
+
+这条判断引用的原文在哪里？    # 中文：页码、坐标、表格单元格、字符范围
+
+系统有没有漏掉附件、图片或扫描页？    # 中文：完整性</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>E</mi><mi>x</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>&lt;</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>U</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>&lt;</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>E</mi><mi>n</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TextExtraction
+&lt;
+DocumentUnderstanding
+&lt;
+ComplianceDataEngineering
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+文本提取只是最底层；文档理解需要恢复结构和业务语义；合规数据工程还必须增加版本、证据、质量和审计能力。这里的
+<code>&lt;</code> 表示能力层级逐步增加，不是数学大小关系。</p>
+<hr />
+<h1 id="二stage-3-的-document-schema-在这里正式落地">二、Stage 3 的
+Document Schema 在这里正式落地</h1>
+<p>Stage 3 已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TextChunk
+\neq
+BusinessClause
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 检索切分出来的文本块 ≠
+政府采购业务条款。</p>
+<p>并建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>F</mi><mi>u</mi><mi>n</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>p</mi><mi>a</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Project
+\rightarrow
+Document
+\rightarrow
+Version
+\rightarrow
+Section
+\rightarrow
+Clause
+\rightarrow
+Requirement
+\rightarrow
+BusinessFunction
+\rightarrow
+EvidenceSpan
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 采购项目 → 采购文件 → 文档版本 → 章节
+→ 业务条款 → 独立业务要求 → 条款业务作用 → 原文证据片段。</p>
+<p>Stage 10 要把这条链真正变成：</p>
+<blockquote>
+<p>可以存数据库、可以回查原文件、可以被 Rule / RAG / LLM / Agent
+共同使用的数据模型。</p>
+</blockquote>
+<hr />
+<h1 id="三核心心智模型-①">三、核心心智模型 ①</h1>
+<h1 id="file-不等于-document"><code>File</code> 不等于
+<code>Document</code></h1>
+<p>一个采购项目可能包含：</p>
+<pre class="text"><code>采购公告.pdf    # 中文：采购公告文件
+
+招标文件.pdf    # 中文：采购文件主文档
+
+技术参数附件.xlsx    # 中文：技术需求清单
+
+评分办法.docx    # 中文：评分标准附件
+
+澄清公告.pdf    # 中文：对采购文件的澄清
+
+更正公告.pdf    # 中文：对采购文件的更正
+
+附件图纸.zip    # 中文：图纸或其他压缩附件
+
+最终合同.pdf    # 中文：采购结果后的合同文件</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+File
+\neq
+BusinessDocument
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 一个物理文件 ≠
+一个完整业务文档；一个业务文档可能跨多个文件，一个文件也可能同时包含多个附件或业务部分。</p>
+<hr />
+<h1 id="四project-document-graph">四、Project Document Graph</h1>
+<h2 id="项目文档图谱">项目文档图谱</h2>
+<p>建议建立：</p>
+<pre class="text"><code>project_id    # 中文：采购项目唯一标识
+
+document_family_id    # 中文：同一类业务文件的文档族标识，例如“采购文件”这一族
+
+document_id    # 中文：逻辑文档标识
+
+document_version_id    # 中文：具体版本标识
+
+file_id    # 中文：物理文件标识
+
+attachment_id    # 中文：附件标识
+
+supersedes_version_id    # 中文：当前版本替代哪个旧版本
+
+amends_version_id    # 中文：当前文件修改哪个版本
+
+effective_from    # 中文：该版本从什么时点开始作为当前有效文本
+
+source_sha256    # 中文：原始文件SHA-256哈希，用于证明文件字节未被替换</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>F</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>p</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DocumentIdentity
+=
+BusinessIdentity
++
+VersionIdentity
++
+FileFingerprint
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 文档身份 = 业务上它是什么文档 +
+它是哪一个版本 + 原始文件字节指纹。</p>
+<hr />
+<h1 id="五为什么要保存-sha-256">五、为什么要保存 SHA-256？</h1>
+<p>假设数据库里记录：</p>
+<pre class="text"><code>document_version_id = DOCV_004
+# 中文：采购文件第4个版本</code></pre>
+<p>但半年以后原始 PDF 被替换。</p>
+<p>如果没有：</p>
+<pre class="text"><code>source_sha256
+# 中文：原始文件字节哈希</code></pre>
+<p>你无法证明：</p>
+<blockquote>
+<p>今天系统分析的文件，与当时真正发布 / 上传的文件是不是同一份。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>⇒</mo><mi>I</mi><mi>m</mi><mi>m</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>F</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>p</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Auditability
+\Rightarrow
+ImmutableSourceFingerprint
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+要实现可靠审计，就必须为原始来源保存不可变文件指纹。</p>
+<hr />
+<h1 id="六核心心智模型-②">六、核心心智模型 ②</h1>
+<h1 id="latestfile-不等于-applicableversion"><code>LatestFile</code>
+不等于 <code>ApplicableVersion</code></h1>
+<p>一个采购项目里：</p>
+<blockquote>
+<p>文件上传时间最新的文件，不一定完整替代之前版本。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>V1 招标文件    # 中文：原始采购文件
+
+V2 更正公告    # 中文：只修改“项目负责人证书要求”
+
+V3 澄清答复    # 中文：只解释“技术参数第17项”</code></pre>
+<p>这时最终有效规则不是：</p>
+<blockquote>
+<p>只读取 V3。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>A</mi><mi>p</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi><mo>+</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EffectiveDocumentState
+=
+BaseVersion
++
+ApplicableAmendments
++
+Clarifications
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 项目当前有效文件状态 = 基础版本 +
+当前仍有效的更正内容 + 对条款有解释作用的澄清内容。</p>
+<hr />
+<h1 id="七version-graph">七、Version Graph</h1>
+<h2 id="文档版本图">文档版本图</h2>
+<p>不能只存：</p>
+<pre class="text"><code>version_number = 3    # 中文：版本号3</code></pre>
+<p>还应存：</p>
+<pre class="text"><code>parent_version_id    # 中文：当前版本从哪个版本演化而来
+
+change_type    # 中文：完整替换 / 局部修改 / 澄清解释 / 补充附件
+
+changed_clause_ids    # 中文：本次变更影响哪些条款
+
+unchanged_clause_ids    # 中文：哪些条款继续沿用
+
+change_effective_time    # 中文：变更从何时起生效
+
+change_evidence_span    # 中文：变更文件中的原文证据定位</code></pre>
+<hr />
+<h1 id="八核心心智模型-③">八、核心心智模型 ③</h1>
+<h1 id="newerdocument-不等于-fullreplacement"><code>NewerDocument</code>
+不等于 <code>FullReplacement</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>F</mi><mi>u</mi><mi>l</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NewerDocument
+\neq
+FullReplacement
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 后发布的澄清 / 更正文件 ≠
+必然整份替换原采购文件；系统必须识别“整份替换”还是“局部修订”。</p>
+<hr />
+<h1 id="九pdf-不是一种统一的数据类型">九、PDF
+不是一种统一的数据类型</h1>
+<p>PDF 至少分三类：</p>
+<pre class="text"><code>BORN_DIGITAL
+# 中文：原生电子PDF，有可靠文字层的概率较高
+
+SCANNED
+# 中文：扫描PDF，页面主要是图片
+
+HYBRID
+# 中文：混合PDF，有些页面是文字，有些页面是扫描图片</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>D</mi><mi>F</mi><mo>≠</mo><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PDF
+\neq
+TextFile
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> PDF ≠
+普通文本文件；PDF首先描述页面呈现，未必天然提供可靠语义结构和阅读顺序。</p>
+<hr />
+<h1 id="十page-routing">十、Page Routing</h1>
+<h2 id="页面级解析路由">页面级解析路由</h2>
+<p>不能整个文件只选择一种解析方法。</p>
+<p>推荐：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>→</mo><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mo>→</mo><mi>L</mi><mi>a</mi><mi>y</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mo>→</mo><mi>O</mi><mi>C</mi><mi>R</mi><mi>F</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>I</mi><mi>f</mi><mi>N</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Page
+\rightarrow
+TextLayerCheck
+\rightarrow
+LayoutCheck
+\rightarrow
+OCRFallbackIfNeeded
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 每一页 → 检查文字层 → 检查版面完整性
+→ 只有需要时才进入 OCR 识别。</p>
+<p>工程状态：</p>
+<pre class="text"><code>NATIVE_TEXT_OK    # 中文：原生文字层可用
+
+NATIVE_TEXT_LAYOUT_RISK    # 中文：文字可提取，但阅读顺序 / 布局存在风险
+
+OCR_REQUIRED    # 中文：扫描页或文字层不可用，需要OCR
+
+OCR_COMPLETED    # 中文：OCR已完成
+
+OCR_LOW_CONFIDENCE    # 中文：OCR识别质量不足，需要人工或其他路径复核
+
+PAGE_UNREADABLE    # 中文：页面当前无法可靠解析</code></pre>
+<hr />
+<h1 id="十一核心心智模型-④">十一、核心心智模型 ④</h1>
+<h1 id="ocr-是-fallback不是默认真相"><code>OCR</code> 是
+fallback，不是默认真相</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>F</mi><mi>i</mi><mi>r</mi><mi>s</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>C</mi><mi>R</mi><mi>F</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NativeTextFirst
+\rightarrow
+OCRFallback
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+有可靠原生文字层时优先使用原生文本；OCR
+应主要作为扫描页、图片页或原生文字提取失败时的补救路径。</p>
+<p>为什么？</p>
+<p>OCR 可能发生：</p>
+<pre class="text"><code>0 / O confusion    # 中文：数字0与字母O识别混淆
+
+1 / l confusion    # 中文：数字1与字母l识别混淆
+
+decimal_error    # 中文：小数点漏识别或错位
+
+percent_error    # 中文：百分号漏识别
+
+minus_sign_error    # 中文：负号 / 连接号混淆
+
+table_column_shift    # 中文：表格列错位
+
+Chinese_character_error    # 中文：中文近形字识别错误
+
+header_body_mix    # 中文：页眉页脚被混入正文</code></pre>
+<p>这些错误在政府采购里可能直接改变：</p>
+<blockquote>
+<p>金额、比例、分值、技术参数和日期。</p>
+</blockquote>
+<hr />
+<h1 id="十二ocr-confidence-不等于事实正确">十二、OCR Confidence
+不等于事实正确</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>O</mi><mi>C</mi><mi>R</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighOCRConfidence
+\neq
+CorrectBusinessFact
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> OCR 置信度高 ≠
+识别出的政府采购业务事实一定正确。</p>
+<p>例如：</p>
+<blockquote>
+<p><code>10.0%</code></p>
+</blockquote>
+<p>被识别成：</p>
+<blockquote>
+<p><code>100%</code></p>
+</blockquote>
+<p>即使大部分文字都识别正确，</p>
+<p>对合规判断仍然是灾难性错误。</p>
+<hr />
+<h1 id="十三evidence-image">十三、Evidence Image</h1>
+<h2 id="证据页面图像为什么必须保留">证据页面图像为什么必须保留？</h2>
+<p>对扫描页和复杂版式，建议保存：</p>
+<pre class="text"><code>page_image_ref    # 中文：原始页面渲染图引用
+
+page_no    # 中文：PDF / 文档页码
+
+image_sha256    # 中文：页面图像指纹
+
+ocr_engine_version    # 中文：OCR引擎版本
+
+ocr_text    # 中文：OCR识别文本
+
+ocr_confidence    # 中文：OCR质量分数 / 置信度
+
+ocr_boxes    # 中文：每段文字对应的页面坐标</code></pre>
+<p>这样发现错误时可以：</p>
+<blockquote>
+<p>回到原始页面视觉证据，而不是只能相信 OCR 输出。</p>
+</blockquote>
+<hr />
+<h1 id="十四核心心智模型-⑤">十四、核心心智模型 ⑤</h1>
+<h1 id="ocrtext-不等于-originalevidence"><code>OCRText</code> 不等于
+<code>OriginalEvidence</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>C</mi><mi>R</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>O</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OCRText
+\neq
+OriginalEvidence
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> OCR
+识别文本是派生数据，不是原始证据；原始页面图像 /
+原始文件才是更高层的来源证据。</p>
+<hr />
+<h1 id="十五word-文档也不是干净文本">十五、Word
+文档也不是“干净文本”</h1>
+<p>DOCX 可能包含：</p>
+<pre class="text"><code>paragraphs    # 中文：普通段落
+
+styles    # 中文：标题1、标题2、正文等样式
+
+numbering    # 中文：多级编号
+
+tables    # 中文：表格
+
+merged_cells    # 中文：合并单元格
+
+headers_footers    # 中文：页眉页脚
+
+footnotes_endnotes    # 中文：脚注 / 尾注
+
+text_boxes    # 中文：文本框
+
+comments    # 中文：批注
+
+tracked_changes    # 中文：修订痕迹
+
+embedded_images    # 中文：嵌入图片
+
+hyperlinks    # 中文：内部 / 外部链接</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>O</mi><mi>C</mi><mi>X</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>D</mi><mi>O</mi><mi>C</mi><mi>X</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DOCXText
+\neq
+DOCXStructure
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> Word 文档里的纯文字 ≠ Word
+原始结构；标题层级、编号、表格、修订、脚注等都会影响业务含义。</p>
+<hr />
+<h1 id="十六pdf-和-word-的真相不完全相同">十六、PDF 和 Word
+的“真相”不完全相同</h1>
+<p>如果同时拿到：</p>
+<pre class="text"><code>采购文件.docx
+采购文件.pdf</code></pre>
+<p>两者各有价值：</p>
+<pre class="text"><code>DOCX    # 中文：通常更容易恢复语义结构、段落样式、表格逻辑
+
+PDF    # 中文：通常更接近最终发布时的视觉排版和页码证据</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>O</mi><mi>C</mi><mi>X</mi><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>D</mi><mi>F</mi><mi>V</mi><mi>i</mi><mi>s</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DOCXSemanticStructure
+\neq
+PDFVisualEvidence
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> Word 的结构信息 ≠ PDF
+的最终视觉证据；如果两种来源都存在，应该建立关联，而不是互相替代。</p>
+<hr />
+<h1 id="十七reading-order">十七、Reading Order</h1>
+<h2 id="阅读顺序是数据工程问题">阅读顺序是数据工程问题</h2>
+<p>双栏、侧栏、表格、页眉、脚注可能导致提取结果变成：</p>
+<pre class="text"><code>左栏第1段
+右栏第1段
+左栏第2段
+右栏第2段</code></pre>
+<p>而人类实际阅读顺序可能完全不同。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>O</mi><mi>r</mi><mi>d</mi><mi>e</mi><mi>r</mi><mo>≠</mo><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>O</mi><mi>r</mi><mi>d</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExtractedOrder
+\neq
+HumanReadingOrder
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 文本提取顺序 ≠
+人类阅读的真实逻辑顺序。</p>
+<p>系统至少要保存：</p>
+<pre class="text"><code>block_id    # 中文：版面文本块标识
+
+page_no    # 中文：所在页
+
+bbox_native    # 中文：解析引擎原生页面坐标
+
+bbox_normalized    # 中文：归一化0～1页面坐标，便于跨解析器比较
+
+reading_order    # 中文：恢复后的阅读顺序
+
+block_type    # 中文：标题、正文、列表、表格、页眉、页脚等</code></pre>
+<hr />
+<h1 id="十八页眉页脚去重为什么危险">十八、页眉页脚去重为什么危险？</h1>
+<p>典型采购文件每一页都可能出现：</p>
+<pre class="text"><code>项目名称
+采购代理机构
+页码
+保密提示</code></pre>
+<p>如果全部保留：</p>
+<blockquote>
+<p>RAG 会重复召回，关键词统计会偏高。</p>
+</blockquote>
+<p>如果全部删除：</p>
+<blockquote>
+<p>可能把真正有业务意义的页眉信息删掉。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>A</mi><mi>l</mi><mi>w</mi><mi>a</mi><mi>y</mi><mi>s</mi><mi>N</mi><mi>o</mi><mi>i</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RepeatedText
+\neq
+AlwaysNoise
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 页面重复文本 ≠
+永远是噪声；应先识别其版面角色，再决定是否从业务正文视图中排除，同时仍保留原始证据。</p>
+<hr />
+<h1 id="十九table-是政府采购数据工程的核心难点">十九、Table
+是政府采购数据工程的核心难点</h1>
+<p>真实采购文件大量关键内容在表格：</p>
+<pre class="text"><code>资格审查表    # 中文：供应商准入条件
+
+技术参数表    # 中文：采购需求和技术指标
+
+评分表    # 中文：评审因素、分值和评分规则
+
+分项报价表    # 中文：产品、数量、单价、总价
+
+合同条款表    # 中文：付款、验收、违约等
+
+附件9检查表    # 中文：专项整治规则或检查清单</code></pre>
+<p>最危险的做法：</p>
+<blockquote>
+<p>把表格按视觉顺序直接拼成一段文本。</p>
+</blockquote>
+<hr />
+<h1 id="二十核心心智模型-⑥">二十、核心心智模型 ⑥</h1>
+<h1 id="tabletext-不等于-tablesemantics"><code>TableText</code> 不等于
+<code>TableSemantics</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TableText
+\neq
+TableSemantics
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 表格里的文字内容 ≠
+表格表达的完整语义；行标题、列标题、合并单元格和上下文共同决定一个单元格到底是什么意思。</p>
+<hr />
+<h1
+id="二十一表格必须恢复成二维语义">二十一、表格必须恢复成二维语义</h1>
+<p>一个技术参数表：</p>
+<pre class="text"><code>序号 | 参数名称 | 技术要求 | 是否实质性 | 证明材料</code></pre>
+<p>系统不能只保存：</p>
+<pre class="text"><code>“CPU ≥ 16核”</code></pre>
+<p>还应该保存：</p>
+<pre class="text"><code>table_id    # 中文：表格标识
+
+row_id    # 中文：行标识
+
+column_id    # 中文：列标识
+
+row_header    # 中文：行标题 / 参数项目
+
+column_header    # 中文：列标题 / 业务字段
+
+cell_id    # 中文：单元格标识
+
+cell_text_raw    # 中文：单元格原始文字
+
+cell_text_normalized    # 中文：标准化后的文字
+
+row_span    # 中文：跨行合并关系
+
+col_span    # 中文：跨列合并关系
+
+parent_header_path    # 中文：多级表头路径</code></pre>
+<hr />
+<h1 id="二十二merged-cell">二十二、Merged Cell</h1>
+<h2 id="合并单元格必须传播语义">合并单元格必须传播语义</h2>
+<p>例如：</p>
+<pre class="text"><code>商务要求
+ ├─ 交付期
+ ├─ 付款方式
+ └─ 售后服务</code></pre>
+<p>如果“商务要求”是合并单元格，</p>
+<p>后面三行都需要继承：</p>
+<pre class="text"><code>parent_header = 商务要求    # 中文：父级表头</code></pre>
+<p>否则：</p>
+<blockquote>
+<p>单独抽出“交付期：30日”时，会失去它属于商务要求的上下文。</p>
+</blockquote>
+<hr />
+<h1 id="二十三核心心智模型-⑦">二十三、核心心智模型 ⑦</h1>
+<h1 id="cell-不是独立事实"><code>Cell</code> 不是独立事实</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>e</mi><mi>l</mi><mi>l</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>C</mi><mi>e</mi><mi>l</mi><mi>l</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>R</mi><mi>o</mi><mi>w</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>m</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>H</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CellMeaning
+=
+CellText
++
+RowContext
++
+ColumnContext
++
+ParentHeaders
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 单元格含义 = 单元格文本 +
+当前行上下文 + 当前列上下文 + 多级父表头。</p>
+<hr />
+<h1 id="二十四section-tree">二十四、Section Tree</h1>
+<h2 id="章节树怎么恢复">章节树怎么恢复？</h2>
+<p>采购文件通常存在：</p>
+<pre class="text"><code>第一章 采购公告
+第二章 投标人须知
+第三章 资格审查
+第四章 采购需求
+第五章 评标办法
+第六章 合同文本
+第七章 投标文件格式</code></pre>
+<p>但真实文件可能：</p>
+<pre class="text"><code>标题样式不规范    # 中文：全部只是粗体
+
+编号跳级    # 中文：1 → 1.1 → （一）→ 1.
+
+同级标题样式不同    # 中文：格式不统一
+
+表格中嵌标题    # 中文：章节标题出现在表格单元格
+
+扫描页没有结构标签    # 中文：只能从视觉和文字判断</code></pre>
+<p>所以章节树是一个：</p>
+<h1 id="structure-reconstruction">Structure Reconstruction</h1>
+<h2 id="结构恢复任务">结构恢复任务</h2>
+<hr />
+<h1 id="二十五section-tree-schema">二十五、Section Tree Schema</h1>
+<pre class="text"><code>section_id    # 中文：章节节点标识
+
+document_version_id    # 中文：属于哪个文档版本
+
+parent_section_id    # 中文：父章节
+
+section_level    # 中文：章节层级
+
+section_number_raw    # 中文：原始章节编号，例如“第五章”“3.2.1”
+
+section_title_raw    # 中文：原始标题
+
+section_title_normalized    # 中文：标准化标题
+
+business_role    # 中文：资格、技术、评分、合同等业务角色
+
+start_page    # 中文：起始页
+
+end_page    # 中文：结束页
+
+start_block_id    # 中文：起始版面块
+
+end_block_id    # 中文：结束版面块
+
+structure_confidence    # 中文：结构恢复置信度</code></pre>
+<hr />
+<h1 id="二十六核心心智模型-⑧">二十六、核心心智模型 ⑧</h1>
+<h1 id="page-不等于-businesssection"><code>Page</code> 不等于
+<code>BusinessSection</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PageBoundary
+\neq
+BusinessBoundary
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 页码边界 ≠
+业务章节边界；一个条款可能跨页，一个页面也可能包含多个业务章节。</p>
+<hr />
+<h1 id="二十七clause">二十七、Clause</h1>
+<h2 id="什么才叫一个业务条款">什么才叫一个业务条款？</h2>
+<p>Clause 不等于：</p>
+<pre class="text"><code>一个PDF文本框    # 中文：版面块
+
+一个自然段    # 中文：段落
+
+一个句子    # 中文：语法句子
+
+固定500 tokens    # 中文：RAG定长切块</code></pre>
+<p>Clause 是：</p>
+<blockquote>
+<p>在政府采购业务上可以作为一个相对完整规范单元理解、引用和审查的条款。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi><mo>=</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>R</mi><mi>o</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClauseBoundary
+=
+Structure
++
+NormativeMeaning
++
+BusinessRole
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 条款边界 = 文档结构 + 规范含义 +
+政府采购业务作用共同决定。</p>
+<hr />
+<h1 id="二十八requirement">二十八、Requirement</h1>
+<h2 id="一个-clause-里可以有多个独立要求">一个 Clause
+里可以有多个独立要求</h2>
+<p>例如：</p>
+<blockquote>
+<p>“供应商须具有A证书，项目负责人具有B证书，并承诺中标后7日内在本地设立服务机构。”</p>
+</blockquote>
+<p>这一个 Clause 至少可以拆成：</p>
+<pre class="text"><code>REQ_01    # 中文：供应商具有A证书
+
+REQ_02    # 中文：项目负责人具有B证书
+
+REQ_03    # 中文：中标后7日内设立本地服务机构</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Clause
+\neq
+Requirement
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 一个条款 ≠
+一个独立业务要求；一条文字中可能同时存在多个需要分别判断的条件。</p>
+<hr />
+<h1 id="二十九requirement-schema">二十九、Requirement Schema</h1>
+<pre class="text"><code>requirement_id    # 中文：独立业务要求标识
+
+clause_id    # 中文：来源条款
+
+subject    # 中文：要求作用于谁，例如供应商、项目负责人、制造商、产品
+
+action_or_state    # 中文：要求的动作或状态
+
+object    # 中文：要求对象
+
+condition    # 中文：触发 / 前提条件
+
+operator    # 中文：大于、小于、至少、不得、必须等逻辑关系
+
+value_raw    # 中文：原始数值 / 内容
+
+value_normalized    # 中文：标准化值
+
+unit_raw    # 中文：原始单位
+
+unit_normalized    # 中文：标准化单位
+
+timing    # 中文：投标前、中标后、合同期内等时间条件
+
+evidence_required    # 中文：证明材料
+
+business_role    # 中文：资格、实质性、评分、履约等业务角色
+
+evidence_span_ids    # 中文：支撑该要求的原文证据片段</code></pre>
+<hr />
+<h1 id="三十核心心智模型-⑨">三十、核心心智模型 ⑨</h1>
+<h1 id="normalization-不能覆盖原文"><code>Normalization</code>
+不能覆盖原文</h1>
+<p>例如原文：</p>
+<pre class="text"><code>“注册资本不低于伍仟万元人民币”</code></pre>
+<p>可以标准化为：</p>
+<pre class="text"><code>normalized_value = 50000000
+# 中文：标准化数值5000万元
+
+normalized_currency = CNY
+# 中文：人民币</code></pre>
+<p>但：</p>
+<pre class="text"><code>raw_text
+# 中文：原始文本</code></pre>
+<p>必须永久保留。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>≠</mo><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NormalizedFact
+\neq
+SourceReplacement
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 标准化事实 ≠
+替换原始证据；标准化是派生层，不能覆盖原文。</p>
+<hr />
+<h1
+id="三十一为什么数字单位和比较符必须单独解析">三十一、为什么数字、单位和比较符必须单独解析？</h1>
+<p>以下文本业务意义完全不同：</p>
+<pre class="text"><code>不少于3家    # 中文：&gt;=3
+
+超过3家    # 中文：&gt;3
+
+不超过3家    # 中文：&lt;=3
+
+少于3家    # 中文：&lt;3
+
+3家以上    # 中文：通常需要结合语境解析是否包含3
+
+3家以内    # 中文：通常需要结合语境解析是否包含3</code></pre>
+<p>系统必须抽：</p>
+<pre class="text"><code>operator    # 中文：比较运算符
+
+numeric_value    # 中文：数值
+
+unit    # 中文：单位
+
+inclusivity    # 中文：边界是否包含
+
+raw_expression    # 中文：原始表达</code></pre>
+<hr />
+<h1 id="三十二核心心智模型-⑩">三十二、核心心智模型 ⑩</h1>
+<h1
+id="numberextraction-不等于-constraintunderstanding"><code>NumberExtraction</code>
+不等于 <code>ConstraintUnderstanding</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mi>E</mi><mi>x</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>U</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NumberExtraction
+\neq
+ConstraintUnderstanding
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 抽到了“3”“50%”“30日”等数字 ≠
+已经理解完整约束；还必须恢复比较关系、单位、时点、对象和条件。</p>
+<hr />
+<h1
+id="三十三日期也必须标准化但不能丢失语义">三十三、日期也必须标准化，但不能丢失语义</h1>
+<p>例如：</p>
+<pre class="text"><code>“合同签订后30日内”
+# 中文：相对日期
+
+“2026年10月1日前”
+# 中文：绝对日期上限
+
+“自中标通知书发出之日起7个工作日”
+# 中文：以业务事件为起点的工作日规则</code></pre>
+<p>因此：</p>
+<pre class="text"><code>time_expression_raw    # 中文：原始时间表达
+
+time_type    # 中文：绝对日期 / 相对日期 / 工作日 / 自然日
+
+anchor_event    # 中文：合同签订、中标通知书发出等业务事件
+
+duration_value    # 中文：时长数值
+
+duration_unit    # 中文：日 / 工作日 / 月等
+
+resolved_date    # 中文：在已知锚点时可计算得到的日期</code></pre>
+<hr />
+<h1 id="三十四negation">三十四、Negation</h1>
+<h2 id="否定词是合规抽取的高风险点">否定词是合规抽取的高风险点</h2>
+<p>比较：</p>
+<pre class="text"><code>不得要求供应商提供本地业绩
+# 中文：禁止设置本地业绩要求
+
+要求供应商提供本地业绩
+# 中文：直接设置本地业绩条件
+
+并非必须提供本地业绩
+# 中文：明确否定“必须”
+
+未提供本地业绩不得作为否决条件
+# 中文：限制评审处理方式</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>e</mi><mi>y</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>H</mi><mi>i</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KeywordHit
+\neq
+RequirementPolarity
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 命中“本地业绩”关键词 ≠
+已经知道条款是在要求、禁止、豁免还是解释该条件。</p>
+<hr />
+<h1 id="三十五cross-reference">三十五、Cross Reference</h1>
+<h2 id="交叉引用必须解析">交叉引用必须解析</h2>
+<p>采购文件经常写：</p>
+<pre class="text"><code>“详见第四章采购需求”
+“按附件2执行”
+“评分标准见表5”
+“除第3.2条另有规定外”
+“具体参数详见技术需求清单”</code></pre>
+<p>如果只抽当前段落：</p>
+<blockquote>
+<p>信息是不完整的。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>C</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>R</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LocalClause
++
+CrossReferenceResolution
+=
+CompleteContext
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 当前条款 + 被引用章节 / 附件解析 =
+更完整的业务上下文。</p>
+<hr />
+<h1 id="三十六cross-reference-schema">三十六、Cross Reference
+Schema</h1>
+<pre class="text"><code>cross_ref_id    # 中文：交叉引用标识
+
+source_clause_id    # 中文：引用发起条款
+
+reference_text_raw    # 中文：原始“详见附件2”等文本
+
+target_type    # 中文：章节 / 条款 / 表格 / 附件 / 外部文件
+
+target_document_version_id    # 中文：被引用文档版本
+
+target_section_id    # 中文：被引用章节
+
+target_clause_id    # 中文：被引用条款
+
+target_table_id    # 中文：被引用表格
+
+resolution_status    # 中文：已解析 / 多义 / 找不到目标
+
+resolution_confidence    # 中文：解析置信度</code></pre>
+<hr />
+<h1 id="三十七核心心智模型-⑪">三十七、核心心智模型 ⑪</h1>
+<h1 id="localcontext-不等于-completecontext"><code>LocalContext</code>
+不等于 <code>CompleteContext</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LocalContext
+\neq
+CompleteContext
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 当前段落附近的文字 ≠
+完整业务上下文；采购文件大量通过章节、附件和表格交叉引用表达完整要求。</p>
+<hr />
+<h1 id="三十八clause-id-到底怎样设计">三十八、Clause ID
+到底怎样设计？</h1>
+<p>一个错误设计：</p>
+<pre class="text"><code>clause_id = hash(clause_text)
+# 中文：直接用条款文本哈希做唯一标识</code></pre>
+<p>问题：</p>
+<blockquote>
+<p>同一句话在两个章节重复出现，会变成同一个 ID。</p>
+</blockquote>
+<p>但它们的：</p>
+<pre class="text"><code>business_role    # 中文：业务角色
+location    # 中文：文档位置
+version    # 中文：文档版本</code></pre>
+<p>可能完全不同。</p>
+<hr />
+<h1 id="三十九version-scoped-clause-id">三十九、Version-scoped Clause
+ID</h1>
+<h2 id="版本内条款标识">版本内条款标识</h2>
+<p>建议：</p>
+<pre class="text"><code>clause_id
+# 中文：在具体文档版本中稳定定位一个条款
+
+document_version_id
+# 中文：版本作用域
+
+section_path
+# 中文：章节路径
+
+local_ordinal
+# 中文：章节内条款顺序
+
+source_anchor
+# 中文：页码 / 段落 / 表格位置等来源锚点</code></pre>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>I</mi><mi>D</mi><mo>=</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClauseID
+=
+VersionScope
++
+StructuralLocation
++
+LocalIdentity
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> Clause ID = 文档版本作用域 + 结构位置
++ 版本内局部身份。</p>
+<hr />
+<h1 id="四十核心心智模型-⑫">四十、核心心智模型 ⑫</h1>
+<h1 id="clauseid-不应假装跨版本永远不变"><code>ClauseID</code>
+不应假装跨版本永远不变</h1>
+<p>如果 V2 插入一个新条款：</p>
+<blockquote>
+<p>后面全部序号可能变化。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>I</mi><mi>D</mi><mo>≠</mo><mi>C</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>a</mi><mi>n</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VersionScopedClauseID
+\neq
+CrossVersionCanonicalIdentity
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 版本内条款标识 ≠
+跨版本永久不变的条款身份。</p>
+<hr />
+<h1 id="四十一canonical-clause-id">四十一、Canonical Clause ID</h1>
+<h2 id="跨版本条款身份">跨版本条款身份</h2>
+<p>另外建立：</p>
+<pre class="text"><code>canonical_clause_id    # 中文：同一业务条款跨版本对齐后的逻辑身份
+
+version_clause_id    # 中文：某一个具体版本中的条款实例
+
+alignment_type    # 中文：UNCHANGED / MODIFIED / SPLIT / MERGED / NEW / DELETED
+
+similarity_evidence    # 中文：文本、结构、标题、位置等对齐证据</code></pre>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CanonicalClause
+\rightarrow
+VersionedClauseInstances
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+一个跨版本逻辑条款可以映射到多个具体版本中的条款实例。</p>
+<hr />
+<h1 id="四十二clarification-amendment-diff">四十二、Clarification /
+Amendment Diff</h1>
+<h2 id="澄清更正差异必须结构化">澄清、更正差异必须结构化</h2>
+<p>系统要能回答：</p>
+<pre class="text"><code>哪条被删除？    # 中文：DELETED
+
+哪条被新增？    # 中文：NEW
+
+哪条数值变化？    # 中文：MODIFIED_VALUE
+
+哪条资格条件变成评分项？    # 中文：ROLE_CHANGED
+
+哪条技术参数放宽 / 收紧？    # 中文：CONSTRAINT_CHANGED
+
+哪条只是解释，没有改变规范要求？    # 中文：CLARIFIED_ONLY</code></pre>
+<p>这对后续 Agent 非常重要。</p>
+<hr />
+<h1 id="四十三evidence-span">四十三、Evidence Span</h1>
+<h2
+id="证据片段是整门合规系统的坐标系">证据片段是整门合规系统的“坐标系”</h2>
+<p>一个 Finding 如果只输出：</p>
+<blockquote>
+<p>“存在本地业绩限制。”</p>
+</blockquote>
+<p>不够。</p>
+<p>必须回答：</p>
+<blockquote>
+<p><strong>哪一份文件、哪个版本、第几页、哪一段 /
+哪个表格单元格、哪几个字符？</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>⇒</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>p</mi><mi>a</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Finding
+\Rightarrow
+EvidenceSpan
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+每一个合规发现项都必须能够回指原始文件中的证据片段。</p>
+<hr />
+<h1 id="四十四evidence-span-第一版">四十四、Evidence Span 第一版</h1>
+<pre class="text"><code>evidence_span_id    # 中文：证据片段标识
+
+project_id    # 中文：采购项目标识
+
+document_id    # 中文：逻辑文档标识
+
+document_version_id    # 中文：具体文档版本
+
+file_id    # 中文：物理文件标识
+
+source_sha256    # 中文：原始文件哈希
+
+page_no    # 中文：页码
+
+block_id    # 中文：版面块标识
+
+paragraph_id    # 中文：段落标识，如适用
+
+table_id    # 中文：表格标识，如适用
+
+row_id    # 中文：表格行，如适用
+
+cell_id    # 中文：表格单元格，如适用
+
+char_start    # 中文：文本起始字符位置
+
+char_end    # 中文：文本结束字符位置
+
+bbox_native    # 中文：原生页面坐标
+
+bbox_normalized    # 中文：归一化页面坐标
+
+raw_text    # 中文：原始证据文本
+
+raw_text_sha256    # 中文：证据文本指纹
+
+page_image_ref    # 中文：页面视觉证据引用
+
+extraction_method    # 中文：原生文本 / OCR / DOCX结构解析等
+
+extraction_quality    # 中文：证据提取质量状态</code></pre>
+<hr />
+<h1 id="四十五核心心智模型-⑬">四十五、核心心智模型 ⑬</h1>
+<h1 id="quote-不等于-evidencespan"><code>Quote</code> 不等于
+<code>EvidenceSpan</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>p</mi><mi>a</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QuotedText
+\neq
+EvidenceSpan
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 引用了一句原文 ≠
+建立了完整证据定位；还必须保存版本、页码、坐标、表格位置和来源指纹。</p>
+<hr />
+<h1 id="四十六evidence-span-为什么不能只存页码">四十六、Evidence Span
+为什么不能只存页码？</h1>
+<p>同一页可能有：</p>
+<pre class="text"><code>两个评分表
+三个技术参数表
+多个“5分”
+多个“不得”</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PageNumberOnly
+\neq
+PreciseEvidenceLocation
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 只有页码 ≠
+精确证据定位；复杂采购文件需要块、表格、单元格、坐标甚至字符级定位。</p>
+<hr />
+<h1
+id="四十七original-view-与-normalized-view-必须同时存在">四十七、Original
+View 与 Normalized View 必须同时存在</h1>
+<p>建议每个业务对象都有：</p>
+<pre class="text"><code>raw_view    # 中文：尽量接近原始文件表达
+
+normalized_view    # 中文：便于规则、搜索、计算的标准化表达</code></pre>
+<p>例如：</p>
+<pre class="text"><code>raw = “伍仟万元”
+# 中文：原始中文大写金额
+
+normalized = 50000000
+# 中文：标准化数值</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>F</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourceFidelity
++
+Computability
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+数据系统必须同时追求原始证据保真和机器可计算性，而不是二选一。</p>
+<hr />
+<h1 id="四十八parse-quality">四十八、Parse Quality</h1>
+<h2 id="解析质量不能只有一个总分">解析质量不能只有一个总分</h2>
+<p>如果只存：</p>
+<pre class="text"><code>parse_confidence = 0.96
+# 中文：单一解析置信度</code></pre>
+<p>会掩盖问题。</p>
+<p>建议拆成：</p>
+<pre class="text"><code>text_coverage    # 中文：多少正文成功提取
+
+layout_integrity    # 中文：版面结构是否完整恢复
+
+reading_order_quality    # 中文：阅读顺序是否可靠
+
+table_integrity    # 中文：表格行列、合并单元格是否恢复
+
+ocr_quality    # 中文：扫描页OCR质量
+
+section_structure_quality    # 中文：章节树恢复质量
+
+clause_boundary_quality    # 中文：条款边界质量
+
+cross_reference_resolution    # 中文：交叉引用解析率
+
+attachment_coverage    # 中文：附件覆盖率</code></pre>
+<hr />
+<h1 id="四十九核心心智模型-⑭">四十九、核心心智模型 ⑭</h1>
+<h1
+id="averageparsescore-不等于-criticalfieldcorrectness"><code>AverageParseScore</code>
+不等于 <code>CriticalFieldCorrectness</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>F</mi><mi>i</mi><mi>e</mi><mi>l</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AverageParseQuality
+\neq
+CriticalFieldCorrectness
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 文档整体解析质量很高 ≠
+关键金额、比例、分值、日期、资格条件和技术参数一定正确。</p>
+<p>所以需要：</p>
+<h1 id="critical-field-check">Critical Field Check</h1>
+<h2 id="关键字段校验">关键字段校验</h2>
+<hr />
+<h1 id="五十coverage-report">五十、Coverage Report</h1>
+<h2 id="覆盖报告是必须产物">覆盖报告是必须产物</h2>
+<p>每份文档解析完至少生成：</p>
+<pre class="text"><code>total_pages    # 中文：总页数
+
+native_text_pages    # 中文：原生文字层解析页数
+
+ocr_pages    # 中文：OCR处理页数
+
+unreadable_pages    # 中文：无法可靠读取页数
+
+detected_tables    # 中文：检测到表格数量
+
+parsed_tables    # 中文：成功解析表格数量
+
+detected_images    # 中文：重要图片 / 扫描附件数量
+
+parsed_attachments    # 中文：成功纳入处理的附件数量
+
+unresolved_cross_refs    # 中文：无法解析的交叉引用数量
+
+low_quality_blocks    # 中文：低质量版面块数量
+
+missing_sections    # 中文：预期但未找到的关键章节
+
+coverage_status    # 中文：完整 / 部分 / 阻断</code></pre>
+<hr />
+<h1 id="五十一核心心智模型-⑮">五十一、核心心智模型 ⑮</h1>
+<h1 id="parsesuccess-不等于-coveragecomplete"><code>ParseSuccess</code>
+不等于 <code>CoverageComplete</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ParseSuccess
+\neq
+CoverageComplete
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 程序没有报错、成功输出文本 ≠
+已经覆盖整份采购文件和全部附件。</p>
+<hr />
+<h1 id="五十二no-silent-loss">五十二、No Silent Loss</h1>
+<h2 id="不允许静默丢失">不允许静默丢失</h2>
+<p>政府采购合规系统最危险的数据工程故障之一是：</p>
+<blockquote>
+<p>某一页 / 某一张表 /
+某个附件没有解析成功，但系统继续输出“已检查完成”。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>⇒</mo><mi>I</mi><mi>n</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>e</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UnparsedCriticalContent
+\Rightarrow
+IncompleteReview
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 存在未解析的关键内容 ⇒
+本次合规检查不能声称完整完成。</p>
+<p>这应直接影响 Stage 1 的：</p>
+<pre class="text"><code>system_completion    # 中文：系统是否真正完成检查</code></pre>
+<hr />
+<h1 id="五十三data-quality-state">五十三、Data Quality State</h1>
+<h2 id="数据质量状态机">数据质量状态机</h2>
+<p>建议：</p>
+<pre class="text"><code>INGESTED    # 中文：原始文件已接收
+
+FINGERPRINTED    # 中文：文件哈希已记录
+
+ROUTED    # 中文：页面已完成原生文本 / OCR等路由
+
+PARSED    # 中文：基础文本和版面结构已解析
+
+STRUCTURED    # 中文：章节、表格、条款已经结构化
+
+BUSINESS_MAPPED    # 中文：资格、技术、评分、合同等业务角色已映射
+
+EVIDENCE_LINKED    # 中文：结构化事实已经绑定原文证据
+
+QUALITY_CHECKED    # 中文：覆盖率和关键字段质量已经检查
+
+READY_FOR_COMPLIANCE    # 中文：达到合规引擎可使用门槛
+
+PARTIAL_REVIEW_ONLY    # 中文：只能做部分审查，不得宣称全量完成
+
+HUMAN_REPAIR_REQUIRED    # 中文：需要人工修复文档结构 / OCR / 表格</code></pre>
+<hr />
+<h1 id="五十四核心心智模型-⑯">五十四、核心心智模型 ⑯</h1>
+<h1
+id="ready_for_compliance-是-gate不是随便的标签"><code>READY_FOR_COMPLIANCE</code>
+是 Gate，不是随便的标签</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>F</mi><mi>i</mi><mi>e</mi><mi>l</mi><mi>d</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReadyForCompliance
+=
+CoverageGate
++
+EvidenceGate
++
+StructureGate
++
+CriticalFieldGate
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 可进入合规审查 = 覆盖完整性门槛 +
+证据定位门槛 + 结构恢复门槛 + 关键字段正确性门槛。</p>
+<hr />
+<h1 id="五十五rag-chunk-在-stage-10-怎样重新定义">五十五、RAG Chunk 在
+Stage 10 怎样重新定义？</h1>
+<p>普通 RAG 常见：</p>
+<pre class="text"><code>每500 tokens切一块
+重叠50 tokens</code></pre>
+<p>对政府采购文件：</p>
+<blockquote>
+<p>只能作为最后的技术实现细节，不能作为业务边界。</p>
+</blockquote>
+<p>建议建立多个视图：</p>
+<pre class="text"><code>clause_chunk    # 中文：完整业务条款视图
+
+requirement_chunk    # 中文：独立业务要求视图
+
+section_context_chunk    # 中文：带父章节上下文的条款视图
+
+table_row_chunk    # 中文：恢复完整表头语义后的表格行视图
+
+cross_reference_enriched_chunk    # 中文：补充被引用章节 / 附件上下文的增强视图</code></pre>
+<hr />
+<h1 id="五十六核心心智模型-⑰">五十六、核心心智模型 ⑰</h1>
+<h1 id="chunk-是检索视图不是业务真相"><code>Chunk</code>
+是检索视图，不是业务真相</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Chunk
+=
+RetrievalView
+\neq
+CanonicalBusinessObject
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> Chunk 是为了检索构造的视图 ≠
+数据库中最权威的业务对象；真正权威的是版本化 Clause / Requirement /
+EvidenceSpan。</p>
+<hr />
+<h1
+id="五十七为什么需要多视图而不是复制一份文本">五十七、为什么需要多视图，而不是复制一份文本？</h1>
+<p>一个条款可能同时需要：</p>
+<pre class="text"><code>精确规则匹配    # 中文：Requirement视图
+
+上下文判断    # 中文：Clause + Section视图
+
+RAG召回    # 中文：检索优化视图
+
+人工复核    # 中文：带原始页面定位的Evidence视图</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneSource
+\rightarrow
+MultipleDerivedViews
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+同一份原始来源可以派生多个用途不同的数据视图，但所有视图必须回指同一原始证据。</p>
+<hr />
+<h1 id="五十八ground-truth-与-derived-fact-必须分层">五十八、Ground
+Truth 与 Derived Fact 必须分层</h1>
+<p><code>ProcurementComplianceDataset_V1</code> 不能把：</p>
+<pre class="text"><code>source_text    # 中文：原始文件事实
+
+human_label    # 中文：专家标注
+
+rule_result    # 中文：规则引擎结果
+
+llm_result    # 中文：模型推断结果
+
+normalized_fact    # 中文：标准化派生事实</code></pre>
+<p>全部混在一个字段里。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mo>≠</mo><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>M</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourceTruth
+\neq
+HumanAnnotation
+\neq
+MachineInference
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 原始来源事实 ≠ 专家标注 ≠
+机器推断；三层必须能够明确区分。</p>
+<hr />
+<h1 id="五十九核心心智模型-⑱">五十九、核心心智模型 ⑱</h1>
+<h1 id="derivedfact-必须带-lineage"><code>DerivedFact</code> 必须带
+Lineage</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>⇒</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DerivedFact
+\Rightarrow
+DataLineage
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+任何标准化事实、结构化要求、规则命中或模型判断，都必须能够追溯它由哪些原始数据和哪一步处理得到。</p>
+<p>建议：</p>
+<pre class="text"><code>derived_fact_id    # 中文：派生事实标识
+
+source_evidence_span_ids    # 中文：来源证据
+
+transform_name    # 中文：产生该事实的转换步骤
+
+transform_version    # 中文：转换器 / 解析器版本
+
+created_at    # 中文：生成时间
+
+quality_state    # 中文：质量状态
+
+review_state    # 中文：是否人工确认</code></pre>
+<hr />
+<h1 id="六十数据集不是扁平-jsonl就结束">六十、数据集不是“扁平
+JSONL”就结束</h1>
+<p>本阶段建议把 <code>ProcurementComplianceDataset_V1</code>
+分成九个核心实体：</p>
+<pre class="text"><code>projects    # 中文：采购项目
+
+documents    # 中文：逻辑采购文档
+
+document_versions    # 中文：文档版本
+
+pages_blocks_tables    # 中文：页面、版面块和表格
+
+sections    # 中文：章节树
+
+clauses    # 中文：业务条款
+
+requirements    # 中文：独立业务要求
+
+evidence_spans    # 中文：原始证据定位
+
+quality_reports    # 中文：解析覆盖和质量报告</code></pre>
+<p>另外还有：</p>
+<pre class="text"><code>cross_references    # 中文：跨章节 / 附件引用
+
+version_alignments    # 中文：跨版本条款对齐
+
+derived_facts    # 中文：标准化派生事实
+
+human_annotations    # 中文：专家Gold标注
+
+retrieval_views    # 中文：为RAG构建的派生Chunk视图</code></pre>
+<hr />
+<h1
+id="六十一procurementcompliancedataset_v1-建议目录">六十一、<code>ProcurementComplianceDataset_V1</code>
+建议目录</h1>
+<pre class="text"><code>ProcurementComplianceDataset_V1/
+# 中文：政府采购合规数据工程根目录
+
+├── raw/
+│   # 中文：原始文件，只读保存
+│   ├── pdf/    # 中文：原始PDF文件
+│   ├── docx/    # 中文：原始Word文件
+│   ├── images/    # 中文：原始图片 / 扫描页
+│   └── attachments/    # 中文：其他原始附件
+│
+├── registry/
+│   # 中文：项目、文档、版本和文件指纹注册表
+│   ├── projects.jsonl    # 中文：采购项目注册表
+│   ├── documents.jsonl    # 中文：逻辑文档注册表
+│   ├── document_versions.jsonl    # 中文：文档版本注册表
+│   └── files.jsonl    # 中文：物理文件与哈希注册表
+│
+├── layout/
+│   # 中文：页面、版面块、坐标、图片和OCR结果
+│   ├── pages.jsonl    # 中文：页面结构数据
+│   ├── blocks.jsonl    # 中文：版面块与阅读顺序数据
+│   ├── page_images/    # 中文：页面渲染图 / 证据图
+│   └── ocr/    # 中文：OCR识别结果及坐标
+│
+├── tables/
+│   # 中文：二维表格语义
+│   ├── tables.jsonl    # 中文：表格主记录
+│   ├── rows.jsonl    # 中文：表格行结构
+│   └── cells.jsonl    # 中文：表格单元格与表头语义
+│
+├── structure/
+│   # 中文：章节、条款、业务要求和交叉引用
+│   ├── sections.jsonl    # 中文：章节树
+│   ├── clauses.jsonl    # 中文：业务条款
+│   ├── requirements.jsonl    # 中文：独立业务要求
+│   └── cross_references.jsonl    # 中文：交叉引用关系
+│
+├── evidence/
+│   # 中文：证据片段及原文定位
+│   ├── evidence_spans.jsonl    # 中文：原文证据片段及定位
+│   └── evidence_images/    # 中文：证据页面 / 局部图像
+│
+├── versions/
+│   # 中文：澄清、更正、补充和跨版本对齐
+│   ├── version_graph.jsonl    # 中文：文档版本关系图
+│   ├── clause_alignment.jsonl    # 中文：跨版本条款对齐
+│   └── diffs.jsonl    # 中文：澄清 / 更正差异记录
+│
+├── derived/
+│   # 中文：标准化事实和RAG派生视图
+│   ├── normalized_facts.jsonl    # 中文：标准化派生事实
+│   ├── retrieval_views.jsonl    # 中文：RAG检索派生视图
+│   └── business_roles.jsonl    # 中文：资格 / 技术 / 评分 / 合同等业务角色映射
+│
+├── annotations/
+│   # 中文：人工标注和Gold数据，必须与机器推断分离
+│   ├── human_labels.jsonl    # 中文：人工专家标注
+│   └── adjudication.jsonl    # 中文：争议标注裁决结果
+│
+├── quality/
+│   # 中文：覆盖率、解析质量和阻断项
+│   ├── coverage_reports.jsonl    # 中文：页面、表格、附件覆盖报告
+│   ├── parse_quality.jsonl    # 中文：解析质量指标
+│   └── unresolved_items.jsonl    # 中文：未解析 / 待人工修复事项
+│
+└── manifest.json
+    # 中文：版本、解析器、数据来源、Schema和质量门槛清单</code></pre>
+<hr />
+<h1 id="六十二clause-schema-第一版">六十二、Clause Schema 第一版</h1>
+<pre class="text"><code>clause_id    # 中文：具体版本内条款标识
+
+canonical_clause_id    # 中文：跨版本逻辑条款身份
+
+document_version_id    # 中文：所属文档版本
+
+section_id    # 中文：所属章节
+
+clause_number_raw    # 中文：原始条款编号
+
+clause_title_raw    # 中文：原始条款标题，如存在
+
+clause_text_raw    # 中文：条款原文
+
+clause_text_normalized    # 中文：标准化文本
+
+business_role    # 中文：资格 / 技术 / 商务 / 评分 / 合同 / 政策等
+
+normative_strength    # 中文：必须 / 不得 / 应当 / 可以 / 建议等规范强度
+
+start_page    # 中文：起始页
+
+end_page    # 中文：结束页
+
+source_block_ids    # 中文：来源版面块
+
+table_context_ids    # 中文：如来自表格，关联表格上下文
+
+evidence_span_ids    # 中文：原始证据定位
+
+cross_reference_ids    # 中文：交叉引用
+
+parse_confidence    # 中文：条款结构解析质量
+
+human_review_state    # 中文：是否经过人工复核</code></pre>
+<hr />
+<h1 id="六十三requirement-schema-第一版">六十三、Requirement Schema
+第一版</h1>
+<pre class="text"><code>requirement_id    # 中文：独立业务要求标识
+
+clause_id    # 中文：来源条款
+
+subject_type    # 中文：供应商 / 人员 / 制造商 / 产品 / 采购人等
+
+subject_text_raw    # 中文：原始主体表达
+
+predicate_type    # 中文：要求、禁止、允许、评分、承诺等
+
+action_or_state    # 中文：动作 / 状态
+
+object_type    # 中文：证书、业绩、参数、人员、地域等对象类型
+
+object_text_raw    # 中文：原始对象文本
+
+operator    # 中文：&gt;= / &lt;= / = / 禁止 / 必须等逻辑关系
+
+value_raw    # 中文：原始值
+
+value_normalized    # 中文：标准化值
+
+unit_raw    # 中文：原始单位
+
+unit_normalized    # 中文：标准化单位
+
+condition_text    # 中文：前置条件
+
+timing_text    # 中文：时点 / 履约阶段
+
+exception_text    # 中文：例外
+
+evidence_requirement    # 中文：证明材料要求
+
+business_function    # 中文：资格门槛 / 实质性要求 / 评分因素 / 履约义务等
+
+candidate_rule_ids    # 中文：可能关联的D01-D22等规则
+
+evidence_span_ids    # 中文：支撑该要求的原文证据
+
+normalization_state    # 中文：标准化是否完成
+
+review_state    # 中文：人工 / 机器复核状态</code></pre>
+<hr />
+<h1 id="六十四evidence-span-schema-第一版">六十四、Evidence Span Schema
+第一版</h1>
+<pre class="text"><code>evidence_span_id    # 中文：证据片段标识
+
+document_version_id    # 中文：文档版本
+
+file_id    # 中文：物理文件
+
+source_sha256    # 中文：原始文件哈希
+
+page_no    # 中文：页码
+
+block_id    # 中文：版面块
+
+table_id    # 中文：表格
+
+row_id    # 中文：表格行
+
+cell_id    # 中文：单元格
+
+char_start    # 中文：字符起点
+
+char_end    # 中文：字符终点
+
+bbox_native    # 中文：原生坐标
+
+bbox_normalized    # 中文：归一化坐标
+
+raw_text    # 中文：证据原文
+
+raw_text_sha256    # 中文：证据文本哈希
+
+page_image_ref    # 中文：页面截图 / 渲染引用
+
+extraction_method    # 中文：原生文本 / OCR / DOCX结构解析
+
+extraction_engine_version    # 中文：解析引擎版本
+
+extraction_quality    # 中文：提取质量
+
+human_verified    # 中文：是否人工核验</code></pre>
+<hr />
+<h1 id="六十五完整数据工程流程">六十五、完整数据工程流程</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>s</mi><mo>→</mo><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi><mo>→</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>p</mi><mi>h</mi><mo>→</mo><mi>P</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>R</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>L</mi><mi>a</mi><mi>y</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>E</mi><mi>x</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>T</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>r</mi><mi>e</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>E</mi><mi>x</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>R</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>i</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawFiles
+\rightarrow
+FileRegistry
+\rightarrow
+VersionGraph
+\rightarrow
+PageRouting
+\rightarrow
+LayoutExtraction
+\rightarrow
+TableReconstruction
+\rightarrow
+SectionTree
+\rightarrow
+ClauseSegmentation
+\rightarrow
+RequirementExtraction
+\rightarrow
+Normalization
+\rightarrow
+CrossReferenceResolution
+\rightarrow
+EvidenceLinking
+\rightarrow
+QualityGate
+\rightarrow
+ComplianceReadyDataset
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 原始文件 → 文件注册和哈希 →
+文档版本图 → 页面解析路由 → 版面提取 → 表格恢复 → 章节树 → 条款切分 →
+独立要求抽取 → 标准化 → 交叉引用解析 → 绑定原文证据 → 数据质量门 →
+可供合规引擎使用的数据集。</p>
+<hr />
+<h1 id="六十六quality-gate">六十六、Quality Gate</h1>
+<h2 id="数据进入合规引擎前必须过门">数据进入合规引擎前必须过门</h2>
+<p>至少检查：</p>
+<pre class="text"><code>source_file_available    # 中文：原始文件可回查
+
+file_hash_recorded    # 中文：文件哈希已保存
+
+version_resolved    # 中文：文档版本关系已解析
+
+critical_pages_covered    # 中文：关键页无遗漏
+
+critical_tables_parsed    # 中文：资格、技术、评分等关键表格已解析
+
+section_tree_available    # 中文：章节结构可用
+
+clause_boundaries_available    # 中文：关键条款边界可用
+
+evidence_spans_available    # 中文：结构化事实可回指原文
+
+critical_numbers_verified    # 中文：金额、比例、分值、日期等关键数字已校验
+
+unresolved_items_explicit    # 中文：无法解析的内容已显式列出
+
+coverage_status_acceptable    # 中文：覆盖率达到当前任务门槛</code></pre>
+<hr />
+<h1 id="六十七核心心智模型-⑲">六十七、核心心智模型 ⑲</h1>
+<h1 id="noerror-不等于-dataready"><code>NoError</code> 不等于
+<code>DataReady</code></h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>N</mi><mi>o</mi><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PipelineNoException
+\neq
+ComplianceDataReady
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 程序没有抛异常 ≠
+数据已经达到政府采购合规判断可用标准。</p>
+<hr />
+<h1 id="六十八hard-negative">六十八、Hard Negative</h1>
+<h2 id="数据工程高难负例">数据工程高难负例</h2>
+<p>Stage 10 必须加入：</p>
+<pre class="text"><code>HardNegative_RepeatedHeader
+# 中文：重复页眉看似重复条款，实际不是业务要求
+
+HardNegative_TableHeaderInheritance
+# 中文：参数值只有结合跨行 / 多级表头才有完整语义
+
+HardNegative_ClarificationNotReplacement
+# 中文：后发布澄清只解释局部条款，并未整份替代旧文件
+
+HardNegative_OCRNumberError
+# 中文：OCR整体质量高，但关键金额 / 比例识别错误
+
+HardNegative_SameTextDifferentRole
+# 中文：完全相同文字在资格章节和合同章节业务作用不同
+
+HardNegative_CrossReferenceRequirement
+# 中文：当前条款只有结合被引用附件才能得到完整要求
+
+HardNegative_SplitClauseAcrossPages
+# 中文：同一条款跨页，不能按页直接切断
+
+HardNegative_MergedCellSemantics
+# 中文：合并单元格决定多行参数共同业务语义</code></pre>
+<hr />
+<h1 id="六十九counterfactual-pair">六十九、Counterfactual Pair</h1>
+<h2 id="数据工程反事实样本">数据工程反事实样本</h2>
+<h3 id="pair-a纯文本-vs-证据化结构">Pair A：纯文本 vs 证据化结构</h3>
+<pre class="text"><code>供应商须具有AAA证书。
+# 中文：只有一行提取文本</code></pre>
+<h3 id="pair-b">Pair B</h3>
+<pre class="text"><code>document_version_id = V3    # 中文：文档版本V3
+page_no = 27    # 中文：原文第27页
+section = 资格审查
+clause_id = QUAL_3_2    # 中文：资格章节中的具体条款标识
+requirement_id = REQ_009    # 中文：独立业务要求标识
+raw_text = 供应商须具有AAA证书
+bbox = ...    # 中文：证据在页面上的坐标范围
+evidence_span_id = EV_009
+# 中文：同一个要求具备版本、章节、条款、位置和证据链</code></pre>
+<p>比较：</p>
+<pre class="text"><code>ParsedText    # 中文：解析文本
+
+ReliableComplianceFact    # 中文：可计算、可定位、可审计的合规事实</code></pre>
+<hr />
+<h3 id="pair-cocr高置信度-vs-关键数字错误">Pair C：OCR高置信度 vs
+关键数字错误</h3>
+<pre class="text"><code>OCR confidence = 0.99    # 中文：OCR模型给出的整体识别置信度
+recognized = “最高限价1000万元”
+# 中文：OCR系统整体认为很可靠</code></pre>
+<p>原图实际：</p>
+<pre class="text"><code>最高限价100万元
+# 中文：关键金额多识别了一个0</code></pre>
+<p>比较：</p>
+<pre class="text"><code>AverageOCRConfidence    # 中文：平均OCR质量
+
+CriticalFieldCorrectness    # 中文：关键字段是否正确</code></pre>
+<hr />
+<h3 id="pair-d固定token切块-vs-业务条款">Pair D：固定Token切块 vs
+业务条款</h3>
+<pre class="text"><code>Chunk A = 第4章后半段 + 第5章评分表开头
+# 中文：固定长度刚好跨业务章节</code></pre>
+<h3 id="pair-e">Pair E</h3>
+<pre class="text"><code>Clause Chunk = 完整评分条款 + 父章节 + 表头语义
+# 中文：按业务边界构建检索视图</code></pre>
+<p>比较：</p>
+<pre class="text"><code>TokenBoundary    # 中文：技术切块边界
+
+BusinessBoundary    # 中文：政府采购业务边界</code></pre>
+<hr />
+<h1 id="七十data-engineering-benchmark">七十、Data Engineering
+Benchmark</h1>
+<h2 id="数据工程-benchmark-应测什么">数据工程 Benchmark 应测什么？</h2>
+<p>至少包括：</p>
+<pre class="text"><code>page_coverage_rate    # 中文：页面覆盖率
+
+native_text_extraction_accuracy    # 中文：原生文字提取准确率
+
+ocr_character_accuracy_critical_pages    # 中文：关键扫描页OCR字符准确率
+
+critical_number_accuracy    # 中文：金额、比例、分值、日期关键数值准确率
+
+reading_order_accuracy    # 中文：阅读顺序恢复准确率
+
+header_footer_detection_accuracy    # 中文：页眉页脚识别准确率
+
+table_detection_recall    # 中文：关键表格检测召回率
+
+table_structure_accuracy    # 中文：行列 / 合并单元格 / 多级表头恢复准确率
+
+section_tree_accuracy    # 中文：章节树准确率
+
+clause_boundary_f1    # 中文：业务条款边界F1
+
+requirement_extraction_f1    # 中文：独立业务要求抽取F1
+
+business_role_accuracy    # 中文：资格 / 技术 / 评分 / 合同等业务角色分类准确率
+
+cross_reference_resolution_accuracy    # 中文：交叉引用解析准确率
+
+version_alignment_accuracy    # 中文：跨版本条款对齐准确率
+
+evidence_localization_accuracy    # 中文：页码 / 坐标 / 单元格证据定位准确率
+
+attachment_coverage_rate    # 中文：附件覆盖率
+
+parse_failure_detection_recall    # 中文：解析失败显式发现召回率
+
+silent_loss_rate    # 中文：静默丢失率，目标应尽可能接近0
+
+human_repair_precision    # 中文：真正需要人工修复的数据被正确升级的精确率</code></pre>
+<hr />
+<h1 id="七十一核心心智模型-⑳">七十一、核心心智模型 ⑳</h1>
+<h1 id="数据工程-benchmark-不能只测字符准确率">数据工程 Benchmark
+不能只测字符准确率</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TextAccuracy
+\neq
+ComplianceDataReliability
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 文本字符准确率 ≠
+合规数据可靠性；还必须测版本、结构、表格、条款边界、关键数字、证据定位、附件覆盖和静默丢失。</p>
+<hr />
+<h1 id="七十二本阶段-20-个核心心智模型">七十二、本阶段 20
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>ParsedText ≠ ReliableComplianceFact</code>。抽到文字，不代表得到可靠合规事实。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>File ≠ BusinessDocument</code>。物理文件和业务文档不是同一层。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>NewerDocument ≠ FullReplacement</code>。后发布澄清 /
+更正不一定整份替代旧版。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>PDF ≠ TextFile</code>。PDF是页面呈现容器，不天然等于可靠结构化文本。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>NativeTextFirst → OCRFallback</code>。优先原生文字层，OCR主要用于扫描
+/ 失败页。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>HighOCRConfidence ≠ CorrectBusinessFact</code>。OCR总体置信度不能替代关键业务事实校验。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>OCRText ≠ OriginalEvidence</code>。OCR文本是派生数据，原始文件
+/ 页面才是来源证据。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>TableText ≠ TableSemantics</code>。表格文本只有结合行列和表头才能恢复业务含义。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>PageBoundary ≠ BusinessBoundary</code>。页边界不能直接作为章节、条款边界。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑩：<code>Clause ≠ Requirement</code>。一个条款里可以包含多个独立要求。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑪：<code>NormalizedFact ≠ SourceReplacement</code>。标准化事实不能覆盖原始证据。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑫：<code>NumberExtraction ≠ ConstraintUnderstanding</code>。数字抽取不等于理解比较关系、单位、条件和时点。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑬：<code>LocalContext ≠ CompleteContext</code>。交叉引用、附件和表格常常决定完整含义。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑭：<code>VersionScopedClauseID ≠ CrossVersionCanonicalIdentity</code>。版本内ID与跨版本逻辑身份要分开。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑮：<code>QuotedText ≠ EvidenceSpan</code>。一句引文不是完整证据坐标。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑯：<code>AverageParseQuality ≠ CriticalFieldCorrectness</code>。整体解析好，不代表关键数字一定正确。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑰：<code>ParseSuccess ≠ CoverageComplete</code>。程序成功不代表整份文件和附件都处理完整。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑱：<code>Chunk = RetrievalView ≠ CanonicalBusinessObject</code>。RAG切块只是检索视图，不是权威业务对象。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑲：<code>SourceTruth ≠ HumanAnnotation ≠ MachineInference</code>。原文、专家标注和机器推断必须分层。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑳：<code>PipelineNoException ≠ ComplianceDataReady</code>。没有程序错误，不代表数据已经可以进入合规引擎。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="七十三把整个采购文件数据工程压成一张工程图">七十三、把整个采购文件数据工程压成一张工程图</h1>
+<pre class="text"><code>Raw Procurement Files
+# 中文：PDF、Word、表格、扫描件、附件、澄清和更正文件
+↓
+File Registry + SHA256
+# 中文：登记项目、文档、版本、文件并保存不可变指纹
+↓
+Document / Version Graph
+# 中文：建立原版、补充、澄清、更正、替代关系
+↓
+Page Router
+# 中文：逐页选择原生文字层、版面解析或OCR
+↓
+Layout + Reading Order
+# 中文：恢复页面块、坐标、阅读顺序、页眉页脚
+↓
+Table Reconstruction
+# 中文：恢复行列、多级表头、合并单元格语义
+↓
+Section Tree
+# 中文：恢复采购公告、资格、需求、评分、合同等章节结构
+↓
+Clause Segmentation
+# 中文：按政府采购业务边界形成条款
+↓
+Requirement Extraction
+# 中文：把条款拆成可独立判断的业务要求
+↓
+Normalization
+# 中文：标准化金额、比例、日期、单位、比较符和业务角色，同时保留原文
+↓
+Cross Reference Resolution
+# 中文：解析“详见附件 / 第几章 / 表几”等引用
+↓
+Evidence Span
+# 中文：绑定版本、页码、版面块、表格单元格、字符范围和页面图像
+↓
+Coverage + Quality Gate
+# 中文：检查关键页、关键表、关键数字、附件和未解决问题
+↓
+ProcurementComplianceDataset_V1
+# 中文：形成可计算、可定位、可追溯的政府采购合规数据集
+↓
+Rules + RAG + LLM + Agent
+# 中文：为后续混合合规引擎提供可靠事实底座</code></pre>
+<hr />
+<h1 id="七十四脑中最后只留一句">七十四、脑中最后只留一句</h1>
+<blockquote>
+<p><strong>政府采购数据工程的本质，不是“把文件转成文本”，而是把每一个采购项目中的原始文件、版本变化、章节结构、表格语义、业务条款、独立要求和关键数值恢复成可计算对象，同时为每个对象保留精确到版本、页码、版面块、表格单元格和字符范围的原文证据，并对无法可靠解析的内容显式阻断或升级人工；只有这样，上层规则、RAG、LLM
+和 Agent 的合规判断才真正具有可解释性和可审计性。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第十一课-第-10-阶段掌握测试">第十一课 · 第 10 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：</p>
+<pre class="text"><code>Parsed Text 为什么不等于 Reliable Compliance Fact？
+# 中文：为什么“提取出文字”还远远不够？
+
+File、Document、Document Version 为什么要分开？
+# 中文：一个采购项目为什么不能只用文件名管理？
+
+为什么要保存原始文件SHA-256？
+# 中文：它怎样帮助后续审计证明文件未被替换？
+
+Latest File 为什么不等于 Applicable Version？
+# 中文：澄清、更正和补充怎样与基础版本共同形成当前有效状态？
+
+Born-digital PDF、Scanned PDF、Hybrid PDF 有什么区别？
+# 中文：为什么解析策略应按页路由？
+
+为什么 Native Text First、OCR Fallback？
+# 中文：OCR为什么不应成为所有页面的默认路径？
+
+High OCR Confidence 为什么不等于 Correct Business Fact？
+# 中文：为什么关键金额、比例、分值仍需要独立质量检查？
+
+OCR Text 为什么不等于 Original Evidence？
+# 中文：为什么必须保留原文件 / 页面图像？
+
+DOCX Text 为什么不等于 DOCX Structure？
+# 中文：标题、编号、表格、修订、脚注怎样影响含义？
+
+Extracted Order 为什么不等于 Human Reading Order？
+# 中文：双栏、表格、脚注怎样造成阅读顺序错误？
+
+Table Text 为什么不等于 Table Semantics？
+# 中文：行标题、列标题、多级表头、合并单元格为什么必须保留？
+
+Cell Meaning 为什么需要 Row + Column + Parent Headers？
+# 中文：一个表格单元格为什么不能脱离上下文理解？
+
+Page Boundary 为什么不等于 Business Boundary？
+# 中文：跨页条款和一页多章节怎样处理？
+
+Text Chunk、Business Clause、Requirement 三者有什么区别？
+# 中文：检索块、业务条款、独立要求为什么不能混？
+
+Clause ID 为什么要做版本作用域？
+# 中文：为什么直接用条款文本hash不可靠？
+
+Canonical Clause ID 为什么要和 Version-scoped Clause ID 分开？
+# 中文：跨版本条款对齐怎样实现？
+
+Normalized Fact 为什么不能覆盖 Source Text？
+# 中文：标准化金额和日期为什么必须和原文并存？
+
+Number Extraction 为什么不等于 Constraint Understanding？
+# 中文：&gt;=、&gt;、&lt;=、&lt;、单位、对象、时点为什么都重要？
+
+Keyword Hit 为什么不等于 Requirement Polarity？
+# 中文：要求、禁止、豁免、解释怎样区分？
+
+为什么 Cross Reference Resolution 是必须项？
+# 中文：“详见第四章 / 附件2”怎样影响完整语义？
+
+Evidence Span 至少需要哪些坐标？
+# 中文：版本、页码、块、表格、字符、bbox、原文为什么要同时保留？
+
+Quoted Text 为什么不等于 Evidence Span？
+# 中文：只给一句引文为什么不足以审计？
+
+Average Parse Quality 为什么不等于 Critical Field Correctness？
+# 中文：为什么整体96%准确也可能在关键数字上失败？
+
+Parse Success 为什么不等于 Coverage Complete？
+# 中文：程序不报错怎样仍可能漏页、漏表、漏附件？
+
+什么是 No Silent Loss？
+# 中文：为什么无法解析的关键内容必须阻断“完整审查完成”声明？
+
+Chunk 为什么只是 Retrieval View？
+# 中文：RAG固定token切块为什么不能成为权威业务对象？
+
+Source Truth、Human Annotation、Machine Inference 为什么必须分层？
+# 中文：为什么原文、Gold标注和模型结果不能混成一个字段？
+
+Derived Fact 为什么必须有 Data Lineage？
+# 中文：标准化事实怎样回溯到原始证据和处理版本？
+
+READY_FOR_COMPLIANCE 需要通过哪些 Gate？
+# 中文：覆盖、证据、结构、关键字段为什么缺一不可？
+
+ProcurementComplianceDataset_V1 和普通文本语料库最根本的区别是什么？
+# 中文：为什么它本质上是版本化、证据化、结构化的政府采购事实底座？</code></pre>
+<p>如果这些能够完整解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>十</mi><mi>一</mi><mi>课</mi><mi>第</mi><mn>10</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第十一课第10阶段真正掌握
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 如果能够从原始 PDF / Word
+一直讲到版本、页面、表格、章节、Clause、Requirement、EvidenceSpan、质量门和数据血缘，并知道何时必须停止自动化、转人工修复，就说明真正掌握了本阶段。</p>
+<hr />
+<h1 id="下一阶段第十一课-第-11-阶段">下一阶段：第十一课 · 第 11
+阶段</h1>
+<h1 id="hybrid-compliance-enginerules-llm-rag-calculator">Hybrid
+Compliance Engine：Rules + LLM + RAG + Calculator</h1>
+<h2
+id="哪些问题必须规则算哪些需要模型判断哪些需要法源检索哪些必须转人工">哪些问题必须规则算，哪些需要模型判断，哪些需要法源检索，哪些必须转人工？</h2>
+<p>下一阶段将正式建立：</p>
+<h1
+id="procurementcomplianceengine_v1"><code>ProcurementComplianceEngine_V1</code></h1>
+<p>最重要的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneModel
+\neq
+ComplianceSystem
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 一个大语言模型 ≠
+完整政府采购合规系统；真正可靠的系统必须把确定性规则、法规检索、语义判断、计算器、证据验证和人工复核组合起来。</p>
+<div class="nav"><a class="btn" href="stage09.html">← 第 9 阶段</a><a class="btn" href="stage11.html">第 11 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("lesson11-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("lesson11-theme")||"light";</script></body></html>

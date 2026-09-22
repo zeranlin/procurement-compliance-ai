@@ -1,0 +1,459 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第6阶段：Tensor Parallel、Pipeline Parallel 与多 GPU 推理</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第6阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>MoreGPUs ≠ LinearSpeedup。</li><li>ScaleUp ≠ ScaleOut。模型分片和多副本服务是两种不同扩展。</li><li>Tensor Parallel 用高频通信换取单层并行。</li></ul></div><h1 id="第十课-第-6-阶段">第十课 · 第 6 阶段</h1>
+<h1 id="tensor-parallelpipeline-parallel-与多-gpu-推理-1">Tensor
+Parallel、Pipeline Parallel 与多 GPU 推理</h1>
+<h2
+id="单卡放不下模型怎么办为什么加-gpu-不等于线性加速模型到底应该按-tensorlayer-还是-replica-拆">单卡放不下模型怎么办？为什么加
+GPU 不等于线性加速？模型到底应该按 Tensor、Layer 还是 Replica 拆？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-5">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-5">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>MoreGPUs ≠ LinearSpeedup。</strong></li>
+<li><strong>ScaleUp ≠
+ScaleOut。模型分片和多副本服务是两种不同扩展。</strong></li>
+<li><strong>Tensor Parallel 用高频通信换取单层并行。</strong></li>
+<li><strong>Pipeline Parallel 的关键是 Stage
+Balance，而不是层数平均。</strong></li>
+<li><strong>单副本放不下才优先考虑 Sharding；放得下但吞吐不够优先考虑
+Replica。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-5">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="even">
+<td><code>Pipeline Parallel</code></td>
+<td>流水线并行：把不同层/阶段分配到不同 GPU</td>
+</tr>
+<tr class="odd">
+<td><code>Tensor Parallel</code></td>
+<td>张量并行：把同一层矩阵计算拆到多张 GPU</td>
+</tr>
+<tr class="even">
+<td><code>Serving</code></td>
+<td>服务化：把模型包装成可扩展、可观测、可治理的在线服务</td>
+</tr>
+<tr class="odd">
+<td><code>Throughput</code></td>
+<td>吞吐：单位时间内处理请求或生成 Token 的能力</td>
+</tr>
+<tr class="even">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-5">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>当：</p>
+<pre class="text"><code>模型Weight
++
+KV Cache
++
+Runtime</code></pre>
+<p>超过单卡能力，</p>
+<p>或者单卡吞吐不够，</p>
+<p>就要进入：</p>
+<h1 id="multi-gpu-inference">Multi-GPU Inference</h1>
+<h2 id="多-gpu-推理">多 GPU 推理</h2>
+<p>本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>G</mi><mi>P</mi><mi>U</mi><mi>s</mi><mo>≠</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreGPUs
+\neq
+LinearSpeedup
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementparallelservingpolicy_v0.1-1"><code>ProcurementParallelServingPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一先区分三种常见扩展方式">一、先区分三种常见扩展方式</h1>
+<h2 id="tensor-parallel">Tensor Parallel</h2>
+<h3 id="张量并行">张量并行</h3>
+<p>把同一层里的大矩阵运算：</p>
+<blockquote>
+<p>横向切到多张 GPU。</p>
+</blockquote>
+<h2 id="pipeline-parallel">Pipeline Parallel</h2>
+<h3 id="流水线并行">流水线并行</h3>
+<p>把不同 Layer：</p>
+<blockquote>
+<p>纵向分到不同 GPU / Stage。</p>
+</blockquote>
+<h2 id="replica-serving">Replica Serving</h2>
+<h3 id="多副本服务">多副本服务</h3>
+<p>每组 GPU：</p>
+<blockquote>
+<p>放一份完整模型，由负载均衡器把不同请求分发给不同副本。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>U</mi><mi>p</mi><mo>≠</mo><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>O</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ScaleUp
+\neq
+ScaleOut
+}
+</annotation></semantics></math></p>
+<p>前两者是把一个模型拆开，</p>
+<p>Replica 更像把完整服务复制多份。</p>
+<hr />
+<h1 id="二tensor-parallel">二、Tensor Parallel</h1>
+<p>大矩阵
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+可以被切到：</p>
+<pre class="text"><code>GPU0
+GPU1
+GPU2
+GPU3</code></pre>
+<p>各自计算部分结果，再通过：</p>
+<pre class="text"><code>All-Reduce
+All-Gather
+Reduce-Scatter</code></pre>
+<p>等通信组合。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>P</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>=</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mo>−</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>m</mi><mi>u</mi><mi>n</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TPGain
+=
+ParallelCompute
+-
+CommunicationCost
+}
+</annotation></semantics></math></p>
+<p>因此高速互联非常重要。</p>
+<hr />
+<h1 id="三核心心智模型-①-1">三、核心心智模型 ①</h1>
+<h1 id="interconnect-属于模型推理性能的一部分"><code>Interconnect</code>
+属于模型推理性能的一部分</h1>
+<p>同样四张 GPU，</p>
+<p>如果互联带宽不同，</p>
+<p>TP 性能可能差很多。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>4</mn><mi>G</mi><mi>P</mi><mi>U</mi><mi>s</mi><mo>≠</mo><mn>4</mn><mi>G</mi><mi>P</mi><mi>U</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+4GPUs
+\neq
+4GPUs
+}
+</annotation></semantics></math></p>
+<p>真正硬件描述要包括：</p>
+<pre class="text"><code>GPU型号
+单机卡数
+显存
+GPU互联
+节点网络
+NUMA</code></pre>
+<hr />
+<h1 id="四tp-degree-为什么不是越大越好">四、TP Degree
+为什么不是越大越好？</h1>
+<p>TP Degree 增大：</p>
+<pre class="text"><code>每卡Weight减少
+计算更分散</code></pre>
+<p>但也会：</p>
+<pre class="text"><code>通信更多
+同步更多
+Kernel更碎</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>P</mi><mi>D</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>存</mi><mi>在</mi><mi>最</mi><mi>优</mi><mi>区</mi><mi>间</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TPDegree
+存在最优区间
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五pipeline-parallel">五、Pipeline Parallel</h1>
+<p>例如：</p>
+<pre class="text"><code>GPU0：Layer 1-10
+GPU1：Layer 11-20
+GPU2：Layer 21-30
+GPU3：Layer 31-40</code></pre>
+<p>数据依次穿过 Stage。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>P</mi><mo>=</mo><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PP
+=
+LayerPartitioning
+}
+</annotation></semantics></math></p>
+<p>但如果某个 Stage 特别慢，</p>
+<p>其他 Stage 就会等待。</p>
+<p>这形成：</p>
+<h1 id="pipeline-bubble">Pipeline Bubble</h1>
+<h2 id="流水线气泡">流水线气泡</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>决</mi><mi>定</mi><mi>P</mi><mi>P</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PipelineBalance
+决定
+PPEfficiency
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六核心心智模型-②-1">六、核心心智模型 ②</h1>
+<h1
+id="equallayercount-不一定等于-equalwork"><code>EqualLayerCount</code>
+不一定等于 <code>EqualWork</code></h1>
+<p>不同 Layer 的：</p>
+<pre class="text"><code>算力
+显存
+KV
+通信</code></pre>
+<p>可能不同。</p>
+<p>所以 Pipeline 切分不能只按层数平均。</p>
+<hr />
+<h1 id="七replica-serving">七、Replica Serving</h1>
+<p>如果模型本身已经能放进一组 GPU，</p>
+<p>但总流量太大，</p>
+<p>可以：</p>
+<pre class="text"><code>Replica A
+Replica B
+Replica C</code></pre>
+<p>每个副本各自服务请求。</p>
+<p>这时扩的是：</p>
+<blockquote>
+<p>总吞吐。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>D</mi><mi>o</mi><mi>e</mi><mi>s</mi><mi>N</mi><mi>o</mi><mi>t</mi><mi>F</mi><mi>i</mi><mi>t</mi><mo>→</mo><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelDoesNotFit
+\rightarrow
+Sharding
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>F</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>B</mi><mi>u</mi><mi>t</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelFitsButTrafficHigh
+\rightarrow
+Replication
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八核心心智模型-③">八、核心心智模型 ③</h1>
+<h1 id="先问放不下还是吞吐不够">先问“放不下”还是“吞吐不够”</h1>
+<p>Parallelism Choice 必须由 Bottleneck Type 决定。</p>
+<p>盲目提高 TP：</p>
+<blockquote>
+<p>可能增加通信，却没有解决真正问题。</p>
+</blockquote>
+<hr />
+<h1 id="九组合并行">九、组合并行</h1>
+<p>可以：</p>
+<pre class="text"><code>TP=4
+×
+3 Replicas</code></pre>
+<p>也可以：</p>
+<pre class="text"><code>TP + PP</code></pre>
+<p>但越复杂：</p>
+<pre class="text"><code>调度
+通信
+故障
+发布
+监控</code></pre>
+<p>越复杂。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>s</mi><mi>m</mi><mo>=</mo><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreParallelism
+=
+MoreCoordination
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十多节点为什么更难">十、多节点为什么更难？</h1>
+<p>跨节点：</p>
+<pre class="text"><code>延迟更高
+带宽更低
+故障点更多</code></pre>
+<p>对于通信密集型 TP，</p>
+<p>网络可能直接成为瓶颈。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>p</mi><mi>o</mi><mi>l</mi><mi>o</mi><mi>g</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>进</mi><mi>入</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>l</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Topology
+必须进入
+ParallelPlan
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一latency-和-throughput-要分开评">十一、Latency 和 Throughput
+要分开评</h1>
+<p>TP：</p>
+<blockquote>
+<p>可能改变单请求延迟。</p>
+</blockquote>
+<p>Replica：</p>
+<blockquote>
+<p>主要提升总吞吐。</p>
+</blockquote>
+<p>PP：</p>
+<blockquote>
+<p>让更大模型可部署，但可能带来流水线延迟。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>s</mi><mi>m</mi><mi>必</mi><mi>须</mi><mi>分</mi><mi>别</mi><mi>评</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>和</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Parallelism
+必须分别评
+Latency
+和
+Throughput
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二fault-domain">十二、Fault Domain</h1>
+<p>如果一个服务实例由很多 GPU 共同组成，</p>
+<p>任意一张卡故障：</p>
+<blockquote>
+<p>可能让整个实例不可用。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>p</mi><mi>可</mi><mi>能</mi><mi>扩</mi><mi>大</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LargerShardGroup
+可能扩大
+FailureImpact
+}
+</annotation></semantics></math></p>
+<p>性能拓扑：</p>
+<blockquote>
+<p>同时也是可靠性拓扑。</p>
+</blockquote>
+<hr />
+<h1 id="十三parallel-benchmark">十三、Parallel Benchmark</h1>
+<p>至少比较：</p>
+<pre class="text"><code>单卡 / 单组基线
+
+TP=2
+
+TP=4
+
+Replica x2
+
+TP=2 + Replica x2</code></pre>
+<p>记录：</p>
+<pre class="text"><code>TTFT
+TPOT
+Throughput
+P95/P99
+GPU Utilization
+Interconnect Traffic
+Cost
+Fault Impact</code></pre>
+<hr />
+<h1 id="十四本阶段正式工程产物">十四、本阶段正式工程产物</h1>
+<h1
+id="procurementparallelservingpolicy_v0.1-2"><code>ProcurementParallelServingPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>parallel_policy_version
+model_version
+hardware_topology
+gpu_model
+gpus_per_node
+interconnect
+tensor_parallel_degree
+pipeline_parallel_degree
+replica_count
+pipeline_partition
+load_balancer_policy
+communication_backend
+max_context
+concurrency
+ttft
+tpot
+throughput
+p95_p99
+interconnect_utilization
+gpu_memory
+cost
+fault_domain
+failure_recovery
+quality_regression
+release_gate</code></pre>
+<hr />
+<h1 id="十五本阶段最重要的-8-个核心心智模型">十五、本阶段最重要的 8
+个核心心智模型</h1>
+<blockquote>
+<p><strong>① <code>MoreGPUs ≠ LinearSpeedup</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>②
+<code>ScaleUp ≠ ScaleOut</code>。模型分片和多副本服务是两种不同扩展。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③ Tensor Parallel 用高频通信换取单层并行。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④ Pipeline Parallel 的关键是 Stage
+Balance，而不是层数平均。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤ 单副本放不下才优先考虑 Sharding；放得下但吞吐不够优先考虑
+Replica。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥ Parallelism Choice 必须由 Bottleneck 与 Hardware Topology
+共同决定。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦
+<code>4GPUs ≠ 4GPUs</code>，互联拓扑会改变真实性能。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧ 性能拓扑同时也是故障拓扑。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第十课-第-7-阶段">下一阶段：第十课 · 第 7 阶段</h1>
+<h1
+id="serving-architecture把-model-rag-agent-接成真实-api-服务">Serving
+Architecture：把 Model + RAG + Agent 接成真实 API 服务</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>L</mi><mi>o</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Deployment
+\neq
+ModelLoading
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementservingarchitecture_v0.1"><code>ProcurementServingArchitecture_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage05.html">← 第 5 阶段</a><a class="btn" href="stage07.html">第 7 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

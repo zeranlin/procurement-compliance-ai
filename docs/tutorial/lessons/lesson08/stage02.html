@@ -1,0 +1,1094 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第8课 · 第2阶段：Domain Corpus：什么样的政府采购领域语料值得用于 CPT？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第8课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>做 CPT、领域语料混合、能力保持、灾难性遗忘和 Synthetic Data。<ul><li>CPTCorpus ≠ DocumentDump。Corpus 是你希望模型长期吸收的领域分布，不是采购文件仓库。</li><li>MoreDocuments ≠ MoreSignal。真正有意义的是经过质量过滤、去重和领域相关性折算后的 Effective Tokens。</li><li>CorpusQuality × Coverage 决定 CPT 上限。训练更久不能弥补语料里根本不存在的领域覆盖。</li></ul></div><h1 id="第八课-第-2-阶段">第八课 · 第 2 阶段</h1>
+<h1 id="domain-corpus什么样的政府采购领域语料值得用于-cpt-1">Domain
+Corpus：什么样的政府采购领域语料值得用于 CPT？</h1>
+<h2
+id="采购文本越多越好为什么是错的怎样把原始文档变成真正适合继续预训练的领域语料-1">“采购文本越多越好”为什么是错的？怎样把原始文档变成真正适合继续预训练的领域语料？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>CPTCorpus ≠ DocumentDump。Corpus
+是你希望模型长期吸收的领域分布，不是采购文件仓库。</strong></li>
+<li><strong>MoreDocuments ≠
+MoreSignal。真正有意义的是经过质量过滤、去重和领域相关性折算后的
+Effective Tokens。</strong></li>
+<li><strong>CorpusQuality × Coverage 决定 CPT
+上限。训练更久不能弥补语料里根本不存在的领域覆盖。</strong></li>
+<li><strong>Authority ≠
+Representativeness。权威法规很重要，但只训练法规并不能代表完整政府采购语言世界。</strong></li>
+<li><strong>Coverage
+是多维空间。文件类型、行业、地区、时间、复杂度和生命周期必须一起看，不能只看总
+Token。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="even">
+<td><code>Domain Corpus</code></td>
+<td>领域语料：用于继续预训练的政府采购专业文本集合</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>OCR</code></td>
+<td>OCR：把扫描图像中的文字转换成机器可读文本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 1 阶段我们已经锁定：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mo>=</mo><mi>在</mi><mi>领</mi><mi>域</mi><mi>语</mi><mi>料</mi><mi>分</mi><mi>布</mi><mi>上</mi><mi>继</mi><mi>续</mi><mi>执</mi><mi>行</mi><mi>预</mi><mi>训</mi><mi>练</mi><mi>目</mi><mi>标</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPT
+=
+在领域语料分布上继续执行预训练目标
+}
+</annotation></semantics></math></p>
+<p>所以第 2 阶段真正要解决的问题不是：</p>
+<blockquote>
+<p><strong>“去哪里找更多采购文件？”</strong></p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>“什么样的数据分布，值得让模型继续改 Weight？”</strong></p>
+</blockquote>
+<p>因为 CPT 和 RAG 不一样。</p>
+<p>RAG 的坏文档主要会污染一次检索。</p>
+<p>而 CPT 的坏语料会通过梯度：</p>
+<blockquote>
+<p><strong>直接写进模型参数。</strong></p>
+</blockquote>
+<p>所以本阶段最终形成：</p>
+<h1
+id="procurementcptcorpuspolicy_v0.1-1"><code>ProcurementCPTCorpusPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-1">一、先锁死本阶段最重要的一句话</h1>
+<p>CPT Corpus 不是：</p>
+<blockquote>
+<p><strong>一堆采购文件的集合。</strong></p>
+</blockquote>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mo>=</mo><mi>我</mi><mi>们</mi><mi>希</mi><mi>望</mi><mi>模</mi><mi>型</mi><mi>长</mi><mi>期</mi><mi>吸</mi><mi>收</mi><mi>的</mi><mi>领</mi><mi>域</mi><mi>分</mi><mi>布</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPTCorpus
+=
+我们希望模型长期吸收的领域分布
+}
+</annotation></semantics></math></p>
+<p>这句话非常重要。</p>
+<p>因为你把什么文本长期、大量、重复地放进 CPT，</p>
+<p>模型就会逐渐认为：</p>
+<blockquote>
+<p><strong>这就是这个领域“正常语言世界”的样子。</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>D</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>r</mi><mi>D</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorpusDesign
+=
+DomainPriorDesign
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>你不是在“喂文件”，你是在设计模型未来的领域先验。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二核心心智模型-①data-volume-不等于-effective-learning-signal">二、核心心智模型
+①：Data Volume 不等于 Effective Learning Signal</h1>
+<p>第一个必须彻底改掉的直觉是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>U</mi><mi>s</mi><mi>e</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreDocuments
+\neq
+MoreUsefulSignal
+}
+</annotation></semantics></math></p>
+<p>假设你收集了：</p>
+<pre class="text"><code>1000万页采购文本</code></pre>
+<p>但其中：</p>
+<pre class="text"><code>40% 是重复公告模板
+20% 是网页导航 / 页眉页脚
+15% 是OCR错误
+10% 是同一项目不同镜像站重复
+10% 是无关附件
+真正高质量领域正文只剩 5%</code></pre>
+<p>那么表面上：</p>
+<blockquote>
+<p>数据量巨大。</p>
+</blockquote>
+<p>实际上：</p>
+<blockquote>
+<p><strong>有效学习信号非常低。</strong></p>
+</blockquote>
+<p>所以真正要关注的是：</p>
+<h1 id="effective-domain-tokens">Effective Domain Tokens</h1>
+<h2 id="有效领域-token">有效领域 Token</h2>
+<p>可以概念化为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>=</mo><mi>R</mi><mi>a</mi><mi>w</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>×</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>×</mo><mi>U</mi><mi>n</mi><mi>i</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>×</mo><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+EffectiveTokens
+=
+RawTokens
+\times
+QualityRate
+\times
+UniquenessRate
+\times
+DomainRelevance
+</annotation></semantics></math></p>
+<p>这里不是要求你真的机械相乘。</p>
+<p>而是建立一个工程直觉：</p>
+<blockquote>
+<p><strong>Token
+数量只有经过质量、去重和领域相关性折算以后，才有意义。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三核心心智模型-②corpus-quality-决定-cpt-上限">三、核心心智模型
+②：Corpus Quality 决定 CPT 上限</h1>
+<p>CPT 最终能学到什么，</p>
+<p>首先取决于：</p>
+<blockquote>
+<p>Corpus 本身提供了什么。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>U</mi><mi>p</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mo>≈</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>×</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>×</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPTUpperBound
+\approx
+CorpusQuality
+\times
+CorpusCoverage
+\times
+TrainingQuality
+}
+</annotation></semantics></math></p>
+<p>如果 Corpus 里没有：</p>
+<pre class="text"><code>复杂技术参数
+高质量合同条款
+评分办法
+履约验收文本
+中小企业政策表达
+跨行业采购需求</code></pre>
+<p>模型就不可能凭空学会：</p>
+<blockquote>
+<p>这些领域分布。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>不</mi><mi>能</mi><mi>靠</mi><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>E</mi><mi>p</mi><mi>o</mi><mi>c</mi><mi>h</mi><mi>s</mi><mi>补</mi><mi>回</mi><mi>来</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MissingCoverage
+不能靠MoreEpochs补回来
+}
+</annotation></semantics></math></p>
+<p>这是非常重要的专业判断。</p>
+<p>训练更久：</p>
+<blockquote>
+<p>只能更充分地学习已有数据分布。</p>
+</blockquote>
+<p>不能创造：</p>
+<blockquote>
+<p>语料中根本不存在的领域结构。</p>
+</blockquote>
+<hr />
+<h1 id="四domain-corpus-的完整工程流程">四、Domain Corpus
+的完整工程流程</h1>
+<p>英文流程先给出来：</p>
+<pre class="text"><code>Source Discovery
+↓
+Eligibility Check
+↓
+Document Extraction
+↓
+Normalization
+↓
+Quality Filtering
+↓
+Deduplication
+↓
+Sensitive / Compliance Filtering
+↓
+Benchmark Firewall
+↓
+Coverage Balancing
+↓
+Token Budgeting
+↓
+Corpus Versioning
+↓
+CPT Ready Corpus</code></pre>
+<p>翻译成人话：</p>
+<pre class="text"><code>先找到候选来源
+↓
+判断是否应该进入训练
+↓
+把文件可靠解析成正文
+↓
+做不改变语义的规范化
+↓
+过滤低质量文档
+↓
+删除重复和模板堆积
+↓
+处理敏感数据与使用边界
+↓
+隔离未来Benchmark
+↓
+检查领域覆盖是否偏斜
+↓
+计算真正可用的Token预算
+↓
+冻结版本和来源清单
+↓
+得到可训练Corpus</code></pre>
+<p>这里最重要的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawDocuments
+\neq
+TrainingCorpus
+}
+</annotation></semantics></math></p>
+<p>中间必须经过一整条数据治理链。</p>
+<hr />
+<h1
+id="五核心心智模型-③source-authority-不等于-corpus-fitness">五、核心心智模型
+③：Source Authority 不等于 Corpus Fitness</h1>
+<p>这条非常容易被忽略。</p>
+<p>某份文件很权威，</p>
+<p>不代表它一定适合 CPT。</p>
+<p>例如：</p>
+<pre class="text"><code>法律法规原文</code></pre>
+<p>权威性非常高。</p>
+<p>但如果你的 CPT 目标是：</p>
+<blockquote>
+<p>让模型更熟悉采购文件结构和采购实务语言，</p>
+</blockquote>
+<p>那么只用法规文本会导致：</p>
+<blockquote>
+<p>领域分布过窄。</p>
+</blockquote>
+<p>反过来：</p>
+<pre class="text"><code>采购文件
+成交公告
+采购需求
+合同
+验收材料</code></pre>
+<p>可能更接近：</p>
+<blockquote>
+<p>真实业务语言分布。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Authority
+\neq
+Representativeness
+}
+</annotation></semantics></math></p>
+<p>CPT Corpus 需要的是：</p>
+<blockquote>
+<p><strong>“权威 + 代表性 + 质量 + 覆盖”共同成立。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六政府采购-cpt-corpus-应该有哪些-source-type">六、政府采购 CPT
+Corpus 应该有哪些 Source Type？</h1>
+<p>第一版可以把来源分成六类。</p>
+<h2 id="regulatory-corpus">1. Regulatory Corpus</h2>
+<h3 id="法规与规范语料">法规与规范语料</h3>
+<p>例如：</p>
+<pre class="text"><code>法律法规
+部门规章
+规范性文件
+政策解释
+官方指南</code></pre>
+<p>作用：</p>
+<blockquote>
+<p>建立规范性语言和规则表达分布。</p>
+</blockquote>
+<hr />
+<h2 id="procurement-document-corpus">2. Procurement Document Corpus</h2>
+<h3 id="采购文件语料">采购文件语料</h3>
+<p>例如：</p>
+<pre class="text"><code>招标文件
+竞争性磋商文件
+询价文件
+采购需求
+评分办法
+资格条件
+技术参数</code></pre>
+<p>作用：</p>
+<blockquote>
+<p>建立真实采购文件结构和条款语言。</p>
+</blockquote>
+<hr />
+<h2 id="transaction-notice-corpus">3. Transaction / Notice Corpus</h2>
+<h3 id="交易与公告语料">交易与公告语料</h3>
+<p>例如：</p>
+<pre class="text"><code>采购公告
+更正公告
+成交公告
+中标公告
+终止公告</code></pre>
+<p>作用：</p>
+<blockquote>
+<p>学习项目生命周期和公开交易表达。</p>
+</blockquote>
+<hr />
+<h2 id="contract-performance-corpus">4. Contract / Performance
+Corpus</h2>
+<h3 id="合同与履约语料">合同与履约语料</h3>
+<p>例如：</p>
+<pre class="text"><code>合同条款
+履约要求
+验收标准
+付款条件
+售后服务</code></pre>
+<p>作用：</p>
+<blockquote>
+<p>补足采购后半程语言。</p>
+</blockquote>
+<hr />
+<h2 id="industry-specific-corpus">5. Industry-specific Corpus</h2>
+<h3 id="行业专项语料">行业专项语料</h3>
+<p>例如：</p>
+<pre class="text"><code>医疗
+教育
+信息化
+工程
+物业
+检测
+科研设备</code></pre>
+<p>作用：</p>
+<blockquote>
+<p>避免模型只懂通用采购，不懂行业采购。</p>
+</blockquote>
+<hr />
+<h2 id="high-quality-explanatory-corpus">6. High-quality Explanatory
+Corpus</h2>
+<h3 id="高质量解释性语料">高质量解释性语料</h3>
+<p>例如：</p>
+<pre class="text"><code>官方问答
+政策解读
+业务指南
+培训材料
+专家校对后的解释文本</code></pre>
+<p>作用：</p>
+<blockquote>
+<p>增强概念之间的解释连接。</p>
+</blockquote>
+<hr />
+<h1
+id="七核心心智模型-④coverage-是多维空间不是文件类型齐了">七、核心心智模型
+④：Coverage 是多维空间，不是“文件类型齐了”</h1>
+<p>很多团队说：</p>
+<blockquote>
+<p>“我们公告、文件、合同都有了，覆盖已经很全。”</p>
+</blockquote>
+<p>这远远不够。</p>
+<p>真正的 Coverage 至少应该看：</p>
+<pre class="text"><code>Document Type
+采购方式
+行业
+地区
+年份
+项目金额区间
+项目复杂度
+风险类型
+文档长度
+语言风格
+生命周期阶段</code></pre>
+<p>所以 Corpus Coverage 更像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>=</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>T</mi><mi>y</mi><mi>p</mi><mi>e</mi><mo>×</mo><mi>I</mi><mi>n</mi><mi>d</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi><mo>×</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo>×</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Coverage
+=
+DocumentType
+\times
+Industry
+\times
+Region
+\times
+Time
+\times
+Complexity
+}
+</annotation></semantics></math></p>
+<p>不是数学上真的要做笛卡尔积，</p>
+<p>而是建立：</p>
+<blockquote>
+<p><strong>覆盖是多维的。</strong></p>
+</blockquote>
+<p>例如总体有 1 亿 Token，</p>
+<p>但其中：</p>
+<pre class="text"><code>80% 都来自IT采购</code></pre>
+<p>那么对医疗和工程采购来说：</p>
+<blockquote>
+<p>仍然是严重缺覆盖。</p>
+</blockquote>
+<hr />
+<h1 id="八temporal-coverage时间分布为什么非常重要">八、Temporal
+Coverage：时间分布为什么非常重要？</h1>
+<p>采购规则、模板、表达方式会随时间变化。</p>
+<p>如果 Corpus 主要来自：</p>
+<pre class="text"><code>2018～2020</code></pre>
+<p>模型可能学到：</p>
+<blockquote>
+<p>旧表达、旧模板、旧规则语言。</p>
+</blockquote>
+<p>所以至少要保留：</p>
+<pre class="text"><code>publish_date
+effective_date
+document_version
+source_version</code></pre>
+<p>并分析：</p>
+<h1 id="temporal-distribution">Temporal Distribution</h1>
+<h2 id="时间分布">时间分布</h2>
+<p>核心不是简单追求：</p>
+<blockquote>
+<p>越新越好。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>知道哪些是历史分布，哪些是当前主流分布。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="九核心心智模型-⑤historical-data-可以训练但必须带时间意识">九、核心心智模型
+⑤：Historical Data 可以训练，但必须带时间意识</h1>
+<p>历史文档不是都应该删除。</p>
+<p>因为历史语料可以帮助模型理解：</p>
+<pre class="text"><code>政策演化
+旧文书表达
+版本变化
+历史项目语言</code></pre>
+<p>但问题是：</p>
+<blockquote>
+<p>如果历史语料和当前语料完全混在一起，没有任何时间边界，</p>
+</blockquote>
+<p>模型就可能把：</p>
+<blockquote>
+<p>过期表达</p>
+</blockquote>
+<p>当成：</p>
+<blockquote>
+<p>当前主流表达。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mo>≠</mo><mi>I</mi><mi>n</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Historical
+\neq
+Invalid
+}
+</annotation></semantics></math></p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>必</mi><mi>须</mi><mi>可</mi><mi>识</mi><mi>别</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Historical
+必须可识别
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十deduplication采购语料为什么特别容易假大数据">十、Deduplication：采购语料为什么特别容易“假大数据”？</h1>
+<p>政府采购数据非常容易重复。</p>
+<p>同一个项目可能出现在：</p>
+<pre class="text"><code>中央平台
+地方平台
+代理机构网站
+镜像站
+转载站
+搜索缓存</code></pre>
+<p>还可能存在：</p>
+<pre class="text"><code>原公告
+更正公告
+复制公告
+附件重复
+模板复用</code></pre>
+<p>所以至少要做：</p>
+<pre class="text"><code>Exact Deduplication
+完全重复去重
+
+Near Deduplication
+近似重复去重
+
+Template Deduplication
+模板级去重
+
+Document Lineage Analysis
+文档血缘分析</code></pre>
+<p>这里要特别注意：</p>
+<blockquote>
+<p>更正公告和原公告不能简单当重复删掉。</p>
+</blockquote>
+<p>因为它们可能表达：</p>
+<blockquote>
+<p>真实业务变化。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Similarity
+\neq
+SameMeaning
+}
+</annotation></semantics></math></p>
+<p>去重必须保留：</p>
+<blockquote>
+<p>Lineage。</p>
+</blockquote>
+<hr />
+<h1
+id="十一boilerplate模板文本到底该不该删">十一、Boilerplate：模板文本到底该不该删？</h1>
+<p>采购文档里有大量：</p>
+<pre class="text"><code>页眉
+页脚
+固定免责声明
+平台导航
+版权信息
+重复联系人模板
+固定投标须知</code></pre>
+<p>如果全部保留，</p>
+<p>模型会浪费大量容量学习：</p>
+<blockquote>
+<p>高频但低价值模板。</p>
+</blockquote>
+<p>但如果全部删除模板，</p>
+<p>又可能损失：</p>
+<blockquote>
+<p>真实文书结构。</p>
+</blockquote>
+<p>所以正确思路不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>o</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>r</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>A</mi><mi>l</mi><mi>l</mi></mrow><annotation encoding="application/x-tex">
+Boilerplate
+\rightarrow
+DeleteAll
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>o</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>r</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>f</mi><mi>y</mi><mo>→</mo><mi>K</mi><mi>e</mi><mi>e</mi><mi>p</mi><mi>/</mi><mi>D</mi><mi>o</mi><mi>w</mi><mi>n</mi><mi>s</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>/</mi><mi>R</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>v</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Boilerplate
+\rightarrow
+Classify
+\rightarrow
+Keep / Downsample / Remove
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>网页导航
+→ Remove
+
+文档结构标题
+→ Keep
+
+固定法律声明
+→ Downsample
+
+高频投标须知模板
+→ Keep部分代表样本</code></pre>
+<hr />
+<h1 id="十二quality-filter什么叫高质量-cpt-文档">十二、Quality
+Filter：什么叫“高质量 CPT 文档”？</h1>
+<p>可以用几个维度检查：</p>
+<pre class="text"><code>Parse Integrity
+解析是否完整
+
+Text Coherence
+上下文是否连贯
+
+Domain Relevance
+是否真正属于采购领域
+
+Structure Integrity
+章节结构是否保留
+
+Noise Rate
+乱码 / OCR噪声比例
+
+Metadata Completeness
+来源、时间、版本是否完整
+
+Semantic Density
+有效业务内容比例
+
+Authenticity
+是否接近真实业务文本</code></pre>
+<p>可以建立一个概念化质量函数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>,</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>,</mo><mi>C</mi><mi>o</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>,</mo><mi>M</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>,</mo><mi>N</mi><mi>o</mi><mi>i</mi><mi>s</mi><mi>e</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Q(d)
+=
+f(
+Integrity,
+Relevance,
+Coherence,
+Metadata,
+Noise
+)
+</annotation></semantics></math></p>
+<p>这里不要求一开始就做复杂模型打分。</p>
+<p>第一版完全可以：</p>
+<blockquote>
+<p><strong>规则过滤 + 抽样人工复核。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十三ocr-文本为什么不能能读就进-cpt">十三、OCR
+文本为什么不能“能读就进 CPT”？</h1>
+<p>假设原文：</p>
+<pre class="text"><code>投标人须具有三级资质</code></pre>
+<p>OCR 变成：</p>
+<pre class="text"><code>投标人须具有三汲资质</code></pre>
+<p>单条看似问题不大。</p>
+<p>但如果亿级 Token 里到处都是这种错误：</p>
+<blockquote>
+<p>模型会把 OCR 错误本身学成语言分布。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>C</mi><mi>R</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OCRReadable
+\neq
+TrainingReady
+}
+</annotation></semantics></math></p>
+<p>OCR 文档至少要经过：</p>
+<pre class="text"><code>字符异常率
+版面完整性
+数字一致性
+单位完整性
+随机人工抽检</code></pre>
+<p>对于质量过低的来源：</p>
+<blockquote>
+<p>宁可不进 CPT。</p>
+</blockquote>
+<hr />
+<h1
+id="十四sensitive-data训练语料不是公开抓到就能随便进">十四、Sensitive
+Data：训练语料不是“公开抓到就能随便进”</h1>
+<p>Corpus Governance 还必须考虑：</p>
+<pre class="text"><code>个人信息
+联系人手机号
+身份证号
+银行账户
+内部账号
+未公开商业信息
+密钥
+内部标记</code></pre>
+<p>需要：</p>
+<h1 id="sensitive-data-filtering">Sensitive Data Filtering</h1>
+<h2 id="敏感数据过滤">敏感数据过滤</h2>
+<p>核心原则是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>E</mi><mi>l</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AvailableData
+\neq
+TrainingEligibleData
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>数据能拿到，不代表应该进入长期模型参数。</p>
+</blockquote>
+<hr />
+<h1
+id="十五benchmark-firewallcpt-corpus-和未来-benchmark-必须隔离">十五、Benchmark
+Firewall：CPT Corpus 和未来 Benchmark 必须隔离</h1>
+<p>这是第 1 阶段已经提过，</p>
+<p>但第 2 阶段必须工程化。</p>
+<p>流程：</p>
+<pre class="text"><code>Candidate Corpus
+↓
+Benchmark Registry
+↓
+Exact Match Check
+↓
+Near-Duplicate Check
+↓
+Project / Document Lineage Check
+↓
+Blocked Set
+↓
+Training Eligible Set</code></pre>
+<p>翻译成人话：</p>
+<blockquote>
+<p>候选语料在进入训练之前，先拿未来测试集和测试候选项目来做一道防火墙。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mo>∩</mo><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mo>=</mo><mi>⌀</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingCorpus
+\cap
+Benchmark
+=
+\varnothing
+}
+</annotation></semantics></math></p>
+<p>现实里未必能做到绝对数学意义上的零交集，</p>
+<p>但必须建立：</p>
+<blockquote>
+<p><strong>主动隔离和审计机制。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十六token-budget真正训练的是-token不是文件数">十六、Token
+Budget：真正训练的是 Token，不是文件数</h1>
+<p>假设：</p>
+<pre class="text"><code>100万份文件</code></pre>
+<p>这对训练预算没有直接意义。</p>
+<p>真正影响训练的是：</p>
+<h1 id="token-budget">Token Budget</h1>
+<h2 id="token-预算">Token 预算</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>=</mo><munderover><mo>∑</mo><mrow><mi>d</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+TotalTokens
+=
+\sum_{d=1}^{N}
+Tokens(d)
+</annotation></semantics></math></p>
+<p>但真正应该看的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>=</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>A</mi><mi>f</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>t</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>A</mi><mi>f</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>p</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EffectiveTokens
+=
+TokensAfterFilter
++
+TokensAfterDedup
++
+CoverageQualifiedTokens
+}
+</annotation></semantics></math></p>
+<p>更准确地说：</p>
+<blockquote>
+<p>去重、过滤以后还剩多少 Token？</p>
+</blockquote>
+<blockquote>
+<p>这些 Token 分布在哪些领域？</p>
+</blockquote>
+<p>这才决定：</p>
+<blockquote>
+<p>CPT 的有效训练规模。</p>
+</blockquote>
+<p>Tokenizer 的具体审计，</p>
+<p>我们留到第 3 阶段。</p>
+<hr />
+<h1 id="十七corpus-versioningcorpus-也必须像软件一样发布">十七、Corpus
+Versioning：Corpus 也必须像软件一样发布</h1>
+<p>最终不能只保存一个目录：</p>
+<pre class="text"><code>/data/cpt/final/</code></pre>
+<p>半年以后没人知道：</p>
+<blockquote>
+<p>“final 到底是哪一版？”</p>
+</blockquote>
+<p>至少应该有：</p>
+<pre class="text"><code>ProcurementCPTCorpus_V0.1
+
+corpus_manifest.json
+
+source_registry.json
+
+filter_policy_version
+
+dedup_version
+
+benchmark_firewall_version
+
+document_count
+
+token_count
+
+time_range
+
+domain_distribution</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>必</mi><mi>须</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Corpus
+必须Versioned
+}
+</annotation></semantics></math></p>
+<p>因为模型版本能不能复现，</p>
+<p>首先取决于：</p>
+<blockquote>
+<p>训练 Corpus 能不能复现。</p>
+</blockquote>
+<hr />
+<h1
+id="十八本阶段工程产物procurementcptcorpuspolicy_v0.1">十八、本阶段工程产物：<code>ProcurementCPTCorpusPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>corpus_policy_version
+
+source_types
+
+source_registry
+
+eligibility_rules
+
+exclusion_rules
+
+parse_quality_rules
+
+normalization_policy
+
+exact_dedup_policy
+
+near_dedup_policy
+
+template_policy
+
+document_lineage_policy
+
+temporal_coverage
+
+industry_coverage
+
+region_coverage
+
+document_type_coverage
+
+sensitive_data_policy
+
+benchmark_firewall_policy
+
+token_budget
+
+quality_sampling_plan
+
+corpus_version
+
+manifest_required
+=
+true</code></pre>
+<p>每份 Document 最好至少保留：</p>
+<pre class="text"><code>document_id
+
+source_id
+
+source_type
+
+project_id
+
+document_type
+
+industry
+
+region
+
+publish_date
+
+document_version
+
+lineage_id
+
+parse_quality
+
+dedup_group_id
+
+benchmark_blocked
+
+sensitive_flag
+
+token_count
+
+corpus_eligible</code></pre>
+<p>这就是：</p>
+<blockquote>
+<p><strong>一个真正可以审计的 CPT Corpus。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十九本阶段最重要的-7-个核心心智模型">十九、本阶段最重要的 7
+个核心心智模型</h1>
+<p>把整阶段压成七条。</p>
+<blockquote>
+<p><strong>心智模型 ①：<code>CPTCorpus ≠ DocumentDump</code>。Corpus
+是你希望模型长期吸收的领域分布，不是采购文件仓库。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>MoreDocuments ≠ MoreSignal</code>。真正有意义的是经过质量过滤、去重和领域相关性折算后的
+Effective Tokens。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ③：<code>CorpusQuality × Coverage</code> 决定 CPT
+上限。训练更久不能弥补语料里根本不存在的领域覆盖。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Authority ≠ Representativeness</code>。权威法规很重要，但只训练法规并不能代表完整政府采购语言世界。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑤：Coverage
+是多维空间。文件类型、行业、地区、时间、复杂度和生命周期必须一起看，不能只看总
+Token。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>Similarity ≠ Duplicate</code>。采购文档存在更正、版本和模板血缘，去重必须理解
+Document Lineage。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>AvailableData ≠ TrainingEligibleData</code>。能抓到的数据还必须通过质量、敏感信息、Benchmark
+Firewall 和版本治理，才能进入 Weight。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十把完整流程压成一张专业工程图">二十、把完整流程压成一张专业工程图</h1>
+<pre class="text"><code>                     Raw Procurement Sources
+                              │
+                              ▼
+                       Source Registry
+                记录来源、权限、类型与版本
+                              │
+                              ▼
+                      Eligibility Check
+                 判断是否具备训练资格
+                              │
+                              ▼
+                    Parse &amp; Normalize
+                恢复正文并做安全规范化
+                              │
+                              ▼
+                      Quality Filter
+               去掉乱码、低质量和无关内容
+                              │
+                              ▼
+                     Dedup &amp; Lineage
+              去重复，同时保留版本与血缘
+                              │
+                              ▼
+                  Sensitive Data Filter
+               隔离不应写入模型参数的数据
+                              │
+                              ▼
+                   Benchmark Firewall
+               防止未来Gold/Test进入训练
+                              │
+                              ▼
+                    Coverage Analysis
+          检查行业、地区、时间、文档类型偏斜
+                              │
+                              ▼
+                      Token Budget
+             计算真正可用于训练的有效Token
+                              │
+                              ▼
+                    Corpus Versioning
+              冻结Manifest、策略和版本号
+                              │
+                              ▼
+              ProcurementCPTCorpus_V0.1</code></pre>
+<p>如果只记一句：</p>
+<blockquote>
+<p><strong>CPT Corpus
+的专业设计，不是“尽量收集更多采购文本”，而是把真实领域世界转化成一个质量可控、覆盖可解释、重复受控、时间可追踪、敏感数据受治理、Benchmark
+不泄漏、版本可复现的训练分布。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第八课-第-2-阶段掌握测试">第八课 · 第 2 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 CPT Corpus
+不是文件仓库；为什么数据量和有效学习信号不是一回事；什么叫 Effective
+Domain Tokens；Corpus Quality 和 Coverage 为什么决定 CPT 上限；为什么
+Source Authority 不等于 Corpus Fitness；政府采购 CPT 至少应该覆盖哪些
+Source Type；为什么 Coverage
+是多维空间；历史数据为什么可以保留但必须带时间意识；为什么采购语料特别容易形成“假大数据”；Exact
+/ Near / Template Dedup 有什么区别；Document Lineage
+为什么不能丢；Boilerplate 为什么不能简单全部删除；高质量 CPT
+文档应该从哪些维度判断；为什么 OCR “能读”还不代表可以训练；为什么
+Available Data 不等于 Training Eligible Data；Benchmark Firewall
+应该放在哪个环节；为什么 Token Budget 比文件数更有意义；以及为什么
+Corpus Versioning 是模型可复现的前提。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mi>第</mi><mn>2</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课第2阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第八课-第-3-阶段">下一阶段：第八课 · 第 3 阶段</h1>
+<h1
+id="tokenizer-audit领域术语怎样被切分什么时候需要调整-tokenizer">Tokenizer
+Audit：领域术语怎样被切分，什么时候需要调整 Tokenizer？</h1>
+<h2
+id="模型看见了一个采购术语到底意味着什么一个术语被切成-1-个-token3-个-token10-个-token会怎样影响-cpt">“模型看见了一个采购术语”到底意味着什么？一个术语被切成
+1 个 Token、3 个 Token、10 个 Token，会怎样影响 CPT？</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Tokenization
+Vocabulary Coverage
+Subword Fragmentation
+Token Fertility
+Unknown / Rare Pattern
+Numeric / Unit Tokenization
+Chinese Procurement Terms
+Tokenizer Extension
+Embedding Resize
+Initialization
+Compatibility Risk
+Tokenizer Versioning</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementtokenizeraudit_v0.1"><code>ProcurementTokenizerAudit_V0.1</code></h1>
+<p>下一阶段最核心的边界是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>I</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>e</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>I</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizerIssue
+\neq
+ModelKnowledgeIssue
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>有些领域问题不是“模型不知道”，而是模型在输入层就把关键术语切得很差。</p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

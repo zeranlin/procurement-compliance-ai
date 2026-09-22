@@ -1,0 +1,1488 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第11阶段：真正搭建 `ProcurementAgent_V0.1`：端到端政府采购工作流</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第11阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，LLM 不是 Agent；Agent 是 Model + State + Tools + Policy + Loop，模型只是决策组件。</li><li>第二，Tool Calling 不是模型直接执行函数，而是 Structured Tool Request → Runtime Execution → Tool Result → New Observation。</li><li>第三，复杂任务必须经过 Planning 与 Task Graph，Agent Loop 必须依赖真实 State，而不是只靠聊天历史。</li></ul></div><h1 id="第七课-第-11-阶段">第七课 · 第 11 阶段</h1>
+<h1 id="真正搭建-procurementagent_v0.1端到端政府采购工作流-1">真正搭建
+<code>ProcurementAgent_V0.1</code>：端到端政府采购工作流</h1>
+<h2
+id="怎样把-ragtoolsplanningstaterecoverysafetyhuman-approval-和-evaluation-全部接成一个真正可以执行可以审计可以评测的系统-1">怎样把
+RAG、Tools、Planning、State、Recovery、Safety、Human Approval 和
+Evaluation 全部接成一个真正可以执行、可以审计、可以评测的系统？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-10">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：缺少统一、醒目的阶段核心心智模型入口；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-10">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，LLM 不是 Agent；Agent 是 Model + State + Tools +
+Policy + Loop，模型只是决策组件。</strong></li>
+<li><strong>第二，Tool Calling 不是模型直接执行函数，而是 Structured
+Tool Request → Runtime Execution → Tool Result → New
+Observation。</strong></li>
+<li><strong>第三，复杂任务必须经过 Planning 与 Task Graph，Agent Loop
+必须依赖真实 State，而不是只靠聊天历史。</strong></li>
+<li><strong>第四，RAG、Database、File、Compute、Action Tool
+不能混为一谈；Routing 首先要找到正确 Source of Truth。</strong></li>
+<li><strong>第五，可靠 Agent 不是永不失败，而是失败以后能够正确
+Retry、Replan、Verify、Fallback、Compensate 或 Escalate。</strong></li>
+<li><strong>第六，Agent Safety 不是让模型“更听话”，而是用 Least
+Privilege、Capability Boundary、Approval Gate、Data Boundary 和 Runtime
+Policy 阻止不该发生的真实动作。</strong></li>
+<li><strong>第七，真正可发布的 Agent 必须让
+Planning、Tool、State、Recovery、Safety、Evidence、Completion 与 Audit
+都能单独评测和 Trace；AgentQuality ≠
+FinalAnswerQualityOnly。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-10">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="even">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="odd">
+<td><code>Recovery</code></td>
+<td>恢复：工具失败或中断后安全重试、降级和继续</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>Planning</code></td>
+<td>任务规划：把目标拆成可执行、带依赖的子任务</td>
+</tr>
+<tr class="even">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="odd">
+<td><code>Routing</code></td>
+<td>路由：决定当前任务交给哪个工具/模块</td>
+</tr>
+<tr class="even">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="odd">
+<td><code>Tool Calling</code></td>
+<td>工具调用：模型按受控协议选择工具并构造参数</td>
+</tr>
+<tr class="even">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-10">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前 10 个阶段，我们已经分别建立了：</p>
+<pre class="text"><code>Stage 1
+Agent Boundary
+
+Stage 2
+Tool Calling Protocol
+
+Stage 3
+Structured Output
+
+Stage 4
+Tool Registry / Capability Boundary
+
+Stage 5
+Agent Loop
+
+Stage 6
+Planning / Task Decomposition
+
+Stage 7
+State / Memory / Working Context
+
+Stage 8
+RAG + Tool Routing
+
+Stage 9
+Failure Recovery / Human-in-the-loop
+
+Stage 10
+Agent Safety / Audit Trail</code></pre>
+<p>最后一个阶段不再继续增加新的“大概念”。</p>
+<p>我们要做的是：</p>
+<blockquote>
+<p><strong>把这些组件真正接起来。</strong></p>
+</blockquote>
+<p>最终形成：</p>
+<h1 id="procurementagent_v0.1-1"><code>ProcurementAgent_V0.1</code></h1>
+<hr />
+<h1 id="一先锁死最终系统定义">一、先锁死最终系统定义</h1>
+<p><code>ProcurementAgent_V0.1</code> 不是：</p>
+<blockquote>
+<p>一个会自动调用工具的大模型。</p>
+</blockquote>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>=</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>+</mo><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>s</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>o</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementAgent\_V0.1
+=
+ProcurementRAG\_V0.1
++
+Planning
++
+State
++
+Tools
++
+Policy
++
+Recovery
++
+HumanApproval
++
+Evaluator
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<pre class="text"><code>ProcurementRAG_V0.1
+负责：
+外部知识与证据
+
+Planning
+负责：
+把目标拆成任务
+
+State
+负责：
+保存真实任务进度
+
+Tools
+负责：
+执行外部动作
+
+Policy
+负责：
+限制能力和权限
+
+Recovery
+负责：
+失败后的恢复
+
+Human Approval
+负责：
+高风险节点的人类控制
+
+Evaluator
+负责：
+判断任务是否真的完成</code></pre>
+<p>所以最终边界是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mi>负</mi><mi>责</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLM
+负责Decision
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>负</mi><mi>责</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Runtime
+负责Execution
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>负</mi><mi>责</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>O</mi><mi>f</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+State
+负责TruthOfProgress
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>负</mi><mi>责</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Policy
+负责CapabilityBoundary
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>负</mi><mi>责</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Evaluator
+负责CompletionTruth
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二最终端到端主链">二、最终端到端主链</h1>
+<p>整个 <code>ProcurementAgent_V0.1</code> 的在线执行链可以压成：</p>
+<pre class="text"><code>User Goal
+↓
+Goal Understanding
+↓
+Task Planning
+↓
+Task State Initialization
+↓
+Tool Discovery
+↓
+RAG / Tool Routing
+↓
+Structured Tool Call
+↓
+Runtime Validation
+↓
+Authorization / Approval
+↓
+Execution
+↓
+Observation
+↓
+State Update
+↓
+Progress / Completion Check
+↓
+Continue / Replan / Recover / Stop
+↓
+Final Artifact
+↓
+Audit Trace
+↓
+Evaluation</code></pre>
+<p>用公式表达：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>S</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>S</mi><mi>t</mi></msub><mo>,</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mi>t</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+S_{t+1}
+=
+Update(
+S_t,
+Observation_t
+)
+</annotation></semantics></math></p>
+<p>而下一步决策：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi><mo>,</mo><msub><mi>S</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>,</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><msub><mi>t</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Decision_{t+1}
+=
+Policy(
+Goal,
+S_{t+1},
+WorkingContext_{t+1}
+)
+</annotation></semantics></math></p>
+<p>直到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>S</mi><mi>t</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+CompletionCheck(S_t)=True
+</annotation></semantics></math></p>
+<p>或：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>S</mi><mi>t</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+StopCondition(S_t)=True
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三真正开始运行以前先建立-task-contract">三、真正开始运行以前：先建立
+Task Contract</h1>
+<p>用户说：</p>
+<blockquote>
+<p>“帮我完整审查这份采购文件，并生成带依据的风险报告。”</p>
+</blockquote>
+<p>不能马上乱调 Tool。</p>
+<p>先建立一个：</p>
+<h1 id="task-contract">Task Contract</h1>
+<h2 id="任务契约">任务契约</h2>
+<p>至少包括：</p>
+<div class="sourceCode" id="cb542"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb542-1"><a href="#cb542-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb542-2"><a href="#cb542-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb542-3"><a href="#cb542-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;goal&quot;</span><span class="fu">:</span> <span class="st">&quot;完整审查采购文件并生成风险报告&quot;</span><span class="fu">,</span></span>
+<span id="cb542-4"><a href="#cb542-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;scope&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb542-5"><a href="#cb542-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;FILE_001&quot;</span></span>
+<span id="cb542-6"><a href="#cb542-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb542-7"><a href="#cb542-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;required_outputs&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb542-8"><a href="#cb542-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;qualification_review&quot;</span><span class="ot">,</span></span>
+<span id="cb542-9"><a href="#cb542-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;scoring_review&quot;</span><span class="ot">,</span></span>
+<span id="cb542-10"><a href="#cb542-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;technical_review&quot;</span><span class="ot">,</span></span>
+<span id="cb542-11"><a href="#cb542-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;contract_review&quot;</span><span class="ot">,</span></span>
+<span id="cb542-12"><a href="#cb542-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;evidence_map&quot;</span><span class="ot">,</span></span>
+<span id="cb542-13"><a href="#cb542-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;final_report&quot;</span></span>
+<span id="cb542-14"><a href="#cb542-14" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb542-15"><a href="#cb542-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;allowed_side_effect&quot;</span><span class="fu">:</span> <span class="st">&quot;draft_only&quot;</span><span class="fu">,</span></span>
+<span id="cb542-16"><a href="#cb542-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;human_approval_required_for&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb542-17"><a href="#cb542-17" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;external_publish&quot;</span><span class="ot">,</span></span>
+<span id="cb542-18"><a href="#cb542-18" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;formal_submission&quot;</span></span>
+<span id="cb542-19"><a href="#cb542-19" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb542-20"><a href="#cb542-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;completion_criteria&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb542-21"><a href="#cb542-21" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;required_sections_reviewed&quot;</span><span class="ot">,</span></span>
+<span id="cb542-22"><a href="#cb542-22" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;evidence_attached&quot;</span><span class="ot">,</span></span>
+<span id="cb542-23"><a href="#cb542-23" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;unresolved_items_marked&quot;</span><span class="ot">,</span></span>
+<span id="cb542-24"><a href="#cb542-24" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;report_generated&quot;</span></span>
+<span id="cb542-25"><a href="#cb542-25" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb542-26"><a href="#cb542-26" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这一步非常重要。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi><mi>必</mi><mi>须</mi><mi>先</mi><mi>变</mi><mi>成</mi><mi>M</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Goal
+必须先变成
+MachineCheckableTaskContract
+}
+</annotation></semantics></math></p>
+<p>否则后面根本无法判断：</p>
+<blockquote>
+<p>“任务到底算不算完成？”</p>
+</blockquote>
+<hr />
+<h1 id="四初始化-state系统一开始必须知道自己处于什么状态">四、初始化
+State：系统一开始必须知道自己处于什么状态</h1>
+<p>第一版 Task State：</p>
+<div class="sourceCode" id="cb543"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb543-1"><a href="#cb543-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb543-2"><a href="#cb543-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb543-3"><a href="#cb543-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;running&quot;</span><span class="fu">,</span></span>
+<span id="cb543-4"><a href="#cb543-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;step&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb543-5"><a href="#cb543-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;goal&quot;</span><span class="fu">:</span> <span class="st">&quot;完整审查采购文件并生成风险报告&quot;</span><span class="fu">,</span></span>
+<span id="cb543-6"><a href="#cb543-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_graph_version&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb543-7"><a href="#cb543-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;completed_tasks&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb543-8"><a href="#cb543-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pending_tasks&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb543-9"><a href="#cb543-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;blocked_tasks&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb543-10"><a href="#cb543-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;artifact_refs&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb543-11"><a href="#cb543-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb543-12"><a href="#cb543-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb543-13"><a href="#cb543-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;approval_state&quot;</span><span class="fu">:</span> <span class="fu">{},</span></span>
+<span id="cb543-14"><a href="#cb543-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;state_version&quot;</span><span class="fu">:</span> <span class="dv">1</span></span>
+<span id="cb543-15"><a href="#cb543-15" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>然后 Planning 模块生成 Task Graph。</p>
+<p>例如：</p>
+<pre class="text"><code>T0 读取采购文件
+↓
+T1 识别文档结构
+↓
+├─ T2 资格条件审查
+├─ T3 评分标准审查
+├─ T4 技术参数审查
+└─ T5 合同条款审查
+↓
+T6 汇总证据
+↓
+T7 生成报告
+↓
+T8 Completion Check</code></pre>
+<p>这样系统从第一步开始就不是：</p>
+<blockquote>
+<p>“聊天。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>执行一个有状态的任务实例。</strong></p>
+</blockquote>
+<hr />
+<h1 id="五tool-discovery每一步只暴露当前真正需要的能力">五、Tool
+Discovery：每一步只暴露当前真正需要的能力</h1>
+<p>当任务处于：</p>
+<pre class="text"><code>T0 读取采购文件</code></pre>
+<p>当前可见 Tool 可以只有：</p>
+<pre class="text"><code>procurement.read_file
+procurement.parse_document</code></pre>
+<p>进入规则审查以后再暴露：</p>
+<pre class="text"><code>regulation.search
+project.get_metadata
+compute.basic</code></pre>
+<p>准备生成报告时：</p>
+<pre class="text"><code>report.create_draft
+artifact.save</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><msub><mi>s</mi><mi>t</mi></msub><mo>=</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>e</mi><mi>s</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>T</mi><mi>a</mi><mi>s</mi><msub><mi>k</mi><mi>t</mi></msub><mo>,</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mo>,</mo><mi>U</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VisibleTools_t
+=
+RelevantCapabilities(
+Task_t,
+Policy,
+UserPermission
+)
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>从任务第一秒开始就把全部系统能力暴露给模型。</p>
+</blockquote>
+<hr />
+<h1
+id="六routing每一个信息需求先找-source-of-truth">六、Routing：每一个信息需求先找
+Source of Truth</h1>
+<p>假设当前子任务是：</p>
+<blockquote>
+<p>“判断资格条件 R1 是否存在风险。”</p>
+</blockquote>
+<p>Agent 需要的不是一个 Tool，</p>
+<p>而可能是多路 Source：</p>
+<pre class="text"><code>R1原文
+→ File / Artifact
+
+项目辖区
+→ Project Database
+
+当前查询时间
+→ Runtime State
+
+适用规则
+→ ProcurementRAG_V0.1
+
+风险判断
+→ ProcurementLM_V0.1</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>S</mi><mi>u</mi><mi>b</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>可</mi><mi>能</mi><mi>需</mi><mi>要</mi><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneSubtask
+可能需要
+MultiSourceRoute
+}
+</annotation></semantics></math></p>
+<p>最终进入 Working Context 的不是“无来源文本”，而是：</p>
+<pre class="text"><code>Requirement R1
++
+Project Metadata
++
+Evidence E1 / E2
++
+Source Version
++
+Validity
++
+Current Task State</code></pre>
+<hr />
+<h1 id="七structured-tool-call所有动作都必须经过数据契约">七、Structured
+Tool Call：所有动作都必须经过数据契约</h1>
+<p>模型决定调用：</p>
+<pre class="text"><code>regulation.search</code></pre>
+<p>输出不能是：</p>
+<pre class="text"><code>“帮我查一下本地机构规定”</code></pre>
+<p>而应该是：</p>
+<div class="sourceCode" id="cb553"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb553-1"><a href="#cb553-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb553-2"><a href="#cb553-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool&quot;</span><span class="fu">:</span> <span class="st">&quot;regulation.search&quot;</span><span class="fu">,</span></span>
+<span id="cb553-3"><a href="#cb553-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;arguments&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb553-4"><a href="#cb553-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;投标前要求供应商设立本地机构&quot;</span><span class="fu">,</span></span>
+<span id="cb553-5"><a href="#cb553-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;jurisdiction_code&quot;</span><span class="fu">:</span> <span class="st">&quot;CN-XX&quot;</span><span class="fu">,</span></span>
+<span id="cb553-6"><a href="#cb553-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17&quot;</span></span>
+<span id="cb553-7"><a href="#cb553-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb553-8"><a href="#cb553-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Runtime 依次执行：</p>
+<pre class="text"><code>JSON Parse
+↓
+Schema Validation
+↓
+Semantic Validation
+↓
+Capability Check
+↓
+Resource Scope Check
+↓
+Risk / Approval Check
+↓
+Execution</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>不</mi><mi>能</mi><mi>直</mi><mi>接</mi><mi>等</mi><mi>于</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelOutput
+不能直接等于Execution
+}
+</annotation></semantics></math></p>
+<p>中间永远存在 Runtime Gate。</p>
+<hr />
+<h1 id="八agent-loop每一次-tool-result-都要回到-state">八、Agent
+Loop：每一次 Tool Result 都要回到 State</h1>
+<p>Tool Result：</p>
+<div class="sourceCode" id="cb555"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb555-1"><a href="#cb555-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb555-2"><a href="#cb555-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;success&quot;</span><span class="fu">,</span></span>
+<span id="cb555-3"><a href="#cb555-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb555-4"><a href="#cb555-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E1&quot;</span><span class="ot">,</span></span>
+<span id="cb555-5"><a href="#cb555-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E2&quot;</span></span>
+<span id="cb555-6"><a href="#cb555-6" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb555-7"><a href="#cb555-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>不能只塞进聊天历史。</p>
+<p>应该产生：</p>
+<pre class="text"><code>Observation
+↓
+State Transition
+↓
+State Version + 1
+↓
+Event Log
+↓
+Working Context Refresh</code></pre>
+<p>例如：</p>
+<div class="sourceCode" id="cb557"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb557-1"><a href="#cb557-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb557-2"><a href="#cb557-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb557-3"><a href="#cb557-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;current_task&quot;</span><span class="fu">:</span> <span class="st">&quot;review_requirement_R1&quot;</span><span class="fu">,</span></span>
+<span id="cb557-4"><a href="#cb557-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb557-5"><a href="#cb557-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E1&quot;</span><span class="ot">,</span></span>
+<span id="cb557-6"><a href="#cb557-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E2&quot;</span></span>
+<span id="cb557-7"><a href="#cb557-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb557-8"><a href="#cb557-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;current_task_status&quot;</span><span class="fu">:</span> <span class="st">&quot;evidence_ready&quot;</span><span class="fu">,</span></span>
+<span id="cb557-9"><a href="#cb557-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;state_version&quot;</span><span class="fu">:</span> <span class="dv">12</span></span>
+<span id="cb557-10"><a href="#cb557-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>然后模型才进行下一次 Decision。</p>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>N</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolResult
+\rightarrow
+Observation
+\rightarrow
+State
+\rightarrow
+NextDecision
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi><mo>→</mo><mi>直</mi><mi>接</mi><mi>生</mi><mi>成</mi><mi>最</mi><mi>终</mi><mi>答</mi><mi>案</mi></mrow><annotation encoding="application/x-tex">
+ToolResult
+\rightarrow
+直接生成最终答案
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="九recovery失败以后必须走显式恢复路径">九、Recovery：失败以后必须走显式恢复路径</h1>
+<p>假设：</p>
+<pre class="text"><code>regulation.search</code></pre>
+<p>返回：</p>
+<pre class="text"><code>timeout</code></pre>
+<p>Recovery Policy 先判断：</p>
+<pre class="text"><code>这是Transient Failure吗？
+有没有Side Effect？
+是否可Retry？
+是否需要Backoff？</code></pre>
+<p>因为这是只读 Tool，</p>
+<p>可以：</p>
+<pre class="text"><code>Retry
+→ Backoff
+→ Retry</code></pre>
+<p>如果最终仍失败：</p>
+<pre class="text"><code>Fallback
+或
+Replan
+或
+needs_review</code></pre>
+<p>但如果失败的是：</p>
+<pre class="text"><code>publish_notice</code></pre>
+<p>则必须：</p>
+<pre class="text"><code>Verify External State
+↓
+Check Operation ID
+↓
+Confirm Not Executed
+↓
+Retry with Same Idempotency Key</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>P</mi><mi>a</mi><mi>t</mi><mi>h</mi><mi>必</mi><mi>须</mi><mi>和</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>S</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>绑</mi><mi>定</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RecoveryPath
+必须和ToolSideEffect绑定
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十human-approval人工不是异常而是正式控制节点">十、Human
+Approval：人工不是异常，而是正式控制节点</h1>
+<p>如果最终用户要求：</p>
+<blockquote>
+<p>“把修改后的公告正式发布。”</p>
+</blockquote>
+<p>系统不能因为：</p>
+<pre class="text"><code>报告已经生成</code></pre>
+<p>就自动调用：</p>
+<pre class="text"><code>publish_notice</code></pre>
+<p>而应该：</p>
+<pre class="text"><code>Draft Ready
+↓
+Risk Classification
+↓
+Approval Required
+↓
+waiting_for_approval
+↓
+Trusted Human Approval
+↓
+Runtime Revalidates State
+↓
+Execute</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>Approval 后还要重新检查 External State。</p>
+</blockquote>
+<p>因为等待审批期间：</p>
+<pre class="text"><code>文件可能更新
+项目状态可能改变
+审批权限可能变化</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>不</mi><mi>是</mi><mi>解</mi><mi>除</mi><mi>所</mi><mi>有</mi><mi>后</mi><mi>续</mi><mi>检</mi><mi>查</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Approval
+不是解除所有后续检查
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十一completion-check最终不是模型说完成了就算完成">十一、Completion
+Check：最终不是模型说“完成了”就算完成</h1>
+<p>假设 Task Contract 要求：</p>
+<pre class="text"><code>资格条件审查
+评分标准审查
+技术参数审查
+合同条款审查
+证据映射
+风险报告
+未解决项标记</code></pre>
+<p>Completion Evaluator 应逐项检查：</p>
+<pre class="text"><code>qualification_review_done
+scoring_review_done
+technical_review_done
+contract_review_done
+evidence_map_complete
+report_generated
+unresolved_items_explicit</code></pre>
+<p>只有满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>l</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>a</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AllRequiredCompletionCriteria=True
+}
+</annotation></semantics></math></p>
+<p>任务状态才能进入：</p>
+<pre class="text"><code>completed</code></pre>
+<p>否则可能是：</p>
+<pre class="text"><code>partial_success
+needs_review
+blocked
+failed_terminal</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>S</mi><mi>a</mi><mi>y</mi><mi>s</mi><mi>D</mi><mi>o</mi><mi>n</mi><mi>e</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelSaysDone
+\neq
+TaskCompleted
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二最终系统数据契约">十二、最终系统数据契约</h1>
+<p>一个真实 Agent 系统必须让模块之间传递：</p>
+<blockquote>
+<p>内容 + 身份 + 状态 + 来源 + 版本。</p>
+</blockquote>
+<p>第一版可以有以下核心对象。</p>
+<h2 id="taskrequest">1. TaskRequest</h2>
+<div class="sourceCode" id="cb573"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb573-1"><a href="#cb573-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb573-2"><a href="#cb573-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb573-3"><a href="#cb573-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;user_goal&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb573-4"><a href="#cb573-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;actor_id&quot;</span><span class="fu">:</span> <span class="st">&quot;U_001&quot;</span><span class="fu">,</span></span>
+<span id="cb573-5"><a href="#cb573-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;input_artifacts&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb573-6"><a href="#cb573-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;FILE_001&quot;</span></span>
+<span id="cb573-7"><a href="#cb573-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb573-8"><a href="#cb573-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;request_time&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb573-9"><a href="#cb573-9" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h2 id="taskstate">2. TaskState</h2>
+<div class="sourceCode" id="cb574"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb574-1"><a href="#cb574-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb574-2"><a href="#cb574-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb574-3"><a href="#cb574-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;running&quot;</span><span class="fu">,</span></span>
+<span id="cb574-4"><a href="#cb574-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;state_version&quot;</span><span class="fu">:</span> <span class="dv">12</span><span class="fu">,</span></span>
+<span id="cb574-5"><a href="#cb574-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;current_task&quot;</span><span class="fu">:</span> <span class="st">&quot;review_R1&quot;</span><span class="fu">,</span></span>
+<span id="cb574-6"><a href="#cb574-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;completed_tasks&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb574-7"><a href="#cb574-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pending_tasks&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb574-8"><a href="#cb574-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;artifact_refs&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb574-9"><a href="#cb574-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb574-10"><a href="#cb574-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;approval_state&quot;</span><span class="fu">:</span> <span class="fu">{}</span></span>
+<span id="cb574-11"><a href="#cb574-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h2 id="toolrequest">3. ToolRequest</h2>
+<div class="sourceCode" id="cb575"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb575-1"><a href="#cb575-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb575-2"><a href="#cb575-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool_call_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TC_018&quot;</span><span class="fu">,</span></span>
+<span id="cb575-3"><a href="#cb575-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool_name&quot;</span><span class="fu">:</span> <span class="st">&quot;regulation.search&quot;</span><span class="fu">,</span></span>
+<span id="cb575-4"><a href="#cb575-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool_version&quot;</span><span class="fu">:</span> <span class="st">&quot;v2&quot;</span><span class="fu">,</span></span>
+<span id="cb575-5"><a href="#cb575-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;arguments&quot;</span><span class="fu">:</span> <span class="fu">{},</span></span>
+<span id="cb575-6"><a href="#cb575-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;requested_by_task&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span></span>
+<span id="cb575-7"><a href="#cb575-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h2 id="toolresult">4. ToolResult</h2>
+<div class="sourceCode" id="cb576"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb576-1"><a href="#cb576-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb576-2"><a href="#cb576-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool_call_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TC_018&quot;</span><span class="fu">,</span></span>
+<span id="cb576-3"><a href="#cb576-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;success&quot;</span><span class="fu">,</span></span>
+<span id="cb576-4"><a href="#cb576-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;result&quot;</span><span class="fu">:</span> <span class="fu">{},</span></span>
+<span id="cb576-5"><a href="#cb576-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_version&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb576-6"><a href="#cb576-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;executed_at&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb576-7"><a href="#cb576-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h2 id="agentresponse">5. AgentResponse</h2>
+<div class="sourceCode" id="cb577"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb577-1"><a href="#cb577-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb577-2"><a href="#cb577-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb577-3"><a href="#cb577-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;completed&quot;</span><span class="fu">,</span></span>
+<span id="cb577-4"><a href="#cb577-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;answer&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb577-5"><a href="#cb577-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;artifact_refs&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb577-6"><a href="#cb577-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;ART_014&quot;</span></span>
+<span id="cb577-7"><a href="#cb577-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb577-8"><a href="#cb577-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb577-9"><a href="#cb577-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E1&quot;</span><span class="ot">,</span></span>
+<span id="cb577-10"><a href="#cb577-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E2&quot;</span></span>
+<span id="cb577-11"><a href="#cb577-11" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb577-12"><a href="#cb577-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb577-13"><a href="#cb577-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;trace_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TRACE_001&quot;</span></span>
+<span id="cb577-14"><a href="#cb577-14" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>核心原则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>每</mi><mi>个</mi><mi>模</mi><mi>块</mi><mi>传</mi><mi>递</mi><mi>的</mi><mi>不</mi><mi>只</mi><mi>是</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>还</mi><mi>必</mi><mi>须</mi><mi>传</mi><mi>递</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>/</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>/</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>/</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+每个模块传递的不只是Text
+还必须传递Identity / Version / Provenance / State
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三最终运行时伪代码">十三、最终运行时伪代码</h1>
+<p>可以把 <code>ProcurementAgent_V0.1</code> 压成下面的库无关逻辑：</p>
+<div class="sourceCode" id="cb578"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb578-1"><a href="#cb578-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_agent(task_request):</span>
+<span id="cb578-2"><a href="#cb578-2" aria-hidden="true" tabindex="-1"></a>    state <span class="op">=</span> initialize_state(task_request)</span>
+<span id="cb578-3"><a href="#cb578-3" aria-hidden="true" tabindex="-1"></a>    plan <span class="op">=</span> build_task_graph(task_request, state)</span>
+<span id="cb578-4"><a href="#cb578-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-5"><a href="#cb578-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> <span class="va">True</span>:</span>
+<span id="cb578-6"><a href="#cb578-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> stop_condition(state):</span>
+<span id="cb578-7"><a href="#cb578-7" aria-hidden="true" tabindex="-1"></a>            <span class="cf">break</span></span>
+<span id="cb578-8"><a href="#cb578-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-9"><a href="#cb578-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> completion_check(state):</span>
+<span id="cb578-10"><a href="#cb578-10" aria-hidden="true" tabindex="-1"></a>            state.status <span class="op">=</span> <span class="st">&quot;completed&quot;</span></span>
+<span id="cb578-11"><a href="#cb578-11" aria-hidden="true" tabindex="-1"></a>            <span class="cf">break</span></span>
+<span id="cb578-12"><a href="#cb578-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-13"><a href="#cb578-13" aria-hidden="true" tabindex="-1"></a>        current_task <span class="op">=</span> choose_ready_task(plan, state)</span>
+<span id="cb578-14"><a href="#cb578-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-15"><a href="#cb578-15" aria-hidden="true" tabindex="-1"></a>        visible_tools <span class="op">=</span> discover_tools(</span>
+<span id="cb578-16"><a href="#cb578-16" aria-hidden="true" tabindex="-1"></a>            task<span class="op">=</span>current_task,</span>
+<span id="cb578-17"><a href="#cb578-17" aria-hidden="true" tabindex="-1"></a>            state<span class="op">=</span>state,</span>
+<span id="cb578-18"><a href="#cb578-18" aria-hidden="true" tabindex="-1"></a>            actor<span class="op">=</span>task_request.actor_id</span>
+<span id="cb578-19"><a href="#cb578-19" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb578-20"><a href="#cb578-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-21"><a href="#cb578-21" aria-hidden="true" tabindex="-1"></a>        working_context <span class="op">=</span> build_working_context(</span>
+<span id="cb578-22"><a href="#cb578-22" aria-hidden="true" tabindex="-1"></a>            task<span class="op">=</span>current_task,</span>
+<span id="cb578-23"><a href="#cb578-23" aria-hidden="true" tabindex="-1"></a>            state<span class="op">=</span>state,</span>
+<span id="cb578-24"><a href="#cb578-24" aria-hidden="true" tabindex="-1"></a>            artifacts<span class="op">=</span>load_relevant_artifacts(state),</span>
+<span id="cb578-25"><a href="#cb578-25" aria-hidden="true" tabindex="-1"></a>            memory<span class="op">=</span>retrieve_relevant_memory(state),</span>
+<span id="cb578-26"><a href="#cb578-26" aria-hidden="true" tabindex="-1"></a>            evidence<span class="op">=</span>retrieve_relevant_evidence(state)</span>
+<span id="cb578-27"><a href="#cb578-27" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb578-28"><a href="#cb578-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-29"><a href="#cb578-29" aria-hidden="true" tabindex="-1"></a>        decision <span class="op">=</span> llm_decide(</span>
+<span id="cb578-30"><a href="#cb578-30" aria-hidden="true" tabindex="-1"></a>            task<span class="op">=</span>current_task,</span>
+<span id="cb578-31"><a href="#cb578-31" aria-hidden="true" tabindex="-1"></a>            context<span class="op">=</span>working_context,</span>
+<span id="cb578-32"><a href="#cb578-32" aria-hidden="true" tabindex="-1"></a>            tools<span class="op">=</span>visible_tools</span>
+<span id="cb578-33"><a href="#cb578-33" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb578-34"><a href="#cb578-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-35"><a href="#cb578-35" aria-hidden="true" tabindex="-1"></a>        validated_action <span class="op">=</span> runtime_validate(</span>
+<span id="cb578-36"><a href="#cb578-36" aria-hidden="true" tabindex="-1"></a>            decision<span class="op">=</span>decision,</span>
+<span id="cb578-37"><a href="#cb578-37" aria-hidden="true" tabindex="-1"></a>            state<span class="op">=</span>state,</span>
+<span id="cb578-38"><a href="#cb578-38" aria-hidden="true" tabindex="-1"></a>            actor<span class="op">=</span>task_request.actor_id</span>
+<span id="cb578-39"><a href="#cb578-39" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb578-40"><a href="#cb578-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-41"><a href="#cb578-41" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> validated_action.requires_approval:</span>
+<span id="cb578-42"><a href="#cb578-42" aria-hidden="true" tabindex="-1"></a>            state <span class="op">=</span> pause_for_approval(state, validated_action)</span>
+<span id="cb578-43"><a href="#cb578-43" aria-hidden="true" tabindex="-1"></a>            <span class="cf">break</span></span>
+<span id="cb578-44"><a href="#cb578-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-45"><a href="#cb578-45" aria-hidden="true" tabindex="-1"></a>        result <span class="op">=</span> execute_tool(validated_action)</span>
+<span id="cb578-46"><a href="#cb578-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-47"><a href="#cb578-47" aria-hidden="true" tabindex="-1"></a>        observation <span class="op">=</span> normalize_result(result)</span>
+<span id="cb578-48"><a href="#cb578-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-49"><a href="#cb578-49" aria-hidden="true" tabindex="-1"></a>        state <span class="op">=</span> update_state(</span>
+<span id="cb578-50"><a href="#cb578-50" aria-hidden="true" tabindex="-1"></a>            state<span class="op">=</span>state,</span>
+<span id="cb578-51"><a href="#cb578-51" aria-hidden="true" tabindex="-1"></a>            observation<span class="op">=</span>observation</span>
+<span id="cb578-52"><a href="#cb578-52" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb578-53"><a href="#cb578-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-54"><a href="#cb578-54" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> observation.is_failure:</span>
+<span id="cb578-55"><a href="#cb578-55" aria-hidden="true" tabindex="-1"></a>            state <span class="op">=</span> recover_or_replan(</span>
+<span id="cb578-56"><a href="#cb578-56" aria-hidden="true" tabindex="-1"></a>                state<span class="op">=</span>state,</span>
+<span id="cb578-57"><a href="#cb578-57" aria-hidden="true" tabindex="-1"></a>                observation<span class="op">=</span>observation</span>
+<span id="cb578-58"><a href="#cb578-58" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb578-59"><a href="#cb578-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-60"><a href="#cb578-60" aria-hidden="true" tabindex="-1"></a>        plan <span class="op">=</span> revise_plan_if_needed(</span>
+<span id="cb578-61"><a href="#cb578-61" aria-hidden="true" tabindex="-1"></a>            plan<span class="op">=</span>plan,</span>
+<span id="cb578-62"><a href="#cb578-62" aria-hidden="true" tabindex="-1"></a>            state<span class="op">=</span>state</span>
+<span id="cb578-63"><a href="#cb578-63" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb578-64"><a href="#cb578-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb578-65"><a href="#cb578-65" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> build_final_response(state)</span></code></pre></div>
+<p>这段代码最重要的不是语法。</p>
+<p>而是顺序：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>→</mo><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>d</mi><mi>e</mi><mo>→</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>/</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plan
+\rightarrow
+Discover
+\rightarrow
+Context
+\rightarrow
+Decide
+\rightarrow
+Validate
+\rightarrow
+Execute
+\rightarrow
+Observe
+\rightarrow
+State
+\rightarrow
+Recover/Replan
+\rightarrow
+Complete
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十四端到端评测不能只看最终答案">十四、端到端评测：不能只看最终答案</h1>
+<p>真正 Agent 至少要分层评测。</p>
+<h2 id="layer-1planning">Layer 1：Planning</h2>
+<pre class="text"><code>subtask_coverage
+dependency_accuracy
+plan_revision_success_rate</code></pre>
+<h2 id="layer-2tool-routing">Layer 2：Tool / Routing</h2>
+<pre class="text"><code>source_of_truth_accuracy
+tool_selection_accuracy
+argument_valid_rate
+authorization_accuracy</code></pre>
+<h2 id="layer-3state">Layer 3：State</h2>
+<pre class="text"><code>state_consistency_rate
+state_update_accuracy
+checkpoint_resume_success_rate</code></pre>
+<h2 id="layer-4recovery">Layer 4：Recovery</h2>
+<pre class="text"><code>retry_precision
+replan_success_rate
+duplicate_side_effect_rate
+recovery_completion_rate</code></pre>
+<h2 id="layer-5safety">Layer 5：Safety</h2>
+<pre class="text"><code>prompt_injection_resistance_rate
+unauthorized_execution_rate
+approval_bypass_rate
+audit_trace_coverage</code></pre>
+<h2 id="layer-6task-completion">Layer 6：Task Completion</h2>
+<pre class="text"><code>task_completion_rate
+partial_success_rate
+needs_review_accuracy
+completion_false_positive_rate</code></pre>
+<h2 id="layer-7quality-evidence">Layer 7：Quality / Evidence</h2>
+<pre class="text"><code>business_conclusion_accuracy
+evidence_correctness
+citation_correctness
+unsupported_claim_rate</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>F</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentQuality
+\neq
+FinalAnswerQualityOnly
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五最终-trace出了错必须知道是哪一层">十五、最终
+Trace：出了错必须知道是哪一层</h1>
+<p>如果最终报告错了，</p>
+<p>排查顺序应该是：</p>
+<pre class="text"><code>1. Goal Understanding
+↓
+2. Planning
+↓
+3. Tool Discovery
+↓
+4. Routing
+↓
+5. Structured Arguments
+↓
+6. Runtime Validation
+↓
+7. Tool Execution
+↓
+8. Observation
+↓
+9. State Update
+↓
+10. Recovery / Replan
+↓
+11. Completion Check
+↓
+12. Final Generation
+↓
+13. Audit / Citation</code></pre>
+<p>例如：</p>
+<blockquote>
+<p>报告漏掉一项技术风险。</p>
+</blockquote>
+<p>不能直接说：</p>
+<blockquote>
+<p>“模型能力不够。”</p>
+</blockquote>
+<p>可能是：</p>
+<pre class="text"><code>Planning漏了技术参数子任务
+或
+File Tool没有提取到对应章节
+或
+State错误标记为completed
+或
+Completion Check错误通过</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Answer
+\rightarrow
+Trace
+\rightarrow
+EveryLayer
+}
+</annotation></semantics></math></p>
+<p>这是 Agent 工程真正可调试的前提。</p>
+<hr />
+<h1 id="十六latency-与-costagent-成本必须拆解到阶段">十六、Latency 与
+Cost：Agent 成本必须拆解到阶段</h1>
+<p>端到端延迟可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mrow><mi>t</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi></mrow></msub><mo>=</mo><msub><mi>T</mi><mrow><mi>p</mi><mi>l</mi><mi>a</mi><mi>n</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>r</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>t</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>r</mi><mi>a</mi><mi>g</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>l</mi><mi>l</mi><mi>m</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>r</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>a</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>a</mi><mi>l</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+T_{total}
+=
+T_{plan}
++
+T_{routing}
++
+T_{tool}
++
+T_{rag}
++
+T_{llm}
++
+T_{recovery}
++
+T_{approval}
+</annotation></semantics></math></p>
+<p>其中某些步骤可以并行。</p>
+<p>成本同样应该拆成：</p>
+<pre class="text"><code>LLM Tokens
+
+Embedding / Retrieval
+
+Reranker
+
+Tool API Calls
+
+Database Queries
+
+Artifact Processing
+
+Human Review
+
+Retries / Recovery</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>能</mi><mi>只</mi><mi>优</mi><mi>化</mi><mi>L</mi><mi>L</mi><mi>M</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentOptimization
+不能只优化LLMLatency
+}
+</annotation></semantics></math></p>
+<p>真正应该优化：</p>
+<blockquote>
+<p>Critical Path + Unnecessary Calls + Recovery Waste。</p>
+</blockquote>
+<hr />
+<h1 id="十七端到端-benchmark-应该覆盖哪些场景">十七、端到端 Benchmark
+应该覆盖哪些场景？</h1>
+<p>第一版 Benchmark 至少要有：</p>
+<pre class="text"><code>Normal Task
+正常完整任务
+
+Multi-step Task
+多步任务
+
+Parallel Task
+可并行任务
+
+Missing Information
+缺少辖区 / 时间 / 文件
+
+Tool Failure
+工具超时 / 空结果
+
+Permission Failure
+权限不足
+
+Partial Failure
+部分分支失败
+
+Conflict
+多Source冲突
+
+No-answer / Insufficient Evidence
+证据不足
+
+Prompt Injection
+文件 / 网页 / Tool Result注入
+
+High-risk Action
+需要Approval
+
+Recovery
+重试 / Replan / Fallback
+
+Checkpoint Resume
+中断后恢复
+
+Version Change
+执行中外部状态更新
+
+Completion Trap
+表面完成但缺少必要输出</code></pre>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>必</mi><mi>须</mi><mi>测</mi><mi>过</mi><mi>程</mi><mi>不</mi><mi>能</mi><mi>只</mi><mi>测</mi><mi>问</mi><mi>答</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentBenchmark
+必须测过程
+不能只测问答
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十八release-gate什么情况下才允许发布-procurementagent_v0.1">十八、Release
+Gate：什么情况下才允许发布 <code>ProcurementAgent_V0.1</code>？</h1>
+<p>最终 Release Gate 至少要覆盖：</p>
+<pre class="text"><code>Planning Gate
+关键子任务覆盖达到基线
+
+Routing Gate
+Source-of-Truth错误受控
+
+Tool Gate
+结构化参数与执行成功率达标
+
+State Gate
+状态一致性与恢复能力达标
+
+Recovery Gate
+无高风险重复副作用
+
+Safety Gate
+越权、Approval Bypass、Injection测试通过
+
+Evidence Gate
+关键结论可追溯
+
+Completion Gate
+Completion False Positive受控
+
+Latency Gate
+p95延迟可接受
+
+Cost Gate
+单任务成本可接受
+
+Regression Gate
+升级后不破坏既有能力</code></pre>
+<p>具体阈值不能在课堂里随便拍脑袋写一个固定数字。</p>
+<p>应该由：</p>
+<pre class="text"><code>真实Benchmark
++
+业务风险
++
+系统SLA
++
+人工成本</code></pre>
+<p>共同确定。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>必</mi><mi>须</mi><mi>来</mi><mi>自</mi><mi>真</mi><mi>实</mi><mi>验</mi><mi>证</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseGateThreshold
+必须来自真实验证
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十九最终-release-bundle">十九、最终 Release Bundle</h1>
+<p><code>ProcurementAgent_V0.1</code> 不应该只交付一段 Agent
+Prompt。</p>
+<p>至少应该包含：</p>
+<pre class="text"><code>1. ProcurementRAG_V0.1
+
+2. ProcurementAgentBoundaryModel_V0.1
+
+3. ProcurementToolCallingProtocol_V0.1
+
+4. ProcurementStructuredOutputPolicy_V0.1
+
+5. ProcurementToolRegistryPolicy_V0.1
+
+6. ProcurementAgentLoopPolicy_V0.1
+
+7. ProcurementTaskPlanningPolicy_V0.1
+
+8. ProcurementAgentStatePolicy_V0.1
+
+9. ProcurementRAGToolRoutingPolicy_V0.1
+
+10. ProcurementAgentRecoveryPolicy_V0.1
+
+11. ProcurementAgentSafetyPolicy_V0.1
+
+12. Tool Registry Manifest
+
+13. Task State Schema
+
+14. Benchmark Dataset
+
+15. End-to-End Evaluation Report
+
+16. Safety / Injection Test Report
+
+17. Known Limitations
+
+18. Release Manifest</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>≠</mo><mi>O</mi><mi>n</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentRelease
+\neq
+OnePrompt
+}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<blockquote>
+<p><strong>一个完整系统版本。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十把完整政府采购工作流跑一遍">二十、把完整政府采购工作流跑一遍</h1>
+<p>用户目标：</p>
+<blockquote>
+<p>“审查这份采购文件中的资格条件、评分标准、技术参数和合同要求；找出潜在风险并给出依据；证据不足的地方标记人工复核；最后生成一份结构化报告草稿。”</p>
+</blockquote>
+<p>系统流程：</p>
+<pre class="text"><code>1. Goal Understanding
+识别：
+完整采购文件审查
+
+2. Task Contract
+锁定：
+审查范围
+输出要求
+只生成草稿
+不允许自动发布
+
+3. Planning
+拆成：
+资格
+评分
+技术
+合同
+四个审查分支
+
+4. State Initialization
+记录：
+pending tasks
+artifact refs
+approval policy
+
+5. File Tool
+读取并解析采购文件
+
+6. Artifact Store
+保存结构化解析结果
+
+7. Parallel Review
+四个分支分别执行
+
+8. Routing
+文件事实
+→ Artifact / File
+
+项目元数据
+→ Database
+
+规则依据
+→ ProcurementRAG_V0.1
+
+计算
+→ Compute Tool
+
+9. Evidence
+每个风险点绑定 Evidence ID
+
+10. Recovery
+某分支检索失败
+→ Retry / Replan
+
+11. Human-in-the-loop
+证据冲突
+→ needs_review
+
+12. State Join
+四个分支状态汇合
+
+13. Report Draft
+生成结构化风险报告
+
+14. Completion Check
+确认：
+四类审查都有状态
+证据已映射
+人工复核项已显式标记
+报告已生成
+
+15. Final Response
+返回：
+报告草稿
+Evidence Map
+needs_review
+trace_id</code></pre>
+<p>如果用户接着说：</p>
+<blockquote>
+<p>“把报告里的修改建议直接发布成正式更正公告。”</p>
+</blockquote>
+<p>系统必须开启新的高风险动作链：</p>
+<pre class="text"><code>Intent Recheck
+↓
+Capability Check
+↓
+Resource Scope
+↓
+Approval Gate
+↓
+External State Revalidation
+↓
+Idempotency
+↓
+Execution
+↓
+Audit</code></pre>
+<p>绝不能因为前面的“审查任务”已经完成，</p>
+<p>就自动继承：</p>
+<blockquote>
+<p>发布权限。</p>
+</blockquote>
+<hr />
+<h1 id="二十一第七课-11-个阶段现在怎样连成一个系统">二十一、第七课 11
+个阶段现在怎样连成一个系统？</h1>
+<p>可以把整课压成下面这张映射：</p>
+<pre class="text"><code>Stage 1
+Agent是什么？
+→ 建立边界
+
+Stage 2
+Tool Calling
+→ 让模型提出真实Action Request
+
+Stage 3
+Structured Output
+→ 让Action参数可验证
+
+Stage 4
+Tool Registry
+→ 限定能看到和能执行的Capability
+
+Stage 5
+Agent Loop
+→ 让动作连续执行
+
+Stage 6
+Planning
+→ 把复杂Goal拆成Task Graph
+
+Stage 7
+State / Memory
+→ 让任务长期保持一致状态
+
+Stage 8
+RAG + Tool Routing
+→ 让每类信息去正确Source of Truth
+
+Stage 9
+Recovery
+→ 让失败可恢复、可升级
+
+Stage 10
+Safety
+→ 让能力受到权限、Approval和Audit约束
+
+Stage 11
+End-to-End Integration
+→ 让整个系统真正可运行、可评测、可发布</code></pre>
+<p>所以第七课真正完成的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>从</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>升</mi><mi>级</mi><mi>到</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+从AnsweringSystem
+升级到
+ControlledActingSystem
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十二把整课压成最后-7-句话">二十二、把整课压成最后 7 句话</h1>
+<blockquote>
+<p><strong>第一，LLM 不是 Agent；Agent 是
+<code>Model + State + Tools + Policy + Loop</code>，模型只是决策组件。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Tool Calling 不是模型直接执行函数，而是
+<code>Structured Tool Request → Runtime Execution → Tool Result → New Observation</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，复杂任务必须经过 Planning 与 Task Graph，Agent Loop
+必须依赖真实 State，而不是只靠聊天历史。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，RAG、Database、File、Compute、Action Tool
+不能混为一谈；Routing 首先要找到正确 Source of Truth。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，可靠 Agent 不是永不失败，而是失败以后能够正确
+Retry、Replan、Verify、Fallback、Compensate 或 Escalate。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，Agent Safety 不是让模型“更听话”，而是用 Least
+Privilege、Capability Boundary、Approval Gate、Data Boundary 和 Runtime
+Policy 阻止不该发生的真实动作。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第七，真正可发布的 Agent 必须让
+Planning、Tool、State、Recovery、Safety、Evidence、Completion 与 Audit
+都能单独评测和
+Trace；<code>AgentQuality ≠ FinalAnswerQualityOnly</code>。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-10">本阶段最核心的一张图</h1>
+<pre class="text"><code>                           User Goal
+                              │
+                              ▼
+                        Task Contract
+                              │
+                              ▼
+                           Planning
+                              │
+                              ▼
+                         Task State
+                              │
+                              ▼
+                       Tool Discovery
+                              │
+                              ▼
+                    RAG / Tool Routing
+                              │
+                              ▼
+                       LLM Decision
+                              │
+                              ▼
+                    Structured Tool Call
+                              │
+                              ▼
+                     Runtime Policy Gate
+                   ┌──────────┼──────────┐
+                   ▼          ▼          ▼
+                Schema     Capability  Approval
+                   │          │          │
+                   └──────────┼──────────┘
+                              ▼
+                          Execution
+                              │
+                              ▼
+                         Observation
+                              │
+                              ▼
+                       State Transition
+                              │
+                 ┌────────────┼────────────┐
+                 ▼            ▼            ▼
+              Progress      Failure      Complete?
+                 │            │            │
+                 │       Recovery /        │
+                 │        Replan           │
+                 └────────────┼────────────┘
+                              ▼
+                       Completion Check
+                              │
+                              ▼
+                        Final Artifact
+                              │
+                              ▼
+                         Audit Trace
+                              │
+                              ▼
+                          Evaluation</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong><code>ProcurementAgent_V0.1</code>
+不是一个“会自己干活的大模型”，而是一套让模型在明确
+Task、State、Tool、Policy、Approval、Recovery、Evidence 与 Audit
+边界里持续决策和执行，直到真实任务被可验证地完成的受控工作流系统。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-11-阶段掌握测试">第七课 · 第 11 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：<code>ProcurementAgent_V0.1</code>
+为什么不等于一个会 Tool Calling 的 LLM；Task Contract
+为什么必须在任务开始时建立；Task State 和 Task Graph
+分别负责什么；为什么 Tool Discovery
+要动态限制当前可见能力；一个采购风险判断为什么可能同时需要
+File、Database、RAG 和 LLM；Structured Tool Call
+到真实执行之间必须经过哪些 Runtime Gate；为什么 Tool Result 必须进入
+State；Recovery 为什么必须和 Side Effect 绑定；Human Approval
+为什么是正式控制节点而不是异常；为什么 Completion Check
+不能由模型一句“完成了”替代；核心数据契约为什么必须携带
+Identity、Version、Provenance 和 State；Agent 为什么必须分层评测；Trace
+怎样帮助定位最终错误；Latency 和 Cost 为什么要按阶段拆；Agent Benchmark
+为什么必须包含失败、安全、恢复、冲突和完成陷阱；Release Gate
+为什么不能只看最终回答正确率；以及为什么 Agent Release
+最终交付的是一整套系统资产，而不是一个 Prompt。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>11</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第11阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="第七课正式完成">第七课正式完成</h1>
+<h1 id="procurementagent_v0.1-2"><code>ProcurementAgent_V0.1</code></h1>
+<p>第七课完整系统演化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementDataset\_V0.1
+\rightarrow
+ProcurementLM\_V0.1
+\rightarrow
+ProcurementRAG\_V0.1
+\rightarrow
+ProcurementAgent\_V0.1
+}
+</annotation></semantics></math></p>
+<p>我们已经从：</p>
+<blockquote>
+<p><strong>训练一个模型</strong></p>
+</blockquote>
+<p>一路走到：</p>
+<blockquote>
+<p><strong>构建一个能够基于证据、调用工具、维护状态、拆解任务、恢复失败、接受人工控制、限制真实权限并留下完整审计轨迹的政府采购
+Agent 系统。</strong></p>
+</blockquote>
+<p>这就是第七课的最终交付：</p>
+<h1 id="procurementagent_v0.1-3"><code>ProcurementAgent_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage10.html">← 第 10 阶段</a><a class="btn" href="../lesson08/stage01.html">第 8 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

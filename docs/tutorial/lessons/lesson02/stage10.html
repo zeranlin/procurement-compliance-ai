@@ -1,0 +1,3647 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第2课 · 第10阶段：Position Encoding 与 RoPE</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第2课 · 第10阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>解释 Transformer/LLM 内部机制，定位 Attention、Token、KV Cache 等架构问题。<ul><li>没有 Position Information 的 Self-Attention 很难区分相同 Token 集合的不同顺序。</li><li>Positional Encoding 的任务是把“谁在前、谁在后、相距多远”注入模型表示。</li><li>RoPE 通过旋转 Query/Key 表示位置关系，使 Attention Score 同时感知内容与相对位置。</li></ul></div><h1 id="第二课-第-10-阶段position-encoding-与-rope">第二课 · 第 10
+阶段：Position Encoding 与 RoPE</h1>
+<h2
+id="采购人限制供应商和供应商限制采购人拥有相同-tokentransformer-到底怎样知道谁在前谁在后">“采购人限制供应商”和“供应商限制采购人”拥有相同
+Token，Transformer 到底怎样知道谁在前、谁在后？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-9">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-9">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>没有 Position Information 的 Self-Attention 很难区分相同
+Token 集合的不同顺序。</strong></li>
+<li><strong>Positional Encoding
+的任务是把“谁在前、谁在后、相距多远”注入模型表示。</strong></li>
+<li><strong>RoPE 通过旋转 Query/Key 表示位置关系，使 Attention Score
+同时感知内容与相对位置。</strong></li>
+<li><strong>Max Context Length
+是架构/训练/推理共同约束，不等于模型在整个最大长度上都同样可靠。</strong></li>
+<li><strong>Long-Context Extension ≠ Free
+Extrapolation。扩展上下文窗口仍需要位置编码、训练分布和评测共同支持。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-9">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>RoPE</code></td>
+<td>RoPE：旋转位置编码，把位置信息融入注意力</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>Self-Attention</code></td>
+<td>自注意力：同一序列内部各位置计算相关性并聚合</td>
+</tr>
+<tr class="odd">
+<td><code>Causal Mask</code></td>
+<td>因果掩码：阻止当前位置看到未来 Token</td>
+</tr>
+<tr class="even">
+<td><code>Representation</code></td>
+<td>表示：模型内部承载语义或特征的向量结构</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="odd">
+<td><code>Softmax</code></td>
+<td>Softmax：把一组分数转换成归一化权重</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-9">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 8、9 阶段，我们已经完成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawText
+\rightarrow
+Tokenizer
+\rightarrow
+TokenIDs
+\rightarrow
+Embedding
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<blockquote>
+<p>“采购人限制供应商”</p>
+</blockquote>
+<p>可能变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>e</mi><mtext mathvariant="normal">采购人</mtext></msub><mo>,</mo><msub><mi>e</mi><mtext mathvariant="normal">限制</mtext></msub><mo>,</mo><msub><mi>e</mi><mtext mathvariant="normal">供应商</mtext></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[e_{\text{采购人}},e_{\text{限制}},e_{\text{供应商}}]
+</annotation></semantics></math></p>
+<p>现在把顺序倒过来：</p>
+<blockquote>
+<p>“供应商限制采购人”</p>
+</blockquote>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>e</mi><mtext mathvariant="normal">供应商</mtext></msub><mo>,</mo><msub><mi>e</mi><mtext mathvariant="normal">限制</mtext></msub><mo>,</mo><msub><mi>e</mi><mtext mathvariant="normal">采购人</mtext></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[e_{\text{供应商}},e_{\text{限制}},e_{\text{采购人}}]
+</annotation></semantics></math></p>
+<p>看起来似乎只是矩阵里的行换了位置。</p>
+<p>问题来了：</p>
+<blockquote>
+<p><strong>Self-Attention 到底凭什么知道某个 Token 是第 1 个、第 2
+个还是第 20000 个？</strong></p>
+</blockquote>
+<p>今天我们要建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenIdentity
++
+PositionInformation
+\rightarrow
+ContextualRepresentation
+}
+</annotation></semantics></math></p>
+<p>最后一路走到现代 LLM 中极其重要的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>P</mi><mi>E</mi><mo>=</mo><mi>R</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>y</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RoPE
+=
+Rotary\ Position\ Embedding
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么语言绝对不能没有顺序">1. 为什么语言绝对不能没有顺序？</h2>
+<p>看两句话：</p>
+<blockquote>
+<p>采购人限制供应商。</p>
+</blockquote>
+<blockquote>
+<p>供应商限制采购人。</p>
+</blockquote>
+<p>词几乎完全一样。</p>
+<p>但：</p>
+<blockquote>
+<p>主体与客体完全反过来了。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>s</mi><mo>+</mo><mi>O</mi><mi>r</mi><mi>d</mi><mi>e</mi><mi>r</mi><mo>=</mo><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Words
++
+Order
+=
+Meaning
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="再看一个采购例子">2. 再看一个采购例子</h2>
+<p>A：</p>
+<blockquote>
+<p>注册资本不得低于5000万元。</p>
+</blockquote>
+<p>B：</p>
+<blockquote>
+<p>5000万元不得低于注册资本。</p>
+</blockquote>
+<p>虽然 B 很奇怪，但它说明：</p>
+<blockquote>
+<p>Token 集合本身并不足以表达完整语义。</p>
+</blockquote>
+<p>必须知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>谁</mi><mi>出</mi><mi>现</mi><mi>在</mi><mi>谁</mi><mi>之</mi><mi>前</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+谁出现在谁之前
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第-8-阶段的-token-embedding-只解决了什么">3. 第 8 阶段的 Token
+Embedding 只解决了什么？</h2>
+<p>它解决：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>o</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>m</mi><mspace width="0.222em"></mspace><mi>I</mi><mi>?</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Who\ am\ I?
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>我是“供应商”。</p>
+</blockquote>
+<blockquote>
+<p>我是“采购人”。</p>
+</blockquote>
+<blockquote>
+<p>我是“不得”。</p>
+</blockquote>
+<p>但没有天然解决：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>m</mi><mspace width="0.222em"></mspace><mi>I</mi><mi>?</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Where\ am\ I?
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以我们至少需要两个信息源">4. 所以我们至少需要两个信息源</h2>
+<p>第一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Token\ Identity
+}
+</annotation></semantics></math></p>
+<p>第二个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Position
+}
+</annotation></semantics></math></p>
+<p>组合起来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Identity
++
+Position
+}
+</annotation></semantics></math></p>
+<p>才能形成真正的序列输入。</p>
+<hr />
+<h2 id="第一个核心心智模型-9">5. 第一个核心心智模型</h2>
+<h3 id="心智模型-①embedding-回答我是谁position-回答我在哪里">心智模型
+①：Embedding 回答“我是谁”，Position 回答“我在哪里”</h3>
+<p>这两件事必须分开。</p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>e</mi><mtext mathvariant="normal">供应商</mtext></msub><annotation encoding="application/x-tex">
+e_{\text{供应商}}
+</annotation></semantics></math></p>
+<p>表示 Token 身份。</p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mn>37</mn></msub><annotation encoding="application/x-tex">
+p_{37}
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>它当前位于第 37 个位置。</p>
+</blockquote>
+<hr />
+<h1 id="一为什么纯-self-attention-天然不懂顺序">一、为什么纯
+Self-Attention 天然不懂顺序？</h1>
+<h2 id="先暂时忘掉-position">6. 先暂时忘掉 Position</h2>
+<p>假设输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><msub><mi>x</mi><mn>1</mn></msub></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><msub><mi>x</mi><mn>2</mn></msub></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><msub><mi>x</mi><mn>3</mn></msub></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+X=
+\begin{bmatrix}
+x_1\\
+x_2\\
+x_3
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>Self-Attention 会计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>Q</mi></msub></mrow><annotation encoding="application/x-tex">
+Q=XW_Q
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">
+K=XW_K
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>V</mi></msub></mrow><annotation encoding="application/x-tex">
+V=XW_V
+</annotation></semantics></math></p>
+<hr />
+<h2 id="然后计算关系">7. 然后计算关系</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+QK^T
+</annotation></semantics></math></p>
+<p>再：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>o</mi><mi>f</mi><mi>t</mi><mi>m</mi><mi>a</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Softmax
+</annotation></semantics></math></p>
+<p>最后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><mi>K</mi><mo>,</mo><mi>V</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Attention(Q,K,V)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="注意这里发生了什么">8. 注意这里发生了什么</h2>
+<p>Attention 会问：</p>
+<blockquote>
+<p>每个 Token 与其它 Token 有多匹配？</p>
+</blockquote>
+<p>但如果没有任何 Position 信息：</p>
+<blockquote>
+<p>它没有天然的“第几个 Token”概念。</p>
+</blockquote>
+<hr />
+<h2 id="一个简单思维实验">9. 一个简单思维实验</h2>
+<p>输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo>,</mo><mi>C</mi><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[A,B,C]
+</annotation></semantics></math></p>
+<p>如果我们把顺序统一置换成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mi>C</mi><mo>,</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[C,A,B]
+</annotation></semantics></math></p>
+<p>同时 Q、K、V 也跟着完全相同地重新排列，</p>
+<p>Self-Attention 的结果：</p>
+<blockquote>
+<p>也会按照相同方式重新排列。</p>
+</blockquote>
+<hr />
+<h2 id="这叫-permutation-equivariance">10. 这叫 Permutation
+Equivariance</h2>
+<p>在不加位置结构的标准 Self-Attention 中，可以粗略写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>P</mi><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>P</mi><mspace width="0.167em"></mspace><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Attention(PX)
+=
+P\,Attention(X)
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>P</mi><annotation encoding="application/x-tex">
+P
+</annotation></semantics></math></p>
+<p>是一个置换矩阵。</p>
+<hr />
+<h2 id="这句话到底什么意思">11. 这句话到底什么意思？</h2>
+<p>它意味着：</p>
+<blockquote>
+<p>Attention 知道“这些 Token 之间有什么关系”。</p>
+</blockquote>
+<p>但单凭这一机制：</p>
+<blockquote>
+<p>并不知道“它们原本应该按什么天然顺序排列”。</p>
+</blockquote>
+<hr />
+<h2 id="注意一个重要技术细节">12. 注意一个重要技术细节</h2>
+<p>Decoder-only LLM 还有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+CausalMask
+</annotation></semantics></math></p>
+<p>它规定：</p>
+<blockquote>
+<p>当前 Token 不能看未来 Token。</p>
+</blockquote>
+<p>Causal Mask 本身已经引入了一定：</p>
+<blockquote>
+<p>前后结构。</p>
+</blockquote>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo>≠</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>n</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CausalMask
+\neq
+PositionEncoding
+}
+</annotation></semantics></math></p>
+<p>它们解决的问题不同。</p>
+<hr />
+<h2 id="causal-mask-回答什么">13. Causal Mask 回答什么？</h2>
+<p>它回答：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>o</mi><mspace width="0.222em"></mspace><mi>m</mi><mi>a</mi><mi>y</mi><mspace width="0.222em"></mspace><mi>I</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>o</mi><mi>?</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Who\ may\ I\ attend\ to?
+}
+</annotation></semantics></math></p>
+<p>例如第 10 个位置：</p>
+<blockquote>
+<p>只能看 1～10。</p>
+</blockquote>
+<hr />
+<h2 id="position-encoding-回答什么">14. Position Encoding
+回答什么？</h2>
+<p>它回答：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>r</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>h</mi><mi>e</mi><mi>s</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>?</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Where\ are\ these\ tokens?
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<blockquote>
+<p>Token A 和 Token B 相隔 1 个位置还是 1000 个位置？</p>
+</blockquote>
+<p>这是另一件事。</p>
+<hr />
+<h2 id="第二个核心心智模型-9">15. 第二个核心心智模型</h2>
+<h3 id="心智模型-②mask-管可见性position-管位置关系">心智模型 ②：Mask
+管“可见性”，Position 管“位置关系”</h3>
+<p>这两个东西以后一定不要混淆：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo>=</mo><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Mask
+=
+AccessControl
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>O</mi><mi>r</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>G</mi><mi>e</mi><mi>o</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Position
+=
+OrderGeometry
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二最直观的方法position-id">二、最直观的方法：Position ID</h1>
+<h2 id="假设一句话有-5-个-token">16. 假设一句话有 5 个 Token</h2>
+<p>那么可以给它们编号：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>,</mo><mn>3</mn><mo>,</mo><mn>4</mn><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[0,1,2,3,4]
+</annotation></semantics></math></p>
+<p>这就是：</p>
+<h1 id="position-ids">Position IDs</h1>
+<hr />
+<h2 id="例如-7">17. 例如</h2>
+<pre class="text"><code>供应商   0
+必须     1
+在       2
+本市     3
+注册     4</code></pre>
+<p>所以现在每个 Token 有两个身份：</p>
+<pre class="text"><code>Token ID
+Position ID</code></pre>
+<hr />
+<h2 id="token-id-与-position-id-完全不是一回事">18. Token ID 与 Position
+ID 完全不是一回事</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mo>=</mo><mn>5832</mn></mrow><annotation encoding="application/x-tex">
+TokenID=5832
+</annotation></semantics></math></p>
+<p>可能表示：</p>
+<blockquote>
+<p>“供应商”。</p>
+</blockquote>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>I</mi><mi>D</mi><mo>=</mo><mn>37</mn></mrow><annotation encoding="application/x-tex">
+PositionID=37
+</annotation></semantics></math></p>
+<p>只表示：</p>
+<blockquote>
+<p>它当前位于第 37 个序列位置。</p>
+</blockquote>
+<hr />
+<h2 id="token-id-会查哪里">19. Token ID 会查哪里？</h2>
+<p>查：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>M</mi><mi>a</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+TokenEmbeddingMatrix
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>e</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+e_i
+</annotation></semantics></math></p>
+<hr />
+<h2 id="position-id-可以怎么用">20. Position ID 可以怎么用？</h2>
+<p>最简单方案：</p>
+<blockquote>
+<p>也查一张 Position Embedding Matrix。</p>
+</blockquote>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+p_i
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>h</mi><mi>i</mi></msub><mo>=</mo><msub><mi>e</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>i</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+h_i=e_i+p_i
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三learned-absolute-position-embedding">三、Learned Absolute
+Position Embedding</h1>
+<h2 id="假设最大长度">21. 假设最大长度</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>L</mi><mrow><mi>m</mi><mi>a</mi><mi>x</mi></mrow></msub><mo>=</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+L_{max}=4096
+</annotation></semantics></math></p>
+<p>Hidden Size：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mo>=</mo><mn>768</mn></mrow><annotation encoding="application/x-tex">
+D=768
+</annotation></semantics></math></p>
+<p>那么我们可以创建：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><mn>4096</mn><mo>×</mo><mn>768</mn></mrow></msup></mrow><annotation encoding="application/x-tex">
+P\in\mathbb R^{4096\times768}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="每个-position-都有自己的向量">22. 每个 Position
+都有自己的向量</h2>
+<p>位置 0：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mn>0</mn></msub><annotation encoding="application/x-tex">
+P_0
+</annotation></semantics></math></p>
+<p>位置 1：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+P_1
+</annotation></semantics></math></p>
+<p>……</p>
+<p>位置 4095：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mn>4095</mn></msub><annotation encoding="application/x-tex">
+P_{4095}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="token-embedding-1">23. Token Embedding</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>e</mi><mtext mathvariant="normal">供应商</mtext></msub><annotation encoding="application/x-tex">
+e_{\text{供应商}}
+</annotation></semantics></math></p>
+<p>是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>768</mn><annotation encoding="application/x-tex">
+768
+</annotation></semantics></math></p>
+<p>维。</p>
+<p>Position：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mn>37</mn></msub><annotation encoding="application/x-tex">
+p_{37}
+</annotation></semantics></math></p>
+<p>也是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>768</mn><annotation encoding="application/x-tex">
+768
+</annotation></semantics></math></p>
+<p>维。</p>
+<hr />
+<h2 id="直接相加">24. 直接相加</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>h</mi><mo>=</mo><msub><mi>e</mi><mtext mathvariant="normal">供应商</mtext></msub><mo>+</mo><msub><mi>p</mi><mn>37</mn></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+h
+=
+e_{\text{供应商}}
++
+p_{37}
+}
+</annotation></semantics></math></p>
+<p>于是 Hidden State 同时包含：</p>
+<blockquote>
+<p>Token 身份。</p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p>位置身份。</p>
+</blockquote>
+<hr />
+<h2 id="为什么可以直接相加">25. 为什么可以直接相加？</h2>
+<p>因为二者：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>768</mn><mo>,</mo><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Shape=(768,)
+</annotation></semantics></math></p>
+<p>一致。</p>
+<p>加法后：</p>
+<blockquote>
+<p>仍然是 768 维。</p>
+</blockquote>
+<p>所以无需让 Hidden Size 翻倍。</p>
+<hr />
+<h2 id="第三个核心心智模型-9">26. 第三个核心心智模型</h2>
+<h3
+id="心智模型-③最简单的-position-encoding就是把内容向量和位置向量放进同一个表示空间">心智模型
+③：最简单的 Position
+Encoding，就是把“内容向量”和“位置向量”放进同一个表示空间</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InputRepresentation
+=
+TokenEmbedding
++
+PositionEmbedding
+}
+</annotation></semantics></math></p>
+<p>这是非常经典的设计。</p>
+<hr />
+<h2 id="position-embedding-是否可训练">27. Position Embedding
+是否可训练？</h2>
+<p>如果是：</p>
+<h1 id="learned-position-embedding">Learned Position Embedding</h1>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>P</mi><annotation encoding="application/x-tex">
+P
+</annotation></semantics></math></p>
+<p>本身也是 Parameter。</p>
+<p>训练：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>P</mi></mrow><annotation encoding="application/x-tex">
+Loss
+\rightarrow
+Backward
+\rightarrow
+P
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这意味着位置-37-的向量也是学出来的">28. 这意味着位置 37
+的向量也是“学出来的”</h2>
+<p>不是我们人工告诉模型：</p>
+<blockquote>
+<p>第 37 位是什么意思。</p>
+</blockquote>
+<p>模型通过训练：</p>
+<blockquote>
+<p>自己调整
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mn>37</mn></msub><annotation encoding="application/x-tex">P_{37}</annotation></semantics></math>。</p>
+</blockquote>
+<hr />
+<h2 id="经典绝对位置有什么优点">29. 经典绝对位置有什么优点？</h2>
+<p>简单。</p>
+<p>直观。</p>
+<p>实现容易。</p>
+<p>模型可以：</p>
+<blockquote>
+<p>直接为每一个位置学一套表示。</p>
+</blockquote>
+<hr />
+<h2 id="但马上出现第一个问题">30. 但马上出现第一个问题</h2>
+<p>如果只训练：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>∼</mo><mn>4095</mn></mrow><annotation encoding="application/x-tex">
+0\sim4095
+</annotation></semantics></math></p>
+<p>这些 Position，</p>
+<p>突然推理输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mn>5000</mn></mrow><annotation encoding="application/x-tex">
+Position=5000
+</annotation></semantics></math></p>
+<p>怎么办？</p>
+<hr />
+<h2 id="原来的-position-table-根本没有第-5000-行">31. 原来的 Position
+Table 根本没有第 5000 行</h2>
+<p>这就是 Learned Absolute Position Embedding 的一个明显限制：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MaxPosition
+}
+</annotation></semantics></math></p>
+<p>通常是预先固定的。</p>
+<hr />
+<h2 id="可以把矩阵扩长吗">32. 可以把矩阵扩长吗？</h2>
+<p>技术上可以增加新 Row。</p>
+<p>但这些新 Row：</p>
+<blockquote>
+<p>没训练过。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>增</mi><mi>加</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>长</mi><mi>度</mi><mo>≠</mo><mi>模</mi><mi>型</mi><mi>自</mi><mi>动</mi><mi>学</mi><mi>会</mi><mi>更</mi><mi>长</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+增加PositionTable长度
+\neq
+模型自动学会更长Context
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这和新增-token-很像">33. 这和新增 Token 很像</h2>
+<p>新增 Token：</p>
+<blockquote>
+<p>新 Embedding 没学过。</p>
+</blockquote>
+<p>新增 Position：</p>
+<blockquote>
+<p>新 Position Embedding 也没学过。</p>
+</blockquote>
+<hr />
+<h1
+id="四绝对位置还有一个更深的问题">四、绝对位置还有一个更深的问题</h1>
+<h2 id="假设两个-token">34. 假设两个 Token</h2>
+<p>A 在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>100</mn><annotation encoding="application/x-tex">
+100
+</annotation></semantics></math></p>
+<p>B 在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>101</mn><annotation encoding="application/x-tex">
+101
+</annotation></semantics></math></p>
+<p>模型真正关心的可能是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>101</mn><mo>−</mo><mn>100</mn><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+101-100=1
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>它们相邻。</p>
+</blockquote>
+<hr />
+<h2 id="换一个位置">35. 换一个位置</h2>
+<p>A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3000</mn><annotation encoding="application/x-tex">
+3000
+</annotation></semantics></math></p>
+<p>B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3001</mn><annotation encoding="application/x-tex">
+3001
+</annotation></semantics></math></p>
+<p>关系仍然：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但是-absolute-position-embedding-首先编码的是">36. 但是 Absolute
+Position Embedding 首先编码的是</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>100</mn><annotation encoding="application/x-tex">
+100
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>101</mn><annotation encoding="application/x-tex">
+101
+</annotation></semantics></math></p>
+<p>或者：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3000</mn><annotation encoding="application/x-tex">
+3000
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3001</mn><annotation encoding="application/x-tex">
+3001
+</annotation></semantics></math></p>
+<p>模型还需要：</p>
+<blockquote>
+<p>自己从绝对位置中推导相对距离。</p>
+</blockquote>
+<hr />
+<h2 id="对语言来说相对位置非常重要">37. 对语言来说相对位置非常重要</h2>
+<p>例如：</p>
+<blockquote>
+<p>“不得”离“低于”只有 1～2 个 Token。</p>
+</blockquote>
+<p>比：</p>
+<blockquote>
+<p>“不得”距离某个完全无关条款 3000 Token</p>
+</blockquote>
+<p>通常更有直接语义关系。</p>
+<hr />
+<h2 id="所以-position-有两个层面">38. 所以 Position 有两个层面</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>b</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AbsolutePosition
+}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RelativePosition
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五sinusoidal-position-encoding">五、Sinusoidal Position
+Encoding</h1>
+<h2 id="原始-transformer-提出了一种不需要学习-position-table-的方法">39.
+原始 Transformer 提出了一种不需要学习 Position Table 的方法</h2>
+<p>就是：</p>
+<h1 id="sinusoidal-position-encoding">Sinusoidal Position Encoding</h1>
+<p>正弦位置编码。</p>
+<hr />
+<h2 id="核心思想">40. 核心思想</h2>
+<p>对于每一个位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mi>o</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+pos
+</annotation></semantics></math></p>
+<p>构造一组：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>i</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+sin
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi><mi>o</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+cos
+</annotation></semantics></math></p>
+<p>值。</p>
+<hr />
+<h2 id="经典公式">41. 经典公式</h2>
+<p>对偶数维：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>E</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mi>o</mi><mi>s</mi><mo>,</mo><mn>2</mn><mi>i</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>sin</mo><mrow><mo stretchy="true" form="prefix">(</mo><mfrac><mrow><mi>p</mi><mi>o</mi><mi>s</mi></mrow><msup><mn>10000</mn><mrow><mn>2</mn><mi>i</mi><mi>/</mi><mi>d</mi></mrow></msup></mfrac><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PE(pos,2i)
+=
+\sin
+\left(
+\frac{pos}
+{10000^{2i/d}}
+\right)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="奇数维">42. 奇数维</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>E</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mi>o</mi><mi>s</mi><mo>,</mo><mn>2</mn><mi>i</mi><mo>+</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mfrac><mrow><mi>p</mi><mi>o</mi><mi>s</mi></mrow><msup><mn>10000</mn><mrow><mn>2</mn><mi>i</mi><mi>/</mi><mi>d</mi></mrow></msup></mfrac><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PE(pos,2i+1)
+=
+\cos
+\left(
+\frac{pos}
+{10000^{2i/d}}
+\right)
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>d</mi><annotation encoding="application/x-tex">
+d
+</annotation></semantics></math></p>
+<p>是 Hidden Dimension。</p>
+<hr />
+<h2 id="看起来为什么这么怪">43. 看起来为什么这么怪？</h2>
+<p>关键不是：</p>
+<blockquote>
+<p>10000 这个数字本身有神秘意义。</p>
+</blockquote>
+<p>核心是：</p>
+<blockquote>
+<p>不同维度使用不同频率。</p>
+</blockquote>
+<hr />
+<h2 id="某些维度变化很快">44. 某些维度变化很快</h2>
+<p>位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>→</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+1\rightarrow2
+</annotation></semantics></math></p>
+<p>数值：</p>
+<blockquote>
+<p>就变化明显。</p>
+</blockquote>
+<p>它们可以帮助表示：</p>
+<blockquote>
+<p>精细局部位置。</p>
+</blockquote>
+<hr />
+<h2 id="某些维度变化很慢">45. 某些维度变化很慢</h2>
+<p>可能位置从：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>→</mo><mn>100</mn></mrow><annotation encoding="application/x-tex">
+1\rightarrow100
+</annotation></semantics></math></p>
+<p>只发生较缓慢变化。</p>
+<p>它们可以表达：</p>
+<blockquote>
+<p>较粗尺度的位置变化。</p>
+</blockquote>
+<hr />
+<h2 id="可以把它理解成很多钟表">46. 可以把它理解成很多“钟表”</h2>
+<p>一个钟：</p>
+<blockquote>
+<p>转得很快。</p>
+</blockquote>
+<p>另一个：</p>
+<blockquote>
+<p>转得慢一点。</p>
+</blockquote>
+<p>再一个：</p>
+<blockquote>
+<p>转得更慢。</p>
+</blockquote>
+<p>多个钟的读数组合起来：</p>
+<blockquote>
+<p>表示当前位置。</p>
+</blockquote>
+<hr />
+<h2 id="第四个核心心智模型-9">47. 第四个核心心智模型</h2>
+<h3
+id="心智模型-④sinusoidal-encoding-用多种频率的周期信号共同表示位置">心智模型
+④：Sinusoidal Encoding 用“多种频率的周期信号”共同表示位置</h3>
+<p>这和只给位置一个数字：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>37</mn><annotation encoding="application/x-tex">
+37
+</annotation></semantics></math></p>
+<p>完全不同。</p>
+<p>它把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>37</mn><annotation encoding="application/x-tex">
+37
+</annotation></semantics></math></p>
+<p>展开成：</p>
+<blockquote>
+<p>很多不同时间尺度上的相位状态。</p>
+</blockquote>
+<hr />
+<h2 id="为什么要-sin-和-cos-配对">48. 为什么要 Sin 和 Cos 配对？</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>i</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+sin
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi><mi>o</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+cos
+</annotation></semantics></math></p>
+<p>共同可以表达一个角度。</p>
+<p>例如二维圆：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mo>cos</mo><mi>θ</mi><mo>,</mo><mo>sin</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(\cos\theta,\sin\theta)
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>圆周上的位置。</p>
+</blockquote>
+<hr />
+<h2 id="所以你可以把每两维看成一个小圆">49.
+所以你可以把每两维看成一个小圆</h2>
+<p>Position 增长时：</p>
+<blockquote>
+<p>向量在这个二维平面里旋转。</p>
+</blockquote>
+<p>不同维度对：</p>
+<blockquote>
+<p>旋转速度不同。</p>
+</blockquote>
+<hr />
+<h2 id="这句话要记住">50. 这句话要记住</h2>
+<p>因为到了 RoPE：</p>
+<blockquote>
+<p>我们会直接把“旋转”这件事应用到 Q、K。</p>
+</blockquote>
+<hr />
+<h1 id="六为什么-sinusoidal-能表达相对位移">六、为什么 Sinusoidal
+能表达相对位移？</h1>
+<h2 id="三角恒等式告诉我们">51. 三角恒等式告诉我们</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>sin</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>a</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\sin(a+b)
+</annotation></semantics></math></p>
+<p>可以用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>sin</mo><mi>a</mi><mo>,</mo><mo>cos</mo><mi>a</mi><mo>,</mo><mo>sin</mo><mi>b</mi><mo>,</mo><mo>cos</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+\sin a,\cos a,\sin b,\cos b
+</annotation></semantics></math></p>
+<p>表示。</p>
+<hr />
+<h2 id="例如-8">52. 例如</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>sin</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>a</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>sin</mo><mi>a</mi><mo>cos</mo><mi>b</mi><mo>+</mo><mo>cos</mo><mi>a</mi><mo>sin</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+\sin(a+b)
+=
+\sin a\cos b+\cos a\sin b
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这意味着">53. 这意味着</h2>
+<p>从位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mi>o</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+pos
+</annotation></semantics></math></p>
+<p>移动：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Δ</mi><annotation encoding="application/x-tex">
+\Delta
+</annotation></semantics></math></p>
+<p>到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mi>o</mi><mi>s</mi><mo>+</mo><mi>Δ</mi></mrow><annotation encoding="application/x-tex">
+pos+\Delta
+</annotation></semantics></math></p>
+<p>对应的编码之间：</p>
+<blockquote>
+<p>存在结构化线性关系。</p>
+</blockquote>
+<hr />
+<h2 id="所以它比完全独立的-learned-position-row">54. 所以它比完全独立的
+Learned Position Row</h2>
+<p>天然多了一点：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>S</mi><mi>h</mi><mi>i</mi><mi>f</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RelativeShiftStructure
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但是-sinusoidal-encoding-仍然通常是">55. 但是 Sinusoidal
+Encoding 仍然通常是</h2>
+<p>把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>E</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mi>o</mi><mi>s</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+PE(pos)
+</annotation></semantics></math></p>
+<p>加到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+TokenEmbedding
+</annotation></semantics></math></p>
+<p>上。</p>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mi>i</mi></msub><mo>=</mo><msub><mi>e</mi><mi>i</mi></msub><mo>+</mo><mi>P</mi><mi>E</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>i</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_i=e_i+PE(i)
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="七为什么后来越来越强调-relative-position">七、为什么后来越来越强调
+Relative Position？</h1>
+<h2 id="对很多语言关系而言">56. 对很多语言关系而言</h2>
+<p>真正重要的不是：</p>
+<blockquote>
+<p>“这个 Token 是第 1837 个。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>“它距离当前 Token 是 -2、+4 还是 +1000。”</p>
+</blockquote>
+<hr />
+<h2 id="例如-9">57. 例如</h2>
+<blockquote>
+<p>“不得低于5000万元”</p>
+</blockquote>
+<p>“不得”与“低于”之间的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+RelativeDistance
+</annotation></semantics></math></p>
+<p>对理解这一局部结构很重要。</p>
+<hr />
+<h2 id="又例如法律文本">58. 又例如法律文本</h2>
+<blockquote>
+<p>“符合前款第（三）项规定的供应商……”</p>
+</blockquote>
+<p>“前款”：</p>
+<blockquote>
+<p>本身就是一种相对引用概念。</p>
+</blockquote>
+<hr />
+<h2 id="因此一些模型直接把相对位置放进-attention">59.
+因此一些模型直接把相对位置放进 Attention</h2>
+<p>例如 Attention Score：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+score_{ij}
+</annotation></semantics></math></p>
+<p>除了内容关系：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>q</mi><mi>i</mi><mi>T</mi></msubsup><msub><mi>k</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">
+q_i^Tk_j
+</annotation></semantics></math></p>
+<p>还加：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mrow><mi>i</mi><mo>−</mo><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">
+b_{i-j}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个抽象形式">60. 一个抽象形式</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>=</mo><mfrac><mrow><msubsup><mi>q</mi><mi>i</mi><mi>T</mi></msubsup><msub><mi>k</mi><mi>j</mi></msub></mrow><msqrt><mi>d</mi></msqrt></mfrac><mo>+</mo><msub><mi>b</mi><mrow><mi>i</mi><mo>−</mo><mi>j</mi></mrow></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+score_{ij}
+=
+\frac{q_i^Tk_j}{\sqrt d}
++
+b_{i-j}
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mrow><mi>i</mi><mo>−</mo><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">
+b_{i-j}
+</annotation></semantics></math></p>
+<p>只依赖：</p>
+<blockquote>
+<p>相对距离。</p>
+</blockquote>
+<hr />
+<h2 id="这样位置-100-与-101">61. 这样位置 100 与 101</h2>
+<p>和：</p>
+<p>位置 3000 与 3001</p>
+<p>都拥有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi><mo>−</mo><mi>j</mi><mo>=</mo><mi>−</mi><mn>1</mn></mrow><annotation encoding="application/x-tex">
+i-j=-1
+</annotation></semantics></math></p>
+<p>相同的相对位置结构。</p>
+<hr />
+<h1 id="八relative-position-bias">八、Relative Position Bias</h1>
+<h2 id="一个思路是为不同距离学习-bias">62. 一个思路是为不同距离学习
+Bias</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1</mn><mo>,</mo><mi>−</mi><mn>2</mn><mo>,</mo><mi>−</mi><mn>3</mn><mo>,</mo><mi>…</mi></mrow><annotation encoding="application/x-tex">
+-1,-2,-3,\ldots
+</annotation></semantics></math></p>
+<p>各有参数。</p>
+<hr />
+<h2 id="但距离可能非常大">63. 但距离可能非常大</h2>
+<p>不可能为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>100000</mn></mrow><annotation encoding="application/x-tex">
+-100000
+</annotation></semantics></math></p>
+<p>到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>100000</mn></mrow><annotation encoding="application/x-tex">
++100000
+</annotation></semantics></math></p>
+<p>每个距离都无限建参数。</p>
+<hr />
+<h2 id="所以经常做-bucket">64. 所以经常做 Bucket</h2>
+<p>例如：</p>
+<pre class="text"><code>距离 1
+距离 2
+距离 3
+距离 4–7
+距离 8–15
+距离 16–31
+...</code></pre>
+<p>近距离：</p>
+<blockquote>
+<p>分得细。</p>
+</blockquote>
+<p>远距离：</p>
+<blockquote>
+<p>分得粗。</p>
+</blockquote>
+<hr />
+<h2 id="这符合语言直觉">65. 这符合语言直觉</h2>
+<p>距离：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>2</mn><annotation encoding="application/x-tex">
+2
+</annotation></semantics></math></p>
+<p>可能差别很大。</p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>10001</mn><annotation encoding="application/x-tex">
+10001
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>10002</mn><annotation encoding="application/x-tex">
+10002
+</annotation></semantics></math></p>
+<p>通常没必要拥有完全独立 Position Parameter。</p>
+<hr />
+<h1 id="九alibi另一个重要思路">九、ALiBi：另一个重要思路</h1>
+<h2 id="你以后可能看到">66. 你以后可能看到</h2>
+<h1 id="alibi">ALiBi</h1>
+<p>Attention with Linear Biases。</p>
+<hr />
+<h2 id="它不一定给-token-添加-position-embedding">67. 它不一定给 Token
+添加 Position Embedding</h2>
+<p>而是直接在 Attention Score 中加入：</p>
+<blockquote>
+<p>与距离相关的线性 Bias。</p>
+</blockquote>
+<hr />
+<h2 id="非常简化地想">68. 非常简化地想</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>=</mo><msubsup><mi>q</mi><mi>i</mi><mi>T</mi></msubsup><msub><mi>k</mi><mi>j</mi></msub><mo>−</mo><mi>m</mi><mrow><mo stretchy="true" form="prefix">|</mo><mi>i</mi><mo>−</mo><mi>j</mi><mo stretchy="true" form="postfix">|</mo></mrow></mrow><annotation encoding="application/x-tex">
+score_{ij}
+=
+q_i^Tk_j
+-
+m|i-j|
+</annotation></semantics></math></p>
+<p>不同 Head：</p>
+<blockquote>
+<p>可以使用不同斜率。</p>
+</blockquote>
+<hr />
+<h2 id="核心思想-1">69. 核心思想</h2>
+<p>距离越远：</p>
+<blockquote>
+<p>Attention Score 获得某种位置惩罚。</p>
+</blockquote>
+<p>这使模型获得：</p>
+<blockquote>
+<p>距离感。</p>
+</blockquote>
+<hr />
+<h2 id="我们今天不会深入-alibi">70. 我们今天不会深入 ALiBi</h2>
+<p>但要建立统一认知：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>一</mi><mi>定</mi><mi>非</mi><mi>要</mi><mo>“</mo><mi>加</mi><mi>到</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>上</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PositionInformation
+不一定非要“加到Embedding上”
+}
+</annotation></semantics></math></p>
+<p>它也可以进入：</p>
+<blockquote>
+<p>Attention Score。</p>
+</blockquote>
+<p>甚至：</p>
+<blockquote>
+<p>Q/K 的几何结构。</p>
+</blockquote>
+<p>而后者就是 RoPE。</p>
+<hr />
+<h1 id="十终于进入-rope">十、终于进入 RoPE</h1>
+<h2 id="rope-全称">71. RoPE 全称</h2>
+<h1 id="rotary-position-embedding">Rotary Position Embedding</h1>
+<p>中文通常叫：</p>
+<h1 id="旋转位置编码">旋转位置编码</h1>
+<hr />
+<h2 id="它最关键的思想不是">72. 它最关键的思想不是</h2>
+<blockquote>
+<p>为位置单独创造一个向量然后加到 Token 上。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>根</mi><mi>据</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>旋</mi><mi>转</mi><mi>Q</mi><mi>和</mi><mi>K</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+根据Position旋转Q和K
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这句话第一次看很奇怪">73. 这句话第一次看很奇怪</h2>
+<p>“供应商”明明是文字。</p>
+<p>为什么：</p>
+<blockquote>
+<p>位置会变成旋转？</p>
+</blockquote>
+<p>答案在高维向量几何里。</p>
+<hr />
+<h1 id="十一先从二维旋转开始">十一、先从二维旋转开始</h1>
+<h2 id="一个二维向量">74. 一个二维向量</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><msub><mi>x</mi><mn>1</mn></msub></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><msub><mi>x</mi><mn>2</mn></msub></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+x=
+\begin{bmatrix}
+x_1\\
+x_2
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>旋转角度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">
+\theta
+</annotation></semantics></math></p>
+<hr />
+<h2 id="二维旋转矩阵">75. 二维旋转矩阵</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mo>cos</mo><mi>θ</mi></mtd><mtd columnalign="center" style="text-align: center"><mi>−</mi><mo>sin</mo><mi>θ</mi></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mo>sin</mo><mi>θ</mi></mtd><mtd columnalign="center" style="text-align: center"><mo>cos</mo><mi>θ</mi></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+R(\theta)
+=
+\begin{bmatrix}
+\cos\theta&amp;-\sin\theta\\
+\sin\theta&amp;\cos\theta
+\end{bmatrix}
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="旋转以后">76. 旋转以后</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mi>′</mi><mo>=</mo><mi>R</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">
+x&#39;
+=
+R(\theta)x
+</annotation></semantics></math></p>
+<hr />
+<h2 id="例如-10">77. 例如</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+x=
+\begin{bmatrix}
+1\\
+0
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>=</mo><msup><mn>90</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">
+\theta=90^\circ
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mi>′</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>1</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+x&#39;
+=
+\begin{bmatrix}
+0\\
+1
+\end{bmatrix}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个非常重要性质">78. 一个非常重要性质</h2>
+<p>旋转：</p>
+<blockquote>
+<p>不改变向量长度。</p>
+</blockquote>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="false" form="postfix">∥</mo><mi>R</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>x</mi><mo stretchy="false" form="postfix">∥</mo><mo>=</mo><mo stretchy="false" form="postfix">∥</mo><mi>x</mi><mo stretchy="false" form="postfix">∥</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\|R(\theta)x\|
+=
+\|x\|
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="它改变的是">79. 它改变的是</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Direction
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>位置可以通过改变方向来编码，而不必改变向量整体尺度。</p>
+</blockquote>
+<hr />
+<h1 id="十二position-怎么变成旋转角度">十二、Position
+怎么变成旋转角度？</h1>
+<h2 id="假设-token-位于位置">80. 假设 Token 位于位置</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>m</mi><annotation encoding="application/x-tex">
+m
+</annotation></semantics></math></p>
+<p>我们给它一个基础角速度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">
+\theta
+</annotation></semantics></math></p>
+<p>那么旋转角度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>m</mi><mi>θ</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+m\theta
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="position-1">81. Position = 1</h2>
+<p>旋转：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">
+\theta
+</annotation></semantics></math></p>
+<hr />
+<h2 id="position-2">82. Position = 2</h2>
+<p>旋转：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mi>θ</mi></mrow><annotation encoding="application/x-tex">
+2\theta
+</annotation></semantics></math></p>
+<hr />
+<h2 id="position-100">83. Position = 100</h2>
+<p>旋转：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>100</mn><mi>θ</mi></mrow><annotation encoding="application/x-tex">
+100\theta
+</annotation></semantics></math></p>
+<p>所以位置：</p>
+<blockquote>
+<p>直接变成旋转相位。</p>
+</blockquote>
+<hr />
+<h1 id="十三高维向量怎么旋转">十三、高维向量怎么旋转？</h1>
+<h2 id="假设-head-dimension">84. 假设 Head Dimension</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">
+d=8
+</annotation></semantics></math></p>
+<p>我们把它两两分组：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mn>0</mn></msub><mo>,</mo><msub><mi>x</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(x_0,x_1)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mn>2</mn></msub><mo>,</mo><msub><mi>x</mi><mn>3</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(x_2,x_3)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mn>4</mn></msub><mo>,</mo><msub><mi>x</mi><mn>5</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(x_4,x_5)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mn>6</mn></msub><mo>,</mo><msub><mi>x</mi><mn>7</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(x_6,x_7)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="每一对维度">85. 每一对维度</h2>
+<p>都可以看成：</p>
+<blockquote>
+<p>一个二维平面。</p>
+</blockquote>
+<p>然后：</p>
+<blockquote>
+<p>独立做旋转。</p>
+</blockquote>
+<hr />
+<h2 id="但每个二维平面的旋转速度不同">86.
+但每个二维平面的旋转速度不同</h2>
+<p>定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>θ</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+\theta_i
+</annotation></semantics></math></p>
+<p>不同
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>：</p>
+<blockquote>
+<p>使用不同频率。</p>
+</blockquote>
+<hr />
+<h2 id="一种典型形式">87. 一种典型形式</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>θ</mi><mi>i</mi></msub><mo>=</mo><msup><mi>B</mi><mrow><mi>−</mi><mn>2</mn><mi>i</mi><mi>/</mi><mi>d</mi></mrow></msup></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\theta_i
+=
+B^{-2i/d}
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">
+B
+</annotation></semantics></math></p>
+<p>是 RoPE Base。</p>
+<hr />
+<h2 id="经典设计中常见">88. 经典设计中常见</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>10000</mn></mrow><annotation encoding="application/x-tex">
+B=10000
+</annotation></semantics></math></p>
+<p>但现代模型：</p>
+<blockquote>
+<p>可以使用不同 Base 和不同 Scaling 方法。</p>
+</blockquote>
+<p>所以不要把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>10000</mn><annotation encoding="application/x-tex">
+10000
+</annotation></semantics></math></p>
+<p>理解成 RoPE 的永恒固定常数。</p>
+<hr />
+<h2 id="低编号维度">89. 低编号维度</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>θ</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+\theta_i
+</annotation></semantics></math></p>
+<p>通常较大。</p>
+<p>于是：</p>
+<blockquote>
+<p>随位置变化旋转更快。</p>
+</blockquote>
+<hr />
+<h2 id="高编号维度">90. 高编号维度</h2>
+<p>频率更低。</p>
+<p>于是：</p>
+<blockquote>
+<p>旋转更慢。</p>
+</blockquote>
+<hr />
+<h2 id="这又出现了多尺度位置表示">91. 这又出现了多尺度位置表示</h2>
+<p>与 Sinusoidal Encoding 很像：</p>
+<blockquote>
+<p>快频率负责精细变化。</p>
+</blockquote>
+<blockquote>
+<p>慢频率负责长尺度变化。</p>
+</blockquote>
+<hr />
+<h1 id="十四rope-对-query-做什么">十四、RoPE 对 Query 做什么？</h1>
+<h2 id="原-query">92. 原 Query</h2>
+<p>位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>m</mi><annotation encoding="application/x-tex">
+m
+</annotation></semantics></math></p>
+<p>内容向量：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>q</mi><mi>m</mi></msub><annotation encoding="application/x-tex">
+q_m
+</annotation></semantics></math></p>
+<p>RoPE 后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mover><mi>q</mi><mo accent="true">̃</mo></mover><mi>m</mi></msub><mo>=</mo><msub><mi>R</mi><mi>m</mi></msub><msub><mi>q</mi><mi>m</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\tilde q_m
+=
+R_m q_m
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这里">93. 这里</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>R</mi><mi>m</mi></msub><annotation encoding="application/x-tex">
+R_m
+</annotation></semantics></math></p>
+<p>就是：</p>
+<blockquote>
+<p>根据位置
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>m</mi><annotation encoding="application/x-tex">m</annotation></semantics></math>
+构造的多频率旋转矩阵。</p>
+</blockquote>
+<hr />
+<h2 id="key-也一样">94. Key 也一样</h2>
+<p>位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">
+n
+</annotation></semantics></math></p>
+<p>原 Key：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>k</mi><mi>n</mi></msub><annotation encoding="application/x-tex">
+k_n
+</annotation></semantics></math></p>
+<p>RoPE 后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mover><mi>k</mi><mo accent="true">̃</mo></mover><mi>n</mi></msub><mo>=</mo><msub><mi>R</mi><mi>n</mi></msub><msub><mi>k</mi><mi>n</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\tilde k_n
+=
+R_n k_n
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="然后-attention-看什么">95. 然后 Attention 看什么？</h2>
+<p>仍然计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mover><mi>q</mi><mo accent="true">̃</mo></mover><mi>m</mi><mi>T</mi></msubsup><msub><mover><mi>k</mi><mo accent="true">̃</mo></mover><mi>n</mi></msub></mrow><annotation encoding="application/x-tex">
+\tilde q_m^T\tilde k_n
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五rope-最漂亮的一步来了">十五、RoPE 最漂亮的一步来了</h1>
+<h2 id="代入">96. 代入</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mover><mi>q</mi><mo accent="true">̃</mo></mover><mi>m</mi><mi>T</mi></msubsup><msub><mover><mi>k</mi><mo accent="true">̃</mo></mover><mi>n</mi></msub><mo>=</mo><msup><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>R</mi><mi>m</mi></msub><msub><mi>q</mi><mi>m</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mi>T</mi></msup><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>R</mi><mi>n</mi></msub><msub><mi>k</mi><mi>n</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\tilde q_m^T\tilde k_n
+=
+(R_mq_m)^T(R_nk_n)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="转置展开">97. 转置展开</h2>
+<h2
+id="q_mtr_mtr_nk_n"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><msubsup><mi>q</mi><mi>m</mi><mi>T</mi></msubsup><msubsup><mi>R</mi><mi>m</mi><mi>T</mi></msubsup><msub><mi>R</mi><mi>n</mi></msub><msub><mi>k</mi><mi>n</mi></msub></mrow><annotation encoding="application/x-tex">
+=
+q_m^TR_m^TR_nk_n
+</annotation></semantics></math></h2>
+<h2 id="对旋转矩阵">98. 对旋转矩阵</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>R</mi><mi>m</mi><mi>T</mi></msubsup><mo>=</mo><msub><mi>R</mi><mrow><mi>−</mi><mi>m</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+R_m^T
+=
+R_{-m}
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>R</mi><mi>m</mi><mi>T</mi></msubsup><msub><mi>R</mi><mi>n</mi></msub><mo>=</mo><msub><mi>R</mi><mrow><mi>n</mi><mo>−</mo><mi>m</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+R_m^TR_n
+=
+R_{n-m}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以">99. 所以</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msubsup><mover><mi>q</mi><mo accent="true">̃</mo></mover><mi>m</mi><mi>T</mi></msubsup><msub><mover><mi>k</mi><mo accent="true">̃</mo></mover><mi>n</mi></msub><mo>=</mo><msubsup><mi>q</mi><mi>m</mi><mi>T</mi></msubsup><msub><mi>R</mi><mrow><mi>n</mi><mo>−</mo><mi>m</mi></mrow></msub><msub><mi>k</mi><mi>n</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\tilde q_m^T\tilde k_n
+=
+q_m^T
+R_{n-m}
+k_n
+}
+</annotation></semantics></math></p>
+<p>这就是 RoPE 最重要的公式之一。</p>
+<hr />
+<h2 id="看见关键了吗">100. 看见关键了吗？</h2>
+<p>Attention Score 中的位置影响最终依赖：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>n</mi><mo>−</mo><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+n-m
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<h1 id="relative-position">Relative Position</h1>
+<hr />
+<h2 id="这非常漂亮">101. 这非常漂亮</h2>
+<p>我们使用的是：</p>
+<blockquote>
+<p>每个 Token 的绝对位置
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>,</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">m,n</annotation></semantics></math>。</p>
+</blockquote>
+<p>但两者做 Dot Product 时：</p>
+<blockquote>
+<p>自然出现相对距离
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>−</mo><mi>m</mi></mrow><annotation encoding="application/x-tex">n-m</annotation></semantics></math>。</p>
+</blockquote>
+<hr />
+<h2 id="第五个核心心智模型-9">102. 第五个核心心智模型</h2>
+<h3
+id="心智模型-⑤rope-用绝对位置旋转让-qk-的匹配天然呈现相对位置关系">心智模型
+⑤：RoPE 用“绝对位置旋转”，让 Q·K 的匹配天然呈现“相对位置关系”</h3>
+<p>一句话：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>b</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>P</mi><mi>h</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>G</mi><mi>e</mi><mi>o</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AbsolutePhase
+\rightarrow
+RelativeAttentionGeometry
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六一个简单二维例子">十六、一个简单二维例子</h1>
+<h2 id="假设-query-位于">103. 假设 Query 位于</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>=</mo><mn>10</mn></mrow><annotation encoding="application/x-tex">
+m=10
+</annotation></semantics></math></p>
+<p>Key 位于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>12</mn></mrow><annotation encoding="application/x-tex">
+n=12
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>−</mo><mi>m</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+n-m=2
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果二者一起整体往后移动">104. 如果二者一起整体往后移动</h2>
+<p>Query：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>100</mn><annotation encoding="application/x-tex">
+100
+</annotation></semantics></math></p>
+<p>Key：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>102</mn><annotation encoding="application/x-tex">
+102
+</annotation></semantics></math></p>
+<p>依然：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>−</mo><mi>m</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+n-m=2
+</annotation></semantics></math></p>
+<hr />
+<h2 id="因此它们的-position-relationship">105. 因此它们的 Position
+Relationship</h2>
+<p>仍然表现出：</p>
+<blockquote>
+<p>相同相对距离结构。</p>
+</blockquote>
+<p>这非常适合语言。</p>
+<hr />
+<h1 id="十七为什么-rope-特别适合-attention">十七、为什么 RoPE 特别适合
+Attention？</h1>
+<h2 id="attention-的核心本来就是">106. Attention 的核心本来就是</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+QK^T
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>Query 与 Key 的向量匹配。</p>
+</blockquote>
+<hr />
+<h2 id="rope-没有另开一套大型位置网络">107. RoPE
+没有另开一套大型位置网络</h2>
+<p>而是直接：</p>
+<blockquote>
+<p>修改 Q/K 的方向。</p>
+</blockquote>
+<p>于是位置关系：</p>
+<blockquote>
+<p>进入 Dot Product 本身。</p>
+</blockquote>
+<hr />
+<h2 id="所以-content-与-position">108. 所以 Content 与 Position</h2>
+<p>在 Attention Score 中变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>M</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>×</mo><mi>/</mi><mspace width="-0.167em"></mspace><mo>+</mo><mspace width="0.222em"></mspace><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>G</mi><mi>e</mi><mi>o</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ContentMatch
+\times/\!+\ PositionGeometry
+}
+</annotation></semantics></math></p>
+<p>不是简单两条完全独立通道。</p>
+<hr />
+<h1 id="十八为什么通常旋转-q-和-k而不是-v">十八、为什么通常旋转 Q 和
+K，而不是 V？</h1>
+<h2 id="attention-的权重由">109. Attention 的权重由</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+QK^T
+</annotation></semantics></math></p>
+<p>决定。</p>
+<p>因此：</p>
+<blockquote>
+<p>Q/K 决定“看谁”。</p>
+</blockquote>
+<hr />
+<h2 id="v-负责什么">110. V 负责什么？</h2>
+<p>V 是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>a</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>i</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>o</mi><mspace width="0.222em"></mspace><mi>r</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+What\ information\ to\ retrieve
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>真正被聚合的内容。</p>
+</blockquote>
+<hr />
+<h2 id="所以标准-rope-设计通常">111. 所以标准 RoPE 设计通常</h2>
+<p>对：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo>,</mo><mi>K</mi></mrow><annotation encoding="application/x-tex">
+Q,K
+</annotation></semantics></math></p>
+<p>做位置旋转。</p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>V</mi><annotation encoding="application/x-tex">
+V
+</annotation></semantics></math></p>
+<p>通常不做相同旋转。</p>
+<hr />
+<h2 id="可以记成">112. 可以记成</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>/</mi><mi>K</mi><mo>=</mo><mi>A</mi><mi>d</mi><mi>d</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Q/K
+=
+Addressing
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mo>=</mo><mi>P</mi><mi>a</mi><mi>y</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+V
+=
+Payload
+}
+</annotation></semantics></math></p>
+<p>这是很好的 Attention 直觉。</p>
+<hr />
+<h1 id="十九rope-不改变-qk-的长度吗">十九、RoPE 不改变 Q/K
+的长度吗？</h1>
+<h2 id="理想旋转矩阵满足">113. 理想旋转矩阵满足</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>R</mi><mi>T</mi></msup><mi>R</mi><mo>=</mo><mi>I</mi></mrow><annotation encoding="application/x-tex">
+R^TR=I
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="postfix">∥</mo><mi>R</mi><mi>q</mi><mo stretchy="false" form="postfix">∥</mo><mo>=</mo><mo stretchy="false" form="postfix">∥</mo><mi>q</mi><mo stretchy="false" form="postfix">∥</mo></mrow><annotation encoding="application/x-tex">
+\|Rq\|=\|q\|
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以-rope-核心改变">114. 所以 RoPE 核心改变</h2>
+<blockquote>
+<p>方向。</p>
+</blockquote>
+<p>而不是任意放大或缩小：</p>
+<blockquote>
+<p>向量 Norm。</p>
+</blockquote>
+<p>这对数值稳定也很优雅。</p>
+<hr />
+<h1 id="二十complex-number-视角">二十、Complex Number 视角</h1>
+<h2 id="rope-还有一个非常漂亮的理解方式">115. RoPE
+还有一个非常漂亮的理解方式</h2>
+<p>把两个维度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mrow><mn>2</mn><mi>i</mi></mrow></msub><mo>,</mo><msub><mi>x</mi><mrow><mn>2</mn><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(x_{2i},x_{2i+1})
+</annotation></semantics></math></p>
+<p>看成一个复数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><msub><mi>x</mi><mrow><mn>2</mn><mi>i</mi></mrow></msub><mo>+</mo><mi>j</mi><msub><mi>x</mi><mrow><mn>2</mn><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">
+z=x_{2i}+jx_{2i+1}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="旋转等于乘">116. 旋转等于乘</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><msup><mi>e</mi><mrow><mi>j</mi><mi>m</mi><msub><mi>θ</mi><mi>i</mi></msub></mrow></msup></menclose><annotation encoding="application/x-tex">
+\boxed{
+e^{jm\theta_i}
+}
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mi>′</mi><mo>=</mo><mi>z</mi><msup><mi>e</mi><mrow><mi>j</mi><mi>m</mi><msub><mi>θ</mi><mi>i</mi></msub></mrow></msup></mrow><annotation encoding="application/x-tex">
+z&#39;
+=
+z e^{jm\theta_i}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="position-就变成">117. Position 就变成</h2>
+<h1 id="phase">Phase</h1>
+<p>相位。</p>
+<p>这也是为什么 RoPE 的本质非常像：</p>
+<blockquote>
+<p>多频率相位编码。</p>
+</blockquote>
+<hr />
+<h1 id="二十一为什么不同频率很关键">二十一、为什么不同频率很关键？</h1>
+<h2 id="如果所有维度旋转速度都一样">118. 如果所有维度旋转速度都一样</h2>
+<p>不同位置：</p>
+<blockquote>
+<p>容易产生周期性混淆。</p>
+</blockquote>
+<hr />
+<h2 id="多个频率组合">119. 多个频率组合</h2>
+<p>让一个 Position：</p>
+<blockquote>
+<p>同时在很多“钟表”上留下不同相位。</p>
+</blockquote>
+<p>这提高了：</p>
+<blockquote>
+<p>位置可区分性。</p>
+</blockquote>
+<hr />
+<h2 id="你可以粗略想象">120. 你可以粗略想象</h2>
+<p>第一对维度：</p>
+<blockquote>
+<p>秒针。</p>
+</blockquote>
+<p>第二对：</p>
+<blockquote>
+<p>分针。</p>
+</blockquote>
+<p>第三对：</p>
+<blockquote>
+<p>时针。</p>
+</blockquote>
+<p>更多维度：</p>
+<blockquote>
+<p>更慢的长周期钟。</p>
+</blockquote>
+<hr />
+<h1 id="二十二rope-shape-怎么看">二十二、RoPE Shape 怎么看？</h1>
+<h2 id="假设-multi-head-attention">121. 假设 Multi-Head Attention</h2>
+<p>Hidden Size：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mo>=</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+D=4096
+</annotation></semantics></math></p>
+<p>Head 数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>32</mn><annotation encoding="application/x-tex">
+32
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>D</mi><mi>i</mi><mi>m</mi><mo>=</mo><mfrac><mn>4096</mn><mn>32</mn></mfrac><mo>=</mo><mn>128</mn></mrow><annotation encoding="application/x-tex">
+HeadDim
+=
+\frac{4096}{32}
+=
+128
+</annotation></semantics></math></p>
+<hr />
+<h2 id="每个-head-的-qk">122. 每个 Head 的 Q/K</h2>
+<p>Shape 类似：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><mi>H</mi><mo>,</mo><mi>S</mi><mo>,</mo><msub><mi>d</mi><mi>h</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(B,H,S,d_h)
+</annotation></semantics></math></p>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><mn>32</mn><mo>,</mo><mi>S</mi><mo>,</mo><mn>128</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(B,32,S,128)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="rope-通常作用在哪个维度">123. RoPE 通常作用在哪个维度？</h2>
+<p>作用在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mi>h</mi></msub><annotation encoding="application/x-tex">
+d_h
+</annotation></semantics></math></p>
+<p>里的维度对。</p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>128</mn><annotation encoding="application/x-tex">
+128
+</annotation></semantics></math></p>
+<p>维：</p>
+<blockquote>
+<p>两两旋转。</p>
+</blockquote>
+<hr />
+<h2 id="也有模型只对部分维度使用-rope">124. 也有模型只对部分维度使用
+RoPE</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>D</mi><mi>i</mi><mi>m</mi><mo>&lt;</mo><mi>H</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>D</mi><mi>i</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+RotaryDim&lt;HeadDim
+</annotation></semantics></math></p>
+<p>这取决于：</p>
+<blockquote>
+<p>具体架构。</p>
+</blockquote>
+<p>所以看到实现时：</p>
+<blockquote>
+<p>不要假定永远 100% Head Dimension 都旋转。</p>
+</blockquote>
+<hr />
+<h1 id="二十三position-id-如何生成-rope">二十三、Position ID 如何生成
+RoPE？</h1>
+<h2 id="位置序列">125. 位置序列</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>,</mo><mi>…</mi><mo>,</mo><mi>S</mi><mo>−</mo><mn>1</mn><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[0,1,2,\ldots,S-1]
+</annotation></semantics></math></p>
+<hr />
+<h2 id="对每个频率">126. 对每个频率</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>θ</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+\theta_i
+</annotation></semantics></math></p>
+<p>计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><msub><mi>θ</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">
+m\theta_i
+</annotation></semantics></math></p>
+<hr />
+<h2 id="然后生成">127. 然后生成</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>m</mi><msub><mi>θ</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\cos(m\theta_i)
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>sin</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>m</mi><msub><mi>θ</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\sin(m\theta_i)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以实际代码经常缓存">128. 所以实际代码经常缓存</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>s</mi><mi>C</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+CosCache
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>i</mi><mi>n</mi><mi>C</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+SinCache
+</annotation></semantics></math></p>
+<p>避免：</p>
+<blockquote>
+<p>每次重复计算。</p>
+</blockquote>
+<hr />
+<h1 id="二十四一个常见-rope-实现直觉">二十四、一个常见 RoPE
+实现直觉</h1>
+<h2 id="对某个向量">129. 对某个向量</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<p>可以构造一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>_</mi><mi>h</mi><mi>a</mi><mi>l</mi><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+rotate\_half(x)
+</annotation></semantics></math></p>
+<p>把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mn>0</mn></msub><mo>,</mo><msub><mi>x</mi><mn>1</mn></msub><mo>,</mo><msub><mi>x</mi><mn>2</mn></msub><mo>,</mo><msub><mi>x</mi><mn>3</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(x_0,x_1,x_2,x_3)
+</annotation></semantics></math></p>
+<p>变成类似：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><msub><mi>x</mi><mn>1</mn></msub><mo>,</mo><msub><mi>x</mi><mn>0</mn></msub><mo>,</mo><mi>−</mi><msub><mi>x</mi><mn>3</mn></msub><mo>,</mo><msub><mi>x</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(-x_1,x_0,-x_3,x_2)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="然后">130. 然后</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>x</mi><mrow><mi>r</mi><mi>o</mi><mi>p</mi><mi>e</mi></mrow></msub><mo>=</mo><mi>x</mi><mo>cos</mo><mi>θ</mi><mo>+</mo><mi>r</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>_</mi><mi>h</mi><mi>a</mi><mi>l</mi><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>sin</mo><mi>θ</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+x_{rope}
+=
+x\cos\theta
++
+rotate\_half(x)\sin\theta
+}
+</annotation></semantics></math></p>
+<p>本质就是：</p>
+<blockquote>
+<p>二维旋转矩阵的向量化实现。</p>
+</blockquote>
+<hr />
+<h1
+id="二十五rope-和-sinusoidal-position-encoding-有什么关系">二十五、RoPE
+和 Sinusoidal Position Encoding 有什么关系？</h1>
+<h2 id="两者都使用">131. 两者都使用</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>i</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+sin
+</annotation></semantics></math></p>
+<p>与：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi><mi>o</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+cos
+</annotation></semantics></math></p>
+<p>以及：</p>
+<blockquote>
+<p>多频率结构。</p>
+</blockquote>
+<hr />
+<h2 id="但应用方式不同">132. 但应用方式不同</h2>
+<p>Sinusoidal：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenEmbedding
++
+PositionVector
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="rope">133. RoPE</h2>
+<p>更像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><mi>p</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rotate(Q,position)
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>K</mi><mo>,</mo><mi>p</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rotate(K,position)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以它不是简单">134. 所以它不是简单</h2>
+<blockquote>
+<p>“在 Embedding 上加一串正弦数字”。</p>
+</blockquote>
+<p>这是非常重要的区别。</p>
+<hr />
+<h1 id="二十六rope-与绝对-position-embedding-的核心差异">二十六、RoPE
+与绝对 Position Embedding 的核心差异</h1>
+<h2 id="learned-absolute">135. Learned Absolute</h2>
+<p>位置 100：</p>
+<blockquote>
+<p>有一个专属向量。</p>
+</blockquote>
+<p>位置 101：</p>
+<blockquote>
+<p>另一个专属向量。</p>
+</blockquote>
+<hr />
+<h2 id="rope-1">136. RoPE</h2>
+<p>位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>m</mi><annotation encoding="application/x-tex">
+m
+</annotation></semantics></math></p>
+<p>首先决定：</p>
+<blockquote>
+<p>一组旋转角。</p>
+</blockquote>
+<hr />
+<h2 id="它把-position-作用到">137. 它把 Position 作用到</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo>,</mo><mi>K</mi></mrow><annotation encoding="application/x-tex">
+Q,K
+</annotation></semantics></math></p>
+<p>的几何关系里。</p>
+<p>最终 Attention：</p>
+<blockquote>
+<p>自然反映相对位移。</p>
+</blockquote>
+<hr />
+<h1 id="二十七为什么现代-llm-很喜欢-rope">二十七、为什么现代 LLM 很喜欢
+RoPE？</h1>
+<h2 id="几个主要优点">138. 几个主要优点</h2>
+<p>它：</p>
+<ul>
+<li>不需要巨大的位置 Embedding Table；</li>
+<li>与 Attention Dot Product 深度整合；</li>
+<li>有漂亮的相对位置性质；</li>
+<li>实现高效；</li>
+<li>可以使用各种 Scaling 技术扩展 Context。</li>
+</ul>
+<hr />
+<h2 id="但一定不要得到错误结论">139. 但一定不要得到错误结论</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>用</mi><mi>了</mi><mi>R</mi><mi>o</mi><mi>P</mi><mi>E</mi><mo>≠</mo><mi>无</mi><mi>限</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+用了RoPE
+\neq
+无限Context
+}
+</annotation></semantics></math></p>
+<p>RoPE 也有：</p>
+<blockquote>
+<p>长度外推问题。</p>
+</blockquote>
+<hr />
+<h1 id="二十八为什么长-context-会成为问题">二十八、为什么长 Context
+会成为问题？</h1>
+<h2 id="假设模型训练时最多看过">140. 假设模型训练时最多看过</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>4096</mn><annotation encoding="application/x-tex">
+4096
+</annotation></semantics></math></p>
+<p>Token。</p>
+<p>那么训练过程中 Position：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>m</mi><annotation encoding="application/x-tex">
+m
+</annotation></semantics></math></p>
+<p>主要位于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>∼</mo><mn>4095</mn></mrow><annotation encoding="application/x-tex">
+0\sim4095
+</annotation></semantics></math></p>
+<hr />
+<h2 id="推理突然给">141. 推理突然给</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>=</mo><mn>50000</mn></mrow><annotation encoding="application/x-tex">
+m=50000
+</annotation></semantics></math></p>
+<p>RoPE 仍然可以数学上算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>sin</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>50000</mn><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\sin(50000\theta)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>50000</mn><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\cos(50000\theta)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但数学能算不等于模型训练过这种分布">142.
+但数学能算不等于模型训练过这种分布</h2>
+<p>模型参数从未充分学习：</p>
+<blockquote>
+<p>这么大的相位组合。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Computable
+\neq
+Reliable
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这和第一课的-ood-完全一致">143. 这和第一课的 OOD 完全一致</h2>
+<p>训练 Position Distribution：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mrow><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{train}(position)
+</annotation></semantics></math></p>
+<p>与部署：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mrow><mi>d</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{deploy}(position)
+</annotation></semantics></math></p>
+<p>差异太大。</p>
+<p>就会形成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>O</mi><mi>O</mi><mi>D</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PositionOOD
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十九rope-为什么可能在超长位置变困难">二十九、RoPE
+为什么可能在超长位置变困难？</h1>
+<h2 id="不同频率会不断旋转">144. 不同频率会不断旋转</h2>
+<p>位置越来越大时：</p>
+<blockquote>
+<p>高频维度已经转过很多圈。</p>
+</blockquote>
+<hr />
+<h2 id="模型训练只见过某个角度分布范围">145.
+模型训练只见过某个角度分布范围</h2>
+<p>直接外推：</p>
+<blockquote>
+<p>可能让 Attention 几何关系进入陌生区域。</p>
+</blockquote>
+<hr />
+<h2 id="所以长-context-不只是">146. 所以长 Context 不只是</h2>
+<blockquote>
+<p>“显存够不够”。</p>
+</blockquote>
+<p>还包括：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PositionalGeneralization
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十position-interpolation">三十、Position Interpolation</h1>
+<h2 id="一个重要思想叫">147. 一个重要思想叫</h2>
+<h1 id="position-interpolation">Position Interpolation</h1>
+<p>简称：</p>
+<h1 id="pi">PI</h1>
+<hr />
+<h2 id="假设模型原来支持">148. 假设模型原来支持</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+L=4096
+</annotation></semantics></math></p>
+<p>现在希望：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>′</mi><mo>=</mo><mn>16384</mn></mrow><annotation encoding="application/x-tex">
+L&#39;=16384
+</annotation></semantics></math></p>
+<p>扩展：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mo>×</mo></mrow><annotation encoding="application/x-tex">
+4\times
+</annotation></semantics></math></p>
+<hr />
+<h2 id="与其直接给位置-16383">149. 与其直接给位置 16383</h2>
+<p>不如把新 Position：</p>
+<blockquote>
+<p>压缩回原训练范围。</p>
+</blockquote>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>m</mi><mrow><mi>s</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>d</mi></mrow></msub><mo>=</mo><mfrac><mi>m</mi><mn>4</mn></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+m_{scaled}
+=
+\frac{m}{4}
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="那么新位置">150. 那么新位置</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>16383</mn><annotation encoding="application/x-tex">
+16383
+</annotation></semantics></math></p>
+<p>映射到大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>4095.75</mn><annotation encoding="application/x-tex">
+4095.75
+</annotation></semantics></math></p>
+<p>仍位于：</p>
+<blockquote>
+<p>原来熟悉的 Position Scale。</p>
+</blockquote>
+<hr />
+<h2 id="直觉是什么">151. 直觉是什么？</h2>
+<p>把一条：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>16</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+16K
+</annotation></semantics></math></p>
+<p>长的尺子，</p>
+<p>压缩到原来的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+4K
+</annotation></semantics></math></p>
+<p>位置空间。</p>
+<hr />
+<h2 id="代价是什么">152. 代价是什么？</h2>
+<p>原本位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>与：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>2</mn><annotation encoding="application/x-tex">
+2
+</annotation></semantics></math></p>
+<p>现在间距也被压缩。</p>
+<p>所以：</p>
+<blockquote>
+<p>局部位置分辨率发生变化。</p>
+</blockquote>
+<hr />
+<h1
+id="三十一为什么不能只粗暴统一压缩">三十一、为什么不能只粗暴统一压缩？</h1>
+<h2 id="rope-不同维度使用不同频率">153. RoPE 不同维度使用不同频率</h2>
+<p>高频维度：</p>
+<blockquote>
+<p>更关注局部差异。</p>
+</blockquote>
+<p>低频维度：</p>
+<blockquote>
+<p>更适合长尺度结构。</p>
+</blockquote>
+<p>统一缩放：</p>
+<blockquote>
+<p>不一定对所有频率都最优。</p>
+</blockquote>
+<hr />
+<h2 id="所以后来出现更多-scaling-方法">154. 所以后来出现更多 Scaling
+方法</h2>
+<p>例如：</p>
+<ul>
+<li>NTK-aware scaling；</li>
+<li>Dynamic NTK scaling；</li>
+<li>YaRN；</li>
+<li>各类 frequency-aware scaling。</li>
+</ul>
+<hr />
+<h2 id="现在不需要背公式">155. 现在不需要背公式</h2>
+<p>真正要理解的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>调</mi><mi>整</mi><mi>R</mi><mi>o</mi><mi>P</mi><mi>E</mi><mi>频</mi><mi>率</mi><mi>/</mi><mi>位</mi><mi>置</mi><mi>映</mi><mi>射</mi><mi>，</mi><mi>让</mi><mi>更</mi><mi>长</mi><mi>位</mi><mi>置</mi><mi>尽</mi><mi>量</mi><mi>落</mi><mi>入</mi><mi>模</mi><mi>型</mi><mi>可</mi><mi>泛</mi><mi>化</mi><mi>的</mi><mi>几</mi><mi>何</mi><mi>区</mi><mi>域</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongContextScaling
+=
+调整RoPE频率/位置映射，
+让更长位置尽量落入模型可泛化的几何区域
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十二ntk-aware-scaling-的直觉">三十二、NTK-aware Scaling
+的直觉</h1>
+<h2 id="不简单把所有频率">156. 不简单把所有频率</h2>
+<blockquote>
+<p>一刀切缩放。</p>
+</blockquote>
+<p>而是考虑：</p>
+<blockquote>
+<p>不同 RoPE 频率对短距离和长距离关系的贡献不同。</p>
+</blockquote>
+<hr />
+<h2 id="目标之一">157. 目标之一</h2>
+<p>尽量：</p>
+<blockquote>
+<p>保住短距离分辨率。</p>
+</blockquote>
+<p>同时：</p>
+<blockquote>
+<p>扩展长距离表示能力。</p>
+</blockquote>
+<hr />
+<h1 id="三十三yarn-的宏观理解">三十三、YaRN 的宏观理解</h1>
+<h2 id="yarn-属于">158. YaRN 属于</h2>
+<blockquote>
+<p>长 Context RoPE Scaling 方法家族。</p>
+</blockquote>
+<p>它会更精细地处理：</p>
+<blockquote>
+<p>不同频率区间。</p>
+</blockquote>
+<p>并配合：</p>
+<blockquote>
+<p>Attention Scale 等调整。</p>
+</blockquote>
+<hr />
+<h2 id="现在不要陷入算法名词竞赛">159. 现在不要陷入算法名词竞赛</h2>
+<p>以后看到任何 Context Extension 方法，</p>
+<p>先问三个问题：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>怎</mi><mi>么</mi><mi>映</mi><mi>射</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Position怎么映射？
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>怎</mi><mi>么</mi><mi>改</mi><mi>变</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Frequency怎么改变？
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>有</mi><mi>没</mi><mi>有</mi><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>继</mi><mi>续</mi><mi>训</mi><mi>练</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+有没有LongContext继续训练？
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三十四长上下文最关键的现实问题">三十四、长上下文最关键的现实问题</h1>
+<h2 id="一个模型配置写着">160. 一个模型配置写着</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+128K
+</annotation></semantics></math></p>
+<p>Context。</p>
+<p>这只能说明：</p>
+<blockquote>
+<p>系统允许你输入那么多 Token。</p>
+</blockquote>
+<hr />
+<h2 id="它不自动证明">161. 它不自动证明</h2>
+<p>模型在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+128K
+</annotation></semantics></math></p>
+<p>任何位置都：</p>
+<blockquote>
+<p>同样可靠。</p>
+</blockquote>
+<hr />
+<h2 id="例如信息放在">162. 例如信息放在</h2>
+<p>开头：</p>
+<blockquote>
+<p>能找到。</p>
+</blockquote>
+<p>结尾：</p>
+<blockquote>
+<p>能找到。</p>
+</blockquote>
+<p>中间：</p>
+<blockquote>
+<p>可能性能下降。</p>
+</blockquote>
+<p>这类现象经常被称为：</p>
+<h1 id="lost-in-the-middle">Lost in the Middle</h1>
+<hr />
+<h2 id="所以-context-length-不是单一数字能力">163. 所以 Context Length
+不是单一数字能力</h2>
+<p>更应该测：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>×</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Performance
+\times
+Position
+\times
+Distance
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第六个核心心智模型-4">164. 第六个核心心智模型</h2>
+<h3
+id="心智模型-⑥context-window-是容量上限long-context-ability-是需要独立评测的能力">心智模型
+⑥：Context Window 是容量上限，Long-Context Ability
+是需要独立评测的能力</h3>
+<p>就像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>P</mi><mi>U</mi><mspace width="0.222em"></mspace><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+GPU\ Memory
+</annotation></semantics></math></p>
+<p>够放一个模型，</p>
+<p>不代表：</p>
+<blockquote>
+<p>模型质量就好。</p>
+</blockquote>
+<p>同样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128</mn><mi>K</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+128K\ Context
+</annotation></semantics></math></p>
+<p>不代表：</p>
+<blockquote>
+<p>128K 范围内理解能力均匀。</p>
+</blockquote>
+<hr />
+<h1
+id="三十五政府采购长文档为什么尤其需要这个认知">三十五、政府采购长文档为什么尤其需要这个认知？</h1>
+<h2 id="一份采购文件可能有">165. 一份采购文件可能有</h2>
+<ul>
+<li>采购需求；</li>
+<li>资格条件；</li>
+<li>技术参数；</li>
+<li>商务要求；</li>
+<li>评分办法；</li>
+<li>合同条款；</li>
+<li>附件。</li>
+</ul>
+<p>总长度可能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>数</mi><mi>万</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+数万Token
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个风险点可能在第-3000-token">166. 一个风险点可能在第 3000
+Token</h2>
+<p>相关解释却在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>25000</mn><annotation encoding="application/x-tex">
+25000
+</annotation></semantics></math></p>
+<p>Token 后。</p>
+<hr />
+<h2 id="模型需要跨越">167. 模型需要跨越</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>22000</mn><annotation encoding="application/x-tex">
+22000
+</annotation></semantics></math></p>
+<p>Token</p>
+<p>建立关系。</p>
+<p>这就不是：</p>
+<blockquote>
+<p>单纯局部语义问题。</p>
+</blockquote>
+<hr />
+<h2 id="例如-11">168. 例如</h2>
+<p>前文：</p>
+<blockquote>
+<p>“供应商须在项目所在地设置服务机构。”</p>
+</blockquote>
+<p>后文：</p>
+<blockquote>
+<p>“现场响应仅适用于重大故障情形，普通服务均可远程完成。”</p>
+</blockquote>
+<p>二者结合后：</p>
+<blockquote>
+<p>风险判断可能改变。</p>
+</blockquote>
+<hr />
+<h2 id="所以政府采购模型必须评测">169. 所以政府采购模型必须评测</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongRangeEvidenceIntegration
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>只测 500 Token 小片段。</p>
+</blockquote>
+<hr />
+<h1 id="三十六position-encoding-能解决所有长文档问题吗">三十六、Position
+Encoding 能解决所有长文档问题吗？</h1>
+<h2 id="不能">170. 不能</h2>
+<p>Position Encoding 只是：</p>
+<blockquote>
+<p>让模型知道 Token 的位置关系。</p>
+</blockquote>
+<p>它不保证：</p>
+<blockquote>
+<p>模型一定会正确找到远距离证据。</p>
+</blockquote>
+<hr />
+<h2 id="还取决于">171. 还取决于</h2>
+<ul>
+<li>Attention Architecture；</li>
+<li>Training Data；</li>
+<li>Long-context training；</li>
+<li>Model capacity；</li>
+<li>Retrieval strategy；</li>
+<li>Document structure；</li>
+<li>Prompt design。</li>
+</ul>
+<hr />
+<h2 id="所以对于超长采购文件">172. 所以对于超长采购文件</h2>
+<p>仍然可能需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>R</mi><mi>A</mi><mi>G</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongContext
++
+RAG
++
+StructuredParsing
+}
+</annotation></semantics></math></p>
+<p>共同工作。</p>
+<hr />
+<h1 id="三十七position-与-rag-是什么关系">三十七、Position 与 RAG
+是什么关系？</h1>
+<h2 id="rag-的一个作用">173. RAG 的一个作用</h2>
+<p>不是强迫模型：</p>
+<blockquote>
+<p>一次把 300 页文件全部精细记住。</p>
+</blockquote>
+<p>而是先：</p>
+<blockquote>
+<p>找到最相关区域。</p>
+</blockquote>
+<hr />
+<h2 id="然后送入较短-context">174. 然后送入较短 Context</h2>
+<p>比如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3000</mn><mo>∼</mo><mn>10000</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+3000\sim10000\ Tokens
+</annotation></semantics></math></p>
+<p>模型处理起来：</p>
+<blockquote>
+<p>可能更可靠、更便宜。</p>
+</blockquote>
+<hr />
+<h2 id="所以即使模型支持">175. 所以即使模型支持</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi>M</mi><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+1M\ Tokens
+</annotation></semantics></math></p>
+<p>RAG 仍然可能有价值。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mi>F</mi><mi>i</mi><mi>t</mi><mo>≠</mo><mi>S</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>l</mi><mi>d</mi><mi>A</mi><mi>l</mi><mi>w</mi><mi>a</mi><mi>y</mi><mi>s</mi><mi>F</mi><mi>i</mi><mi>t</mi><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>t</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CanFit
+\neq
+ShouldAlwaysFitEverything
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十八causal-mask-再和-rope-区分一次">三十八、Causal Mask 再和
+RoPE 区分一次</h1>
+<h2 id="decoder-only-llm">176. Decoder-only LLM</h2>
+<p>位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">
+i
+</annotation></semantics></math></p>
+<p>通常只能看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi><mo>≤</mo><mi>i</mi></mrow><annotation encoding="application/x-tex">
+j\leq i
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这是通过">177. 这是通过</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+CausalMask
+</annotation></semantics></math></p>
+<p>实现。</p>
+<hr />
+<h2 id="rope-则告诉-attention">178. RoPE 则告诉 Attention</h2>
+<p>在允许看的这些 Token 里面：</p>
+<blockquote>
+<p>彼此相隔多远、相对在哪里。</p>
+</blockquote>
+<hr />
+<h2 id="所以-1">179. 所以</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo>=</mo><mi>未</mi><mi>来</mi><mi>不</mi><mi>可</mi><mi>见</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CausalMask
+=
+未来不可见
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>P</mi><mi>E</mi><mo>=</mo><mi>位</mi><mi>置</mi><mi>几</mi><mi>何</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RoPE
+=
+位置几何
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三十九attention-mask-和-position-id-也不要混淆">三十九、Attention
+Mask 和 Position ID 也不要混淆</h1>
+<h2 id="attention-mask-1">180. Attention Mask</h2>
+<p>可能表示：</p>
+<blockquote>
+<p>这个位置是不是 PAD。</p>
+</blockquote>
+<p>或者：</p>
+<blockquote>
+<p>能不能互相 Attention。</p>
+</blockquote>
+<hr />
+<h2 id="position-id">181. Position ID</h2>
+<p>表示：</p>
+<blockquote>
+<p>这个有效 Token 使用哪个位置编号。</p>
+</blockquote>
+<p>两者：</p>
+<blockquote>
+<p>可以不同。</p>
+</blockquote>
+<hr />
+<h1 id="四十padding-时-position-怎么处理">四十、Padding 时 Position
+怎么处理？</h1>
+<h2 id="假设两个样本">182. 假设两个样本</h2>
+<p>A 长度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3</mn><annotation encoding="application/x-tex">
+3
+</annotation></semantics></math></p>
+<p>B 长度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>5</mn><annotation encoding="application/x-tex">
+5
+</annotation></semantics></math></p>
+<p>右侧 Padding：</p>
+<pre class="text"><code>A A A PAD PAD
+B B B B   B</code></pre>
+<hr />
+<h2 id="有效位置可以是">183. 有效位置可以是</h2>
+<p>A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>,</mo><mn>1</mn><mo>,</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+0,1,2
+</annotation></semantics></math></p>
+<p>B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>,</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>,</mo><mn>3</mn><mo>,</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">
+0,1,2,3,4
+</annotation></semantics></math></p>
+<p>PAD：</p>
+<blockquote>
+<p>由 Mask 排除。</p>
+</blockquote>
+<hr />
+<h2 id="左侧-padding-会更有趣">184. 左侧 Padding 会更有趣</h2>
+<pre class="text"><code>PAD PAD A A A
+B   B   B B B</code></pre>
+<p>如果直接按 Tensor Column 编：</p>
+<p>A 会得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mo>,</mo><mn>3</mn><mo>,</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">
+2,3,4
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但有些实现希望有效-token-仍然使用">185. 但有些实现希望有效 Token
+仍然使用</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>,</mo><mn>1</mn><mo>,</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+0,1,2
+</annotation></semantics></math></p>
+<p>因此：</p>
+<blockquote>
+<p>Position IDs 往往需要根据 Attention Mask 重新计算。</p>
+</blockquote>
+<hr />
+<h2 id="具体行为取决于模型实现">186. 具体行为取决于模型实现</h2>
+<p>所以做推理框架兼容时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>不</mi><mi>要</mi><mi>自</mi><mi>己</mi><mi>猜</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>规</mi><mi>则</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+不要自己猜PositionID规则
+}
+</annotation></semantics></math></p>
+<p>应该遵循：</p>
+<blockquote>
+<p>模型原实现。</p>
+</blockquote>
+<hr />
+<h1 id="四十一packed-training">四十一、Packed Training</h1>
+<h2 id="训练时为了减少-padding">187. 训练时为了减少 Padding</h2>
+<p>可能把多个短文档拼成一条长序列。</p>
+<p>例如：</p>
+<pre class="text"><code>文档A | 文档B | 文档C</code></pre>
+<p>这叫：</p>
+<h1 id="sequence-packing">Sequence Packing</h1>
+<hr />
+<h2 id="这样-gpu-利用率更高">188. 这样 GPU 利用率更高</h2>
+<p>因为：</p>
+<blockquote>
+<p>少浪费 PAD。</p>
+</blockquote>
+<hr />
+<h2 id="但马上有问题">189. 但马上有问题</h2>
+<p>文档 A 结尾：</p>
+<blockquote>
+<p>不应该偷看文档 B。</p>
+</blockquote>
+<hr />
+<h2 id="所以光重置-position-id-不够">190. 所以光重置 Position ID
+不够</h2>
+<p>必须同时处理：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AttentionBoundary
+}
+</annotation></semantics></math></p>
+<p>例如使用：</p>
+<blockquote>
+<p>Block-diagonal Attention Mask。</p>
+</blockquote>
+<hr />
+<h2 id="这是非常重要的工程点">191. 这是非常重要的工程点</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>t</mi><mo>≠</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>I</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PositionReset
+\neq
+DocumentIsolation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十二kv-cache-与-position">四十二、KV Cache 与 Position</h1>
+<h2 id="llm-生成时">192. LLM 生成时</h2>
+<p>第一个 Token：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Position=0
+</annotation></semantics></math></p>
+<p>第二个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>一路生成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>t</mi><annotation encoding="application/x-tex">
+t
+</annotation></semantics></math></p>
+<hr />
+<h2 id="每次如果把过去所有-token-重新算一遍">193. 每次如果把过去所有
+Token 重新算一遍</h2>
+<p>极其浪费。</p>
+<p>所以使用：</p>
+<h1 id="kv-cache">KV Cache</h1>
+<p>缓存以前的 Key、Value。</p>
+<hr />
+<h2 id="rope-与-kv-cache-紧密相关">194. RoPE 与 KV Cache 紧密相关</h2>
+<p>过去的 Key：</p>
+<blockquote>
+<p>已经对应过去的位置完成了 RoPE 处理。</p>
+</blockquote>
+<p>然后被缓存。</p>
+<hr />
+<h2 id="新-token-到来">195. 新 Token 到来</h2>
+<p>只需计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>q</mi><mi>t</mi></msub><annotation encoding="application/x-tex">
+q_t
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>k</mi><mi>t</mi></msub><mo>,</mo><msub><mi>v</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">
+k_t,v_t
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>q</mi><mi>t</mi></msub><mo>,</mo><msub><mi>k</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">
+q_t,k_t
+</annotation></semantics></math></p>
+<p>使用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Position=t
+</annotation></semantics></math></p>
+<p>的旋转。</p>
+<hr />
+<h2 id="然后新-query">196. 然后新 Query</h2>
+<p>可以与缓存的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>K</mi><mrow><mn>0</mn><mo>:</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">
+K_{0:t}
+</annotation></semantics></math></p>
+<p>计算 Attention。</p>
+<hr />
+<h2 id="所以-position-counter-绝对不能乱">197. 所以 Position Counter
+绝对不能乱</h2>
+<p>如果模型生成到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>=</mo><mn>500</mn></mrow><annotation encoding="application/x-tex">
+t=500
+</annotation></semantics></math></p>
+<p>你却错误给新 Token：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Position=0
+</annotation></semantics></math></p>
+<p>RoPE 几何：</p>
+<blockquote>
+<p>会完全错乱。</p>
+</blockquote>
+<hr />
+<h1 id="四十三prefix-cache-为什么要求上下文一致">四十三、Prefix Cache
+为什么要求上下文一致？</h1>
+<h2 id="假设系统-prompt">198. 假设系统 Prompt</h2>
+<p>完全相同。</p>
+<p>可以缓存：</p>
+<blockquote>
+<p>它的 KV。</p>
+</blockquote>
+<p>后续不同请求：</p>
+<blockquote>
+<p>复用。</p>
+</blockquote>
+<hr />
+<h2 id="但如果前面突然插入-100-个-token">199. 但如果前面突然插入 100 个
+Token</h2>
+<p>原 Prefix 中 Token 的位置：</p>
+<blockquote>
+<p>全部发生变化。</p>
+</blockquote>
+<p>对于 RoPE：</p>
+<blockquote>
+<p>对应旋转相位也改变。</p>
+</blockquote>
+<hr />
+<h2 id="所以-prefix-cache">200. 所以 Prefix Cache</h2>
+<p>通常依赖：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>相</mi><mi>同</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>x</mi><mo>+</mo><mi>相</mi><mi>同</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+相同TokenPrefix
++
+相同PositionStructure
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<blockquote>
+<p>“文字大概一样”就能随便复用。</p>
+</blockquote>
+<hr />
+<h1 id="四十四position-与-chat-template">四十四、Position 与 Chat
+Template</h1>
+<h2 id="例如-system-prompt-有">201. 例如 System Prompt 有</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1000</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+1000\ Tokens
+</annotation></semantics></math></p>
+<p>那么用户真正正文的第一个 Token：</p>
+<blockquote>
+<p>已经不是 Position 0。</p>
+</blockquote>
+<hr />
+<h2 id="它可能从">202. 它可能从</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1000</mn><mo>+</mo></mrow><annotation encoding="application/x-tex">
+1000+
+</annotation></semantics></math></p>
+<p>的位置开始。</p>
+<p>所以非常长的系统 Prompt：</p>
+<blockquote>
+<p>不只占 Context。</p>
+</blockquote>
+<p>还会把后面所有内容：</p>
+<blockquote>
+<p>推向更远 Position。</p>
+</blockquote>
+<hr />
+<h2 id="这再次说明">203. 这再次说明</h2>
+<p>Prompt Engineering 不是：</p>
+<blockquote>
+<p>纯语言艺术。</p>
+</blockquote>
+<p>它会真正改变：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>o</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenLayout
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="四十五位置越靠后语义一定越弱吗">四十五、位置越靠后，语义一定越弱吗？</h1>
+<h2 id="不一定">204. 不一定</h2>
+<p>Position Encoding 本身：</p>
+<blockquote>
+<p>不是一个简单“越远权重越低”的规则。</p>
+</blockquote>
+<p>特别是 RoPE：</p>
+<blockquote>
+<p>主要改变 Attention Geometry。</p>
+</blockquote>
+<hr />
+<h2 id="最终-attention-强不强">205. 最终 Attention 强不强</h2>
+<p>仍由：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Content
++
+Position
++
+ModelWeights
++
+Context
+</annotation></semantics></math></p>
+<p>共同决定。</p>
+<hr />
+<h1
+id="四十六相对距离越远就一定不重要吗">四十六、相对距离越远就一定不重要吗？</h1>
+<h2 id="也不一定">206. 也不一定</h2>
+<p>法律文件中：</p>
+<blockquote>
+<p>前面定义的术语</p>
+</blockquote>
+<p>可能在 10000 Token 后：</p>
+<blockquote>
+<p>仍然非常关键。</p>
+</blockquote>
+<hr />
+<h2 id="所以模型不能只学">207. 所以模型不能只学</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>↑</mo><mo>⇒</mo><mi>I</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>↓</mo></mrow><annotation encoding="application/x-tex">
+Distance\uparrow
+\Rightarrow
+Importance\downarrow
+</annotation></semantics></math></p>
+<p>而必须学：</p>
+<blockquote>
+<p>内容和距离共同决定关系。</p>
+</blockquote>
+<hr />
+<h1 id="四十七rope-不是距离衰减函数">四十七、RoPE
+不是“距离衰减函数”</h1>
+<h2 id="这是一个重要误区">208. 这是一个重要误区</h2>
+<p>RoPE 本身不是简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>=</mo><mfrac><mn>1</mn><mrow><mo stretchy="true" form="prefix">|</mo><mi>i</mi><mo>−</mo><mi>j</mi><mo stretchy="true" form="postfix">|</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+score
+=
+\frac1{|i-j|}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="它是">209. 它是</h2>
+<blockquote>
+<p>用不同频率旋转 Q/K。</p>
+</blockquote>
+<p>然后：</p>
+<blockquote>
+<p>让 Dot Product 对相对位置敏感。</p>
+</blockquote>
+<p>这是更复杂的几何机制。</p>
+<hr />
+<h1
+id="四十八为什么有时会谈-rope-的-long-term-decay">四十八、为什么有时会谈
+RoPE 的 Long-term Decay？</h1>
+<h2 id="对不同频率和高维组合">210. 对不同频率和高维组合</h2>
+<p>随着相对距离变化：</p>
+<blockquote>
+<p>Dot Product 的统计结构可能表现出某些距离特性。</p>
+</blockquote>
+<hr />
+<h2 id="但不要简化成">211. 但不要简化成</h2>
+<blockquote>
+<p>“RoPE 就是离得越远 Attention 越小。”</p>
+</blockquote>
+<p>这个结论：</p>
+<blockquote>
+<p>太粗糙。</p>
+</blockquote>
+<p>真正 Attention 仍受：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo>,</mo><mi>K</mi></mrow><annotation encoding="application/x-tex">
+Q,K
+</annotation></semantics></math></p>
+<p>内容影响。</p>
+<hr />
+<h1 id="四十九position-是不是现实世界页码">四十九、Position
+是不是现实世界“页码”？</h1>
+<h2 id="不是-1">212. 不是</h2>
+<p>Position：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3000</mn><annotation encoding="application/x-tex">
+3000
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>Token Sequence 中第 3000 个位置。</p>
+</blockquote>
+<hr />
+<h2 id="它不天然表示">213. 它不天然表示</h2>
+<blockquote>
+<p>PDF 第 8 页。</p>
+</blockquote>
+<blockquote>
+<p>招标文件第 3 章。</p>
+</blockquote>
+<blockquote>
+<p>评分办法第 4 条。</p>
+</blockquote>
+<p>这些是：</p>
+<h1 id="document-structure">Document Structure</h1>
+<p>另一层信息。</p>
+<hr />
+<h2 id="所以-procurementai-还需要结构解析">214. 所以 ProcurementAI
+还需要结构解析</h2>
+<p>例如保留：</p>
+<pre class="text"><code>章节
+条款号
+表格
+页码
+字段</code></pre>
+<p>这些 Metadata。</p>
+<hr />
+<h2 id="position-encoding-不能替代-document-parser">215. Position
+Encoding 不能替代 Document Parser</h2>
+<p>再次是层级区别：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenPosition
+\neq
+DocumentStructure
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十表格为什么更麻烦">五十、表格为什么更麻烦？</h1>
+<h2 id="采购文件大量使用表格">216. 采购文件大量使用表格</h2>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>参数项</th>
+<th>要求</th>
+<th>分值</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CPU</td>
+<td>≥3.2GHz</td>
+<td>5</td>
+</tr>
+<tr class="even">
+<td>内存</td>
+<td>≥32GB</td>
+<td>5</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="如果把表格简单线性化">217. 如果把表格简单线性化</h2>
+<p>模型看到的是一维 Token Sequence。</p>
+<hr />
+<h2 id="但原表格其实有二维关系">218. 但原表格其实有二维关系</h2>
+<p>“5”到底属于：</p>
+<blockquote>
+<p>CPU 还是内存？</p>
+</blockquote>
+<p>依赖：</p>
+<blockquote>
+<p>行列结构。</p>
+</blockquote>
+<hr />
+<h2 id="一维-position-只能表达">219. 一维 Position 只能表达</h2>
+<blockquote>
+<p>前后距离。</p>
+</blockquote>
+<p>不能天然完整表达：</p>
+<blockquote>
+<p>二维表格 Layout。</p>
+</blockquote>
+<hr />
+<h2 id="所以复杂采购文档理解可能需要">220.
+所以复杂采购文档理解可能需要</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>L</mi><mi>a</mi><mi>y</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>T</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TextPosition
++
+LayoutStructure
++
+TableStructure
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>只靠 RoPE。</p>
+</blockquote>
+<hr />
+<h1
+id="五十一一个政府采购顺序思维实验">五十一、一个政府采购顺序思维实验</h1>
+<h2 id="文本-a">221. 文本 A</h2>
+<blockquote>
+<p>“供应商应具备售后服务能力，不要求在采购人所在地设立分支机构。”</p>
+</blockquote>
+<hr />
+<h2 id="文本-b">222. 文本 B</h2>
+<blockquote>
+<p>“供应商应在采购人所在地设立分支机构，不要求具备售后服务能力。”</p>
+</blockquote>
+<p>词大量重合。</p>
+<p>但：</p>
+<blockquote>
+<p>条件完全不同。</p>
+</blockquote>
+<hr />
+<h2 id="模型必须建模">223. 模型必须建模</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>否</mi><mi>定</mi><mi>词</mi></mrow><annotation encoding="application/x-tex">
+否定词
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>被</mi><mi>否</mi><mi>定</mi><mi>对</mi><mi>象</mi></mrow><annotation encoding="application/x-tex">
+被否定对象
+</annotation></semantics></math></p>
+<p>之间的位置关系。</p>
+<hr />
+<h2 id="这也是为什么">224. 这也是为什么</h2>
+<p>“不得低于”</p>
+<p>“不得高于”</p>
+<p>“不得要求”</p>
+<p>这些短语：</p>
+<blockquote>
+<p>对 Token Order 非常敏感。</p>
+</blockquote>
+<hr />
+<h1 id="五十二position-与否定范围">五十二、Position 与否定范围</h1>
+<h2 id="例如-12">225. 例如</h2>
+<blockquote>
+<p>“不得仅因供应商注册资本较低而拒绝其参与采购活动。”</p>
+</blockquote>
+<p>“不得”修饰：</p>
+<blockquote>
+<p>后面一大段行为。</p>
+</blockquote>
+<hr />
+<h2 id="如果模型不能处理位置和上下文范围">226.
+如果模型不能处理位置和上下文范围</h2>
+<p>可能错误理解成：</p>
+<blockquote>
+<p>“注册资本较低 = 不得参与”。</p>
+</blockquote>
+<p>含义完全相反。</p>
+<hr />
+<h2 id="所以-position-本质上参与">227. 所以 Position 本质上参与</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>y</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SyntacticScope
+}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SemanticScope
+}
+</annotation></semantics></math></p>
+<p>建模。</p>
+<hr />
+<h1 id="五十三position-与法律引用">五十三、Position 与法律引用</h1>
+<h2 id="例如-13">228. 例如</h2>
+<blockquote>
+<p>“前款规定不适用于本条第二项情形。”</p>
+</blockquote>
+<p>这里有：</p>
+<ul>
+<li>前款；</li>
+<li>本条；</li>
+<li>第二项。</li>
+</ul>
+<hr />
+<h2 id="token-position-只能告诉">229. Token Position 只能告诉</h2>
+<blockquote>
+<p>字面顺序。</p>
+</blockquote>
+<p>真正解析：</p>
+<blockquote>
+<p>“前款”引用哪里，</p>
+</blockquote>
+<p>还需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+DocumentStructure
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以未来采购法律-rag">230. 所以未来采购法律 RAG</h2>
+<p>最好保留：</p>
+<ul>
+<li>Article ID；</li>
+<li>Paragraph ID；</li>
+<li>Section ID；</li>
+<li>Source Document；</li>
+<li>Effective Date。</li>
+</ul>
+<p>这样模型不必：</p>
+<blockquote>
+<p>纯靠 Token 距离猜法律结构。</p>
+</blockquote>
+<hr />
+<h1 id="五十四长-context-的-procurement-benchmark-应该怎么做">五十四、长
+Context 的 Procurement Benchmark 应该怎么做？</h1>
+<h2 id="第一类single-needle-retrieval">231. 第一类：Single Needle
+Retrieval</h2>
+<p>在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>32</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+32K
+</annotation></semantics></math></p>
+<p>文档里放一个风险条件。</p>
+<p>问模型：</p>
+<blockquote>
+<p>条件是什么？</p>
+</blockquote>
+<hr />
+<h2 id="位置要变化">232. 位置要变化</h2>
+<p>分别放在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>5</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+5\%
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>25</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+25\%
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>50</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+50\%
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>75</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+75\%
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>95</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+95\%
+</annotation></semantics></math></p>
+<p>位置。</p>
+<hr />
+<h2 id="这样可以画">233. 这样可以画</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mspace width="0.222em"></mspace><mi>v</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Accuracy\ vs\ Position
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第二类two-evidence-integration">234. 第二类：Two-Evidence
+Integration</h2>
+<p>证据 A：</p>
+<blockquote>
+<p>在前 10%。</p>
+</blockquote>
+<p>证据 B：</p>
+<blockquote>
+<p>在后 90%。</p>
+</blockquote>
+<p>只有结合：</p>
+<blockquote>
+<p>才能做正确判断。</p>
+</blockquote>
+<hr />
+<h2 id="这比-needle-更难">235. 这比 Needle 更难</h2>
+<p>因为模型不只是：</p>
+<blockquote>
+<p>找一个字符串。</p>
+</blockquote>
+<p>而要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mo>+</mo><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retrieve
++
+Integrate
++
+Reason
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第三类contradiction-resolution">236. 第三类：Contradiction
+Resolution</h2>
+<p>前文：</p>
+<blockquote>
+<p>供应商必须设置本地机构。</p>
+</blockquote>
+<p>后文更正：</p>
+<blockquote>
+<p>删除本地机构要求。</p>
+</blockquote>
+<p>问：</p>
+<blockquote>
+<p>最终有效要求是什么？</p>
+</blockquote>
+<hr />
+<h2 id="这特别适合采购文件">237. 这特别适合采购文件</h2>
+<p>因为真实项目经常有：</p>
+<ul>
+<li>原公告；</li>
+<li>更正公告；</li>
+<li>补充通知；</li>
+<li>澄清文件。</li>
+</ul>
+<hr />
+<h2 id="第四类section-boundary">238. 第四类：Section Boundary</h2>
+<p>把相似内容放在：</p>
+<blockquote>
+<p>不同章节。</p>
+</blockquote>
+<p>看模型能否区分：</p>
+<ul>
+<li>资格条件；</li>
+<li>技术参数；</li>
+<li>评分标准；</li>
+<li>合同要求。</li>
+</ul>
+<hr />
+<h2 id="第五类long-distance-negation">239. 第五类：Long-distance
+Negation</h2>
+<p>前文：</p>
+<blockquote>
+<p>某要求成立。</p>
+</blockquote>
+<p>后文：</p>
+<blockquote>
+<p>某特殊情形除外。</p>
+</blockquote>
+<p>测试：</p>
+<blockquote>
+<p>模型能否正确处理例外。</p>
+</blockquote>
+<hr />
+<h1 id="五十五长-context-指标不能只有整体-accuracy">五十五、长 Context
+指标不能只有整体 Accuracy</h1>
+<h2 id="应该按-position-slice">240. 应该按 Position Slice</h2>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>位置</th>
+<th style="text-align: right;">Accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0–20%</td>
+<td style="text-align: right;">95%</td>
+</tr>
+<tr class="even">
+<td>20–40%</td>
+<td style="text-align: right;">93%</td>
+</tr>
+<tr class="odd">
+<td>40–60%</td>
+<td style="text-align: right;">76%</td>
+</tr>
+<tr class="even">
+<td>60–80%</td>
+<td style="text-align: right;">91%</td>
+</tr>
+<tr class="odd">
+<td>80–100%</td>
+<td style="text-align: right;">94%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="如果只看平均">241. 如果只看平均</h2>
+<p>可能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>90</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+90\%
+</annotation></semantics></math></p>
+<p>看起来很好。</p>
+<p>但中间区域：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>76</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+76\%
+</annotation></semantics></math></p>
+<p>明显弱。</p>
+<hr />
+<h2 id="第一课的-slice-evaluation-又回来了">242. 第一课的 Slice
+Evaluation 又回来了</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>h</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>W</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Average
+\ hides\
+PositionWeakness
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十六训练长度与推理长度">五十六、训练长度与推理长度</h1>
+<h2 id="一个很关键的配置">243. 一个很关键的配置</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+TrainContextLength
+</annotation></semantics></math></p>
+<hr />
+<h2 id="另一个是">244. 另一个是</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+InferenceContextLength
+</annotation></semantics></math></p>
+<p>两者：</p>
+<blockquote>
+<p>不一定相同。</p>
+</blockquote>
+<hr />
+<h2 id="如果训练主要是">245. 如果训练主要是</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+4K
+</annotation></semantics></math></p>
+<p>但部署强行扩到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+128K
+</annotation></semantics></math></p>
+<p>需要非常谨慎。</p>
+<hr />
+<h2 id="即使-rope-scaling-技术上支持">246. 即使 RoPE Scaling
+技术上支持</h2>
+<p>仍需要：</p>
+<blockquote>
+<p>长上下文评测。</p>
+</blockquote>
+<p>最好还有：</p>
+<blockquote>
+<p>Long-context continued training / fine-tuning。</p>
+</blockquote>
+<hr />
+<h1 id="五十七长-context-继续训练教模型什么">五十七、长 Context
+继续训练教模型什么？</h1>
+<h2 id="不只是让-position-数字变大">247. 不只是让 Position 数字变大</h2>
+<p>还让模型实际看到：</p>
+<blockquote>
+<p>长距离依赖任务。</p>
+</blockquote>
+<hr />
+<h2 id="例如-14">248. 例如</h2>
+<p>证据：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>10000</mn><annotation encoding="application/x-tex">
+10000
+</annotation></semantics></math></p>
+<p>Token 前。</p>
+<p>结论：</p>
+<blockquote>
+<p>在当前 Token。</p>
+</blockquote>
+<p>模型通过 Loss：</p>
+<blockquote>
+<p>学习跨长距离使用信息。</p>
+</blockquote>
+<hr />
+<h2 id="所以-2">249. 所以</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>u</mi><mi>p</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mo>≠</mo><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongPositionSupport
+\neq
+LongReasoningTraining
+}
+</annotation></semantics></math></p>
+<p>这是一个非常重要的区别。</p>
+<hr />
+<h1 id="五十八position-scaling-与训练数据必须一起看">五十八、Position
+Scaling 与训练数据必须一起看</h1>
+<h2 id="只改-rope-config">250. 只改 RoPE Config</h2>
+<p>让：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mn>128</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+MaxPosition=128K
+</annotation></semantics></math></p>
+<p>不代表：</p>
+<blockquote>
+<p>模型获得真正 128K 专业阅读能力。</p>
+</blockquote>
+<hr />
+<h2 id="还应该问">251. 还应该问</h2>
+<blockquote>
+<p>有没有 32K、64K、128K 训练样本？</p>
+</blockquote>
+<blockquote>
+<p>有没有长距离依赖？</p>
+</blockquote>
+<blockquote>
+<p>有没有长文档 Benchmark？</p>
+</blockquote>
+<hr />
+<h1
+id="五十九为什么长采购文件可能不应该全部塞进去">五十九、为什么长采购文件可能不应该全部塞进去？</h1>
+<h2 id="假设一个文件">252. 假设一个文件</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>90</mn><mi>K</mi><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+90K\ Tokens
+</annotation></semantics></math></p>
+<p>真正与当前问题相关的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+3K
+</annotation></semantics></math></p>
+<hr />
+<h2 id="全塞进去">253. 全塞进去</h2>
+<p>不仅成本高。</p>
+<p>还增加：</p>
+<blockquote>
+<p>无关信息干扰。</p>
+</blockquote>
+<hr />
+<h2 id="所以更加成熟的系统思路">254. 所以更加成熟的系统思路</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>L</mi><mi>L</mi><mi>M</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Parser
+\rightarrow
+Retriever
+\rightarrow
+RelevantContext
+\rightarrow
+LongContextLLM
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="long-context-是能力储备">255. Long Context 是能力储备</h2>
+<p>RAG 是：</p>
+<blockquote>
+<p>信息选择机制。</p>
+</blockquote>
+<p>二者：</p>
+<blockquote>
+<p>不是替代关系。</p>
+</blockquote>
+<hr />
+<h1 id="六十position-encoding-最终统一到一个问题">六十、Position
+Encoding 最终统一到一个问题</h1>
+<h2 id="对任意两个-token">256. 对任意两个 Token</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi><mo>,</mo><mi>j</mi></mrow><annotation encoding="application/x-tex">
+i,j
+</annotation></semantics></math></p>
+<p>模型真正需要知道：</p>
+<blockquote>
+<p>它们是什么？</p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p>它们在哪里？</p>
+</blockquote>
+<hr />
+<h2 id="token-embedding-提供">257. Token Embedding 提供</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Content
+</annotation></semantics></math></p>
+<hr />
+<h2 id="position-mechanism-提供">258. Position Mechanism 提供</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+PositionRelation
+</annotation></semantics></math></p>
+<hr />
+<h2 id="attention-最终组合">259. Attention 最终组合</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>o</mi><mo>+</mo><mi>W</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>W</mi><mi>h</mi><mi>o</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mi>T</mi><mi>o</mi><mi>W</mi><mi>h</mi><mi>o</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Who
++
+Where
++
+WhoRelatesToWhom
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六十一第二课第-10-阶段七个核心心智模型">六十一、第二课第 10
+阶段七个核心心智模型</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>心智模型</th>
+<th>核心认知</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① Token Embedding 管身份，Position 管序列位置</strong></td>
+<td>没有位置结构，词集合不足以表达语言顺序</td>
+</tr>
+<tr class="even">
+<td><strong>② Mask 与 Position 是两种机制</strong></td>
+<td>Mask 管谁能看谁；Position 管彼此在哪里</td>
+</tr>
+<tr class="odd">
+<td><strong>③ Absolute Position 简单但外推有限</strong></td>
+<td>Learned Position Table 对训练外位置没有天然保证</td>
+</tr>
+<tr class="even">
+<td><strong>④ 多频率 Sin/Cos 把位置变成多尺度相位</strong></td>
+<td>不同频率同时编码局部和长尺度位置变化</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ RoPE 用绝对旋转产生相对 Attention 几何</strong></td>
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>R</mi><mi>m</mi><mi>T</mi></msubsup><msub><mi>R</mi><mi>n</mi></msub><mo>=</mo><msub><mi>R</mi><mrow><mi>n</mi><mo>−</mo><mi>m</mi></mrow></msub></mrow><annotation encoding="application/x-tex">R_m^TR_n=R_{n-m}</annotation></semantics></math>
+是核心</td>
+</tr>
+<tr class="even">
+<td><strong>⑥ Context Window 不等于 Long-context
+Reliability</strong></td>
+<td>必须按位置、距离、任务独立评测</td>
+</tr>
+<tr class="odd">
+<td><strong>⑦ 长文档能力是系统能力</strong></td>
+<td>Position、Attention、训练数据、RAG、解析、评测必须一起工作</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="六十二如果只记四个公式">六十二、如果只记四个公式</h1>
+<p>第一个，经典输入加绝对位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>h</mi><mi>i</mi></msub><mo>=</mo><msub><mi>e</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>i</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+h_i=e_i+p_i
+}
+</annotation></semantics></math></p>
+<p>第二个，二维旋转：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mo>cos</mo><mi>θ</mi></mtd><mtd columnalign="center" style="text-align: center"><mi>−</mi><mo>sin</mo><mi>θ</mi></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mo>sin</mo><mi>θ</mi></mtd><mtd columnalign="center" style="text-align: center"><mo>cos</mo><mi>θ</mi></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+R(\theta)
+=
+\begin{bmatrix}
+\cos\theta&amp;-\sin\theta\\
+\sin\theta&amp;\cos\theta
+\end{bmatrix}
+}
+</annotation></semantics></math></p>
+<p>第三个，RoPE：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mover><mi>q</mi><mo accent="true">̃</mo></mover><mi>m</mi></msub><mo>=</mo><msub><mi>R</mi><mi>m</mi></msub><msub><mi>q</mi><mi>m</mi></msub><mo>,</mo><mspace width="2.0em"></mspace><msub><mover><mi>k</mi><mo accent="true">̃</mo></mover><mi>n</mi></msub><mo>=</mo><msub><mi>R</mi><mi>n</mi></msub><msub><mi>k</mi><mi>n</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\tilde q_m=R_mq_m,\qquad
+\tilde k_n=R_nk_n
+}
+</annotation></semantics></math></p>
+<p>第四个，最核心：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msubsup><mover><mi>q</mi><mo accent="true">̃</mo></mover><mi>m</mi><mi>T</mi></msubsup><msub><mover><mi>k</mi><mo accent="true">̃</mo></mover><mi>n</mi></msub><mo>=</mo><msubsup><mi>q</mi><mi>m</mi><mi>T</mi></msubsup><msub><mi>R</mi><mrow><mi>n</mi><mo>−</mo><mi>m</mi></mrow></msub><msub><mi>k</mi><mi>n</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\tilde q_m^T\tilde k_n
+=
+q_m^TR_{n-m}k_n
+}
+</annotation></semantics></math></p>
+<p>如果这个第四个公式真正理解：</p>
+<blockquote>
+<p>RoPE 的灵魂就已经抓住了。</p>
+</blockquote>
+<hr />
+<h1 id="六十三如果只记一句话">六十三、如果只记一句话</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>P</mi><mi>E</mi><mi>不</mi><mi>是</mi><mi>给</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mo>“</mo><mi>贴</mi><mi>一</mi><mi>个</mi><mi>位</mi><mi>置</mi><mi>标</mi><mi>签</mi><mo>”</mo><mi>，</mi><mi>而</mi><mi>是</mi><mi>根</mi><mi>据</mi><mi>位</mi><mi>置</mi><mi>旋</mi><mi>转</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>和</mi><mi>K</mi><mi>e</mi><mi>y</mi><mi>，</mi><mi>使</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>在</mi><mi>比</mi><mi>较</mi><mi>内</mi><mi>容</mi><mi>的</mi><mi>同</mi><mi>时</mi><mi>，</mi><mi>天</mi><mi>然</mi><mi>感</mi><mi>知</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>之</mi><mi>间</mi><mi>的</mi><mi>相</mi><mi>对</mi><mi>位</mi><mi>置</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RoPE不是给Token“贴一个位置标签”，
+而是根据位置旋转Query和Key，
+使Attention在比较内容的同时，
+天然感知Token之间的相对位置。
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六十四第二课-810-阶段现在组成完整输入层">六十四、第二课 8～10
+阶段现在组成完整输入层</h1>
+<p>第 9 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Text
+\rightarrow
+TokenIDs
+}
+</annotation></semantics></math></p>
+<p>第 8 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenIDs
+\rightarrow
+TokenEmbedding
+}
+</annotation></semantics></math></p>
+<p>第 10 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenEmbedding
++
+PositionStructure
+}
+</annotation></semantics></math></p>
+<p>于是终于得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>I</mi><mi>D</mi><mi>s</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>s</mi><mo>→</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>A</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawText
+\rightarrow
+Tokenizer
+\rightarrow
+IDs
+\rightarrow
+Embeddings
+\rightarrow
+PositionAwareRepresentations
+}
+</annotation></semantics></math></p>
+<p>现在，LLM 已经具备：</p>
+<blockquote>
+<p>“这些 Token 是什么”</p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p>“这些 Token 在哪里”</p>
+</blockquote>
+<p>两种基础信息。</p>
+<p>但是，还差真正最关键的一步：</p>
+<blockquote>
+<p><strong>它怎么决定当前这个 Token 应该去看前面的哪些
+Token？</strong></p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Attention
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六十五第-10-阶段掌握标准">六十五、第 10 阶段掌握标准</h1>
+<p>学完这一阶段，你应该能够从机制上解释：</p>
+<blockquote>
+<p>为什么纯粹的无位置 Self-Attention 没有天然 Token 顺序概念？</p>
+</blockquote>
+<blockquote>
+<p>Causal Mask 与 Position Encoding 有什么根本区别？</p>
+</blockquote>
+<blockquote>
+<p>Token ID 与 Position ID 为什么完全不同？</p>
+</blockquote>
+<blockquote>
+<p>Learned Absolute Position Embedding 如何工作？</p>
+</blockquote>
+<blockquote>
+<p>为什么直接把 Position Table 从 4K 扩到 128K 并不等于获得 128K
+能力？</p>
+</blockquote>
+<blockquote>
+<p>Sinusoidal Position Encoding 为什么使用不同频率？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Sin 和 Cos 经常成对出现？</p>
+</blockquote>
+<blockquote>
+<p>Absolute Position 与 Relative Position 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>Relative Position Bias 怎样进入 Attention Score？</p>
+</blockquote>
+<blockquote>
+<p>RoPE 为什么叫“旋转”位置编码？</p>
+</blockquote>
+<blockquote>
+<p>二维 Rotation Matrix 是怎样工作的？</p>
+</blockquote>
+<blockquote>
+<p>为什么 RoPE 通常作用在 Q 和 K，而不是 V？</p>
+</blockquote>
+<blockquote>
+<p>为什么旋转不会改变向量 Norm？</p>
+</blockquote>
+<blockquote>
+<p>为什么
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>R</mi><mi>m</mi><mi>T</mi></msubsup><msub><mi>R</mi><mi>n</mi></msub><mo>=</mo><msub><mi>R</mi><mrow><mi>n</mi><mo>−</mo><mi>m</mi></mrow></msub></mrow><annotation encoding="application/x-tex">R_m^TR_n=R_{n-m}</annotation></semantics></math>
+能让 Dot Product 感知相对位置？</p>
+</blockquote>
+<blockquote>
+<p>RoPE 与普通 Sinusoidal Position Encoding
+最根本的应用方式差在哪里？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 RoPE Base？</p>
+</blockquote>
+<blockquote>
+<p>为什么不同维度需要不同旋转频率？</p>
+</blockquote>
+<blockquote>
+<p>为什么 RoPE 数学上能算 100K Position，不代表模型可靠支持 100K
+Context？</p>
+</blockquote>
+<blockquote>
+<p>Position Interpolation 的“压缩尺子”直觉是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 NTK-aware / YaRN
+这类方法本质上都在重新处理位置与频率尺度？</p>
+</blockquote>
+<blockquote>
+<p>Context Window 与 Long-context Ability 为什么必须分开评测？</p>
+</blockquote>
+<blockquote>
+<p>为什么要做 Position Slice Benchmark？</p>
+</blockquote>
+<blockquote>
+<p>KV Cache 为什么必须保持正确 Position？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Sequence Packing 时重置 Position 不足以隔离不同文档？</p>
+</blockquote>
+<blockquote>
+<p>Token Position 为什么不能替代 PDF 页码、章节和表格结构？</p>
+</blockquote>
+<blockquote>
+<p>为什么采购长文档即使能塞进模型，仍然可能需要 RAG？</p>
+</blockquote>
+<p>如果这些问题已经能够自己完整解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>二</mi><mi>课</mi><mi>第</mi><mn>10</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>建</mi><mi>立</mi><mi>起</mi><mi>来</mi><mi>了</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第二课第10阶段真正建立起来了
+}
+</annotation></semantics></math></p>
+<p>下一阶段，我们就正式进入整个 Transformer
+最核心、也是很多人第一次真正“看懂大语言模型”的地方：</p><div class="nav"><a class="btn" href="stage09.html">← 第 9 阶段</a><a class="btn" href="stage11.html">第 11 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

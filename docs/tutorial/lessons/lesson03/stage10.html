@@ -1,0 +1,2576 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第10阶段：基础模型选型与 ProcurementAI Baseline</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第10阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>Best Leaderboard Model ≠ Best Procurement Model。选型必须看真实政府采购任务，而不是只看通用榜单。</li><li>模型选型是多目标问题：中文理解、Context、RAG/Tool 兼容、质量、延迟、显存、许可证和部署成本都要一起看。</li><li>Baseline 必须可复现：固定模型版本、Tokenizer、Prompt、解码参数和 Benchmark，才能公平比较。</li></ul></div><h1 id="第三课-第-10-阶段基础模型选型与-procurementai-baseline">第三课 ·
+第 10 阶段：基础模型选型与 ProcurementAI Baseline</h1>
+<h2
+id="不再问哪个模型最强而是第一次真正回答哪个模型最适合我们的政府采购-ai">不再问“哪个模型最强”，而是第一次真正回答：哪个模型最适合我们的政府采购
+AI？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-9">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-9">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Best Leaderboard Model ≠ Best Procurement
+Model。选型必须看真实政府采购任务，而不是只看通用榜单。</strong></li>
+<li><strong>模型选型是多目标问题：中文理解、Context、RAG/Tool
+兼容、质量、延迟、显存、许可证和部署成本都要一起看。</strong></li>
+<li><strong>Baseline
+必须可复现：固定模型版本、Tokenizer、Prompt、解码参数和
+Benchmark，才能公平比较。</strong></li>
+<li><strong>Model Comparison 要在 Same Protocol 下进行；测试集、Prompt
+或硬件不同，分数不能直接归因给模型。</strong></li>
+<li><strong>最终选择的是 System
+Fit，而不是参数量最大或宣传最强的模型。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-9">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="odd">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="even">
+<td><code>Precision</code></td>
+<td>精确率：系统报出的风险中真正成立的比例</td>
+</tr>
+<tr class="odd">
+<td><code>VRAM</code></td>
+<td>显存：GPU 上存放权重、激活和 KV Cache 等的高速内存</td>
+</tr>
+<tr class="even">
+<td><code>TTFT</code></td>
+<td>首 Token 时间：用户等待第一个输出 Token 的时间</td>
+</tr>
+<tr class="odd">
+<td><code>Citation</code></td>
+<td>引用：把生成结论和具体来源建立可追踪链接</td>
+</tr>
+<tr class="even">
+<td><code>BF16</code></td>
+<td>BF16：保留较大指数范围的 16 位浮点，常用于大模型</td>
+</tr>
+<tr class="odd">
+<td><code>CUDA</code></td>
+<td>CUDA：NVIDIA GPU 通用并行计算平台与软件生态</td>
+</tr>
+<tr class="even">
+<td><code>Accuracy</code></td>
+<td>准确率：全部样本中判断正确的比例</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-9">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前 9 个阶段，我们一直在拆机器。</p>
+<p>我们已经知道了：</p>
+<pre class="text"><code>GPU是什么
+↓
+CUDA怎么连接软件和GPU
+↓
+模型文件是什么
+↓
+Weight怎么加载
+↓
+文字怎么进入模型
+↓
+模型怎么生成Token
+↓
+精度和量化怎么影响显存
+↓
+显存到底花在哪里
+↓
+Sampling怎么影响输出
+↓
+多人请求怎么变成推理服务</code></pre>
+<p>现在第三课最后一个问题终于来了：</p>
+<blockquote>
+<p><strong>我们真正要做 ProcurementAI，到底选哪个基础模型？</strong></p>
+</blockquote>
+<p>这个问题看起来像：</p>
+<blockquote>
+<p>“去排行榜上选第一名。”</p>
+</blockquote>
+<p>实际上不是。</p>
+<p>而且这是很多 AI 项目第一次真正走偏的地方。</p>
+<hr />
+<h1 id="一这一阶段只先记住-6-个核心心智模型">一、这一阶段只先记住 6
+个核心心智模型</h1>
+<p>这 6 个，是第三课最后真正需要留下的东西：</p>
+<pre class="text"><code>① 最强模型 ≠ 最适合项目的模型
+
+② 选模型先看“硬门槛”，再比“软能力”
+
+③ 公共Benchmark只能帮助筛选，
+   自己的Procurement Gold Set才负责最终决策
+
+④ 模型要和部署预算一起选，
+   不能先选模型、最后才问GPU够不够
+
+⑤ Baseline不是最终产品，
+   Baseline是以后所有优化必须击败的“起跑线”
+
+⑥ 第一个Baseline的目的不是证明模型有多强，
+   而是尽快暴露：
+   模型到底错在哪里</code></pre>
+<p>这六句话，实际上比任何一张模型排行榜都重要。</p>
+<hr />
+<h1
+id="二第一个核心心智模型最强模型-最适合项目的模型">二、第一个核心心智模型：最强模型
+≠ 最适合项目的模型</h1>
+<p>想象现在有三个候选。</p>
+<h3 id="模型-a-3">模型 A</h3>
+<pre class="text"><code>72B
+能力很强
+需要多张GPU
+推理成本高</code></pre>
+<h3 id="模型-b-3">模型 B</h3>
+<pre class="text"><code>14B
+能力不错
+单卡量化可以运行
+速度较快</code></pre>
+<h3 id="模型-c">模型 C</h3>
+<pre class="text"><code>7B
+能力稍弱
+单卡很轻
+部署非常便宜</code></pre>
+<p>如果只问：</p>
+<blockquote>
+<p>“谁最强？”</p>
+</blockquote>
+<p>可能是 A。</p>
+<p>但如果我们的真实条件是：</p>
+<pre class="text"><code>单机
+24GB GPU
+需要处理长文档
+需要多人使用
+预算有限</code></pre>
+<p>A 甚至：</p>
+<blockquote>
+<p>根本不是一个现实候选。</p>
+</blockquote>
+<hr />
+<h1 id="三用公务用车做类比">三、用公务用车做类比</h1>
+<p>你要采购一辆车。</p>
+<p>世界上最快的赛车：</p>
+<blockquote>
+<p>当然“性能很强”。</p>
+</blockquote>
+<p>但你的需求是：</p>
+<ul>
+<li>日常办公；</li>
+<li>坐 5 个人；</li>
+<li>能放材料；</li>
+<li>油耗合理；</li>
+<li>维修方便。</li>
+</ul>
+<p>那赛车：</p>
+<blockquote>
+<p>反而是很差的选型。</p>
+</blockquote>
+<p>LLM 也一样。</p>
+<hr />
+<h1
+id="四所以模型选型真正的问题不是">四、所以模型选型真正的问题不是</h1>
+<pre class="text"><code>谁最高分？</code></pre>
+<p>而是：</p>
+<pre class="text"><code>谁在我的业务
++
+我的硬件
++
+我的成本
++
+我的可靠性要求
+
+下面最好用？</code></pre>
+<p>这才是：</p>
+<h1 id="model-selection">Model Selection</h1>
+<hr />
+<h1 id="五先做一个非常重要的转变">五、先做一个非常重要的转变</h1>
+<p>以后不要说：</p>
+<blockquote>
+<p>“我要找最好的开源模型。”</p>
+</blockquote>
+<p>而应该说：</p>
+<blockquote>
+<p><strong>“我要找在 ProcurementAI
+目标工作负载下最合适的模型。”</strong></p>
+</blockquote>
+<p>这句话听起来只是措辞变化。</p>
+<p>实际上思维方式完全不同。</p>
+<hr />
+<h1 id="六什么叫目标工作负载">六、什么叫“目标工作负载”？</h1>
+<p>就是未来它到底要干什么。</p>
+<p>我们的第一版 ProcurementModel，不是什么都做。</p>
+<p>我们先聚焦一个清楚的任务：</p>
+<h1 id="政府采购文件合规风险审查">政府采购文件合规风险审查</h1>
+<p>而不是：</p>
+<pre class="text"><code>聊天
++
+写诗
++
+代码
++
+数学
++
+翻译
++
+采购审查
++
+所有事情</code></pre>
+<hr />
+<h1 id="七第一版任务进一步拆成-5-类风险">七、第一版任务进一步拆成 5
+类风险</h1>
+<p>我们可以把第一版核心审查对象先定义为：</p>
+<pre class="text"><code>A
+供应商资格
+
+B
+技术参数
+
+C
+商务要求
+
+D
+评分标准
+
+E
+采购需求</code></pre>
+<p>于是模型选型开始有：</p>
+<blockquote>
+<p>明确靶子。</p>
+</blockquote>
+<p>而不是泛泛比较“聪明程度”。</p>
+<hr />
+<h1 id="八为什么任务边界这么重要">八、为什么任务边界这么重要？</h1>
+<p>假设一个模型：</p>
+<blockquote>
+<p>数学题特别强。</p>
+</blockquote>
+<p>另一个模型：</p>
+<blockquote>
+<p>中文长文本理解、规则判断更强。</p>
+</blockquote>
+<p>如果我们的任务是：</p>
+<blockquote>
+<p>政府采购文件审查，</p>
+</blockquote>
+<p>数学榜第一：</p>
+<blockquote>
+<p>不一定有多少直接价值。</p>
+</blockquote>
+<hr />
+<h1 id="九所以第一个模型选型原则">九、所以第一个模型选型原则</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>先</mi><mi>定</mi><mi>义</mi><mi>任</mi><mi>务</mi><mi>再</mi><mi>选</mi><mi>择</mi><mi>模</mi><mi>型</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+先定义任务
+再选择模型
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>先</mi><mi>喜</mi><mi>欢</mi><mi>一</mi><mi>个</mi><mi>模</mi><mi>型</mi><mi>再</mi><mi>想</mi><mi>办</mi><mi>法</mi><mi>找</mi><mi>任</mi><mi>务</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+先喜欢一个模型
+再想办法找任务
+}
+</annotation></semantics></math></p>
+<p>这是非常常见的项目反转。</p>
+<hr />
+<h1
+id="十第二个核心心智模型先过硬门槛">十、第二个核心心智模型：先过“硬门槛”</h1>
+<p>选模型可以想象成招聘专家。</p>
+<p>不是所有候选人：</p>
+<blockquote>
+<p>都直接进入最终面试。</p>
+</blockquote>
+<p>先有一轮：</p>
+<h1 id="hard-gates">Hard Gates</h1>
+<p>也就是：</p>
+<blockquote>
+<p>不满足就直接淘汰的条件。</p>
+</blockquote>
+<hr />
+<h1 id="十一硬门槛一license">十一、硬门槛一：License</h1>
+<p>这件事很容易被技术人员忽略。</p>
+<p>模型可能：</p>
+<blockquote>
+<p>技术上很好。</p>
+</blockquote>
+<p>但它的许可证：</p>
+<blockquote>
+<p>不适合你的商业或项目使用方式。</p>
+</blockquote>
+<p>那怎么办？</p>
+<p>答案很简单：</p>
+<blockquote>
+<p>淘汰。</p>
+</blockquote>
+<hr />
+<h1 id="十二为什么-license-是门槛而不是加分项">十二、为什么 License
+是“门槛”而不是“加分项”？</h1>
+<p>因为它不像：</p>
+<blockquote>
+<p>“中文能力 85 分还是 90 分。”</p>
+</blockquote>
+<p>而更像：</p>
+<blockquote>
+<p>“这个项目到底能不能合法使用。”</p>
+</blockquote>
+<p>所以一定先查：</p>
+<pre class="text"><code>商业使用是否允许？
+
+修改是否允许？
+
+部署是否有限制？
+
+衍生模型有什么义务？
+
+是否需要注明来源？
+
+特定规模是否存在额外条款？</code></pre>
+<p>具体模型：</p>
+<blockquote>
+<p>要以其当前正式许可证为准。</p>
+</blockquote>
+<hr />
+<h1 id="十三硬门槛二硬件装不装得下">十三、硬门槛二：硬件装不装得下</h1>
+<p>假设项目只有：</p>
+<pre class="text"><code>1 × 24GB GPU</code></pre>
+<p>候选模型：</p>
+<pre class="text"><code>72B BF16</code></pre>
+<p>哪怕能力非常高：</p>
+<blockquote>
+<p>第一轮直接淘汰。</p>
+</blockquote>
+<hr />
+<h1 id="十四但这里不是只看-weight">十四、但这里不是只看 Weight</h1>
+<p>第 7 阶段已经告诉我们：</p>
+<pre class="text"><code>VRAM
+=
+Weights
++
+KV Cache
++
+Activations
++
+Runtime
++
+Safety Headroom</code></pre>
+<p>所以选型不能只问：</p>
+<blockquote>
+<p>“模型文件几 GB？”</p>
+</blockquote>
+<hr />
+<h1 id="十五硬门槛三context-是否满足基本业务">十五、硬门槛三：Context
+是否满足基本业务</h1>
+<p>假设真实采购文件：</p>
+<blockquote>
+<p>经常很长。</p>
+</blockquote>
+<p>候选模型只能舒服处理：</p>
+<pre class="text"><code>2K / 4K</code></pre>
+<p>即使其他能力不错：</p>
+<blockquote>
+<p>对我们的业务可能并不合适。</p>
+</blockquote>
+<hr />
+<h1 id="十六但又不能犯另一个极端">十六、但又不能犯另一个极端</h1>
+<p>模型宣传：</p>
+<pre class="text"><code>128K Context</code></pre>
+<p>不意味着：</p>
+<blockquote>
+<p>它就是最佳长文档采购模型。</p>
+</blockquote>
+<p>因为还要看：</p>
+<ul>
+<li>真实长文本质量；</li>
+<li>Lost-in-the-middle；</li>
+<li>显存；</li>
+<li>TTFT；</li>
+<li>长 Context 下推理成本。</li>
+</ul>
+<hr />
+<h1 id="十七所以-context-要问两个问题">十七、所以 Context
+要问两个问题</h1>
+<pre class="text"><code>模型理论支持多长？</code></pre>
+<p>以及：</p>
+<pre class="text"><code>我们实际硬件上能稳定跑多长？</code></pre>
+<p>这两个缺一不可。</p>
+<hr />
+<h1 id="十八硬门槛四tokenizer-与中文">十八、硬门槛四：Tokenizer
+与中文</h1>
+<p>模型处理的是 Token。</p>
+<p>所以即使两个模型都说：</p>
+<blockquote>
+<p>支持中文，</p>
+</blockquote>
+<p>Tokenizer 的效率也可能不同。</p>
+<hr />
+<h1 id="十九一个简单例子">十九、一个简单例子</h1>
+<p>同样一份：</p>
+<blockquote>
+<p>10 万字采购文件。</p>
+</blockquote>
+<p>模型 A：</p>
+<pre class="text"><code>120K Token</code></pre>
+<p>模型 B：</p>
+<pre class="text"><code>80K Token</code></pre>
+<p>这意味着什么？</p>
+<p>不是只有 Tokenizer 好不好看。</p>
+<p>它直接影响：</p>
+<pre class="text"><code>Context占用
+↓
+Prefill时间
+↓
+KV Cache
+↓
+显存
+↓
+成本</code></pre>
+<hr />
+<h1 id="二十tokenizer-效率会变成钱">二十、Tokenizer 效率会变成钱</h1>
+<p>这件事特别值得记。</p>
+<pre class="text"><code>更高 Token Fertility
+      ↓
+同样中文产生更多Token
+      ↓
+计算更多
+      ↓
+显存更多
+      ↓
+延迟更多
+      ↓
+成本更多</code></pre>
+<p>所以中文 Tokenizer：</p>
+<blockquote>
+<p>是工程指标。</p>
+</blockquote>
+<p>不是小细节。</p>
+<hr />
+<h1
+id="二十一硬门槛五基础推理能否稳定运行">二十一、硬门槛五：基础推理能否稳定运行</h1>
+<p>一些模型可能需要：</p>
+<pre class="text"><code>特殊代码
+特殊Kernel
+特殊依赖</code></pre>
+<p>如果你的部署环境：</p>
+<blockquote>
+<p>很难稳定维护，</p>
+</blockquote>
+<p>也要计入选型。</p>
+<hr />
+<h1 id="二十二政府项目尤其要问">二十二、政府项目尤其要问</h1>
+<blockquote>
+<p><strong>这个模型半年以后还能不能稳定复现？</strong></p>
+</blockquote>
+<p>不仅是：</p>
+<blockquote>
+<p>“我今天在我的电脑上跑起来了。”</p>
+</blockquote>
+<hr />
+<h1
+id="二十三所以第一层筛选图可以画成">二十三、所以第一层筛选图可以画成</h1>
+<pre class="text"><code>候选模型
+   │
+   ▼
+License允许？
+   │
+   ├─ 否 → 淘汰
+   ▼
+硬件装得下？
+   │
+   ├─ 否 → 淘汰
+   ▼
+Context基本够？
+   │
+   ├─ 否 → 淘汰
+   ▼
+中文/Tokenizer可接受？
+   │
+   ├─ 否 → 淘汰
+   ▼
+运行栈可维护？
+   │
+   ├─ 否 → 淘汰
+   ▼
+进入正式Benchmark</code></pre>
+<p>这就是：</p>
+<h1 id="gate-first">Gate First</h1>
+<hr />
+<h1 id="二十四为什么先-gate-很重要">二十四、为什么先 Gate 很重要？</h1>
+<p>因为如果一开始就拿：</p>
+<blockquote>
+<p>20 个模型</p>
+</blockquote>
+<p>跑几千道 Benchmark，</p>
+<p>很浪费。</p>
+<p>其中很多模型可能：</p>
+<blockquote>
+<p>业务上根本不可能部署。</p>
+</blockquote>
+<hr />
+<h1
+id="二十五第三个核心心智模型公共榜单只能做海选">二十五、第三个核心心智模型：公共榜单只能做“海选”</h1>
+<p>这是模型选型非常关键的一条。</p>
+<p>网上有很多：</p>
+<ul>
+<li>综合能力榜；</li>
+<li>中文能力榜；</li>
+<li>数学榜；</li>
+<li>Coding 榜；</li>
+<li>Arena 类评价。</li>
+</ul>
+<p>它们：</p>
+<blockquote>
+<p>有价值。</p>
+</blockquote>
+<p>但用途主要是：</p>
+<h1 id="candidate-discovery">Candidate Discovery</h1>
+<hr />
+<h1 id="二十六它们不能直接回答">二十六、它们不能直接回答</h1>
+<blockquote>
+<p>“谁最适合政府采购文件合规审查？”</p>
+</blockquote>
+<p>为什么？</p>
+<p>因为公共 Benchmark：</p>
+<blockquote>
+<p>不是按照我们的业务风险设计的。</p>
+</blockquote>
+<hr />
+<h1 id="二十七举一个极端例子">二十七、举一个极端例子</h1>
+<p>模型 A：</p>
+<pre class="text"><code>通用Benchmark 90分</code></pre>
+<p>模型 B：</p>
+<pre class="text"><code>通用Benchmark 87分</code></pre>
+<p>但在采购审查 Gold Set：</p>
+<pre class="text"><code>A：
+高风险漏报率 18%
+
+B：
+高风险漏报率 6%</code></pre>
+<p>你选谁？</p>
+<p>对于合规审查：</p>
+<blockquote>
+<p>很可能 B。</p>
+</blockquote>
+<hr />
+<h1
+id="二十八因为业务错误不是等价的">二十八、因为业务错误不是等价的</h1>
+<p>假设模型发生两个错误。</p>
+<p>错误 A：</p>
+<blockquote>
+<p>把“中风险”判成“高风险”。</p>
+</blockquote>
+<p>错误 B：</p>
+<blockquote>
+<p>把真正严重风险判成“无风险”。</p>
+</blockquote>
+<p>这两个：</p>
+<blockquote>
+<p>业务成本完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="二十九所以我们不能只看-accuracy">二十九、所以我们不能只看
+Accuracy</h1>
+<p>政府采购风险审查至少应该看：</p>
+<pre class="text"><code>Precision
+
+Recall
+
+F1
+
+高风险Recall
+
+漏报率
+
+误报率</code></pre>
+<p>第一课其实已经讲过这些。</p>
+<p>现在终于开始真正落地。</p>
+<hr />
+<h1 id="三十为什么我特别强调-recall">三十、为什么我特别强调
+Recall？</h1>
+<p>如果模型的任务是：</p>
+<blockquote>
+<p>帮助发现采购文件中的潜在风险，</p>
+</blockquote>
+<p>那么：</p>
+<blockquote>
+<p>真正的风险没有被发现</p>
+</blockquote>
+<p>通常特别值得关注。</p>
+<p>也就是：</p>
+<h1 id="false-negative">False Negative</h1>
+<hr />
+<h1 id="三十一用安检机类比">三十一、用安检机类比</h1>
+<p>安检系统：</p>
+<blockquote>
+<p>如果经常把普通东西误报成危险品，</p>
+</blockquote>
+<p>会烦。</p>
+<p>但如果：</p>
+<blockquote>
+<p>真正危险品直接漏掉，</p>
+</blockquote>
+<p>通常更严重。</p>
+<p>采购风险审查也有类似逻辑。</p>
+<hr />
+<h1 id="三十二但这不代表-recall-无限高越好">三十二、但这不代表 Recall
+无限高越好</h1>
+<p>如果模型为了不漏报：</p>
+<blockquote>
+<p>把所有条款都标成风险，</p>
+</blockquote>
+<p>Recall 可能很好。</p>
+<p>但系统：</p>
+<blockquote>
+<p>完全没法用。</p>
+</blockquote>
+<p>所以还要：</p>
+<blockquote>
+<p>Precision。</p>
+</blockquote>
+<hr />
+<h1
+id="三十三这就是第一课的知识回来了">三十三、这就是第一课的知识回来了</h1>
+<pre class="text"><code>Recall
+=
+风险找全多少
+
+Precision
+=
+你报出来的风险有多少是真的</code></pre>
+<p>最终要：</p>
+<blockquote>
+<p>平衡。</p>
+</blockquote>
+<hr />
+<h1 id="三十四但-llm-不只是分类器">三十四、但 LLM 不只是分类器</h1>
+<p>我们还要它解释：</p>
+<pre class="text"><code>问题在哪里？
+
+为什么有风险？
+
+依据是什么？
+
+怎么修改？</code></pre>
+<p>所以还需要：</p>
+<h1 id="generation-evaluation">Generation Evaluation</h1>
+<hr />
+<h1
+id="三十五政府采购模型最重要的一类指标citation-correctness">三十五、政府采购模型最重要的一类指标：Citation
+Correctness</h1>
+<p>如果模型说：</p>
+<blockquote>
+<p>“依据某某规定第 X 条……”</p>
+</blockquote>
+<p>我们必须验证：</p>
+<pre class="text"><code>法规存在吗？
+
+法规名称对吗？
+
+条文真的支持这个结论吗？
+
+当前有效吗？
+
+适用层级对吗？
+
+适用地区对吗？</code></pre>
+<hr />
+<h1
+id="三十六一个模型可能分类对依据错">三十六、一个模型可能“分类对、依据错”</h1>
+<p>例如：</p>
+<blockquote>
+<p>这个资格条件确实存在风险。</p>
+</blockquote>
+<p>模型判断：</p>
+<blockquote>
+<p>对。</p>
+</blockquote>
+<p>但引用：</p>
+<blockquote>
+<p>一个不存在的法条。</p>
+</blockquote>
+<p>对于专业产品：</p>
+<blockquote>
+<p>仍然不合格。</p>
+</blockquote>
+<hr />
+<h1
+id="三十七所以以后我们会把答案拆成多个评价维度">三十七、所以以后我们会把答案拆成多个评价维度</h1>
+<p>例如：</p>
+<pre class="text"><code>风险类型正确？
+
+风险等级合理？
+
+依据正确？
+
+依据充分？
+
+理由与证据一致？
+
+修改建议可执行？</code></pre>
+<p>而不是一个：</p>
+<blockquote>
+<p>“总体感觉不错”。</p>
+</blockquote>
+<hr />
+<h1 id="三十八什么叫-gold-set">三十八、什么叫 Gold Set？</h1>
+<p>Gold：</p>
+<blockquote>
+<p>金标准。</p>
+</blockquote>
+<p>就是我们准备一批：</p>
+<blockquote>
+<p>由专业人员确认过答案的真实业务样本。</p>
+</blockquote>
+<hr />
+<h1 id="三十九例如一条样本">三十九、例如一条样本</h1>
+<p>输入：</p>
+<pre class="text"><code>供应商须在采购人所在地具有固定办公场所。</code></pre>
+<p>Gold Label 可能包含：</p>
+<pre class="text"><code>风险类型：
+潜在地域性/不合理资格条件
+
+风险等级：
+待结合项目履约必要性判断
+
+关键证据：
+……
+
+专家理由：
+……
+
+建议修改方向：
+……</code></pre>
+<hr />
+<h1 id="四十为什么-gold-set-特别重要">四十、为什么 Gold Set
+特别重要？</h1>
+<p>因为它代表：</p>
+<blockquote>
+<p><strong>我们自己对“好答案”的定义。</strong></p>
+</blockquote>
+<p>公共 Benchmark：</p>
+<blockquote>
+<p>定义的是别人的问题。</p>
+</blockquote>
+<p>Gold Set：</p>
+<blockquote>
+<p>定义的是我们的业务。</p>
+</blockquote>
+<hr />
+<h1
+id="四十一这就是模型选型最核心的一句话之一">四十一、这就是模型选型最核心的一句话之一</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>u</mi><mi>b</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>负</mi><mi>责</mi><mi>筛</mi><mi>候</mi><mi>选</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PublicBenchmark
+负责筛候选
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>S</mi><mi>e</mi><mi>t</mi><mi>负</mi><mi>责</mi><mi>定</mi><mi>冠</mi><mi>军</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BusinessGoldSet
+负责定冠军
+}
+</annotation></semantics></math></p>
+<p>非常值得记。</p>
+<hr />
+<h1 id="四十二gold-set-一开始需要多大">四十二、Gold Set
+一开始需要多大？</h1>
+<p>不要陷入：</p>
+<blockquote>
+<p>“没有 10 万条就不能开始。”</p>
+</blockquote>
+<p>第一版可以先做：</p>
+<blockquote>
+<p>小而精。</p>
+</blockquote>
+<p>例如覆盖：</p>
+<pre class="text"><code>A 供应商资格
+B 技术参数
+C 商务要求
+D 评分标准
+E 采购需求</code></pre>
+<p>每一类：</p>
+<blockquote>
+<p>先有一批高质量典型样本。</p>
+</blockquote>
+<hr />
+<h1
+id="四十三真正重要的是覆盖决策边界">四十三、真正重要的是覆盖“决策边界”</h1>
+<p>不是只放：</p>
+<blockquote>
+<p>一眼就能看出有问题的题。</p>
+</blockquote>
+<p>还要大量放：</p>
+<h1 id="hard-cases">Hard Cases</h1>
+<hr />
+<h1 id="四十四什么叫-hard-case">四十四、什么叫 Hard Case？</h1>
+<p>例如：</p>
+<h3 id="case-a-1">Case A</h3>
+<p>明显不合理：</p>
+<blockquote>
+<p>“供应商必须是本市企业。”</p>
+</blockquote>
+<hr />
+<h3 id="case-b-1">Case B</h3>
+<p>明显合理：</p>
+<blockquote>
+<p>“供应商应具备履行合同所需的设备和专业技术能力。”</p>
+</blockquote>
+<hr />
+<h3 id="case-c-1">Case C</h3>
+<p>最难：</p>
+<blockquote>
+<p>“供应商应在项目所在地具备 2 小时内到场服务能力。”</p>
+</blockquote>
+<p>这时：</p>
+<blockquote>
+<p>不能只看到“项目所在地”就机械判违法。</p>
+</blockquote>
+<p>还要判断：</p>
+<ul>
+<li>项目性质；</li>
+<li>服务必要性；</li>
+<li>是否可以用响应能力替代所在地要求；</li>
+<li>是否构成不合理限制。</li>
+</ul>
+<p>这种：</p>
+<blockquote>
+<p>才真正检验模型能力。</p>
+</blockquote>
+<hr />
+<h1 id="四十五所以-gold-set-不能只有简单题">四十五、所以 Gold Set
+不能只有“简单题”</h1>
+<p>一个模型如果只在简单题上 99%：</p>
+<blockquote>
+<p>没什么可炫耀的。</p>
+</blockquote>
+<p>真正的专业能力：</p>
+<blockquote>
+<p>往往体现在边界案例。</p>
+</blockquote>
+<hr />
+<h1
+id="四十六第四个核心心智模型模型和硬件必须一起选">四十六、第四个核心心智模型：模型和硬件必须一起选</h1>
+<p>这是第三课全部硬件知识最后要落到的地方。</p>
+<p>不能这样：</p>
+<pre class="text"><code>先选72B
+↓
+觉得它最好
+↓
+最后才问：
+服务器多少钱？</code></pre>
+<hr />
+<h1 id="四十七更合理的流程">四十七、更合理的流程</h1>
+<pre class="text"><code>业务目标
++
+预算
++
+部署环境
+      │
+      ▼
+形成候选模型范围
+      │
+      ▼
+再做能力比较</code></pre>
+<hr />
+<h1 id="四十八假设我们有一张-24gb-gpu">四十八、假设我们有一张 24GB
+GPU</h1>
+<p>现在有三种思路。</p>
+<h3 id="方案-a-1">方案 A</h3>
+<pre class="text"><code>7B BF16</code></pre>
+<hr />
+<h3 id="方案-b-1">方案 B</h3>
+<pre class="text"><code>14B 4-bit</code></pre>
+<hr />
+<h3 id="方案-c">方案 C</h3>
+<pre class="text"><code>32B 4-bit</code></pre>
+<hr />
+<h1 id="四十九不要立刻说-c-最好">四十九、不要立刻说 C 最好</h1>
+<p>我们先看每个方案。</p>
+<hr />
+<h1 id="五十方案-a7b-bf16">五十、方案 A：7B BF16</h1>
+<p>优势可能是：</p>
+<pre class="text"><code>精度高
+部署简单
+显存还有余量
+Context空间更宽松</code></pre>
+<p>劣势：</p>
+<blockquote>
+<p>模型容量较小。</p>
+</blockquote>
+<hr />
+<h1 id="五十一方案-b14b-4-bit">五十一、方案 B：14B 4-bit</h1>
+<p>优势：</p>
+<pre class="text"><code>模型参数更多
+Weight显存较低
+仍可能单卡运行</code></pre>
+<p>劣势：</p>
+<pre class="text"><code>有量化影响
+速度取决于Kernel
+模型架构可能更重</code></pre>
+<hr />
+<h1 id="五十二方案-c32b-4-bit">五十二、方案 C：32B 4-bit</h1>
+<p>优势：</p>
+<blockquote>
+<p>参数量更大。</p>
+</blockquote>
+<p>但风险：</p>
+<pre class="text"><code>Weight已经吃掉较多VRAM
+KV余量变小
+长Context紧张
+并发能力下降</code></pre>
+<hr />
+<h1
+id="五十三如果我们的核心任务是长采购文件审查">五十三、如果我们的核心任务是“长采购文件审查”</h1>
+<p>那很可能出现：</p>
+<blockquote>
+<p>14B 4-bit 比 32B 4-bit 更实用。</p>
+</blockquote>
+<p>不是因为：</p>
+<blockquote>
+<p>14B 比 32B 更聪明。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>整套系统更平衡。</p>
+</blockquote>
+<hr />
+<h1 id="五十四所以我们真正优化的是">五十四、所以我们真正优化的是</h1>
+<pre class="text"><code>Business Utility</code></pre>
+<p>不是：</p>
+<pre class="text"><code>Parameter Count</code></pre>
+<hr />
+<h1 id="五十五模型选型需要一张矩阵">五十五、模型选型需要一张矩阵</h1>
+<p>以后不要靠：</p>
+<blockquote>
+<p>“感觉这个模型不错。”</p>
+</blockquote>
+<p>我们建：</p>
+<h1 id="base-model-selection-matrix">Base Model Selection Matrix</h1>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>维度</th>
+<th style="text-align: right;">Model A</th>
+<th style="text-align: right;">Model B</th>
+<th style="text-align: right;">Model C</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>License</td>
+<td style="text-align: right;">✅</td>
+<td style="text-align: right;">✅</td>
+<td style="text-align: right;">✅</td>
+</tr>
+<tr class="even">
+<td>中文能力</td>
+<td style="text-align: right;">8</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;">9</td>
+</tr>
+<tr class="odd">
+<td>Procurement Gold Set</td>
+<td style="text-align: right;">78</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">86</td>
+</tr>
+<tr class="even">
+<td>高风险 Recall</td>
+<td style="text-align: right;">82%</td>
+<td style="text-align: right;">91%</td>
+<td style="text-align: right;">92%</td>
+</tr>
+<tr class="odd">
+<td>Citation Correctness</td>
+<td style="text-align: right;">70%</td>
+<td style="text-align: right;">79%</td>
+<td style="text-align: right;">80%</td>
+</tr>
+<tr class="even">
+<td>32K Context 实测</td>
+<td style="text-align: right;">✅</td>
+<td style="text-align: right;">✅</td>
+<td style="text-align: right;">⚠️</td>
+</tr>
+<tr class="odd">
+<td>Peak VRAM</td>
+<td style="text-align: right;">15GB</td>
+<td style="text-align: right;">12GB</td>
+<td style="text-align: right;">22GB</td>
+</tr>
+<tr class="even">
+<td>TTFT</td>
+<td style="text-align: right;">快</td>
+<td style="text-align: right;">中</td>
+<td style="text-align: right;">慢</td>
+</tr>
+<tr class="odd">
+<td>TPS</td>
+<td style="text-align: right;">快</td>
+<td style="text-align: right;">中</td>
+<td style="text-align: right;">较慢</td>
+</tr>
+<tr class="even">
+<td>并发余量</td>
+<td style="text-align: right;">高</td>
+<td style="text-align: right;">中</td>
+<td style="text-align: right;">低</td>
+</tr>
+<tr class="odd">
+<td>部署复杂度</td>
+<td style="text-align: right;">低</td>
+<td style="text-align: right;">中</td>
+<td style="text-align: right;">中高</td>
+</tr>
+</tbody>
+</table>
+<p>这里的数字：</p>
+<blockquote>
+<p>全部只是教学示意。</p>
+</blockquote>
+<p>真正项目要：</p>
+<blockquote>
+<p>实测填表。</p>
+</blockquote>
+<hr />
+<h1 id="五十六为什么矩阵比排行榜好">五十六、为什么矩阵比排行榜好？</h1>
+<p>因为排行榜通常：</p>
+<blockquote>
+<p>只强调一两个能力分数。</p>
+</blockquote>
+<p>而矩阵会逼你同时面对：</p>
+<pre class="text"><code>能力
++
+成本
++
+性能
++
+工程风险</code></pre>
+<p>这就是：</p>
+<blockquote>
+<p>项目选型。</p>
+</blockquote>
+<hr />
+<h1
+id="五十七还应该加一个非常重要的列">五十七、还应该加一个非常重要的列</h1>
+<h1 id="failure-mode">Failure Mode</h1>
+<p>也就是：</p>
+<blockquote>
+<p><strong>这个模型最容易怎么错？</strong></p>
+</blockquote>
+<p>例如：</p>
+<h3 id="model-a-1">Model A</h3>
+<blockquote>
+<p>法规引用经常编造。</p>
+</blockquote>
+<h3 id="model-b-1">Model B</h3>
+<blockquote>
+<p>风险 Recall 很高，但误报较多。</p>
+</blockquote>
+<h3 id="model-c">Model C</h3>
+<blockquote>
+<p>长文本后半部分容易漏看。</p>
+</blockquote>
+<p>这比：</p>
+<blockquote>
+<p>总分 84.7</p>
+</blockquote>
+<p>更有价值。</p>
+<hr />
+<h1 id="五十八为什么">五十八、为什么？</h1>
+<p>因为后续系统架构：</p>
+<blockquote>
+<p>可以针对错误补偿。</p>
+</blockquote>
+<hr />
+<h1 id="五十九例如模型容易法规幻觉">五十九、例如模型容易法规幻觉</h1>
+<p>解决思路：</p>
+<blockquote>
+<p>RAG + Citation Validation。</p>
+</blockquote>
+<hr />
+<h1 id="六十模型漏掉某类明显规则">六十、模型漏掉某类明显规则</h1>
+<p>解决思路：</p>
+<blockquote>
+<p>Rule Engine。</p>
+</blockquote>
+<hr />
+<h1
+id="六十一模型不会按照我们的工作格式输出">六十一、模型不会按照我们的工作格式输出</h1>
+<p>解决思路：</p>
+<blockquote>
+<p>SFT。</p>
+</blockquote>
+<hr />
+<h1
+id="六十二模型不熟悉采购专业语言">六十二、模型不熟悉采购专业语言</h1>
+<p>解决思路：</p>
+<blockquote>
+<p>可能考虑 CPT / SFT / 数据增强。</p>
+</blockquote>
+<hr />
+<h1
+id="六十三这就是一个非常重要的思想">六十三、这就是一个非常重要的思想</h1>
+<p>选模型时不要只问：</p>
+<blockquote>
+<p>“谁错误最少？”</p>
+</blockquote>
+<p>还可以问：</p>
+<blockquote>
+<p><strong>“谁的错误最容易通过系统工程补上？”</strong></p>
+</blockquote>
+<p>这是很成熟的决策思维。</p>
+<hr />
+<h1 id="六十四比如两个模型">六十四、比如两个模型</h1>
+<h3 id="model-x">Model X</h3>
+<p>总分更高。</p>
+<p>但最大的错误：</p>
+<blockquote>
+<p>经常非常自信地编造法规。</p>
+</blockquote>
+<hr />
+<h3 id="model-y">Model Y</h3>
+<p>总分稍低。</p>
+<p>但错误主要是：</p>
+<blockquote>
+<p>表达格式不统一。</p>
+</blockquote>
+<p>对于我们的系统：</p>
+<blockquote>
+<p>Y 可能反而更好修。</p>
+</blockquote>
+<p>因为格式问题：</p>
+<blockquote>
+<p>SFT 很容易改善。</p>
+</blockquote>
+<p>编造法规：</p>
+<blockquote>
+<p>风险更大。</p>
+</blockquote>
+<hr />
+<h1
+id="六十五第五个核心心智模型baseline-到底是什么">六十五、第五个核心心智模型：Baseline
+到底是什么？</h1>
+<p>Baseline：</p>
+<blockquote>
+<p>基线。</p>
+</blockquote>
+<p>最简单说：</p>
+<blockquote>
+<p><strong>以后所有优化都要拿它来比较的第一版系统。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六十六baseline-不是垃圾模型">六十六、Baseline
+不是“垃圾模型”</h1>
+<p>也不是：</p>
+<blockquote>
+<p>随便跑一下。</p>
+</blockquote>
+<p>一个好的 Baseline 应该：</p>
+<pre class="text"><code>简单
+清楚
+可重复
+可测量</code></pre>
+<hr />
+<h1 id="六十七为什么-baseline-要简单">六十七、为什么 Baseline
+要简单？</h1>
+<p>因为以后你会加：</p>
+<pre class="text"><code>RAG
+SFT
+LoRA
+规则
+更好Prompt
+更好数据</code></pre>
+<p>如果第一版一开始就：</p>
+<blockquote>
+<p>20 个模块搅在一起，</p>
+</blockquote>
+<p>最后提升了：</p>
+<blockquote>
+<p>你都不知道是谁起作用。</p>
+</blockquote>
+<hr />
+<h1 id="六十八所以第一版-baseline-应该尽量朴素">六十八、所以第一版
+Baseline 应该尽量朴素</h1>
+<p>例如：</p>
+<pre class="text"><code>一个明确的Base Instruct Model
++
+固定Prompt
++
+固定Generation Config
++
+不做SFT
++
+不做CPT
++
+先不加复杂Rule Engine</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>跑 Gold Set。</p>
+</blockquote>
+<hr />
+<h1 id="六十九这叫-zero-shot-prompt-baseline-的思想">六十九、这叫
+Zero-shot / Prompt Baseline 的思想</h1>
+<p>先问：</p>
+<blockquote>
+<p><strong>这个基础模型不训练，单靠现有能力，到底能做到什么？</strong></p>
+</blockquote>
+<p>这个答案非常重要。</p>
+<hr />
+<h1 id="七十为什么不要一上来就-sft">七十、为什么不要一上来就 SFT？</h1>
+<p>假设 Base Model：</p>
+<blockquote>
+<p>已经 90 分。</p>
+</blockquote>
+<p>SFT 后：</p>
+<blockquote>
+<p>91 分。</p>
+</blockquote>
+<p>那说明：</p>
+<blockquote>
+<p>微调价值有限。</p>
+</blockquote>
+<hr />
+<h1 id="七十一另一种情况">七十一、另一种情况</h1>
+<p>Base：</p>
+<blockquote>
+<p>62 分。</p>
+</blockquote>
+<p>加 RAG：</p>
+<blockquote>
+<p>83 分。</p>
+</blockquote>
+<p>说明：</p>
+<blockquote>
+<p>核心问题可能主要是知识依据。</p>
+</blockquote>
+<hr />
+<h1 id="七十二再一种情况">七十二、再一种情况</h1>
+<p>Base + RAG：</p>
+<blockquote>
+<p>仍然 70 分。</p>
+</blockquote>
+<p>但模型总是：</p>
+<blockquote>
+<p>不会按专家方式组织判断。</p>
+</blockquote>
+<p>SFT 后：</p>
+<blockquote>
+<p>86 分。</p>
+</blockquote>
+<p>说明：</p>
+<blockquote>
+<p>工作方式学习很重要。</p>
+</blockquote>
+<hr />
+<h1 id="七十三如果没有-baseline">七十三、如果没有 Baseline</h1>
+<p>你根本不知道：</p>
+<blockquote>
+<p>提升来自哪里。</p>
+</blockquote>
+<p>所以 Baseline 是：</p>
+<h1 id="scientific-control">Scientific Control</h1>
+<hr />
+<h1 id="七十四第一次设计-procurementmodel-v0.1">七十四、第一次设计
+ProcurementModel V0.1</h1>
+<p>现在我们真正开始给它定义身份。</p>
+<p>不是：</p>
+<blockquote>
+<p>“政府采购万能机器人。”</p>
+</blockquote>
+<p>而是：</p>
+<h1 id="procurementmodel-v0.1">ProcurementModel V0.1</h1>
+<h2 id="政府采购文件合规风险审查-baseline">政府采购文件合规风险审查
+Baseline</h2>
+<hr />
+<h1 id="七十五输入是什么">七十五、输入是什么？</h1>
+<p>第一版输入可以定义得很清楚：</p>
+<pre class="text"><code>一段采购条款
++
+必要的上下文</code></pre>
+<p>例如：</p>
+<pre class="text"><code>项目：
+物业管理服务
+
+资格条件：
+“供应商须在本市注册成立5年以上。”</code></pre>
+<hr />
+<h1 id="七十六输出不要让它自由作文">七十六、输出不要让它自由作文</h1>
+<p>我们可以先规定结构：</p>
+<pre class="text"><code>风险类别：
+风险等级：
+是否需要进一步核验：
+判断理由：
+所需法规依据：
+修改建议：</code></pre>
+<p>这样：</p>
+<blockquote>
+<p>更容易评测。</p>
+</blockquote>
+<hr />
+<h1 id="七十七为什么-structured-output-重要">七十七、为什么 Structured
+Output 重要？</h1>
+<p>如果一个模型回答：</p>
+<blockquote>
+<p>一大篇漂亮文章，</p>
+</blockquote>
+<p>很难自动统计：</p>
+<pre class="text"><code>风险类别对不对？</code></pre>
+<hr />
+<h1 id="七十八结构化后">七十八、结构化后</h1>
+<p>我们能直接提取：</p>
+<pre class="text"><code>risk_type
+risk_level
+needs_review
+reason
+evidence
+suggestion</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>分项评价。</p>
+</blockquote>
+<hr />
+<h1 id="七十九baseline-第一版甚至可以更简单">七十九、Baseline
+第一版甚至可以更简单</h1>
+<p>先只要求：</p>
+<pre class="text"><code>risk_type
+risk_present
+reason</code></pre>
+<p>不要一开始：</p>
+<blockquote>
+<p>让一个 Prompt 承担所有工作。</p>
+</blockquote>
+<hr />
+<h1 id="八十为什么">八十、为什么？</h1>
+<p>因为我们第一步最需要知道：</p>
+<blockquote>
+<p><strong>模型究竟会不会发现风险。</strong></p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>它文章写得漂不漂亮。</p>
+</blockquote>
+<hr />
+<h1 id="八十一于是-v0.1-的核心任务可以变成">八十一、于是 V0.1
+的核心任务可以变成</h1>
+<pre class="text"><code>Input：
+采购条款
+
+↓
+
+Output：
+是否存在风险
++
+风险类别
++
+简短理由</code></pre>
+<p>之后再单独加：</p>
+<blockquote>
+<p>法规依据检索。</p>
+</blockquote>
+<hr />
+<h1 id="八十二这是分层任务的思想">八十二、这是“分层任务”的思想</h1>
+<p>不要：</p>
+<pre class="text"><code>一个模型
+一次生成
+承担整个世界</code></pre>
+<p>而是：</p>
+<pre class="text"><code>风险发现
+↓
+证据检索
+↓
+依据核验
+↓
+解释生成
+↓
+修改建议</code></pre>
+<hr />
+<h1 id="八十三为什么这会更可靠">八十三、为什么这会更可靠？</h1>
+<p>因为每一步：</p>
+<blockquote>
+<p>都能单独测。</p>
+</blockquote>
+<p>如果最终答案错了，</p>
+<p>你能定位：</p>
+<pre class="text"><code>风险识别错？
+
+RAG检索错？
+
+依据验证错？
+
+还是语言生成错？</code></pre>
+<hr />
+<h1 id="八十四这和软件工程一样">八十四、这和软件工程一样</h1>
+<p>一个巨大黑箱：</p>
+<blockquote>
+<p>最难调试。</p>
+</blockquote>
+<p>模块化：</p>
+<blockquote>
+<p>更容易诊断。</p>
+</blockquote>
+<hr />
+<h1 id="八十五第一版-prompt-应该怎么设计">八十五、第一版 Prompt
+应该怎么设计？</h1>
+<p>先不要追求：</p>
+<blockquote>
+<p>“超级 Prompt”。</p>
+</blockquote>
+<p>只需要：</p>
+<blockquote>
+<p>清晰、稳定、可版本化。</p>
+</blockquote>
+<hr />
+<h1 id="八十六例如概念模板">八十六、例如概念模板</h1>
+<pre class="text"><code>角色：
+你是政府采购文件风险审查助手。
+
+任务：
+判断给定条款是否存在潜在合规风险。
+
+要求：
+1. 不确定时明确输出“需要核验”
+2. 不得编造法律依据
+3. 先输出风险类别，再说明理由
+4. 只根据当前提供的信息判断
+
+输入：
+{clause}</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>这是教学模板。</p>
+</blockquote>
+<p>未来还会不断校正。</p>
+<hr />
+<h1 id="八十七为什么-prompt-也要-version">八十七、为什么 Prompt 也要
+Version？</h1>
+<p>因为你改一句：</p>
+<blockquote>
+<p>“必须给出结论”</p>
+</blockquote>
+<p>可能就改变模型行为。</p>
+<p>所以：</p>
+<pre class="text"><code>Prompt V0.1
+Prompt V0.2
+Prompt V0.3</code></pre>
+<p>应该：</p>
+<blockquote>
+<p>有记录。</p>
+</blockquote>
+<hr />
+<h1 id="八十八generation-config-也必须固定">八十八、Generation Config
+也必须固定</h1>
+<p>第 8 阶段已经学过：</p>
+<pre class="text"><code>Greedy
+Temperature
+Top-p</code></pre>
+<p>Baseline 时我们不应该：</p>
+<blockquote>
+<p>每次随便换。</p>
+</blockquote>
+<hr />
+<h1 id="八十九对于合规-baseline">八十九、对于合规 Baseline</h1>
+<p>可以优先测试：</p>
+<blockquote>
+<p>低随机性 / 确定性方案。</p>
+</blockquote>
+<p>目的：</p>
+<blockquote>
+<p>先减少 Sampling 噪声。</p>
+</blockquote>
+<p>这样评测出来的错误：</p>
+<blockquote>
+<p>更像模型能力问题。</p>
+</blockquote>
+<hr />
+<h1 id="九十模型版本也必须锁定">九十、模型版本也必须锁定</h1>
+<p>不要只记录：</p>
+<pre class="text"><code>Model = XXX-14B</code></pre>
+<p>还应该记录：</p>
+<pre class="text"><code>具体Revision
+Tokenizer版本
+Quantization版本
+Runtime版本</code></pre>
+<p>因为模型仓库：</p>
+<blockquote>
+<p>可能更新。</p>
+</blockquote>
+<hr />
+<h1 id="九十一这就是-experiment-manifest">九十一、这就是 Experiment
+Manifest</h1>
+<p>一次实验应该至少知道：</p>
+<pre class="text"><code>Model
+Model Revision
+Tokenizer
+Precision
+Prompt Version
+Generation Config
+Dataset Version
+Code Version
+Hardware</code></pre>
+<p>这样半年后：</p>
+<blockquote>
+<p>才能真正复现。</p>
+</blockquote>
+<hr />
+<h1
+id="九十二我们第一次真正定义一个-baseline-run">九十二、我们第一次真正定义一个
+Baseline Run</h1>
+<p>例如：</p>
+<pre class="text"><code>Experiment：
+PROC-BASE-001
+
+Model：
+Candidate-B
+
+Precision：
+4-bit
+
+Prompt：
+proc_review_v0.1
+
+Generation：
+deterministic
+
+Dataset：
+gold_v0.1
+
+GPU：
+24GB class</code></pre>
+<p>然后跑：</p>
+<blockquote>
+<p>全部 Gold Set。</p>
+</blockquote>
+<hr />
+<h1 id="九十三得到的不应该只是总分">九十三、得到的不应该只是“总分”</h1>
+<p>我们需要：</p>
+<h1 id="error-table">Error Table</h1>
+<hr />
+<h1 id="九十四例如">九十四、例如</h1>
+<table>
+<thead>
+<tr class="header">
+<th>Sample</th>
+<th>Gold</th>
+<th>Prediction</th>
+<th>Error Type</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>001</td>
+<td>风险</td>
+<td>风险</td>
+<td>Correct</td>
+</tr>
+<tr class="even">
+<td>002</td>
+<td>无风险</td>
+<td>风险</td>
+<td>False Positive</td>
+</tr>
+<tr class="odd">
+<td>003</td>
+<td>风险</td>
+<td>无风险</td>
+<td>False Negative</td>
+</tr>
+<tr class="even">
+<td>004</td>
+<td>需核验</td>
+<td>无风险</td>
+<td>Overconfident</td>
+</tr>
+<tr class="odd">
+<td>005</td>
+<td>技术参数风险</td>
+<td>资格风险</td>
+<td>Wrong Type</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1
+id="九十五这张表比一个82分重要得多">九十五、这张表比一个“82分”重要得多</h1>
+<p>因为它告诉你：</p>
+<blockquote>
+<p><strong>模型到底怎么错。</strong></p>
+</blockquote>
+<p>而后面的第四课、第五课：</p>
+<blockquote>
+<p>全部会从这些错误开始。</p>
+</blockquote>
+<hr />
+<h1
+id="九十六第五个核心心智模型再强调一次">九十六、第五个核心心智模型再强调一次</h1>
+<p>Baseline 的价值不是：</p>
+<blockquote>
+<p>证明模型很强。</p>
+</blockquote>
+<p>Baseline 的价值是：</p>
+<blockquote>
+<p><strong>创建一个可测量的起点。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="九十七第六个核心心智模型错误样本是资产">九十七、第六个核心心智模型：错误样本是资产</h1>
+<p>这是我们整个项目以后非常重要的一条。</p>
+<p>很多人觉得：</p>
+<blockquote>
+<p>模型答错了，删掉算了。</p>
+</blockquote>
+<p>实际上：</p>
+<blockquote>
+<p>错题最值钱。</p>
+</blockquote>
+<hr />
+<h1 id="九十八为什么">九十八、为什么？</h1>
+<p>因为错误样本告诉你：</p>
+<blockquote>
+<p>模型的能力边界在哪里。</p>
+</blockquote>
+<hr />
+<h1 id="九十九例如发现-100-个错误里">九十九、例如发现 100 个错误里</h1>
+<pre class="text"><code>40个
+法规知识不知道
+
+30个
+长上下文漏看
+
+20个
+判断逻辑不稳定
+
+10个
+输出格式错误</code></pre>
+<p>现在系统路线一下就清楚了。</p>
+<hr />
+<h1 id="一百40-个知识错误怎么办">一百、40 个知识错误怎么办？</h1>
+<p>优先考虑：</p>
+<blockquote>
+<p>RAG。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一30-个长文本错误怎么办">一百零一、30
+个长文本错误怎么办？</h1>
+<p>可能需要：</p>
+<ul>
+<li>更好的文档切分；</li>
+<li>检索；</li>
+<li>Context 策略；</li>
+<li>更合适模型。</li>
+</ul>
+<hr />
+<h1 id="一百零二20-个工作逻辑错误怎么办">一百零二、20
+个工作逻辑错误怎么办？</h1>
+<p>可能：</p>
+<blockquote>
+<p>SFT。</p>
+</blockquote>
+<hr />
+<h1 id="一百零三10-个格式错误怎么办">一百零三、10
+个格式错误怎么办？</h1>
+<p>可能：</p>
+<blockquote>
+<p>Structured Output / SFT / Validation。</p>
+</blockquote>
+<hr />
+<h1 id="一百零四所以-error-analysis-决定技术路线">一百零四、所以 Error
+Analysis 决定技术路线</h1>
+<p>不是：</p>
+<pre class="text"><code>因为最近大家都在做LoRA
+所以我也LoRA</code></pre>
+<p>而应该：</p>
+<pre class="text"><code>错误是什么
+↓
+为什么错
+↓
+哪种技术专门解决它</code></pre>
+<hr />
+<h1
+id="一百零五这就是专家模型开发路线">一百零五、这就是专家模型开发路线</h1>
+<pre class="text"><code>Measure
+↓
+Diagnose
+↓
+Intervene
+↓
+Measure Again</code></pre>
+<p>中文：</p>
+<pre class="text"><code>测量
+↓
+诊断
+↓
+干预
+↓
+再测量</code></pre>
+<p>这是以后整个课程的一条主线。</p>
+<hr />
+<h1
+id="一百零六现在看一张完整-procurementai-模型选型流程">一百零六、现在看一张完整
+ProcurementAI 模型选型流程</h1>
+<pre class="text"><code>业务任务定义
+      │
+      ▼
+硬门槛
+License / Hardware / Context
+      │
+      ▼
+候选模型 3~5 个
+      │
+      ▼
+统一Prompt
+统一Generation
+统一Hardware条件
+      │
+      ▼
+Procurement Gold Set
+      │
+      ▼
+质量评测
+      │
+      ├─ Recall
+      ├─ Precision
+      ├─ Risk Type
+      ├─ Citation
+      └─ Stability
+      │
+      ▼
+性能评测
+      │
+      ├─ VRAM
+      ├─ TTFT
+      ├─ TPS
+      ├─ Latency
+      └─ Throughput
+      │
+      ▼
+Failure Analysis
+      │
+      ▼
+Base Model Selection Matrix
+      │
+      ▼
+选出V0.1 Baseline</code></pre>
+<p>这就是第三课最终要得到的工程地图。</p>
+<hr />
+<h1
+id="一百零七为什么候选最好不要只有一个">一百零七、为什么候选最好不要只有一个？</h1>
+<p>如果你从一开始就认定：</p>
+<blockquote>
+<p>“我就用这个模型。”</p>
+</blockquote>
+<p>那不叫：</p>
+<blockquote>
+<p>选型。</p>
+</blockquote>
+<p>那叫：</p>
+<blockquote>
+<p>先决定答案，再找理由。</p>
+</blockquote>
+<hr />
+<h1 id="一百零八第一版可以选-35-个候选">一百零八、第一版可以选 3～5
+个候选</h1>
+<p>例如概念上：</p>
+<pre class="text"><code>Candidate S
+小模型
+
+Candidate M
+中模型
+
+Candidate L
+较大模型</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>统一条件实测。</p>
+</blockquote>
+<hr />
+<h1 id="一百零九为什么要统一条件">一百零九、为什么要统一条件？</h1>
+<p>因为否则你可能拿：</p>
+<pre class="text"><code>Model A
+4-bit
+8K Context</code></pre>
+<p>和：</p>
+<pre class="text"><code>Model B
+BF16
+32K Context</code></pre>
+<p>直接比较速度。</p>
+<p>结果：</p>
+<blockquote>
+<p>没意义。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十至少要记录差异">一百一十、至少要记录差异</h1>
+<p>如果某些模型：</p>
+<blockquote>
+<p>必须使用不同配置，</p>
+</blockquote>
+<p>也可以比。</p>
+<p>但必须明确：</p>
+<blockquote>
+<p>你比较的是“部署方案”，而不是单纯 Model Weight。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十一这两个概念要分开">一百一十一、这两个概念要分开</h1>
+<h1 id="model-comparison">Model Comparison</h1>
+<p>比较：</p>
+<blockquote>
+<p>模型本身。</p>
+</blockquote>
+<h1 id="deployment-configuration-comparison">Deployment Configuration
+Comparison</h1>
+<p>比较：</p>
+<blockquote>
+<p>模型 + Quantization + Runtime + Hardware。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十二真实项目最后更关心后者">一百一十二、真实项目最后更关心后者</h1>
+<p>用户不会问：</p>
+<blockquote>
+<p>“你的 FP16 原始权重多厉害？”</p>
+</blockquote>
+<p>用户关心：</p>
+<blockquote>
+<p><strong>系统好不好用。</strong></p>
+</blockquote>
+<p>所以最终应比较：</p>
+<h1 id="solution">Solution</h1>
+<p>而不仅是：</p>
+<h1 id="checkpoint">Checkpoint</h1>
+<hr />
+<h1
+id="一百一十三procurementai-选型矩阵建议分-5-个大区">一百一十三、ProcurementAI
+选型矩阵建议分 5 个大区</h1>
+<p>为了以后真正执行，可以把表分成：</p>
+<pre class="text"><code>① 合规与许可
+
+② 模型能力
+
+③ 业务质量
+
+④ 工程性能
+
+⑤ 运维风险</code></pre>
+<hr />
+<h1 id="一百一十四第一类合规与许可">一百一十四、第一类：合规与许可</h1>
+<p>看：</p>
+<pre class="text"><code>License
+商业使用
+衍生模型限制
+部署约束</code></pre>
+<p>一票否决型。</p>
+<hr />
+<h1 id="一百一十五第二类模型能力">一百一十五、第二类：模型能力</h1>
+<p>例如：</p>
+<pre class="text"><code>中文理解
+长文本
+指令遵循
+结构化输出
+基础推理</code></pre>
+<hr />
+<h1 id="一百一十六第三类业务质量">一百一十六、第三类：业务质量</h1>
+<p>这才是核心：</p>
+<pre class="text"><code>采购风险Recall
+采购风险Precision
+风险类型准确率
+Citation Correctness
+专家评分</code></pre>
+<hr />
+<h1 id="一百一十七第四类工程性能">一百一十七、第四类：工程性能</h1>
+<pre class="text"><code>Peak VRAM
+TTFT
+TPS
+Latency
+Throughput
+Context Capacity</code></pre>
+<hr />
+<h1 id="一百一十八第五类运维风险">一百一十八、第五类：运维风险</h1>
+<p>例如：</p>
+<pre class="text"><code>部署复杂度
+框架兼容性
+社区成熟度
+版本稳定性
+监控难度</code></pre>
+<hr />
+<h1
+id="一百一十九最后不要简单总分最高者获胜">一百一十九、最后不要简单“总分最高者获胜”</h1>
+<p>为什么？</p>
+<p>因为一些指标：</p>
+<blockquote>
+<p>是硬底线。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>License不允许</code></pre>
+<p>哪怕其它 99 分：</p>
+<blockquote>
+<p>也不能选。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十另一些可能是最低门槛">一百二十、另一些可能是最低门槛</h1>
+<p>例如：</p>
+<pre class="text"><code>高风险Recall
+必须 ≥ 某业务门槛</code></pre>
+<p>未达到：</p>
+<blockquote>
+<p>淘汰。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十一然后剩下候选再看综合-pareto">一百二十一、然后剩下候选再看综合
+Pareto</h1>
+<p>也就是：</p>
+<blockquote>
+<p>谁在成本和质量之间最划算。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十二一个教学例子">一百二十二、一个教学例子</h1>
+<p>假设最终三套方案：</p>
+<h3 id="方案-a-2">方案 A</h3>
+<pre class="text"><code>业务分：88
+GPU成本：1
+TTFT：快
+长Context：好</code></pre>
+<h3 id="方案-b-2">方案 B</h3>
+<pre class="text"><code>业务分：91
+GPU成本：2
+TTFT：中
+长Context：好</code></pre>
+<h3 id="方案-c-1">方案 C</h3>
+<pre class="text"><code>业务分：92
+GPU成本：6
+TTFT：慢
+长Context：一般</code></pre>
+<hr />
+<h1 id="一百二十三c-比-b-只高-1-分">一百二十三、C 比 B 只高 1 分</h1>
+<p>但成本：</p>
+<blockquote>
+<p>3 倍。</p>
+</blockquote>
+<p>是不是值得？</p>
+<p>这不是：</p>
+<blockquote>
+<p>模型研究问题。</p>
+</blockquote>
+<p>这是：</p>
+<blockquote>
+<p>产品和项目决策。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十四政府采购-ai-尤其要看可解释失败">一百二十四、政府采购
+AI 尤其要看“可解释失败”</h1>
+<p>如果模型答错，</p>
+<p>我们希望知道：</p>
+<pre class="text"><code>哪一段证据导致的？
+
+哪个规则冲突？
+
+模型为什么判成这样？</code></pre>
+<p>所以未来系统不能只输出：</p>
+<blockquote>
+<p>“风险 0.83”。</p>
+</blockquote>
+<p>还需要：</p>
+<blockquote>
+<p>可追溯证据链。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十五这就是为什么第三课结束以后">一百二十五、这就是为什么第三课结束以后</h1>
+<p>我们不会马上进入：</p>
+<blockquote>
+<p>“疯狂微调模型”。</p>
+</blockquote>
+<p>下一课先进入：</p>
+<h1 id="数据工程">数据工程</h1>
+<p>因为：</p>
+<blockquote>
+<p>没有好数据，就没有好的 Gold Set，也没有好的 SFT。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十六第三课最大的转折其实不是-gpu">一百二十六、第三课最大的转折其实不是
+GPU</h1>
+<p>很多人以为第三课主要是：</p>
+<blockquote>
+<p>学硬件。</p>
+</blockquote>
+<p>但真正变化是：</p>
+<p>从第二课：</p>
+<blockquote>
+<p>“模型里面怎么工作？”</p>
+</blockquote>
+<p>走到第三课：</p>
+<blockquote>
+<p><strong>“怎样把模型变成一个可测、可选、可部署的工程对象？”</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百二十七现在回头看第三课-10-个阶段">一百二十七、现在回头看第三课
+10 个阶段</h1>
+<pre class="text"><code>Stage 1
+GPU、CPU、VRAM、CUDA
+↓
+知道“计算资源在哪”
+
+Stage 2
+PyTorch / CUDA运行链
+↓
+知道“软件怎么调用硬件”
+
+Stage 3
+模型仓库
+↓
+知道“模型文件是什么”
+
+Stage 4
+from_pretrained
+↓
+知道“模型怎么被装起来”
+
+Stage 5
+端到端生成
+↓
+知道“文字怎么进去、出来”
+
+Stage 6
+Precision / Quantization
+↓
+知道“Weight为什么大小不同”
+
+Stage 7
+VRAM Ledger
+↓
+知道“显存怎么做账”
+
+Stage 8
+Decoding
+↓
+知道“Next Token怎么选”
+
+Stage 9
+Serving
+↓
+知道“多人怎么共享模型”
+
+Stage 10
+Model Selection + Baseline
+↓
+知道“项目到底怎么正式开始”</code></pre>
+<p>现在第三课终于不是：</p>
+<blockquote>
+<p>10 个零散概念。</p>
+</blockquote>
+<p>而是一条完整工程链。</p>
+<hr />
+<h1 id="一百二十八第三课最终总图">一百二十八、第三课最终总图</h1>
+<pre class="text"><code>                         业务目标
+                            │
+                            ▼
+                       候选模型
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+           License       Capability     Hardware
+                            │             │
+                            │             ▼
+                            │        Precision
+                            │             │
+                            │             ▼
+                            │           VRAM
+                            │
+                            ▼
+                       Gold Set
+                            │
+              ┌─────────────┴──────────────┐
+              ▼                            ▼
+          Quality Eval                Performance Eval
+              │                            │
+     Recall / Precision             TTFT / TPS
+     Citation / Stability           VRAM / Throughput
+              │                            │
+              └─────────────┬──────────────┘
+                            ▼
+                    Selection Matrix
+                            │
+                            ▼
+                ProcurementModel V0.1
+                            │
+                            ▼
+                       Baseline
+                            │
+                            ▼
+                    Error Analysis
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+             RAG           SFT           Rules</code></pre>
+<p>这就是第三课最后真正需要留下的一张图。</p>
+<hr />
+<h1
+id="一百二十九procurementmodel-v0.1-不应该叫什么">一百二十九、ProcurementModel
+V0.1 不应该叫什么？</h1>
+<p>不要先叫：</p>
+<blockquote>
+<p>“政府采购大模型智能专家系统 V10.0”。</p>
+</blockquote>
+<p>这种名字：</p>
+<blockquote>
+<p>很容易把自己骗进去。</p>
+</blockquote>
+<p>更专业的名字反而朴素：</p>
+<pre class="text"><code>Procurement Compliance Baseline V0.1</code></pre>
+<p>它明确告诉所有人：</p>
+<blockquote>
+<p>这是起点。</p>
+</blockquote>
+<p>不是终点。</p>
+<hr />
+<h1 id="一百三十baseline-通过什么才算建立成功">一百三十、Baseline
+通过什么才算“建立成功”？</h1>
+<p>不是：</p>
+<blockquote>
+<p>“模型能输出中文。”</p>
+</blockquote>
+<p>至少要做到：</p>
+<pre class="text"><code>模型版本固定
+
+Prompt固定
+
+Generation固定
+
+Gold Set固定
+
+评测脚本固定
+
+结果可以复现
+
+错误样本可以导出</code></pre>
+<hr />
+<h1
+id="一百三十一最好还要生成一张-baseline-report">一百三十一、最好还要生成一张
+Baseline Report</h1>
+<p>例如：</p>
+<pre class="text"><code>Model:
+xxx
+
+Dataset:
+gold_v0.1
+
+Overall F1:
+...
+
+High-risk Recall:
+...
+
+Citation Correctness:
+...
+
+Peak VRAM:
+...
+
+TTFT:
+...
+
+TPS:
+...
+
+Top Error Categories:
+1. ...
+2. ...
+3. ...</code></pre>
+<p>这个文件：</p>
+<blockquote>
+<p>会成为以后所有实验的参照物。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十二以后每次技术升级都要问">一百三十二、以后每次技术升级都要问</h1>
+<p>比如增加 RAG。</p>
+<p>不要只说：</p>
+<blockquote>
+<p>“感觉回答更专业了。”</p>
+</blockquote>
+<p>而要比较：</p>
+<pre class="text"><code>Baseline V0.1
+vs
+RAG V0.2</code></pre>
+<hr />
+<h1 id="一百三十三比如-sft">一百三十三、比如 SFT</h1>
+<p>比较：</p>
+<pre class="text"><code>RAG V0.2
+vs
+RAG + SFT V0.3</code></pre>
+<hr />
+<h1 id="一百三十四比如-cpt">一百三十四、比如 CPT</h1>
+<p>比较：</p>
+<pre class="text"><code>V0.3
+vs
+CPT + SFT + RAG</code></pre>
+<p>这样：</p>
+<blockquote>
+<p>每一步提升都有证据。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十五如果某个复杂优化没有提升呢">一百三十五、如果某个复杂优化没有提升呢？</h1>
+<p>那就：</p>
+<blockquote>
+<p>不要因为花了很多时间而舍不得扔。</p>
+</blockquote>
+<p>这就是实验纪律。</p>
+<hr />
+<h1
+id="一百三十六一个项目最危险的事情之一">一百三十六、一个项目最危险的事情之一</h1>
+<p>叫：</p>
+<h1 id="sunk-cost">Sunk Cost</h1>
+<p>已经做了两个月的方案，</p>
+<p>即使数据证明：</p>
+<blockquote>
+<p>没有价值，</p>
+</blockquote>
+<p>团队仍然说：</p>
+<blockquote>
+<p>“都做这么久了，再坚持一下。”</p>
+</blockquote>
+<p>Baseline + Benchmark：</p>
+<blockquote>
+<p>可以帮助我们抵抗这种感觉。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十七数据说话但也不是唯分数论">一百三十七、数据说话，但也不是唯分数论</h1>
+<p>因为 Gold Set：</p>
+<blockquote>
+<p>本身也可能不完整。</p>
+</blockquote>
+<p>所以还需要：</p>
+<ul>
+<li>专家复核；</li>
+<li>新错误样本；</li>
+<li>线上反馈；</li>
+<li>Red Team。</li>
+</ul>
+<hr />
+<h1 id="一百三十八benchmark-也是会成长的">一百三十八、Benchmark
+也是会成长的</h1>
+<p>第一版：</p>
+<pre class="text"><code>Gold V0.1</code></pre>
+<p>发现模型新的失败模式以后：</p>
+<pre class="text"><code>Gold V0.2</code></pre>
+<p>加入更多 Hard Case。</p>
+<hr />
+<h1
+id="一百三十九这就是数据飞轮的最初形态">一百三十九、这就是数据飞轮的最初形态</h1>
+<pre class="text"><code>模型运行
+↓
+发现错误
+↓
+专家确认
+↓
+加入Error Set / Gold Set
+↓
+模型再次评测
+↓
+系统变强</code></pre>
+<p>真正有价值的资产：</p>
+<blockquote>
+<p>会越来越集中在这些高质量错误案例上。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十这就是为什么下载了多少-pdf不是护城河">一百四十、这就是为什么“下载了多少
+PDF”不是护城河</h1>
+<p>任何团队：</p>
+<blockquote>
+<p>都可以下载公开法规。</p>
+</blockquote>
+<p>真正难复制的是：</p>
+<pre class="text"><code>专家怎么判断
+
+边界案例怎么处理
+
+哪些错误最常出现
+
+错误怎样修正
+
+什么证据真正支持结论</code></pre>
+<p>这些才会逐渐变成：</p>
+<blockquote>
+<p>ProcurementAI 的核心资产。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十一本阶段最容易犯的-10-个错误">一百四十一、本阶段最容易犯的
+10 个错误</h1>
+<h3 id="错误-1-5">错误 1</h3>
+<blockquote>
+<p>参数越大一定越适合项目。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-2-5">错误 2</h3>
+<blockquote>
+<p>公共排行榜第一就直接选。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-3-5">错误 3</h3>
+<blockquote>
+<p>License 后面再看。</p>
+</blockquote>
+<p>危险。</p>
+<h3 id="错误-4-5">错误 4</h3>
+<blockquote>
+<p>Weight 能装下，部署就没问题。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-5-5">错误 5</h3>
+<blockquote>
+<p>支持 128K 就说明长文本业务一定强。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-6-5">错误 6</h3>
+<blockquote>
+<p>Accuracy 一个指标就够。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-7-4">错误 7</h3>
+<blockquote>
+<p>Baseline 越复杂越专业。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-8-3">错误 8</h3>
+<blockquote>
+<p>一上来就微调，比先测基础模型更先进。</p>
+</blockquote>
+<p>不一定。</p>
+<h3 id="错误-9-1">错误 9</h3>
+<blockquote>
+<p>模型答错是垃圾，没有价值。</p>
+</blockquote>
+<p>恰恰相反。</p>
+<p>错误样本可能是：</p>
+<blockquote>
+<p>最值钱的数据之一。</p>
+</blockquote>
+<h3 id="错误-10">错误 10</h3>
+<blockquote>
+<p>模型选型完成以后永远不用重新评估。</p>
+</blockquote>
+<p>错。</p>
+<p>模型、数据、业务：</p>
+<blockquote>
+<p>都会变化。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十二第-10-阶段掌握标准">一百四十二、第 10
+阶段掌握标准</h1>
+<p>如果现在不看前文，你可以自己解释下面这些问题，第三课就真正完成了：</p>
+<blockquote>
+<p>为什么“最强模型”不一定是最适合 ProcurementAI 的模型？</p>
+</blockquote>
+<blockquote>
+<p>为什么模型选型应该先做 Hard Gate？</p>
+</blockquote>
+<blockquote>
+<p>License 为什么属于硬门槛？</p>
+</blockquote>
+<blockquote>
+<p>为什么硬件和模型必须一起选？</p>
+</blockquote>
+<blockquote>
+<p>Tokenizer 为什么会影响成本和长文本能力？</p>
+</blockquote>
+<blockquote>
+<p>Public Benchmark 和 Procurement Gold Set 分别负责什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么高风险 Recall 对风险审查特别重要？</p>
+</blockquote>
+<blockquote>
+<p>为什么只看 Accuracy 不够？</p>
+</blockquote>
+<blockquote>
+<p>Citation Correctness 为什么必须单独评？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Hard Case？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Gold Set 不能只放简单题？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Model Failure Mode 也是选型指标？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Baseline？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Baseline 应该尽量简单？</p>
+</blockquote>
+<blockquote>
+<p>为什么没有 Baseline 就不知道 RAG/SFT 到底有没有贡献？</p>
+</blockquote>
+<blockquote>
+<p>ProcurementModel V0.1 的输入和输出为什么应该先定义清楚？</p>
+</blockquote>
+<blockquote>
+<p>为什么结构化输出有助于评测？</p>
+</blockquote>
+<blockquote>
+<p>Prompt、Generation Config、Model Revision 为什么都要版本化？</p>
+</blockquote>
+<blockquote>
+<p>Error Analysis 为什么决定下一步用 RAG、SFT 还是 Rules？</p>
+</blockquote>
+<blockquote>
+<p>为什么模型答错的样本反而是重要资产？</p>
+</blockquote>
+<blockquote>
+<p>为什么最终选型表必须同时包含 Quality 和 Performance？</p>
+</blockquote>
+<blockquote>
+<p>为什么最终真正比较的是“解决方案”，而不只是 Checkpoint？</p>
+</blockquote>
+<p>如果这些都可以清楚讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>三</mi><mi>课</mi><mi>第</mi><mn>10</mn><mi>阶</mi><mi>段</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第三课第10阶段掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百四十三第三课最终只记三句话">一百四十三、第三课最终只记三句话</h1>
+<p>如果第三课其他细节以后忘了一半，也没关系。</p>
+<p>只要留下这三句话。</p>
+<p>第一句：</p>
+<blockquote>
+<p><strong>LLM 不只是一个 Weight 文件，它是一整套“硬件 + Runtime +
+Tokenizer + Context + Generation + Serving”的计算系统。</strong></p>
+</blockquote>
+<p>第二句：</p>
+<blockquote>
+<p><strong>模型选型不是寻找最大、最新、排行榜最高的模型，而是在业务质量、硬件成本、上下文、速度、可靠性之间寻找最合适的方案。</strong></p>
+</blockquote>
+<p>第三句：</p>
+<blockquote>
+<p><strong>第一个 Baseline
+的最大价值，不是证明我们已经成功，而是建立一条以后任何改进都必须用数据击败的起跑线。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百四十四第三课正式闭环">一百四十四、第三课正式闭环</h1>
+<p>现在我们已经完成：</p>
+<pre class="text"><code>第二课
+“LLM为什么能工作？”
+
+           ↓
+
+第三课
+“怎样真正把一个LLM运行、测量、部署并选出来？”</code></pre>
+<p>接下来第四课会发生一个非常明显的变化。</p>
+<p>我们不再继续拆 GPU。</p>
+<p>不再继续拆 Transformer。</p>
+<p>我们开始处理整个项目最容易被低估、但实际上决定上限的东西：</p>
+<h1 id="data">Data</h1>
+<hr />
+<h1 id="下一课第四课-政府采购数据工程与训练数据集">下一课：第四课 ·
+政府采购数据工程与训练数据集</h1>
+<p>第四课计划 <strong>12 个阶段</strong>。</p>
+<p>我们会从最容易被忽略的问题开始：</p>
+<blockquote>
+<p><strong>一份 PDF
+招标文件，究竟什么时候才算变成了“可以训练模型的数据”？</strong></p>
+</blockquote>
+<p>你会发现：</p>
+<pre class="text"><code>下载PDF
+≠
+拥有训练数据</code></pre>
+<p>真正的链路是：</p>
+<pre class="text"><code>PDF / HTML / DOCX
+      ↓
+解析
+      ↓
+文档结构恢复
+      ↓
+去页眉页脚
+      ↓
+表格处理
+      ↓
+条款切分
+      ↓
+去重
+      ↓
+项目级数据隔离
+      ↓
+任务Schema
+      ↓
+专家标注
+      ↓
+Hard Negative
+      ↓
+Train / Validation / Gold Test
+      ↓
+Dataset Version</code></pre>
+<p>第四课最终会形成：</p>
+<h1
+id="procurementdataset_v0.1"><code>ProcurementDataset_V0.1</code></h1>
+<p>也就是说，到第三课这里，我们第一次拥有了：</p>
+<blockquote>
+<p><strong>可以运行和选择的模型。</strong></p>
+</blockquote>
+<p>第四课开始，我们要第一次拥有：</p>
+<blockquote>
+<p><strong>真正可以拿去训练和评测的政府采购数据。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage09.html">← 第 9 阶段</a><a class="btn" href="../lesson04/stage01.html">第 4 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

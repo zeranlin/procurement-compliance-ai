@@ -1,0 +1,78 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>V2 完整体系阅读指南</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}main{max-width:1160px;margin:0 auto;padding:34px 28px 100px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:30px}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}.badge{display:inline-block;background:var(--quote);border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin-right:6px}@media(max-width:800px){main{padding:14px}article{padding:22px 17px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>V2 完整体系阅读指南</strong><a class="btn" href="index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note">V2：核心心智模型前置 + 中文释义增强 + 原正文保留。</div><h1 id="第一课第十一课-v2-完整体系阅读指南">第一课～第十一课 V2
+完整体系阅读指南</h1>
+<h2 id="一v2-为什么不再按几百个点平铺记忆">一、V2
+为什么不再按“几百个点”平铺记忆？</h2>
+<p>V2 统一成四层阅读结构：</p>
+<pre class="text"><code>Layer 1：Core Mental Models    # 中文：每阶段先抓 5～8 个核心判断框架
+↓
+Layer 2：Key Mechanism / Formula / Workflow    # 中文：理解公式、数据结构和系统流程
+↓
+Layer 3：Government Procurement Examples / Counterexamples    # 中文：用政府采购案例和反例理解边界
+↓
+Layer 4：Detailed Engineering Expansion    # 中文：大量编号细节作为查阅层，不要求一次背完</code></pre>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>P</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>s</mi><mo>≠</mo><mi>T</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>s</mi><mi>T</mi><mi>o</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DetailedPoints
+\neq
+ThingsToMemorize
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong>
+一个阶段出现很多展开点，不等于这些点都应该以同等优先级记忆；真正需要长期保留的是核心心智模型、关键机制和判断边界。</p>
+<h2 id="二11-课完整演化体系">二、11 课完整演化体系</h2>
+<pre class="text"><code>第1课：机器学习的学习本质、泛化、评测与不确定性
+↓
+第2课：神经网络 → Attention → Transformer → LLM
+↓
+第3课：GPU / CUDA / PyTorch / 开源大模型运行环境
+↓
+第4课：政府采购文档 → Schema → Clause → Label → Dataset
+↓
+第5课：SFT + LoRA / QLoRA → ProcurementLM_V0.1
+↓
+第6课：RAG + Embedding + Retrieval → ProcurementRAG_V0.1
+↓
+第7课：Agent + Tool Calling + State → ProcurementAgent_V0.1
+↓
+第8课：CPT + 高级领域适配 → ProcurementLM_V0.2
+↓
+第9课：Gold Benchmark + Reliability → ProcurementBench_V1
+↓
+第10课：Inference + Serving + MLOps → ProcurementAI
+↓
+第11课：规则、法规、数据、模型、Agent、Benchmark、生产治理
+↓
+ProcurementLM_V1.0</code></pre>
+<h2 id="三跨课程总心智模型">三、跨课程总心智模型</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>I</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AIProject
+\neq
+ModelProject
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 一个政府采购 AI
+项目不是“选个模型再调参”，而是数据、规则、知识、工具、评测和生产治理共同构成的系统工程。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>I</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>n</mi><mo>+</mo><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>U</mi><mi>n</mi><mi>k</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>n</mi><mo>+</mo><mi>E</mi><mi>s</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>t</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>R</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>W</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableAI
+=
+CorrectWhenKnown
++
+AbstainWhenUnknown
++
+EscalateWhenHighRisk
++
+TraceEverything
++
+RollbackWhenWrong
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 可靠 AI = 知道时正确判断 +
+不知道时拒绝武断 + 高风险时升级人工 + 全过程可追踪 +
+出错时能够回滚。</p>
+</article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("v2theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("v2theme")||"light";</script></body></html>

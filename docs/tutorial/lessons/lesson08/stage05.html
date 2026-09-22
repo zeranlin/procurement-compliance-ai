@@ -1,0 +1,1353 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第8课 · 第5阶段：Data Mixture &amp; Sampling：领域语料比例、质量权重、重复控制与采样策略</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第8课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>做 CPT、领域语料混合、能力保持、灾难性遗忘和 Synthetic Data。<ul><li>CorpusShare ≠ TrainingShare。原始数据占比只是“你有什么”，训练占比才决定“模型实际看什么”。</li><li>SamplingPolicy = GradientAllocationPolicy。采样策略本质上是在给不同能力分配训练梯度。</li><li>Oversampling = SignalAmplification + DuplicateExposure。过采样能强化稀有能力，也会放大重复和过拟合风险。</li></ul></div><h1 id="第八课-第-5-阶段">第八课 · 第 5 阶段</h1>
+<h1
+id="data-mixture-sampling领域语料比例质量权重重复控制与采样策略-1">Data
+Mixture &amp; Sampling：领域语料比例、质量权重、重复控制与采样策略</h1>
+<h2
+id="corpus-已经干净了sequence-也构造好了但不同类型语料到底各训练多少为什么-10-倍数据量并不意味着应该获得-10-倍训练权重-1">Corpus
+已经干净了，Sequence 也构造好了，但不同类型语料到底各训练多少？为什么 10
+倍数据量并不意味着应该获得 10 倍训练权重？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>CorpusShare ≠
+TrainingShare。原始数据占比只是“你有什么”，训练占比才决定“模型实际看什么”。</strong></li>
+<li><strong>SamplingPolicy =
+GradientAllocationPolicy。采样策略本质上是在给不同能力分配训练梯度。</strong></li>
+<li><strong>Oversampling = SignalAmplification +
+DuplicateExposure。过采样能强化稀有能力，也会放大重复和过拟合风险。</strong></li>
+<li><strong>SameTrainingShare ≠
+SameExposure。同样的训练占比，对不同大小的 Unique Token Pool
+会产生完全不同的重复曝光。</strong></li>
+<li><strong>Eligibility ≠ Priority。Filter 决定能不能训练，Weight
+决定有资格的数据训练多频繁。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="even">
+<td><code>Data Mixture</code></td>
+<td>数据混合：控制通用语料和领域语料等来源比例</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Temperature</code></td>
+<td>温度：控制采样分布平滑程度和随机性</td>
+</tr>
+<tr class="odd">
+<td><code>Alpha</code></td>
+<td>LoRA Alpha：控制低秩更新缩放幅度</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 4 阶段，我们已经把 CPT 的训练链条建立到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Corpus
+\rightarrow
+Tokenizer
+\rightarrow
+SequenceConstruction
+\rightarrow
+Loss
+}
+</annotation></semantics></math></p>
+<p>但现在还有一个决定模型最终能力分布的问题：</p>
+<blockquote>
+<p><strong>不同类型的数据，训练时到底各出现多少次？</strong></p>
+</blockquote>
+<p>假设我们的 CPT Corpus 中有：</p>
+<pre class="text"><code>法规与规范文件
+5B tokens
+
+采购文件
+30B tokens
+
+公告
+40B tokens
+
+合同与履约
+8B tokens
+
+医疗采购
+4B tokens
+
+工程采购
+3B tokens
+
+高质量政策解读
+1B tokens</code></pre>
+<p>最简单的做法是：</p>
+<blockquote>
+<p>按原始 Token 占比直接训练。</p>
+</blockquote>
+<p>但这往往不是最专业的做法。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorpusShare
+\neq
+TrainingShare
+}
+</annotation></semantics></math></p>
+<p>某类数据在磁盘里占 40%，</p>
+<p>不代表它就应该贡献：</p>
+<blockquote>
+<p>40% 的训练梯度。</p>
+</blockquote>
+<p>所以本阶段最终形成：</p>
+<h1
+id="procurementcptmixturepolicy_v0.1-1"><code>ProcurementCPTMixturePolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-4">一、先锁死本阶段最重要的一句话</h1>
+<p>CPT 的 Data Mixture 不是：</p>
+<blockquote>
+<p><strong>“把所有语料混在一起然后随机抽。”</strong></p>
+</blockquote>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingDistribution
+=
+DesignedDistribution
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>模型最终更像什么，不只由你收集了什么数据决定，也由训练时哪些数据被看了多少次决定。</strong></p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mo>=</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SamplingPolicy
+=
+GradientAllocationPolicy
+}
+</annotation></semantics></math></p>
+<p>翻译成人话：</p>
+<blockquote>
+<p>采样策略本质上是在决定训练梯度被分配到哪些数据分布上。</p>
+</blockquote>
+<hr />
+<h1
+id="二核心心智模型-①corpus-share-不等于-training-share">二、核心心智模型
+①：Corpus Share 不等于 Training Share</h1>
+<p>假设原始 Corpus：</p>
+<pre class="text"><code>公告类文本
+50%
+
+采购文件
+25%
+
+法规
+10%
+
+合同履约
+8%
+
+行业专项
+5%
+
+高质量解释文本
+2%</code></pre>
+<p>如果直接按自然比例采样，</p>
+<p>训练时：</p>
+<pre class="text"><code>50%的Token
+都来自公告</code></pre>
+<p>模型会大量学习：</p>
+<blockquote>
+<p>公告语言。</p>
+</blockquote>
+<p>但我们的目标可能是：</p>
+<pre class="text"><code>理解采购文件结构
+理解资格条件
+理解评分办法
+理解合同和履约
+保持法规语言能力</code></pre>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NaturalDistribution
+\neq
+TargetCapabilityDistribution
+}
+</annotation></semantics></math></p>
+<p>所以 Data Mixture 的第一步不是：</p>
+<blockquote>
+<p>“统计数据占比。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>先定义目标能力，再设计训练占比。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三data-mixture-的完整工程流程">三、Data Mixture
+的完整工程流程</h1>
+<p>英文流程：</p>
+<pre class="text"><code>Corpus Inventory
+↓
+Capability Mapping
+↓
+Source Bucketing
+↓
+Raw Token Share
+↓
+Quality Scoring
+↓
+Target Mixture Design
+↓
+Sampling Weight Calculation
+↓
+Exposure Simulation
+↓
+Train-time Sampling
+↓
+Mixture Monitoring
+↓
+Evaluation &amp; Rebalance</code></pre>
+<p>中文解释：</p>
+<pre class="text"><code>盘点所有语料
+↓
+映射每类语料支持什么能力
+↓
+把语料按来源 / 类型 / 行业分桶
+↓
+计算原始Token占比
+↓
+评估每桶数据质量
+↓
+设计目标训练比例
+↓
+计算采样权重
+↓
+训练前模拟每类数据会被看多少次
+↓
+按权重进入训练
+↓
+训练中监控真实混合比例
+↓
+根据评测结果重新平衡</code></pre>
+<p>最关键的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>发</mi><mi>生</mi><mi>在</mi><mi>训</mi><mi>练</mi><mi>之</mi><mi>前</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MixtureDesign
+发生在训练之前
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>训练完以后才发现模型偏科。</p>
+</blockquote>
+<hr />
+<h1
+id="四核心心智模型-②sampling-weight-是训练曝光权不是数据重要性标签">四、核心心智模型
+②：Sampling Weight 是“训练曝光权”，不是“数据重要性标签”</h1>
+<p>假设：</p>
+<pre class="text"><code>法规
+Raw Share = 5%
+
+Target Training Share = 15%</code></pre>
+<p>这不意味着：</p>
+<blockquote>
+<p>法规“比采购文件重要三倍”。</p>
+</blockquote>
+<p>它只意味着：</p>
+<blockquote>
+<p>在这次训练目标下，我们希望法规类 Token 获得更多曝光。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mo>≠</mo><mi>I</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>c</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SamplingWeight
+\neq
+IntrinsicImportance
+}
+</annotation></semantics></math></p>
+<p>它只是当前 Experiment 的：</p>
+<blockquote>
+<p><strong>Exposure Allocation。</strong></p>
+</blockquote>
+<p>不同版本的模型，</p>
+<p>目标不同，</p>
+<p>Sampling Weight 也可以不同。</p>
+<hr />
+<h1 id="五最简单的采样权重怎样定义">五、最简单的采样权重怎样定义？</h1>
+<p>假设有
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
+个数据桶：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>D</mi><mn>1</mn></msub><mo>,</mo><msub><mi>D</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>D</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">
+D_1,D_2,\dots,D_K
+</annotation></semantics></math></p>
+<p>每个桶目标采样概率：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+p_i
+</annotation></semantics></math></p>
+<p>满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mi>p</mi><mi>i</mi></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\sum_{i=1}^{K}p_i=1
+</annotation></semantics></math></p>
+<p>训练时每次选择一个数据桶：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>D</mi><mi>i</mi></msub><mo>∼</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">
+D_i\sim p
+</annotation></semantics></math></p>
+<p>然后从该桶里抽样本。</p>
+<p>这就是：</p>
+<h1 id="weighted-sampling">Weighted Sampling</h1>
+<h2 id="加权采样">加权采样</h2>
+<p>如果目标比例是：</p>
+<pre class="text"><code>法规 15%
+采购文件 35%
+公告 20%
+合同履约 10%
+行业专项 15%
+解释文本 5%</code></pre>
+<p>那么训练的真实数据流应该尽量接近：</p>
+<blockquote>
+<p>这套目标分布。</p>
+</blockquote>
+<hr />
+<h1 id="六natural-sampling按原始数据量采样什么时候有问题">六、Natural
+Sampling：按原始数据量采样什么时候有问题？</h1>
+<p>自然采样可以概念化为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>i</mi></msub><mo>=</mo><mfrac><msub><mi>N</mi><mi>i</mi></msub><mrow><munder><mo>∑</mo><mi>j</mi></munder><msub><mi>N</mi><mi>j</mi></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+p_i
+=
+\frac{N_i}{\sum_jN_j}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mi>i</mi></msub><mo>=</mo><mi>第</mi><mi>i</mi><mi>类</mi><mi>数</mi><mi>据</mi><mi>的</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>数</mi></mrow><annotation encoding="application/x-tex">
+N_i
+=
+第i类数据的Token数
+</annotation></semantics></math></p>
+<p>优点：</p>
+<blockquote>
+<p>简单、自然、不会人为放大稀有桶。</p>
+</blockquote>
+<p>但缺点是：</p>
+<blockquote>
+<p>大数据桶会完全主导梯度。</p>
+</blockquote>
+<p>例如公告有：</p>
+<pre class="text"><code>40B tokens</code></pre>
+<p>法规只有：</p>
+<pre class="text"><code>4B tokens</code></pre>
+<p>那么自然采样下公告曝光约 10 倍。</p>
+<p>如果公告高度模板化，</p>
+<p>你实际上可能在训练：</p>
+<blockquote>
+<p>“公告语言模型”。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>“政府采购领域模型”。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>V</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>可</mi><mi>能</mi><mi>放</mi><mi>大</mi><mi>L</mi><mi>o</mi><mi>w</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawVolume
+可能放大
+LowValueDistribution
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七temperature-sampling为什么要压平大数据桶">七、Temperature
+Sampling：为什么要“压平”大数据桶？</h1>
+<p>一种常见思路是：</p>
+<h1 id="temperature-sampling">Temperature Sampling</h1>
+<h2 id="温度采样">温度采样</h2>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>i</mi></msub><mo>∝</mo><msubsup><mi>N</mi><mi>i</mi><mi>α</mi></msubsup></mrow><annotation encoding="application/x-tex">
+p_i
+\propto
+N_i^\alpha
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>&lt;</mo><mi>α</mi><mo>≤</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+0&lt;\alpha\leq1
+</annotation></semantics></math></p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\alpha=1
+</annotation></semantics></math></p>
+<p>就是自然采样。</p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>&lt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\alpha&lt;1
+</annotation></semantics></math></p>
+<p>大数据桶的优势会被压缩，</p>
+<p>小数据桶相对获得更多曝光。</p>
+<p>例如：</p>
+<pre class="text"><code>公告
+40B
+
+法规
+4B</code></pre>
+<p>原始规模相差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>10</mn><mo>×</mo></mrow><annotation encoding="application/x-tex">
+10\times
+</annotation></semantics></math></p>
+<p>经过温度变换以后，</p>
+<p>训练曝光差距可以显著缩小。</p>
+<p>核心不是记公式。</p>
+<p>而是理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>m</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>D</mi><mi>o</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TemperatureSampling
+=
+ReduceSizeDominance
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>降低“谁数据多谁统治训练”的现象。</p>
+</blockquote>
+<hr />
+<h1
+id="八核心心智模型-③oversampling-会放大信号也会放大重复">八、核心心智模型
+③：Oversampling 会放大信号，也会放大重复</h1>
+<p>如果一个高质量小桶只有：</p>
+<pre class="text"><code>500M tokens</code></pre>
+<p>但我们希望它贡献：</p>
+<pre class="text"><code>10%的训练Token</code></pre>
+<p>它可能会被反复抽到很多次。</p>
+<p>这叫：</p>
+<h1 id="oversampling">Oversampling</h1>
+<h2 id="过采样">过采样</h2>
+<p>好处：</p>
+<blockquote>
+<p>让稀有但重要能力获得足够训练曝光。</p>
+</blockquote>
+<p>风险：</p>
+<pre class="text"><code>同一文档被重复看到
+固定表达被过度记忆
+小桶更容易过拟合
+Benchmark近似样本风险被放大</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>D</mi><mi>u</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Oversampling
+=
+SignalAmplification
++
+DuplicateExposure
+}
+</annotation></semantics></math></p>
+<p>不能只看：</p>
+<blockquote>
+<p>“这个桶很重要，所以多抽。”</p>
+</blockquote>
+<p>还要看：</p>
+<blockquote>
+<p>它到底能承受多少重复曝光。</p>
+</blockquote>
+<hr />
+<h1
+id="九exposure专业分析必须看看过多少次不能只看采样比例">九、Exposure：专业分析必须看“看过多少次”，不能只看采样比例</h1>
+<p>假设某一桶：</p>
+<pre class="text"><code>Corpus Size
+=
+1B tokens</code></pre>
+<p>训练过程中从该桶累计抽取：</p>
+<pre class="text"><code>5B tokens</code></pre>
+<p>可以说：</p>
+<blockquote>
+<p>平均 Token Exposure 约为 5 次。</p>
+</blockquote>
+<p>概念化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><msub><mi>e</mi><mi>i</mi></msub><mo>=</mo><mfrac><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><msub><mi>s</mi><mi>i</mi></msub></mrow><mrow><mi>U</mi><mi>n</mi><mi>i</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><msub><mi>s</mi><mi>i</mi></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Exposure_i
+=
+\frac{SampledTokens_i}{UniqueTokens_i}
+</annotation></semantics></math></p>
+<p>这不是严格等同于传统 Epoch，</p>
+<p>因为：</p>
+<pre class="text"><code>随机采样
+Packing
+长文档切分
+去重策略</code></pre>
+<p>会让实际曝光更复杂。</p>
+<p>但它是非常重要的工程直觉：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>⇒</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingShare
++
+CorpusSize
+\Rightarrow
+Exposure
+}
+</annotation></semantics></math></p>
+<p>同样 10% Training Share，</p>
+<p>对 100M Token 小桶和 10B Token 大桶：</p>
+<blockquote>
+<p>重复强度完全不同。</p>
+</blockquote>
+<hr />
+<h1
+id="十核心心智模型-④training-share-必须和-unique-token-pool-一起看">十、核心心智模型
+④：Training Share 必须和 Unique Token Pool 一起看</h1>
+<p>假设：</p>
+<pre class="text"><code>法规桶
+1B unique tokens
+训练占比15%
+
+公告桶
+20B unique tokens
+训练占比20%</code></pre>
+<p>如果总训练量是：</p>
+<pre class="text"><code>100B tokens</code></pre>
+<p>那么法规桶大约被抽：</p>
+<pre class="text"><code>15B tokens</code></pre>
+<p>平均曝光约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>15</mn><mo>×</mo></mrow><annotation encoding="application/x-tex">
+15\times
+</annotation></semantics></math></p>
+<p>公告桶被抽：</p>
+<pre class="text"><code>20B tokens</code></pre>
+<p>平均曝光约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>×</mo></mrow><annotation encoding="application/x-tex">
+1\times
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameTrainingShare
+\neq
+SameExposure
+}
+</annotation></semantics></math></p>
+<p>这条极其重要。</p>
+<p>Data Mixture 设计时至少同时看：</p>
+<pre class="text"><code>Target Training Share
+Unique Token Pool
+Expected Exposure</code></pre>
+<hr />
+<h1 id="十一quality-weighting高质量数据应该获得更多权重吗">十一、Quality
+Weighting：高质量数据应该获得更多权重吗？</h1>
+<p>通常：</p>
+<blockquote>
+<p>可以考虑。</p>
+</blockquote>
+<p>但不能简单写成：</p>
+<pre class="text"><code>高质量
+→ 10倍权重</code></pre>
+<p>更合理的做法是：</p>
+<pre class="text"><code>先按Source / Type分桶
+
+再给每桶做质量分层
+
+High Quality
+高质量
+
+Medium Quality
+中等质量
+
+Low Quality
+低质量</code></pre>
+<p>然后：</p>
+<pre class="text"><code>Low Quality
+→ Remove / Downsample
+
+Medium Quality
+→ Normal Sampling
+
+High Quality
+→ Normal / Mild Upsampling</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>应</mi><mi>该</mi><mi>先</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>再</mi><mi>R</mi><mi>e</mi><mi>w</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualityWeighting
+应该先Filter
+再Reweight
+}
+</annotation></semantics></math></p>
+<p>坏数据不应该靠：</p>
+<blockquote>
+<p>“低一点权重”</p>
+</blockquote>
+<p>就无限保留。</p>
+<hr />
+<h1
+id="十二核心心智模型-⑤filter-和-weight-是两种不同工具">十二、核心心智模型
+⑤：Filter 和 Weight 是两种不同工具</h1>
+<h1 id="filter">Filter</h1>
+<h2 id="过滤">过滤</h2>
+<p>回答：</p>
+<blockquote>
+<p>这条数据有没有训练资格？</p>
+</blockquote>
+<h1 id="weight">Weight</h1>
+<h2 id="权重">权重</h2>
+<p>回答：</p>
+<blockquote>
+<p>有资格的数据，训练时应该出现多频繁？</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>l</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Eligibility
+\neq
+Priority
+}
+</annotation></semantics></math></p>
+<p>先判断：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>l</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>?</mi></mrow><annotation encoding="application/x-tex">
+Eligible?
+</annotation></semantics></math></p>
+<p>再判断：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>o</mi><mi>w</mi><mi>O</mi><mi>f</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>?</mi></mrow><annotation encoding="application/x-tex">
+HowOften?
+</annotation></semantics></math></p>
+<p>如果把这两步混在一起，</p>
+<p>容易出现：</p>
+<blockquote>
+<p>明明应该删除的低质数据，只是被“降权”保留。</p>
+</blockquote>
+<hr />
+<h1 id="十三domain-balance行业平衡不能只看行业-token-数">十三、Domain
+Balance：行业平衡不能只看行业 Token 数</h1>
+<p>假设行业 Corpus：</p>
+<pre class="text"><code>IT采购
+10B
+
+医疗
+2B
+
+工程
+1B
+
+物业
+1B
+
+检测
+0.5B</code></pre>
+<p>自然采样一定会让 IT 主导。</p>
+<p>但是否应该完全均匀成：</p>
+<pre class="text"><code>每个行业20%</code></pre>
+<p>也不一定。</p>
+<p>因为：</p>
+<pre class="text"><code>真实业务量不同
+语言复杂度不同
+目标用户分布不同
+行业风险不同</code></pre>
+<p>所以 Domain Balance 应该综合：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>p</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BusinessImportance
++
+DataQuality
++
+CoverageGap
++
+CorpusSize
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>“平均分”。</p>
+</blockquote>
+<hr />
+<h1 id="十四replay-mix为什么-cpt-里要混入通用语料">十四、Replay
+Mix：为什么 CPT 里要混入通用语料？</h1>
+<p>第 1 阶段我们已经知道：</p>
+<h1 id="catastrophic-forgetting-1">Catastrophic Forgetting</h1>
+<h2 id="灾难性遗忘-1">灾难性遗忘</h2>
+<p>如果训练几乎全部是采购文本，</p>
+<p>模型可能：</p>
+<pre class="text"><code>采购能力上涨
+通用能力下降</code></pre>
+<p>一种重要思路是：</p>
+<h1 id="replay">Replay</h1>
+<h2 id="通用语料回放">通用语料回放</h2>
+<p>即训练时保留一定比例：</p>
+<pre class="text"><code>高质量通用语言
+数学
+代码
+一般知识
+通用指令相关文本</code></pre>
+<p>作为：</p>
+<blockquote>
+<p>General Replay Corpus。</p>
+</blockquote>
+<p>于是 Mixture 可能从：</p>
+<pre class="text"><code>100% Procurement</code></pre>
+<p>变成：</p>
+<pre class="text"><code>80% Domain
+20% General Replay</code></pre>
+<p>具体比例不能凭感觉拍脑袋。</p>
+<p>但原则是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>需</mi><mi>要</mi><mi>和</mi><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>共</mi><mi>同</mi><mi>优</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DomainGain
+需要和
+GeneralRetention
+共同优化
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十五核心心智模型-⑥replay-不是浪费领域训练预算而是能力保险">十五、核心心智模型
+⑥：Replay 不是“浪费领域训练预算”，而是能力保险</h1>
+<p>直觉上很多人会觉得：</p>
+<blockquote>
+<p>“既然做 CPT，为什么还要喂模型通用数据？”</p>
+</blockquote>
+<p>因为 CPT 不是只追求：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+DomainScore\uparrow
+</annotation></semantics></math></p>
+<p>还要控制：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>↓</mo></mrow><annotation encoding="application/x-tex">
+GeneralScore\downarrow
+</annotation></semantics></math></p>
+<p>所以目标更像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mspace width="1.0em"></mspace><mi>S</mi><mi>u</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>T</mi><mi>o</mi><mspace width="1.0em"></mspace><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≤</mo><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MaximizeDomainGain
+\quad
+SubjectTo
+\quad
+GeneralRegression\leq Threshold
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>在通用能力退化不超过允许阈值的前提下，最大化领域收益。</strong></p>
+</blockquote>
+<p>Replay 是：</p>
+<blockquote>
+<p>Ability Retention Mechanism。</p>
+</blockquote>
+<p>这一点会在第 6 阶段深入展开。</p>
+<hr />
+<h1 id="十六mixture-不是一次设计完就不动">十六、Mixture
+不是一次设计完就不动</h1>
+<p>训练初期可能采用：</p>
+<pre class="text"><code>Domain 70%
+Replay 30%</code></pre>
+<p>中期发现：</p>
+<pre class="text"><code>领域Loss下降慢
+通用能力稳定</code></pre>
+<p>可能调整：</p>
+<pre class="text"><code>Domain 80%
+Replay 20%</code></pre>
+<p>反过来，</p>
+<p>如果通用能力快速下降：</p>
+<blockquote>
+<p>就需要提高 Replay。</p>
+</blockquote>
+<p>所以：</p>
+<h1 id="dynamic-mixture">Dynamic Mixture</h1>
+<h2 id="动态混合">动态混合</h2>
+<p>可以根据：</p>
+<pre class="text"><code>Domain Validation Loss
+
+General Validation Loss
+
+Forgetting Metrics
+
+Target Capability Metrics</code></pre>
+<p>进行阶段性调整。</p>
+<p>但必须注意：</p>
+<blockquote>
+<p>动态调整要版本化和可追踪。</p>
+</blockquote>
+<p>不能变成：</p>
+<blockquote>
+<p>训练中随手改参数，最后没人知道怎么训出来的。</p>
+</blockquote>
+<hr />
+<h1 id="十七curriculum-和-mixture-有什么区别">十七、Curriculum 和
+Mixture 有什么区别？</h1>
+<h1 id="mixture">Mixture</h1>
+<h2 id="数据混合">数据混合</h2>
+<p>回答：</p>
+<blockquote>
+<p>同一阶段，不同数据各占多少？</p>
+</blockquote>
+<h1 id="curriculum">Curriculum</h1>
+<h2 id="课程式训练">课程式训练</h2>
+<p>回答：</p>
+<blockquote>
+<p>不同训练阶段，数据难度或分布怎样变化？</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>阶段A
+高质量、通用采购语言
+
+阶段B
+复杂专业采购文档
+
+阶段C
+高难行业专项文本</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>=</mo><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Mixture
+=
+WithinStageDistribution
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>u</mi><mi>l</mi><mi>u</mi><mi>m</mi><mo>=</mo><mi>A</mi><mi>c</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Curriculum
+=
+AcrossStageSchedule
+}
+</annotation></semantics></math></p>
+<p>第 8 阶段会专门讲 Synthetic Data &amp; Curriculum。</p>
+<p>这里先锁死边界。</p>
+<hr />
+<h1 id="十八mixture-drift配置比例和真实训练比例可能不一样">十八、Mixture
+Drift：配置比例和真实训练比例可能不一样</h1>
+<p>你配置：</p>
+<pre class="text"><code>法规
+15%</code></pre>
+<p>不代表真正训练时一定就是：</p>
+<pre class="text"><code>15%</code></pre>
+<p>因为：</p>
+<pre class="text"><code>不同样本长度
+Packing
+Data Loader行为
+过滤
+失败重试
+Shard不均
+分布式Worker</code></pre>
+<p>都可能造成实际比例偏差。</p>
+<p>这叫：</p>
+<h1 id="mixture-drift">Mixture Drift</h1>
+<h2 id="混合分布漂移">混合分布漂移</h2>
+<p>所以必须记录：</p>
+<pre class="text"><code>Configured Share
+配置比例
+
+Observed Share
+实际比例
+
+Token Exposure
+真实Token曝光</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>g</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>M</mi><mi>i</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>M</mi><mi>i</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ConfiguredMixture
+\neq
+ObservedMixture
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十九核心心智模型-⑦按样本数采样和按token数采样不是一回事">十九、核心心智模型
+⑦：按“样本数”采样和按“Token数”采样不是一回事</h1>
+<p>假设：</p>
+<pre class="text"><code>公告平均
+800 tokens
+
+采购文件平均
+20000 tokens</code></pre>
+<p>如果按文档数：</p>
+<pre class="text"><code>各抽50%</code></pre>
+<p>实际 Token 比例可能完全不是：</p>
+<pre class="text"><code>50% : 50%</code></pre>
+<p>所以 Data Mixture 必须明确：</p>
+<pre class="text"><code>Document-level Sampling
+按文档采样
+
+Sequence-level Sampling
+按训练序列采样
+
+Token-level Target
+按Token曝光控制</code></pre>
+<p>CPT 真正影响梯度的更接近：</p>
+<blockquote>
+<p>Token / Sequence Exposure。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SampleShare
+\neq
+TokenShare
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十政府采购-cpt-第一版-mixture-应该怎样设计">二十、政府采购 CPT
+第一版 Mixture 应该怎样设计？</h1>
+<p>不是直接给一个“标准比例”。</p>
+<p>而是建立一张：</p>
+<h1 id="mixture-design-table">Mixture Design Table</h1>
+<h2 id="数据混合设计表">数据混合设计表</h2>
+<p>例如：</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 19%" />
+<col style="width: 14%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Bucket</th>
+<th>训练目标</th>
+<th style="text-align: right;">Unique Tokens</th>
+<th>质量</th>
+<th style="text-align: right;">Target Share</th>
+<th style="text-align: right;">Expected Exposure</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>法规规范</td>
+<td>规则语言</td>
+<td style="text-align: right;">2B</td>
+<td>高</td>
+<td style="text-align: right;">10%</td>
+<td style="text-align: right;">5x</td>
+</tr>
+<tr class="even">
+<td>采购文件</td>
+<td>文件结构与条款</td>
+<td style="text-align: right;">12B</td>
+<td>高</td>
+<td style="text-align: right;">30%</td>
+<td style="text-align: right;">2.5x</td>
+</tr>
+<tr class="odd">
+<td>公告</td>
+<td>生命周期表达</td>
+<td style="text-align: right;">20B</td>
+<td>中高</td>
+<td style="text-align: right;">15%</td>
+<td style="text-align: right;">0.75x</td>
+</tr>
+<tr class="even">
+<td>合同履约</td>
+<td>后半程能力</td>
+<td style="text-align: right;">5B</td>
+<td>高</td>
+<td style="text-align: right;">10%</td>
+<td style="text-align: right;">2x</td>
+</tr>
+<tr class="odd">
+<td>行业专项</td>
+<td>行业覆盖</td>
+<td style="text-align: right;">6B</td>
+<td>高</td>
+<td style="text-align: right;">15%</td>
+<td style="text-align: right;">2.5x</td>
+</tr>
+<tr class="even">
+<td>解释文本</td>
+<td>概念连接</td>
+<td style="text-align: right;">1B</td>
+<td>很高</td>
+<td style="text-align: right;">5%</td>
+<td style="text-align: right;">5x</td>
+</tr>
+<tr class="odd">
+<td>General Replay</td>
+<td>通用能力保持</td>
+<td style="text-align: right;">15B</td>
+<td>高</td>
+<td style="text-align: right;">15%</td>
+<td style="text-align: right;">1x</td>
+</tr>
+</tbody>
+</table>
+<p>这里的比例只是：</p>
+<blockquote>
+<p><strong>设计示例。</strong></p>
+</blockquote>
+<p>不是本课程给出的固定生产配方。</p>
+<p>真正比例必须通过：</p>
+<pre class="text"><code>Ablation
+消融实验
+
+Domain Eval
+领域评测
+
+General Regression
+通用能力回归
+
+Exposure Analysis
+曝光分析</code></pre>
+<p>共同确定。</p>
+<hr />
+<h1
+id="二十一ablation为什么-mixture-需要实验而不是专家拍比例">二十一、Ablation：为什么
+Mixture 需要实验，而不是专家拍比例？</h1>
+<p>假设有三种方案：</p>
+<pre class="text"><code>Mix A
+90% Domain / 10% Replay
+
+Mix B
+80% Domain / 20% Replay
+
+Mix C
+70% Domain / 30% Replay</code></pre>
+<p>分别做小规模 Pilot Run：</p>
+<pre class="text"><code>固定Base Model
+固定Tokenizer
+固定Corpus Version
+固定Token Budget
+只改变Mixture</code></pre>
+<p>然后比较：</p>
+<pre class="text"><code>Domain PPL
+
+Domain Probe
+
+Downstream SFT Result
+
+General Regression
+
+Training Stability</code></pre>
+<p>这样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>来</mi><mi>自</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MixtureDecision
+来自
+ControlledExperiment
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<blockquote>
+<p>“20% Replay 听起来差不多。”</p>
+</blockquote>
+<hr />
+<h1
+id="二十二训练预算固定时mixture-本质上是在做资源分配">二十二、训练预算固定时，Mixture
+本质上是在做资源分配</h1>
+<p>假设总 CPT Budget：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>100</mn><mi>B</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+B=100B\ tokens
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>B</mi><mi>i</mi></msub><mo>=</mo><msub><mi>p</mi><mi>i</mi></msub><mi>B</mi></mrow><annotation encoding="application/x-tex">
+B_i
+=
+p_iB
+</annotation></semantics></math></p>
+<p>每个数据桶获得：</p>
+<blockquote>
+<p>一个固定的训练 Token 预算。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MixtureDesign
+=
+TrainingBudgetAllocation
+}
+</annotation></semantics></math></p>
+<p>换句话说：</p>
+<blockquote>
+<p>给法规多 5B Token，就意味着别的桶少 5B Token。</p>
+</blockquote>
+<p>Data Mixture 是：</p>
+<blockquote>
+<p><strong>有限训练预算下的能力投资组合。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十三本阶段正式工程产物procurementcptmixturepolicy_v0.1">二十三、本阶段正式工程产物：<code>ProcurementCPTMixturePolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>mixture_policy_version
+
+bucket_schema
+
+bucket_definition
+
+capability_mapping
+
+unique_token_count
+
+raw_corpus_share
+
+quality_level
+
+target_training_share
+
+sampling_method
+
+temperature_alpha
+
+oversampling_limit
+
+undersampling_policy
+
+expected_exposure
+
+max_exposure
+
+general_replay_share
+
+replay_source
+
+document_sampling_policy
+
+sequence_sampling_policy
+
+token_share_target
+
+configured_share
+
+observed_share
+
+mixture_drift_threshold
+
+ablation_plan
+
+rebalance_trigger
+
+trace_logging
+=
+enabled</code></pre>
+<p>每次训练至少记录：</p>
+<pre class="text"><code>run_id
+
+bucket_id
+
+configured_sampling_weight
+
+sampled_documents
+
+sampled_sequences
+
+sampled_tokens
+
+unique_tokens
+
+estimated_exposure
+
+observed_token_share
+
+quality_distribution
+
+replay_share
+
+mixture_adjustment
+
+adjustment_reason</code></pre>
+<p>这样以后才能回答：</p>
+<blockquote>
+<p><strong>这个模型到底是被什么数据分布训练出来的？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四本阶段最重要的-8-个核心心智模型">二十四、本阶段最重要的 8
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>CorpusShare ≠ TrainingShare</code>。原始数据占比只是“你有什么”，训练占比才决定“模型实际看什么”。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>SamplingPolicy = GradientAllocationPolicy</code>。采样策略本质上是在给不同能力分配训练梯度。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>Oversampling = SignalAmplification + DuplicateExposure</code>。过采样能强化稀有能力，也会放大重复和过拟合风险。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>SameTrainingShare ≠ SameExposure</code>。同样的训练占比，对不同大小的
+Unique Token Pool 会产生完全不同的重复曝光。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑤：<code>Eligibility ≠ Priority</code>。Filter
+决定能不能训练，Weight 决定有资格的数据训练多频繁。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑥：<code>Replay ≠ Waste</code>。通用语料回放不是浪费
+CPT 预算，而是在为通用能力做保险。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>ConfiguredMixture ≠ ObservedMixture</code>。真正训练分布必须从
+Data Loader 和 Token Exposure 实测，而不能只看配置文件。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>MixtureDesign = TrainingBudgetAllocation</code>。总 Token
+Budget
+固定时，每提高一类数据的训练份额，都意味着减少另一类数据的训练资源。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十五把完整-data-mixture-流程压成一张专业工程图">二十五、把完整
+Data Mixture 流程压成一张专业工程图</h1>
+<pre class="text"><code>                       CPT Corpus
+                    已治理领域语料
+                          │
+                          ▼
+                    Bucketization
+                 按来源/类型/行业分桶
+                          │
+                          ▼
+                  Capability Mapping
+               映射每桶支持哪些能力
+                          │
+                          ▼
+                    Corpus Statistics
+          统计Unique Tokens / Raw Share / Quality
+                          │
+                          ▼
+                  Target Mixture Design
+                  设计目标训练分布
+            ┌─────────────┼─────────────┐
+            ▼             ▼             ▼
+        Quality Weight  Domain Balance  General Replay
+          质量权重        领域平衡        通用回放
+            │             │             │
+            └─────────────┼─────────────┘
+                          ▼
+                  Sampling Weights
+                    计算采样权重
+                          │
+                          ▼
+                 Exposure Simulation
+              训练前模拟重复曝光强度
+                          │
+                          ▼
+                    Train-time Sampler
+                     训练时真实采样
+                          │
+                          ▼
+                   Observed Mixture
+                 统计真实Token占比
+                          │
+                          ▼
+              Domain + General Evaluation
+                 领域与通用能力评测
+                          │
+                          ▼
+                    Rebalance / Lock
+                     调整或冻结比例</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Data Mixture 的本质不是“把各种数据搅在一起”，而是在有限 Token
+Budget
+下，主动决定不同领域、不同质量和通用回放数据分别获得多少训练曝光，从而设计模型最终的能力分布。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第八课-第-5-阶段掌握测试">第八课 · 第 5 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Corpus Share 不等于 Training
+Share；为什么 Sampling Policy 本质上是 Gradient Allocation
+Policy；Weighted Sampling 的基本逻辑是什么；Natural Sampling
+为什么容易让大数据桶统治训练；Temperature Sampling
+怎样压缩规模差距；Oversampling 为什么同时强化信号和重复风险；Exposure
+为什么比单纯 Training Share 更重要；为什么同样 10% Training Share
+在大小不同的数据桶上会产生不同曝光；Quality Filter 和 Quality Weight
+有什么区别；为什么行业平衡不能简单平均分；Replay Mix
+为什么能帮助保持通用能力；为什么 Replay 不等于浪费领域训练预算；Mixture
+和 Curriculum 有什么区别；Mixture Drift 为什么会发生；为什么文档占比和
+Token 占比不是一回事；Mixture Design Table
+应该记录哪些信息；为什么比例必须通过 Ablation 实验验证；以及为什么在固定
+Token Budget 下，Data Mixture 本质上就是训练资源分配。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mi>第</mi><mn>5</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课第5阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第八课-第-6-阶段">下一阶段：第八课 · 第 6 阶段</h1>
+<h1
+id="catastrophic-forgetting为什么模型学会领域知识以后反而可能忘掉原来的能力">Catastrophic
+Forgetting：为什么模型学会领域知识以后，反而可能忘掉原来的能力？</h1>
+<h2
+id="cpt-的真正难点不是领域能力能不能涨而是涨了以后有没有把模型其他能力一起弄坏">CPT
+的真正难点不是“领域能力能不能涨”，而是“涨了以后有没有把模型其他能力一起弄坏”。</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Catastrophic Forgetting
+灾难性遗忘
+
+General Capability Regression
+通用能力回归
+
+Domain-General Tradeoff
+领域-通用权衡
+
+Replay
+通用语料回放
+
+Learning Rate
+学习率影响
+
+Training Duration
+训练时长
+
+Parameter Drift
+参数漂移
+
+Capability Retention
+能力保持
+
+Forgetting Curve
+遗忘曲线
+
+Regression Benchmark
+回归测试集</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementcptforgettingpolicy_v0.1"><code>ProcurementCPTForgettingPolicy_V0.1</code></h1>
+<p>下一阶段最重要的一条边界会是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>≠</mo><mi>N</mi><mi>e</mi><mi>t</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DomainGain
+\neq
+NetModelGain
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>采购能力涨了 10 分，如果通用能力掉了 20 分，这次 CPT
+仍然可能是失败的。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

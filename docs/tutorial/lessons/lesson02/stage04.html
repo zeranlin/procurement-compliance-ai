@@ -1,0 +1,2072 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第2课 · 第4阶段：Forward Propagation——一条政府采购样本到底如何从输入开始，逐层穿过整个神经网络，最终变成一个风险概率</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第2课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>解释 Transformer/LLM 内部机制，定位 Attention、Token、KV Cache 等架构问题。<ul><li>Forward Propagation = 在固定参数下把输入逐层变成输出；Forward 本身不等于学习。</li><li>每一层都同时有“数值”和“Shape”，Shape 跟错会直接导致矩阵运算或后续层语义出错。</li><li>Logit 是模型原始打分，Probability 是经过 Sigmoid/Softmax 等变换后的分数，Business Decision 还要再经过 Threshold。</li></ul></div><h1
+id="第二课-第-4-阶段forward-propagation一条政府采购样本到底如何从输入开始逐层穿过整个神经网络最终变成一个风险概率">第二课
+· 第 4 阶段：Forward
+Propagation——一条政府采购样本到底如何从输入开始，逐层穿过整个神经网络，最终变成一个风险概率</h1>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Forward Propagation =
+在固定参数下把输入逐层变成输出；Forward 本身不等于学习。</strong></li>
+<li><strong>每一层都同时有“数值”和“Shape”，Shape
+跟错会直接导致矩阵运算或后续层语义出错。</strong></li>
+<li><strong>Logit 是模型原始打分，Probability 是经过 Sigmoid/Softmax
+等变换后的分数，Business Decision 还要再经过 Threshold。</strong></li>
+<li><strong>同一个输入和同一组参数下，Forward
+应是可重复的计算过程；训练发生在后续 Loss、Backward 和 Optimizer
+Step。</strong></li>
+<li><strong>理解 Forward 的关键不是背每个矩阵，而是能追踪：输入表示 →
+中间表示 → 输出分数。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Forward Propagation</code></td>
+<td>前向传播：输入逐层计算直到得到预测</td>
+</tr>
+<tr class="even">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="odd">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>PyTorch</code></td>
+<td>PyTorch：张量计算、自动求导和训练/推理框架</td>
+</tr>
+<tr class="odd">
+<td><code>Backpropagation</code></td>
+<td>反向传播：把最终损失沿计算图反向分配到参数</td>
+</tr>
+<tr class="even">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="odd">
+<td><code>dtype</code></td>
+<td>数据类型：FP32/FP16/BF16 等，影响显存、速度和数值稳定性</td>
+</tr>
+<tr class="even">
+<td><code>BF16</code></td>
+<td>BF16：保留较大指数范围的 16 位浮点，常用于大模型</td>
+</tr>
+<tr class="odd">
+<td><code>Optimizer</code></td>
+<td>优化器：依据梯度规则更新参数</td>
+</tr>
+<tr class="even">
+<td><code>Inference</code></td>
+<td>推理：系统接收请求并产生结果的在线计算过程</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前三阶段，我们已经拿到了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>z</mi><mo>=</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+z=WX+b
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>h</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+h=f(z)
+}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>X</mi><mo>→</mo><msub><mi>H</mi><mn>1</mn></msub><mo>→</mo><msub><mi>H</mi><mn>2</mn></msub><mo>→</mo><mi>Y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+X\rightarrow H_1\rightarrow H_2\rightarrow Y
+}
+</annotation></semantics></math></p>
+<p>但我们还没有把一条样本从头到尾真正“跑一遍”。</p>
+<p>这一阶段要解决的，就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>a</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward\ Propagation
+}
+</annotation></semantics></math></p>
+<p>前向传播。</p>
+<hr />
+<h2 id="什么叫-forward-propagation">1. 什么叫 Forward Propagation？</h2>
+<p>最直接的定义：</p>
+<blockquote>
+<p><strong>把输入送入模型，按照网络结构从第一层一直计算到最后一层，得到模型输出。</strong></p>
+</blockquote>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>→</mo><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><msub><mi>r</mi><mn>1</mn></msub><mo>→</mo><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><msub><mi>r</mi><mn>2</mn></msub><mo>→</mo><mi>⋯</mi><mo>→</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Input
+\rightarrow
+Layer_1
+\rightarrow
+Layer_2
+\rightarrow
+\cdots
+\rightarrow
+Output
+}
+</annotation></semantics></math></p>
+<p>这个过程就叫：</p>
+<h1 id="forward-pass">Forward Pass</h1>
+<p>或者：</p>
+<h1 id="forward-propagation">Forward Propagation</h1>
+<hr />
+<h2 id="为什么叫forward">2. 为什么叫“Forward”？</h2>
+<p>因为信息流动方向是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+X
+\rightarrow
+Prediction
+</annotation></semantics></math></p>
+<p>从输入：</p>
+<blockquote>
+<p>向输出方向走。</p>
+</blockquote>
+<p>以后 Backpropagation：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Loss
+\rightarrow
+Parameters
+</annotation></semantics></math></p>
+<p>则沿计算关系：</p>
+<blockquote>
+<p>从后往前计算梯度。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>=</mo><mi>算</mi><mi>答</mi><mi>案</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward
+=
+算答案
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>=</mo><mi>算</mi><mi>责</mi><mi>任</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backward
+=
+算责任
+}
+</annotation></semantics></math></p>
+<p>这个直觉非常重要。</p>
+<hr />
+<h2 id="先看完整训练链">3. 先看完整训练链</h2>
+<p>第一课我们反复看到：</p>
+<pre class="text"><code>Batch
+↓
+Forward
+↓
+Loss
+↓
+Backward
+↓
+Optimizer
+↓
+Update</code></pre>
+<p>现在第二课开始拆其中的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward
+}
+</annotation></semantics></math></p>
+<p>到底发生了什么。</p>
+<hr />
+<h2 id="一个最简单的两层网络">4. 一个最简单的两层网络</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">
+X
+</annotation></semantics></math></p>
+<p>进入第一层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>=</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+z_1=W_1X+b_1
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=ReLU(z_1)
+</annotation></semantics></math></p>
+<p>再进入输出层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>h</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+z_2=W_2h_1+b_2
+</annotation></semantics></math></p>
+<p>最后二分类：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(z_2)
+</annotation></semantics></math></p>
+<p>完整：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>2</mn></msub><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+p
+=
+\sigma(
+W_2ReLU(W_1X+b_1)+b_2
+)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="forward-就是在真正执行这个公式">5. Forward
+就是在真正执行这个公式</h2>
+<p>不是一次性“神奇算出”。</p>
+<p>而是按照顺序：</p>
+<pre class="text"><code>X
+↓
+W1X + b1
+↓
+z1
+↓
+ReLU
+↓
+h1
+↓
+W2h1 + b2
+↓
+z2
+↓
+Sigmoid
+↓
+p</code></pre>
+<p>每一步都有：</p>
+<blockquote>
+<p>输入。</p>
+</blockquote>
+<p>每一步都有：</p>
+<blockquote>
+<p>输出。</p>
+</blockquote>
+<hr />
+<h2 id="第一个核心心智模型-3">6. 第一个核心心智模型</h2>
+<h3 id="心智模型-①forward-是模型当前知识的一次执行">心智模型 ①：Forward
+是“模型当前知识的一次执行”</h3>
+<p>训练好的参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>,</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+W,b
+</annotation></semantics></math></p>
+<p>可以理解成：</p>
+<blockquote>
+<p>模型已经学到的长期状态。</p>
+</blockquote>
+<p>输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">
+X
+</annotation></semantics></math></p>
+<p>进入后：</p>
+<blockquote>
+<p>参数开始对这个具体案例进行计算。</p>
+</blockquote>
+<p>最后产生：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Prediction
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>=</mo><mi>用</mi><mi>当</mi><mi>前</mi><mi>参</mi><mi>数</mi><mi>处</mi><mi>理</mi><mi>当</mi><mi>前</mi><mi>输</mi><mi>入</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward
+=
+用当前参数处理当前输入
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="forward-本身不会修改参数">7. Forward 本身不会修改参数</h2>
+<p>这是非常重要的一点。</p>
+<p>前向计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+W_1X+b_1
+</annotation></semantics></math></p>
+<p>只是：</p>
+<blockquote>
+<p>使用
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mn>1</mn></msub><annotation encoding="application/x-tex">W_1</annotation></semantics></math>。</p>
+</blockquote>
+<p>并不会自动改变：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+W_1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>d</mi><mi>o</mi><mi>e</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>n</mi><mi>o</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>l</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward\ does\ not\ learn
+}
+</annotation></semantics></math></p>
+<p>学习发生在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>+</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>e</mi><mi>p</mi></mrow><annotation encoding="application/x-tex">
+Backward + OptimizerStep
+</annotation></semantics></math></p>
+<p>之后。</p>
+<hr />
+<h2 id="推理时其实主要就是-forward">8. 推理时其实主要就是 Forward</h2>
+<p>模型上线以后：</p>
+<p>用户输入：</p>
+<blockquote>
+<p>一份采购文件。</p>
+</blockquote>
+<p>系统：</p>
+<pre class="text"><code>Input
+↓
+Forward
+↓
+Prediction</code></pre>
+<p>通常不会：</p>
+<pre class="text"><code>Backward
+↓
+Update Parameters</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>主</mi><mi>要</mi><mi>就</mi><mi>是</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Inference
+主要就是Forward
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="训练为什么也需要-forward">9. 训练为什么也需要 Forward？</h2>
+<p>因为你必须先知道：</p>
+<blockquote>
+<p>模型当前预测了什么。</p>
+</blockquote>
+<p>才能计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Loss
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p>真实：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+y=1
+</annotation></semantics></math></p>
+<p>Forward：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.23</mn></mrow><annotation encoding="application/x-tex">
+p=0.23
+</annotation></semantics></math></p>
+<p>然后才知道：</p>
+<blockquote>
+<p>错得很厉害。</p>
+</blockquote>
+<p>所以训练一定先：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Forward
+</annotation></semantics></math></p>
+<p>再：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Loss
+</annotation></semantics></math></p>
+<hr />
+<h2 id="今天第一次正式引入-tensor">10. 今天第一次正式引入 Tensor</h2>
+<p>深度学习代码里最常出现的一个词：</p>
+<h1 id="tensor">Tensor</h1>
+<p>张量。</p>
+<p>你以后几乎每天都会看到。</p>
+<hr />
+<h2 id="scalar-是什么">11. Scalar 是什么？</h2>
+<p>一个数字：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3.7</mn><annotation encoding="application/x-tex">
+3.7
+</annotation></semantics></math></p>
+<p>叫：</p>
+<h1 id="scalar">Scalar</h1>
+<p>标量。</p>
+<p>Shape 可以理解为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+()
+</annotation></semantics></math></p>
+<hr />
+<h2 id="vector-是什么">12. Vector 是什么？</h2>
+<p>一维数组：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>0.2</mn><mo>,</mo><mn>0.7</mn><mo>,</mo><mn>0.9</mn><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+X=
+[0.2,0.7,0.9]
+</annotation></semantics></math></p>
+<p>叫：</p>
+<h1 id="vector">Vector</h1>
+<p>向量。</p>
+<p>Shape：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>3</mn><mo>,</mo><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(3,)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="matrix-是什么">13. Matrix 是什么？</h2>
+<p>二维数字表：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>2</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>3</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>4</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>5</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>6</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+W=
+\begin{bmatrix}
+1&amp;2&amp;3\\
+4&amp;5&amp;6
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>Shape：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>2</mn><mo>,</mo><mn>3</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(2,3)
+</annotation></semantics></math></p>
+<p>叫：</p>
+<h1 id="matrix">Matrix</h1>
+<p>矩阵。</p>
+<hr />
+<h2 id="tensor-又是什么">14. Tensor 又是什么？</h2>
+<p>Tensor 可以把它理解为：</p>
+<blockquote>
+<p><strong>更一般化的多维数字数组。</strong></p>
+</blockquote>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>768</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(32,768)
+</annotation></semantics></math></p>
+<p>二维 Tensor。</p>
+<p>或者：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>8</mn><mo>,</mo><mn>2048</mn><mo>,</mo><mn>4096</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(8,2048,4096)
+</annotation></semantics></math></p>
+<p>三维 Tensor。</p>
+<p>甚至：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><mi>H</mi><mo>,</mo><mi>S</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(B,H,S,D)
+</annotation></semantics></math></p>
+<p>四维 Tensor。</p>
+<hr />
+<h2 id="为什么不用一直说-matrix">15. 为什么不用一直说 Matrix？</h2>
+<p>因为真实深度学习数据经常：</p>
+<blockquote>
+<p>不止两维。</p>
+</blockquote>
+<p>例如 Transformer：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>×</mo><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>×</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Batch
+\times
+Sequence
+\times
+Hidden
+</annotation></semantics></math></p>
+<p>所以需要更一般的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>o</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tensor
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="tensor-有几个核心属性">16. Tensor 有几个核心属性？</h2>
+<p>以后你看到一个 Tensor，要习惯问：</p>
+<ol type="1">
+<li>Shape 是什么？</li>
+<li>Dtype 是什么？</li>
+<li>Device 在哪里？</li>
+<li>数值代表什么？</li>
+</ol>
+<p>这四个问题非常重要。</p>
+<hr />
+<h2 id="shape-1">17. Shape</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mi>.</mi><mi>s</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>768</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+X.shape=(32,768)
+</annotation></semantics></math></p>
+<p>意味着：</p>
+<pre class="text"><code>32 个样本
+×
+每个样本 768 个数字</code></pre>
+<hr />
+<h2 id="dtype">18. Dtype</h2>
+<p>例如：</p>
+<ul>
+<li>FP32</li>
+<li>FP16</li>
+<li>BF16</li>
+<li>INT8</li>
+</ul>
+<p>代表：</p>
+<blockquote>
+<p>数字用什么精度存储。</p>
+</blockquote>
+<p>以后训练大模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>F</mi><mn>16</mn></mrow><annotation encoding="application/x-tex">
+BF16
+</annotation></semantics></math></p>
+<p>会非常常见。</p>
+<hr />
+<h2 id="device">19. Device</h2>
+<p>Tensor 可能在：</p>
+<pre class="text"><code>CPU</code></pre>
+<p>或者：</p>
+<pre class="text"><code>GPU</code></pre>
+<p>例如 PyTorch 里常见：</p>
+<div class="sourceCode" id="cb79"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a>x.device</span></code></pre></div>
+<p>如果：</p>
+<blockquote>
+<p>模型参数在 GPU，输入却在 CPU，</p>
+</blockquote>
+<p>通常不能直接计算。</p>
+<hr />
+<h2 id="第二个核心心智模型-3">20. 第二个核心心智模型</h2>
+<h3
+id="心智模型-②深度学习程序本质是在让-tensor-不断改变-shape-和数值">心智模型
+②：深度学习程序本质是在让 Tensor 不断改变 Shape 和数值</h3>
+<p>例如：</p>
+<pre class="text"><code>(32, 20)
+↓ Linear
+(32, 64)
+↓ ReLU
+(32, 64)
+↓ Linear
+(32, 1)
+↓ Sigmoid
+(32, 1)</code></pre>
+<p>Forward 不只是：</p>
+<blockquote>
+<p>数学公式。</p>
+</blockquote>
+<p>还可以理解成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>o</mi><mi>r</mi><mspace width="0.222em"></mspace><mi>T</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>s</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tensor\ Transformation
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="现在做一次真正完整的数值-forward">21. 现在做一次真正完整的数值
+Forward</h2>
+<p>我们不再只说概念。</p>
+<p>假设一个政府采购风险模型输入只有两个 Feature：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>1</mn></msub><mo>=</mo><mtext mathvariant="normal">竞争限制程度</mtext></mrow><annotation encoding="application/x-tex">
+x_1=\text{竞争限制程度}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>2</mn></msub><mo>=</mo><mtext mathvariant="normal">业务必要性程度</mtext></mrow><annotation encoding="application/x-tex">
+x_2=\text{业务必要性程度}
+</annotation></semantics></math></p>
+<p>输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0.8</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.3</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+X=
+\begin{bmatrix}
+0.8\\
+0.3
+\end{bmatrix}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第一层有三个神经元">22. 第一层有三个神经元</h2>
+<p>网络：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mo>→</mo><mn>3</mn><mo>→</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+2
+\rightarrow
+3
+\rightarrow
+1
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<pre class="text"><code>Input: 2
+Hidden: 3
+Output: 1</code></pre>
+<hr />
+<h2 id="第一层权重">23. 第一层权重</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1.0</mn></mtd><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>0.5</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.4</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>0.8</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>0.7</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>1.2</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+W_1=
+\begin{bmatrix}
+1.0&amp;-0.5\\
+0.4&amp;0.8\\
+-0.7&amp;1.2
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>Shape：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>3</mn><mo>,</mo><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(3,2)
+</annotation></semantics></math></p>
+<p>为什么？</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mi>维</mi><mi>输</mi><mi>入</mi><mo>→</mo><mn>3</mn><mi>维</mi><mi>输</mi><mi>出</mi></mrow><annotation encoding="application/x-tex">
+2维输入
+\rightarrow
+3维输出
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第一层-bias">24. 第一层 Bias</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0.1</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>0.2</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.3</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+b_1=
+\begin{bmatrix}
+0.1\\
+-0.2\\
+0.3
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>Shape：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>3</mn><mo>,</mo><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(3,)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="先计算第一个-hidden-neuron">25. 先计算第一个 Hidden Neuron</h2>
+<p>第一行：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mn>1</mn><mo>,</mo><mn>1</mn></mrow></msub><mo>=</mo><mn>1.0</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.8</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>0.5</mn><mo stretchy="true" form="postfix">)</mo></mrow><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.3</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mn>0.1</mn></mrow><annotation encoding="application/x-tex">
+z_{1,1}
+=
+1.0(0.8)
++
+(-0.5)(0.3)
++
+0.1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.8</mn><mo>−</mo><mn>0.15</mn><mo>+</mo><mn>0.1</mn></mrow><annotation encoding="application/x-tex">
+0.8-0.15+0.1
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mn>0.75</mn></menclose><annotation encoding="application/x-tex">
+\boxed{
+0.75
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第二个神经元">26. 第二个神经元</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mn>1</mn><mo>,</mo><mn>2</mn></mrow></msub><mo>=</mo><mn>0.4</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.8</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mn>0.8</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.3</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mn>0.2</mn></mrow><annotation encoding="application/x-tex">
+z_{1,2}
+=
+0.4(0.8)
++
+0.8(0.3)
+-0.2
+</annotation></semantics></math></p>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.32</mn><mo>+</mo><mn>0.24</mn><mo>−</mo><mn>0.2</mn></mrow><annotation encoding="application/x-tex">
+0.32+0.24-0.2
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mn>0.36</mn></menclose><annotation encoding="application/x-tex">
+\boxed{
+0.36
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第三个神经元">27. 第三个神经元</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mn>1</mn><mo>,</mo><mn>3</mn></mrow></msub><mo>=</mo><mi>−</mi><mn>0.7</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.8</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mn>1.2</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.3</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mn>0.3</mn></mrow><annotation encoding="application/x-tex">
+z_{1,3}
+=
+-0.7(0.8)
++
+1.2(0.3)
++
+0.3
+</annotation></semantics></math></p>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.56</mn><mo>+</mo><mn>0.36</mn><mo>+</mo><mn>0.3</mn></mrow><annotation encoding="application/x-tex">
+-0.56+0.36+0.3
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mn>0.10</mn></menclose><annotation encoding="application/x-tex">
+\boxed{
+0.10
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以第一层-linear-输出">28. 所以第一层 Linear 输出</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0.75</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.36</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.10</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+z_1=
+\begin{bmatrix}
+0.75\\
+0.36\\
+0.10
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mi>维</mi></mrow><annotation encoding="application/x-tex">
+2维
+</annotation></semantics></math></p>
+<p>变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3</mn><mi>维</mi></mrow><annotation encoding="application/x-tex">
+3维
+</annotation></semantics></math></p>
+<hr />
+<h2 id="然后经过-relu">29. 然后经过 ReLU</h2>
+<p>因为三个数都大于 0：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><msub><mi>z</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+ReLU(z_1)=z_1
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0.75</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.36</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.10</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=
+\begin{bmatrix}
+0.75\\
+0.36\\
+0.10
+\end{bmatrix}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果第三个值原来是--0.10-呢">30. 如果第三个值原来是 -0.10
+呢？</h2>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>0.10</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+ReLU(-0.10)=0
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>0.75</mn><mo>,</mo><mn>0.36</mn><mo>,</mo><mn>0</mn><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=
+[
+0.75,
+0.36,
+0
+]
+</annotation></semantics></math></p>
+<p>这就是 Activation：</p>
+<blockquote>
+<p>真正改变表示。</p>
+</blockquote>
+<hr />
+<h2 id="hidden-state-是什么">31. Hidden State 是什么？</h2>
+<p>现在这个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>h</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+h_1
+</annotation></semantics></math></p>
+<p>就是：</p>
+<h1 id="hidden-state">Hidden State</h1>
+<p>或者：</p>
+<h1 id="hidden-representation">Hidden Representation</h1>
+<p>它不是最终答案。</p>
+<p>它是：</p>
+<blockquote>
+<p>网络处理完第一层以后，对这个采购案例形成的内部数字表示。</p>
+</blockquote>
+<hr />
+<h2 id="再进入输出层">32. 再进入输出层</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mn>2</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1.2</mn></mtd><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>0.8</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>0.5</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+W_2=
+\begin{bmatrix}
+1.2&amp;-0.8&amp;0.5
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>Bias：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mn>2</mn></msub><mo>=</mo><mi>−</mi><mn>0.4</mn></mrow><annotation encoding="application/x-tex">
+b_2=-0.4
+</annotation></semantics></math></p>
+<hr />
+<h2 id="输出-logit">33. 输出 Logit</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><mn>1.2</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.75</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mn>0.8</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.36</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mn>0.5</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.10</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mn>0.4</mn></mrow><annotation encoding="application/x-tex">
+z_2
+=
+1.2(0.75)
+-0.8(0.36)
++
+0.5(0.10)
+-0.4
+</annotation></semantics></math></p>
+<p>计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.90</mn><mo>−</mo><mn>0.288</mn><mo>+</mo><mn>0.05</mn><mo>−</mo><mn>0.4</mn></mrow><annotation encoding="application/x-tex">
+0.90-0.288+0.05-0.4
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><mn>0.262</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+z_2=0.262
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这个-0.262-还是-logit">34. 这个 0.262 还是 Logit</h2>
+<p>它还不是：</p>
+<blockquote>
+<p>26.2% 风险。</p>
+</blockquote>
+<p>这是第一课已经学过的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawScore
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="经过-sigmoid">35. 经过 Sigmoid</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0.262</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(0.262)
+</annotation></semantics></math></p>
+<p>大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>p</mi><mo>≈</mo><mn>0.565</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+p\approx0.565
+}
+</annotation></semantics></math></p>
+<p>于是模型：</p>
+<blockquote>
+<p>当前给出约 0.565 的风险分数。</p>
+</blockquote>
+<hr />
+<h2 id="完整-forward-链已经出现">36. 完整 Forward 链已经出现</h2>
+<pre class="text"><code>X
+[0.8, 0.3]
+
+↓
+
+Linear 1
+
+↓
+
+z1
+[0.75, 0.36, 0.10]
+
+↓
+
+ReLU
+
+↓
+
+h1
+[0.75, 0.36, 0.10]
+
+↓
+
+Linear 2
+
+↓
+
+z2
+0.262
+
+↓
+
+Sigmoid
+
+↓
+
+p
+0.565</code></pre>
+<p>这就是一个完整的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>P</mi><mi>a</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ForwardPass
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第三个核心心智模型-3">37. 第三个核心心智模型</h2>
+<h3
+id="心智模型-③每一个-forward-都是在逐层构造当前案例的内部状态">心智模型
+③：每一个 Forward 都是在逐层构造“当前案例的内部状态”</h3>
+<p>不是参数直接：</p>
+<blockquote>
+<p>查出一个答案。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">
+X
+</annotation></semantics></math></p>
+<p>经过层层计算，形成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mn>1</mn></msub><mo>,</mo><msub><mi>H</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi></mrow><annotation encoding="application/x-tex">
+H_1,H_2,\ldots
+</annotation></semantics></math></p>
+<p>最后才得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Prediction
+</annotation></semantics></math></p>
+<hr />
+<h2 id="参数和-activation-再区分一次">38. 参数和 Activation
+再区分一次</h2>
+<p>权重：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mn>1</mn></msub><mo>,</mo><msub><mi>W</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+W_1,W_2
+</annotation></semantics></math></p>
+<p>Bias：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mn>1</mn></msub><mo>,</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+b_1,b_2
+</annotation></semantics></math></p>
+<p>是：</p>
+<h1 id="parameters">Parameters</h1>
+<p>参数。</p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>,</mo><msub><mi>h</mi><mn>1</mn></msub><mo>,</mo><msub><mi>z</mi><mn>2</mn></msub><mo>,</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">
+z_1,h_1,z_2,p
+</annotation></semantics></math></p>
+<p>是：</p>
+<blockquote>
+<p>当前 Forward 中生成的中间值。</p>
+</blockquote>
+<hr />
+<h2 id="参数跨样本共享">39. 参数跨样本共享</h2>
+<p>换另一个采购案例：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mi>′</mi></mrow><annotation encoding="application/x-tex">
+X&#39;
+</annotation></semantics></math></p>
+<p>仍然使用同一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mn>1</mn></msub><mo>,</mo><msub><mi>W</mi><mn>2</mn></msub><mo>,</mo><msub><mi>b</mi><mn>1</mn></msub><mo>,</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+W_1,W_2,b_1,b_2
+</annotation></semantics></math></p>
+<p>但会得到不同：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mi>′</mi></mrow><annotation encoding="application/x-tex">
+h_1&#39;
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>r</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>s</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Parameters\ are\ shared
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>r</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>i</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>−</mo><mi>d</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Activations\ are\ input-dependent
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这也是模型能力和当前状态的区别">40.
+这也是“模型能力”和“当前状态”的区别</h2>
+<p>模型能力：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>比较固定。</p>
+<p>当前案例的计算状态：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>H</mi><annotation encoding="application/x-tex">
+H
+</annotation></semantics></math></p>
+<p>随着输入变化。</p>
+<p>这会一直延伸到 LLM。</p>
+<hr />
+<h2 id="一条样本算一次很慢怎么办">41. 一条样本算一次很慢怎么办？</h2>
+<p>真实训练不会：</p>
+<blockquote>
+<p>一条一条手工算。</p>
+</blockquote>
+<p>我们会一次处理：</p>
+<h1 id="batch">Batch</h1>
+<hr />
+<h2 id="假设有-4-条采购样本">42. 假设有 4 条采购样本</h2>
+<p>每条有两个 Feature。</p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0.8</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>0.3</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.2</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>0.9</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.7</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>0.1</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.4</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>0.6</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+X=
+\begin{bmatrix}
+0.8&amp;0.3\\
+0.2&amp;0.9\\
+0.7&amp;0.1\\
+0.4&amp;0.6
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>Shape：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="true" form="prefix">(</mo><mn>4</mn><mo>,</mo><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+(4,2)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这里每一行代表什么">43. 这里每一行代表什么？</h2>
+<p>一行：</p>
+<blockquote>
+<p>一个样本。</p>
+</blockquote>
+<p>两列：</p>
+<blockquote>
+<p>两个 Feature。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Batch = 4
+Feature Dimension = 2</code></pre>
+<hr />
+<h2 id="batch-forward-不需要写四遍公式">44. Batch Forward
+不需要写四遍公式</h2>
+<p>我们可以一次：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><msup><mi>W</mi><mi>T</mi></msup><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+XW^T+b
+</annotation></semantics></math></p>
+<p>完成整个 Batch。</p>
+<p>这就是：</p>
+<h1 id="vectorization">Vectorization</h1>
+<p>向量化。</p>
+<hr />
+<h2 id="为什么向量化非常重要">45. 为什么向量化非常重要？</h2>
+<p>GPU 最擅长：</p>
+<blockquote>
+<p>大规模矩阵运算。</p>
+</blockquote>
+<p>它不喜欢：</p>
+<div class="sourceCode" id="cb84"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> sample <span class="kw">in</span> samples:</span>
+<span id="cb84-2"><a href="#cb84-2" aria-hidden="true" tabindex="-1"></a>    一个一个慢慢算</span></code></pre></div>
+<p>而喜欢：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>M</mi><mi>a</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>x</mi><mspace width="0.222em"></mspace><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Large\ Matrix\ Multiplication
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第四个核心心智模型-3">46. 第四个核心心智模型</h2>
+<h3 id="心智模型-④gpu-的力量来自并行执行大量相同的矩阵计算">心智模型
+④：GPU 的力量来自“并行执行大量相同的矩阵计算”</h3>
+<p>Batch：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>32</mn><annotation encoding="application/x-tex">
+32
+</annotation></semantics></math></p>
+<p>不意味着 GPU：</p>
+<blockquote>
+<p>按顺序算 32 次。</p>
+</blockquote>
+<p>而是尽量把它们组合成：</p>
+<blockquote>
+<p>大 Tensor 运算。</p>
+</blockquote>
+<hr />
+<h2 id="这就是为什么-batch-会提高吞吐量">47. 这就是为什么 Batch
+会提高吞吐量</h2>
+<p>单样本：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>,</mo><mn>768</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(1,768)
+</annotation></semantics></math></p>
+<p>Batch：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>128</mn><mo>,</mo><mn>768</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(128,768)
+</annotation></semantics></math></p>
+<p>同一个 Weight Matrix：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>一次作用在很多样本上。</p>
+<p>GPU 利用率通常会更高。</p>
+<hr />
+<h2 id="但-batch-越大越好吗">48. 但 Batch 越大越好吗？</h2>
+<p>不是。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+BatchSize\uparrow
+</annotation></semantics></math></p>
+<p>会增加：</p>
+<blockquote>
+<p>Activation Memory。</p>
+</blockquote>
+<p>最终受：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>P</mi><mi>U</mi><mspace width="0.222em"></mspace><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+GPU\ Memory
+</annotation></semantics></math></p>
+<p>限制。</p>
+<p>这就和第一课第 5 阶段接上了。</p>
+<hr />
+<h2 id="pytorch-中-linear-的-shape-约定">49. PyTorch 中 Linear 的 Shape
+约定</h2>
+<p>假设：</p>
+<div class="sourceCode" id="cb85"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a>nn.Linear(<span class="dv">2</span>, <span class="dv">3</span>)</span></code></pre></div>
+<p>PyTorch 参数中的 Weight Shape 通常是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>3</mn><mo>,</mo><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(3,2)
+</annotation></semantics></math></p>
+<p>但用户输入通常：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>,</mo><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(Batch,2)
+</annotation></semantics></math></p>
+<p>输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>,</mo><mn>3</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(Batch,3)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么数学公式有时写-wx代码却像-xwt">50. 为什么数学公式有时写
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>X</mi></mrow><annotation encoding="application/x-tex">WX</annotation></semantics></math>，代码却像
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><msup><mi>W</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">XW^T</annotation></semantics></math>？</h2>
+<p>这是一个非常常见的困惑。</p>
+<p>我们前面把单样本写成列向量：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><mi>d</mi><mo>×</mo><mn>1</mn></mrow></msup></mrow><annotation encoding="application/x-tex">
+X\in\mathbb R^{d\times1}
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>X</mi></mrow><annotation encoding="application/x-tex">
+WX
+</annotation></semantics></math></p>
+<p>最自然。</p>
+<p>代码通常把 Batch 样本放成：</p>
+<blockquote>
+<p>每行一个样本。</p>
+</blockquote>
+<p>所以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><msup><mi>W</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+XW^T
+</annotation></semantics></math></p>
+<p>两者只是：</p>
+<blockquote>
+<p>Shape 约定不同。</p>
+</blockquote>
+<hr />
+<h2 id="不要被转置吓到">51. 不要被转置吓到</h2>
+<p>真正应该检查的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>m</mi><mi>u</mi><mi>s</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>m</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Dimensions\ must\ match
+}
+</annotation></semantics></math></p>
+<p>比如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>768</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>×</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>768</mn><mo>,</mo><mn>3072</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+(32,768)
+\times
+(768,3072)
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>3072</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(32,3072)
+</annotation></semantics></math></p>
+<p>这才是 Shape 思维。</p>
+<hr />
+<h2 id="矩阵乘法的-shape-规则">52. 矩阵乘法的 Shape 规则</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>:</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>m</mi><mo>,</mo><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+A:(m,n)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>:</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>n</mi><mo>,</mo><mi>p</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+B:(n,p)
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>B</mi><mo>:</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>m</mi><mo>,</mo><mi>p</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+AB:(m,p)
+</annotation></semantics></math></p>
+<p>中间的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">
+n
+</annotation></semantics></math></p>
+<p>必须匹配。</p>
+<hr />
+<h2 id="一个必须练成本能的例子">53. 一个必须练成本能的例子</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>768</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>×</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>768</mn><mo>,</mo><mn>3072</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+(32,768)
+\times
+(768,3072)
+</annotation></semantics></math></p>
+<p>结果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>3072</mn><mo stretchy="true" form="postfix">)</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+(32,3072)
+}
+</annotation></semantics></math></p>
+<p>记法：</p>
+<blockquote>
+<p>外面留下来，中间消掉。</p>
+</blockquote>
+<hr />
+<h2 id="transformer-以后也一直这样">54. Transformer 以后也一直这样</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>8</mn><mo>,</mo><mn>2048</mn><mo>,</mo><mn>4096</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(8,2048,4096)
+</annotation></semantics></math></p>
+<p>最后一维：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>4096</mn><annotation encoding="application/x-tex">
+4096
+</annotation></semantics></math></p>
+<p>乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>4096</mn><mo>,</mo><mn>4096</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(4096,4096)
+</annotation></semantics></math></p>
+<p>结果仍：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>8</mn><mo>,</mo><mn>2048</mn><mo>,</mo><mn>4096</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(8,2048,4096)
+</annotation></semantics></math></p>
+<p>前面维度：</p>
+<blockquote>
+<p>保持。</p>
+</blockquote>
+<p>最后 Hidden Dimension：</p>
+<blockquote>
+<p>被 Linear 变换。</p>
+</blockquote>
+<hr />
+<h2 id="什么叫-broadcasting">55. 什么叫 Broadcasting？</h2>
+<p>加入 Bias 时：</p>
+<p>输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>64</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(32,64)
+</annotation></semantics></math></p>
+<p>Bias：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>64</mn><mo>,</mo><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(64,)
+</annotation></semantics></math></p>
+<p>我们不用复制：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>32</mn><annotation encoding="application/x-tex">
+32
+</annotation></semantics></math></p>
+<p>份 Bias。</p>
+<p>框架会自动：</p>
+<blockquote>
+<p>把同一个 Bias 加到每个样本。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="broadcasting">Broadcasting</h1>
+<p>广播。</p>
+<hr />
+<h2 id="例如">56. 例如</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi><mo>=</mo><mi>X</mi><mi>W</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+Z=XW+b
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi><mi>.</mi><mi>s</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>32</mn><mo>,</mo><mn>64</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Z.shape=(32,64)
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mi>.</mi><mi>s</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>64</mn><mo>,</mo><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+b.shape=(64,)
+</annotation></semantics></math></p>
+<p>那么相当于：</p>
+<blockquote>
+<p>每一行都加同一个
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>b</mi><annotation encoding="application/x-tex">b</annotation></semantics></math>。</p>
+</blockquote>
+<hr />
+<h2 id="broadcasting-很方便但也会产生-bug">57. Broadcasting
+很方便，但也会产生 Bug</h2>
+<p>有时 Shape 不对，</p>
+<p>框架却：</p>
+<blockquote>
+<p>依然能广播成功。</p>
+</blockquote>
+<p>于是程序不报错，</p>
+<p>但是：</p>
+<blockquote>
+<p>算错了。</p>
+</blockquote>
+<p>所以专家很重视：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mi>A</mi><mi>s</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ShapeAssertion
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="forward-中到底会保存什么">58. Forward 中到底会保存什么？</h2>
+<p>训练时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+z_1
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>h</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+h_1
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mn>2</mn></msub><annotation encoding="application/x-tex">
+z_2
+</annotation></semantics></math></p>
+<p>等很多中间值可能需要保留。</p>
+<p>为什么？</p>
+<p>因为：</p>
+<blockquote>
+<p>Backward 之后要用。</p>
+</blockquote>
+<hr />
+<h2 id="举例relu-的梯度需要知道什么">59. 举例：ReLU
+的梯度需要知道什么？</h2>
+<p>要知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>&gt;</mo><mn>0</mn><mi>?</mi></mrow><annotation encoding="application/x-tex">
+z&gt;0?
+</annotation></semantics></math></p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mi>′</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mrow><mo stretchy="true" form="prefix">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><mn>1</mn></mtd><mtd columnalign="left" style="text-align: left"><mi>z</mi><mo>&gt;</mo><mn>0</mn></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mn>0</mn></mtd><mtd columnalign="left" style="text-align: left"><mi>z</mi><mo>&lt;</mo><mn>0</mn></mtd></mtr></mtable></mrow></mrow><annotation encoding="application/x-tex">
+ReLU&#39;(z)
+=
+\begin{cases}
+1&amp;z&gt;0\\
+0&amp;z&lt;0
+\end{cases}
+</annotation></semantics></math></p>
+<p>所以 Backward 时：</p>
+<blockquote>
+<p>需要知道前向过程中哪些位置被激活。</p>
+</blockquote>
+<hr />
+<h2 id="这就是-activation-memory-的来源之一">60. 这就是 Activation
+Memory 的来源之一</h2>
+<p>深度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+L\uparrow
+</annotation></semantics></math></p>
+<p>Sequence：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+S\uparrow
+</annotation></semantics></math></p>
+<p>Batch：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+B\uparrow
+</annotation></semantics></math></p>
+<p>Hidden：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+H\uparrow
+</annotation></semantics></math></p>
+<p>中间 Activation：</p>
+<blockquote>
+<p>很快巨大。</p>
+</blockquote>
+<hr />
+<h2 id="一个-transformer-hidden-tensor-有多大">61. 一个 Transformer
+Hidden Tensor 有多大？</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">
+B=8
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mo>=</mo><mn>2048</mn></mrow><annotation encoding="application/x-tex">
+S=2048
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mo>=</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+H=4096
+</annotation></semantics></math></p>
+<p>元素数量：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>8</mn><mo>×</mo><mn>2048</mn><mo>×</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+8\times2048\times4096
+</annotation></semantics></math></p>
+<p>约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>67</mn><mi>M</mi></mrow><annotation encoding="application/x-tex">
+67M
+</annotation></semantics></math></p>
+<p>个数字。</p>
+<hr />
+<h2 id="如果每个数字-bf16-2-bytes">62. 如果每个数字 BF16 2 Bytes</h2>
+<p>单个这样规模的 Tensor：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>67</mn><mi>M</mi><mo>×</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+67M\times2
+</annotation></semantics></math></p>
+<p>大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>134</mn><mi>M</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+134MB
+</annotation></semantics></math></p>
+<p>而一个 Transformer 有：</p>
+<blockquote>
+<p>很多层、很多中间 Tensor。</p>
+</blockquote>
+<p>显存自然快速增加。</p>
+<hr />
+<h2 id="这就是为什么长-context-很贵">63. 这就是为什么长 Context
+很贵</h2>
+<p>Sequence Length：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2048</mn><mo>→</mo><mn>8192</mn></mrow><annotation encoding="application/x-tex">
+2048\rightarrow8192
+</annotation></semantics></math></p>
+<p>很多 Activation：</p>
+<blockquote>
+<p>直接变成 4 倍。</p>
+</blockquote>
+<p>Attention 里的某些计算甚至增长得更快。</p>
+<p>后面专门学。</p>
+<hr />
+<h2 id="现在进入-computational-graph">64. 现在进入 Computational
+Graph</h2>
+<p>这是本阶段特别重要的新概念：</p>
+<h1 id="computational-graph">Computational Graph</h1>
+<p>计算图。</p>
+<hr />
+<h2 id="什么叫计算图">65. 什么叫计算图？</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>2</mn></msub><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p
+=
+\sigma(
+W_2ReLU(W_1X+b_1)+b_2
+)
+</annotation></semantics></math></p>
+<p>我们可以拆成节点：</p>
+<pre class="text"><code>X
+↓
+MatMul
+↓
+Add b1
+↓
+ReLU
+↓
+MatMul
+↓
+Add b2
+↓
+Sigmoid
+↓
+p</code></pre>
+<p>每一个运算：</p>
+<blockquote>
+<p>都是计算图中的节点。</p>
+</blockquote>
+<hr />
+<h2 id="图的边表示什么">66. 图的边表示什么？</h2>
+<p>表示：</p>
+<blockquote>
+<p>一个计算结果被下一步使用。</p>
+</blockquote>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+z_1
+</annotation></semantics></math></p>
+<p>是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+ReLU
+</annotation></semantics></math></p>
+<p>的输入。</p>
+<p>所以：</p>
+<pre class="text"><code>z1 → ReLU</code></pre>
+<hr />
+<h2 id="为什么计算图重要">67. 为什么计算图重要？</h2>
+<p>因为 Backpropagation 需要回答：</p>
+<blockquote>
+<p>最终 Loss 是怎样通过这些运算依赖每一个参数的？</p>
+</blockquote>
+<p>计算图保存了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DependencyStructure
+}
+</annotation></semantics></math></p>
+<p>依赖关系。</p>
+<hr />
+<h2 id="一个最简单计算图">68. 一个最简单计算图</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>w</mi><mi>x</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=wx+b
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(z)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mi>L</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+L=L(p,y)
+</annotation></semantics></math></p>
+<p>图：</p>
+<pre class="text"><code>x ─┐
+   × w
+    ↓
+    +
+    ↑ b
+    ↓
+    z
+    ↓
+ sigmoid
+    ↓
+    p
+    ↓
+  loss ← y
+    ↓
+    L</code></pre>
+<hr />
+<h2 id="forward-在计算图上做什么">69. Forward 在计算图上做什么？</h2>
+<p>从：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>,</mo><mi>w</mi><mo>,</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+x,w,b
+</annotation></semantics></math></p>
+<p>开始，</p>
+<p>一路向前算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">
+z
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">
+p
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">
+L
+</annotation></semantics></math></p>
+<hr />
+<h2 id="backward-将来做什么">70. Backward 将来做什么？</h2>
+<p>从：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">
+L
+</annotation></semantics></math></p>
+<p>开始，</p>
+<p>沿计算图反向算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>p</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial p}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial z}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+</annotation></semantics></math></p>
+<p>等等。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>c</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward\ creates\ values
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>c</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backward\ creates\ gradients
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第五个核心心智模型-3">71. 第五个核心心智模型</h2>
+<h3 id="心智模型-⑤计算图是-forward-和-backward-之间的桥梁">心智模型
+⑤：计算图是 Forward 和 Backward 之间的桥梁</h3>
+<p>Forward 告诉我们：</p>
+<blockquote>
+<p>当前每个节点算出了什么。</p>
+</blockquote>
+<p>计算图告诉我们：</p>
+<blockquote>
+<p>谁依赖谁。</p>
+</blockquote>
+<p>Backward 才能利用：</p>
+<blockquote>
+<p>Chain Rule</p>
+</blockquote>
+<p>一路追责。</p>
+<hr />
+<h2 id="pytorch-的-autograd-本质就在做这个">72. PyTorch 的 Autograd
+本质就在做这个</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb89"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb89-1"><a href="#cb89-1" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> model(x)</span>
+<span id="cb89-2"><a href="#cb89-2" aria-hidden="true" tabindex="-1"></a>loss <span class="op">=</span> criterion(y, target)</span>
+<span id="cb89-3"><a href="#cb89-3" aria-hidden="true" tabindex="-1"></a>loss.backward()</span></code></pre></div>
+<p>看起来只有三行。</p>
+<p>背后却自动构建和遍历：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>p</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+ComputationalGraph
+</annotation></semantics></math></p>
+<hr />
+<h2 id="什么叫-autograd">73. 什么叫 Autograd？</h2>
+<h1 id="automatic-differentiation">Automatic Differentiation</h1>
+<p>自动微分。</p>
+<p>框架会记录：</p>
+<blockquote>
+<p>Forward 做了哪些可微运算。</p>
+</blockquote>
+<p>然后自动计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Gradient
+</annotation></semantics></math></p>
+<p>不用我们手推几十亿个参数的导数。</p>
+<hr />
+<h2 id="forward-为什么需要记录">74. Forward 为什么需要“记录”？</h2>
+<p>训练模式下，</p>
+<p>很多 Tensor 会知道：</p>
+<blockquote>
+<p>自己是由什么运算产生的。</p>
+</blockquote>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h=ReLU(WX+b)
+</annotation></semantics></math></p>
+<p>框架记录：</p>
+<ul>
+<li>MatMul</li>
+<li>Add</li>
+<li>ReLU</li>
+</ul>
+<p>等关系。</p>
+<hr />
+<h2 id="推理为什么可以关闭-gradient-tracking">75. 推理为什么可以关闭
+Gradient Tracking？</h2>
+<p>因为推理：</p>
+<blockquote>
+<p>不需要 Backward。</p>
+</blockquote>
+<p>所以没必要保存：</p>
+<blockquote>
+<p>完整梯度计算图。</p>
+</blockquote>
+<p>PyTorch 常见：</p>
+<div class="sourceCode" id="cb90"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb90-1"><a href="#cb90-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> torch.no_grad():</span></code></pre></div>
+<p>或者：</p>
+<div class="sourceCode" id="cb91"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb91-1"><a href="#cb91-1" aria-hidden="true" tabindex="-1"></a>torch.inference_mode()</span></code></pre></div>
+<p>这样能：</p>
+<blockquote>
+<p>节省显存和计算。</p>
+</blockquote>
+<hr />
+<h2 id="训练-forward-和推理-forward-完全一样吗">76. 训练 Forward 和推理
+Forward 完全一样吗？</h2>
+<p>大部分核心数学：</p>
+<blockquote>
+<p>一样。</p>
+</blockquote>
+<p>但有些层会根据模式不同。</p>
+<p>例如：</p>
+<h1 id="dropout">Dropout</h1>
+<p>训练：</p>
+<blockquote>
+<p>随机关闭部分激活。</p>
+</blockquote>
+<p>推理：</p>
+<blockquote>
+<p>通常关闭随机 Dropout。</p>
+</blockquote>
+<hr />
+<h2 id="batchnorm-也有-traineval-区别">77. BatchNorm 也有 Train/Eval
+区别</h2>
+<p>BatchNorm：</p>
+<p>训练时：</p>
+<blockquote>
+<p>使用 Batch 统计量并更新 running statistics。</p>
+</blockquote>
+<p>推理时：</p>
+<blockquote>
+<p>使用累计统计量。</p>
+</blockquote>
+<p>所以：</p>
+<div class="sourceCode" id="cb92"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb92-1"><a href="#cb92-1" aria-hidden="true" tabindex="-1"></a>model.train()</span></code></pre></div>
+<p>和：</p>
+<div class="sourceCode" id="cb93"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb93-1"><a href="#cb93-1" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">eval</span>()</span></code></pre></div>
+<p>有真实意义。</p>
+<hr />
+<h2 id="transformer-里常见-layernorm">78. Transformer 里常见
+LayerNorm</h2>
+<p>LayerNorm 的 train/eval 行为不像 BatchNorm 那样依赖 running
+statistics，</p>
+<p>但：</p>
+<blockquote>
+<p>Dropout 等模块仍然有差异。</p>
+</blockquote>
+<p>所以推理时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>.</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mrow><mo stretchy="true" form="prefix">(</mo><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+model.eval()
+</annotation></semantics></math></p>
+<p>依然是标准习惯。</p>
+<hr />
+<h2 id="forward-最后的输出一定是概率吗">79. Forward
+最后的输出一定是概率吗？</h2>
+<p>不一定。</p>
+<p>模型可以输出：</p>
+<h1 id="logits">Logits</h1>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mn>2.3</mn></mrow><annotation encoding="application/x-tex">
+z=2.3
+</annotation></semantics></math></p>
+<p>或者多分类：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>2.3</mn><mo>,</mo><mi>−</mi><mn>0.4</mn><mo>,</mo><mn>1.1</mn><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[2.3,-0.4,1.1]
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么很多训练代码直接输出-logits">80.
+为什么很多训练代码直接输出 Logits？</h2>
+<p>因为很多 Loss：</p>
+<blockquote>
+<p>已经内部组合了 Softmax / Sigmoid 相关的稳定计算。</p>
+</blockquote>
+<p>例如：</p>
+<div class="sourceCode" id="cb94"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb94-1"><a href="#cb94-1" aria-hidden="true" tabindex="-1"></a>BCEWithLogitsLoss</span></code></pre></div>
+<p>直接输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>l</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+logit
+</annotation></semantics></math></p>
+<p>通常比：</p>
+<blockquote>
+<p>手动 Sigmoid 再 BCE</p>
+</blockquote>
+<p>数值更稳定。</p>
+<hr />
+<h2 id="多分类也类似">81. 多分类也类似</h2>
+<p>常见：</p>
+<div class="sourceCode" id="cb95"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb95-1"><a href="#cb95-1" aria-hidden="true" tabindex="-1"></a>CrossEntropyLoss</span></code></pre></div>
+<p>通常直接接：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Logits
+</annotation></semantics></math></p>
+<p>而不是先手动 Softmax。</p>
+<p>因为内部会做：</p>
+<blockquote>
+<p>更稳定的计算。</p>
+</blockquote>
+<hr />
+<h2 id="所以网络输出层要区分两个概念">82.
+所以网络“输出层”要区分两个概念</h2>
+<h3 id="raw-model-output">Raw model output</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Logit
+</annotation></semantics></math></p>
+<h3 id="用户想看的结果">用户想看的结果</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+Probability
+</annotation></semantics></math></p>
+<p>训练代码：</p>
+<blockquote>
+<p>经常使用 Logit。</p>
+</blockquote>
+<p>产品界面：</p>
+<blockquote>
+<p>可能展示概率或风险等级。</p>
+</blockquote>
+<hr />
+<h2 id="二分类-forward">83. 二分类 Forward</h2>
+<p>可以写：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+X
+\rightarrow
+Logit
+</annotation></semantics></math></p>
+<p>然后训练：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mo>+</mo><mi>Y</mi><mo>→</mo><mi>B</mi><mi>C</mi><mi>E</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Logit+Y
+\rightarrow
+BCEWithLogitsLoss
+</annotation></semantics></math></p>
+<p>推理：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mo>→</mo><mi>S</mi><mi>i</mi><mi>g</mi><mi>m</mi><mi>o</mi><mi>i</mi><mi>d</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+Logit
+\rightarrow
+Sigmoid
+\rightarrow
+Probability
+</annotation></semantics></math></p>
+<hr />
+<h2 id="多分类-forward">84. 多分类 Forward</h2>
+<p>例如风险类型：</p>
+<pre class="text"><code>资格风险
+技术参数风险
+评分标准风险
+无风险</code></pre>
+<p>模型输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>∈</mo><msup><mi>ℝ</mi><mn>4</mn></msup></mrow><annotation encoding="application/x-tex">
+z\in\mathbb R^4
+</annotation></semantics></math></p>
+<p>也就是 4 个 Logits。</p>
+<hr />
+<h2 id="然后-softmax">85. 然后 Softmax</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>i</mi></msub><mo>=</mo><mfrac><msup><mi>e</mi><msub><mi>z</mi><mi>i</mi></msub></msup><mrow><munder><mo>∑</mo><mi>j</mi></munder><msup><mi>e</mi><msub><mi>z</mi><mi>j</mi></msub></msup></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+p_i
+=
+\frac{e^{z_i}}
+{\sum_j e^{z_j}}
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>p</mi><mn>1</mn></msub><mo>,</mo><msub><mi>p</mi><mn>2</mn></msub><mo>,</mo><msub><mi>p</mi><mn>3</mn></msub><mo>,</mo><msub><mi>p</mi><mn>4</mn></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[p_1,p_2,p_3,p_4]
+</annotation></semantics></math></p>
+<p>并满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><munder><mo>∑</mo><mi>i</mi></munder><msub><mi>p</mi><mi>i</mi></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\sum_i p_i=1
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但多标签问题不同">86. 但多标签问题不同</h2>
+<p>一个采购条款可能同时有：</p>
+<ul>
+<li>资格风险；</li>
+<li>地域限制；</li>
+<li>业绩风险。</li>
+</ul>
+<p>它们不是：</p>
+<blockquote>
+<p>互斥类别。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="multi-label-classification">Multi-label Classification</h1>
+<hr />
+<h2 id="多标签通常怎么办">87. 多标签通常怎么办？</h2>
+<p>每一个标签：</p>
+<blockquote>
+<p>独立一个 Logit。</p>
+</blockquote>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>z</mi><mn>1</mn></msub><mo>,</mo><msub><mi>z</mi><mn>2</mn></msub><mo>,</mo><msub><mi>z</mi><mn>3</mn></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[z_1,z_2,z_3]
+</annotation></semantics></math></p>
+<p>然后分别：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\sigma(z_i)
+</annotation></semantics></math></p>
+<p>而不是 Softmax 强迫总和为 1。</p>
+<hr />
+<h2 id="这个差别对-procurementml-很重要">88. 这个差别对 ProcurementML
+很重要</h2>
+<p>风险类别往往：</p>
+<blockquote>
+<p>可以同时存在。</p>
+</blockquote>
+<p>所以不能机械地：</p>
+<blockquote>
+<p>所有问题都用 Softmax。</p>
+</blockquote>
+<p>任务定义必须先明确。</p>
+<hr />
+<h2 id="forward-里面-loss-算不算一部分">89. Forward 里面 Loss
+算不算一部分？</h2>
+<p>严格讲：</p>
+<blockquote>
+<p>模型的 Forward 通常到模型输出结束。</p>
+</blockquote>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+X\rightarrow Logits
+</annotation></semantics></math></p>
+<p>Loss：</p>
+<blockquote>
+<p>属于训练目标计算。</p>
+</blockquote>
+<p>但从一次完整训练步骤来看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Forward
+\rightarrow
+Loss
+</annotation></semantics></math></p>
+<p>通常连续发生。</p>
+<hr />
+<h2 id="可以把训练前向阶段理解成">90. 可以把训练前向阶段理解成</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>+</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelForward
++
+LossForward
+}
+</annotation></semantics></math></p>
+<p>先模型产生：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>Y</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">
+\hat Y
+</annotation></semantics></math></p>
+<p>再 Loss Function 产生：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">
+L
+</annotation></semantics></math></p>
+<p>然后才进入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Backward
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个完整政府采购训练样本">91. 一个完整政府采购训练样本</h2>
+<p>输入：</p>
+<pre class="text"><code>竞争限制程度 = 0.8
+业务必要性 = 0.3
+市场竞争充分度 = 0.2</code></pre>
+<p>标签：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+y=1
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>专家认为存在风险。</p>
+</blockquote>
+<hr />
+<h2 id="模型-forward">92. 模型 Forward</h2>
+<p>可能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><msub><mi>H</mi><mn>1</mn></msub><mo>→</mo><msub><mi>H</mi><mn>2</mn></msub><mo>→</mo><mi>z</mi></mrow><annotation encoding="application/x-tex">
+X
+\rightarrow
+H_1
+\rightarrow
+H_2
+\rightarrow
+z
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>−</mi><mn>0.7</mn></mrow><annotation encoding="application/x-tex">
+z=-0.7
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>0.7</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mn>0.332</mn></mrow><annotation encoding="application/x-tex">
+p=\sigma(-0.7)\approx0.332
+</annotation></semantics></math></p>
+<hr />
+<h2 id="模型现在错在哪里">93. 模型现在错在哪里？</h2>
+<p>真实：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.332</mn><annotation encoding="application/x-tex">
+0.332
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>明显低估风险。</p>
+</blockquote>
+<p>于是 Loss：</p>
+<blockquote>
+<p>较高。</p>
+</blockquote>
+<hr />
+<h2 id="forward-到这里完成使命">94. Forward 到这里完成使命</h2>
+<p>Forward 只负责告诉我们：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>在</mi><mi>当</mi><mi>前</mi><mi>W</mi><mi>下</mi><mi>，</mi><mi>这</mi><mi>个</mi><mi>X</mi><mi>会</mi><mi>产</mi><mi>生</mi><mi>什</mi><mi>么</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+在当前W下，
+这个X会产生什么Prediction
+}
+</annotation></semantics></math></p>
+<p>它不负责：</p>
+<blockquote>
+<p>怎么改 W。</p>
+</blockquote>
+<hr />
+<h2 id="下一步-backward-才回答">95. 下一步 Backward 才回答</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>为</mi><mi>了</mi><mi>让</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>更</mi><mi>接</mi><mi>近</mi><mi>Y</mi><mi>，</mi><mi>每</mi><mi>个</mi><mi>参</mi><mi>数</mi><mi>应</mi><mi>该</mi><mi>往</mi><mi>什</mi><mi>么</mi><mi>方</mi><mi>向</mi><mi>改</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+为了让Prediction更接近Y，
+每个参数应该往什么方向改？
+}
+</annotation></semantics></math></p>
+<p>这就是：</p>
+<h1 id="credit-assignment">Credit Assignment</h1>
+<p>责任分配。</p>
+<hr />
+<h2 id="forward-像什么">96. Forward 像什么？</h2>
+<p>可以把模型想成一个复杂机器。</p>
+<p>Forward：</p>
+<blockquote>
+<p>把原料放进去，看机器现在产出什么。</p>
+</blockquote>
+<p>Backward：</p>
+<blockquote>
+<p>如果成品不对，沿生产线倒查各机器应该调整多少。</p>
+</blockquote>
+<p>这个类比很好用。</p>
+<hr />
+<h2 id="一次-forward-是确定的吗">97. 一次 Forward 是确定的吗？</h2>
+<p>如果：</p>
+<ul>
+<li>参数固定；</li>
+<li>输入固定；</li>
+<li>模型处于确定性推理模式；</li>
+<li>数值环境固定；</li>
+</ul>
+<p>通常结果应该基本确定。</p>
+<p>但训练中有：</p>
+<ul>
+<li>Dropout；</li>
+<li>随机层；</li>
+<li>某些非确定 GPU 算法；</li>
+</ul>
+<p>所以结果可能存在随机性。</p>
+<hr />
+<h2 id="llm-生成为什么看起来随机">98. LLM 生成为什么看起来随机？</h2>
+<p>这是另一个层次。</p>
+<p>模型 Forward 会计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+NextTokenProbabilityDistribution
+</annotation></semantics></math></p>
+<p>之后 Sampling：</p>
+<blockquote>
+<p>可以随机抽 Token。</p>
+</blockquote>
+<p>所以随机性可能发生在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+SamplingPolicy
+</annotation></semantics></math></p>
+<p>而不仅是网络 Forward 本身。</p>
+<hr />
+<h2 id="temperature-又在哪里">99. Temperature 又在哪里？</h2>
+<p>LLM 得到 Logits 后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+z_i
+</annotation></semantics></math></p>
+<p>可以做：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><msub><mi>z</mi><mi>i</mi></msub><mi>T</mi></mfrac><annotation encoding="application/x-tex">
+\frac{z_i}{T}
+</annotation></semantics></math></p>
+<p>再 Softmax。</p>
+<p>这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>T</mi><annotation encoding="application/x-tex">
+T
+</annotation></semantics></math></p>
+<p>是 Sampling Temperature。</p>
+<p>它改变：</p>
+<blockquote>
+<p>Token 概率分布的尖锐程度。</p>
+</blockquote>
+<p>以后语言模型课程深入。</p>
+<hr />
+<h2 id="第二课-第-4-阶段最终压缩">100. 第二课 · 第 4 阶段最终压缩</h2>
+<p>到这里，我们可以把 Forward 压成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>X</mi><mo>→</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>⋯</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mi>s</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+X
+\rightarrow
+Linear
+\rightarrow
+Activation
+\rightarrow
+HiddenState
+\rightarrow
+\cdots
+\rightarrow
+Logits
+\rightarrow
+Prediction
+}
+</annotation></semantics></math></p>
+<p>训练时继续：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Prediction
+\rightarrow
+Loss
+}
+</annotation></semantics></math></p>
+<p>但此时：</p>
+<blockquote>
+<p>参数还没有发生任何更新。</p>
+</blockquote>
+<p>本阶段最重要的 5 个心智模型是：</p>
+<ol type="1">
+<li><strong>Forward
+是当前模型知识的一次执行</strong>：输入在固定参数下逐层变换成预测。</li>
+<li><strong>神经网络也是 Tensor Shape Transformation
+系统</strong>：每层都必须追踪 Shape、Dtype、Device。</li>
+<li><strong>Hidden State
+是当前案例动态形成的内部状态</strong>：参数共享，Activation
+随输入变化。</li>
+<li><strong>Batch + Matrix Multiplication 是 GPU
+高吞吐的基础</strong>：现代训练依赖向量化，而不是逐样本循环。</li>
+<li><strong>Computational Graph 是 Forward 与 Backward
+的桥梁</strong>：Forward 产生数值并建立依赖关系，Backward
+才沿图计算梯度。</li>
+</ol>
+<p>如果只记一个总流程，请记：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>X</mi><mo>→</mo><msub><mi>Z</mi><mn>1</mn></msub><mo>→</mo><msub><mi>H</mi><mn>1</mn></msub><mo>→</mo><msub><mi>Z</mi><mn>2</mn></msub><mo>→</mo><msub><mi>H</mi><mn>2</mn></msub><mo>→</mo><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mi>s</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+X
+\rightarrow
+Z_1
+\rightarrow
+H_1
+\rightarrow
+Z_2
+\rightarrow
+H_2
+\rightarrow
+Logits
+\rightarrow
+Prediction
+}
+</annotation></semantics></math></p>
+<p>而下一阶段，我们终于要进入第二课最核心的一块：</p>
+<h1
+id="第二课-第-5-阶段backpropagation最终-loss-到底怎样穿过计算图把错误责任一层层分配给每一个-weight"><strong>第二课
+· 第 5 阶段：Backpropagation——最终 Loss
+到底怎样穿过计算图，把“错误责任”一层层分配给每一个
+Weight？</strong></h1>
+<p>我们会从一个只有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>,</mo><mi>x</mi><mo>,</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+w,x,b
+</annotation></semantics></math></p>
+<p>的最小计算图开始，真正手算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+</annotation></semantics></math></p>
+<p>再逐步进入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>h</mi><mi>a</mi><mi>i</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>a</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Chain\ Rule
+\rightarrow
+Local\ Gradient
+\rightarrow
+Gradient\ Flow
+\rightarrow
+Backpropagation
+</annotation></semantics></math></p>
+<p>到那一步，你会第一次真正看清：</p>
+<blockquote>
+<p><strong>“模型是怎样从一次犯错中修改自己”的全过程。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

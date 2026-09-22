@@ -1,0 +1,387 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第1课 · 第8阶段：完整机器学习实验——ProcurementML Experiment 001</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第1课 · 第8阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>判断模型为什么学不好、泛化失败、指标失真或什么时候不该自动回答。<ul><li>大模型项目应该拆成一串可证伪的小实验。</li><li>Test Set 不是剩余数据，而是未来使用场景模拟器。</li><li>模型价值来自相对 Baseline 的提升和成本差异。</li></ul></div><h1
+id="第一课-第-8-阶段完整机器学习实验procurementml-experiment-001">第一课
+· 第 8 阶段：完整机器学习实验——ProcurementML Experiment 001</h1>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-7">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-7">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>大模型项目应该拆成一串可证伪的小实验。</strong></li>
+<li><strong>Test Set
+不是剩余数据，而是未来使用场景模拟器。</strong></li>
+<li><strong>模型价值来自相对 Baseline 的提升和成本差异。</strong></li>
+<li><strong>成功标准必须在看到结果之前定义。</strong></li>
+<li><strong>实验记录、失败结论和错误分析都是研发资产。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-7">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="even">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="odd">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="even">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="odd">
+<td><code>Precision</code></td>
+<td>精确率：系统报出的风险中真正成立的比例</td>
+</tr>
+<tr class="even">
+<td><code>Hard Positive</code></td>
+<td>高难正例：没有明显关键词但确实需要识别的风险</td>
+</tr>
+<tr class="odd">
+<td><code>Regression</code></td>
+<td>回归测试：更新后验证旧能力和关键切片没有退化</td>
+</tr>
+<tr class="even">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-7">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<blockquote>
+<p><strong>原文级教材源文件</strong>：本 Markdown
+是该阶段唯一内容源。HTML
+由本文件直接生成，不再二次压缩、合并知识点或改写公式。</p>
+</blockquote>
+<p>这一阶段把前七个阶段真正装成一个实验：定义
+Problem、Hypothesis、X/Y、Dataset、Split、Baseline、Success
+Criteria、Training、Evaluation、Error Analysis 和 Next Experiment。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>m</mi><mo>→</mo><mi>H</mi><mi>y</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>→</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>→</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>A</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>y</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Problem \rightarrow Hypothesis \rightarrow Dataset \rightarrow Baseline \rightarrow Train \rightarrow Evaluate \rightarrow ErrorAnalysis
+</annotation></semantics></math></p>
+<p>目标是完整设计第一个政府采购机器学习实验
+<code>ProcurementML Experiment 001</code>。</p>
+<hr />
+<h2 id="第八阶段目标把前-7-个阶段装成一台机器">1. 第八阶段目标：把前 7
+个阶段装成一台机器</h2>
+<p>这一阶段不再堆新概念，而是完整设计第一个可执行实验 ProcurementML
+Experiment 001。</p>
+<hr />
+<h2 id="完整实验主线">2. 完整实验主线</h2>
+<p>科学实验式研发应该从问题和假设出发，而不是先开 GPU。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>Problem → Hypothesis → Dataset → Baseline → Train → Evaluate → Error
+Analysis → Next Experiment</p>
+</blockquote>
+<hr />
+<h2 id="experiment-001-的任务边界">3. Experiment 001 的任务边界</h2>
+<p>先做“供应商资格条件是否存在潜在不合理限制风险”的二分类任务，不做大而全。</p>
+<hr />
+<h2 id="为什么先选资格条件风险">4. 为什么先选资格条件风险</h2>
+<p>输入较清晰、标签相对可定义、业务价值明确、可计算
+Precision/Recall，也便于后续扩展。</p>
+<hr />
+<h2 id="第一步定义-x">5. 第一步：定义 X</h2>
+<p>最小 X 是一条资格条件文本。</p>
+<hr />
+<h2 id="experiment-001-a">6. Experiment 001-A</h2>
+<p>X=单条资格条件，用于验证仅凭条款文本能做到什么。</p>
+<hr />
+<h2 id="experiment-001-b">7. Experiment 001-B</h2>
+<p>X=[资格条件,采购标的,项目类型,上下文]，用于验证上下文是否显著提升。</p>
+<hr />
+<h2 id="上下文是可实验变量">8. 上下文是可实验变量</h2>
+<p>A/B 的差异本身就是一个可证伪假设：增加上下文是否减少 FN？</p>
+<hr />
+<h2 id="第二步定义-y">9. 第二步：定义 Y</h2>
+<p>第一版先用二分类：1=存在潜在不合理限制风险，0=未发现明显风险。</p>
+<hr />
+<h2 id="为什么第一版不把-y-做得太复杂">10. 为什么第一版不把 Y
+做得太复杂</h2>
+<p>如果同时训练风险类型、依据、理由、建议，很难知道哪一部分导致失败。</p>
+<hr />
+<h2 id="one-experiment-one-main-question">11. One Experiment, One Main
+Question</h2>
+<p>一次实验尽量回答一个核心问题。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型①：大模型研发是很多小实验，而不是一个“大项目”。</p>
+</blockquote>
+<hr />
+<h2 id="hypothesis-driven-development">12. Hypothesis-driven
+Development</h2>
+<p>Experiment 001 资格风险；002 上下文；003 Hard Negative；004 7B vs
+14B；005 RAG 提升引用准确率。</p>
+<hr />
+<h2 id="第三步定义数据-schema">13. 第三步：定义数据 Schema</h2>
+<p>sample_id、project_id、text、label、risk_type、category、industry、region、date、difficulty、source、expert、confidence
+等字段不是装饰。</p>
+<hr />
+<h2 id="project_id-的用途">14. project_id 的用途</h2>
+<p>用于项目级 Split，防止同项目泄漏。</p>
+<hr />
+<h2 id="industry-region-的用途">15. industry / region 的用途</h2>
+<p>用于 Slice Evaluation 和分布诊断。</p>
+<hr />
+<h2 id="date-的用途">16. date 的用途</h2>
+<p>用于 Time Split、Concept Drift 和法规时效判断。</p>
+<hr />
+<h2 id="difficulty-的用途">17. difficulty 的用途</h2>
+<p>用于 Hard Positive/Negative 和边界案例分析。</p>
+<hr />
+<h2 id="data-schema-future-evaluation-infrastructure">18. Data Schema =
+Future Evaluation Infrastructure</h2>
+<p>今天多保存一个字段，未来就多一个可诊断维度。</p>
+<hr />
+<h2 id="第四步设计样本组成">19. 第四步：设计样本组成</h2>
+<p>假设第一批 10000 条，可以显式安排明显风险、普通风险、普通正常、Hard
+Negative、Hard Positive、边界案例。</p>
+<hr />
+<h2 id="为什么不是简单-5050">20. 为什么不是简单 50/50</h2>
+<p>类别平衡只是一个维度，真正要保证决策边界附近的样本质量。</p>
+<hr />
+<h2 id="第五步trainvaltest-split">21. 第五步：Train/Val/Test Split</h2>
+<p>可以先 8000/1000/1000，但切分单位应是 Project ID。</p>
+<hr />
+<h2 id="项目级隔离">22. 项目级隔离</h2>
+<p>Project A 的所有条款、公告、答复等必须进入同一 split。</p>
+<hr />
+<h2 id="时间外测试">23. 时间外测试</h2>
+<p>过去训练、未来测试，模拟真实部署。</p>
+<hr />
+<h2 id="challenge-set">24. Challenge Set</h2>
+<p>专门放未见行业、新地区、Hard Example、同义改写和 OOD 样本。</p>
+<hr />
+<h2 id="test-是未来场景模拟器">25. Test 是未来场景模拟器</h2>
+<p>Test 不是“剩余数据”，而是对真实部署的预演。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型②：测试设计本身就是产品设计的一部分。</p>
+</blockquote>
+<hr />
+<h2 id="第六步先建立-baseline">26. 第六步：先建立 Baseline</h2>
+<p>不要一开始就 Fine-tune 14B。</p>
+<hr />
+<h2 id="baseline-0永远预测正常">27. Baseline 0：永远预测正常</h2>
+<p>如果风险率30%，Accuracy 可以70%，但 Recall=0。</p>
+<hr />
+<h2 id="baseline-1关键词规则">28. Baseline 1：关键词规则</h2>
+<p>“注册资本/成立年限/本地分公司”等规则可以得到一个朴素起点。</p>
+<hr />
+<h2 id="baseline-2tf-idf-logistic-regression">29. Baseline 2：TF-IDF +
+Logistic Regression</h2>
+<p>便宜、可解释，能验证任务本身是否可学。</p>
+<hr />
+<h2 id="为什么-baseline-极重要">30. 为什么 Baseline 极重要</h2>
+<p>7B F1=.82，如果 TF-IDF=.81，复杂模型增益很小；如果
+Baseline=.63，提升就很有意义。</p>
+<hr />
+<h2 id="improvement-over-baseline">31. Improvement over Baseline</h2>
+<p>模型价值来自相对提升和成本收益，而不是孤立漂亮分数。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型③：永远问相对提升。</p>
+</blockquote>
+<hr />
+<h2 id="第七步定义-primary-metric">32. 第七步：定义 Primary Metric</h2>
+<p>风险筛查优先 Recall。</p>
+<hr />
+<h2 id="secondary-metrics">33. Secondary Metrics</h2>
+<p>Precision、F1/F2、High-Risk Recall、各 Slice 指标。</p>
+<hr />
+<h2 id="第八步训练前写-success-criteria">34. 第八步：训练前写 Success
+Criteria</h2>
+<p>例如 Recall≥90%、Precision≥80%、High-Risk Recall≥95%，并要求相对
+Baseline 有明显提升。</p>
+<hr />
+<h2 id="为什么必须训练前定义成功">35. 为什么必须训练前定义成功</h2>
+<p>否则结果出来后容易挑最好看的指标宣布成功。</p>
+<hr />
+<h2 id="metric-gaming-cherry-picking">36. Metric Gaming / Cherry
+Picking</h2>
+<p>Accuracy94%但Recall61%时，如果目标事先写
+Recall≥90%，就不能自欺欺人。</p>
+<hr />
+<h2 id="心智模型④预注册成功标准">37. 心智模型④：预注册成功标准</h2>
+<p>Define Success → Run → Judge，不要反过来。</p>
+<hr />
+<h2 id="第九步选择第一个模型">38. 第九步：选择第一个模型</h2>
+<p>优先 Logistic Regression、LightGBM/XGBoost 或小型
+Transformer，先验证数据与任务。</p>
+<hr />
+<h2 id="复杂度阶梯">39. 复杂度阶梯</h2>
+<p>Rule → Logistic Regression → Small Transformer → 7B →
+14B，每一层都问增益是否值得。</p>
+<hr />
+<h2 id="第十步正式训练">40. 第十步：正式训练</h2>
+<p>假设 Train=8000、Batch=32，则约250 steps/epoch，5 epoch 最多1250
+steps。</p>
+<hr />
+<h2 id="训练监控表">41. 训练监控表</h2>
+<p>记录 Train Loss、Val
+Loss、Precision、Recall、F1/F2、LR、Step/Epoch、Best Checkpoint。</p>
+<hr />
+<h2 id="曲线案例">42. 曲线案例</h2>
+<p>Epoch3 Val 最好，Epoch4/5 Train 继续改善但 Val 变差，应选择 Epoch3
+附近。</p>
+<hr />
+<h2 id="第十一步test-只在模型冻结后打开">43. 第十一步：Test
+只在模型冻结后打开</h2>
+<p>模型、阈值、超参数确定后再做最终 Test。</p>
+<hr />
+<h2 id="confusion-matrix-例子">44. Confusion Matrix 例子</h2>
+<p>TP=270,FN=30,FP=60,TN=640 → Recall=90%，Precision≈81.8%。</p>
+<hr />
+<h2 id="实验通过-项目结束">45. 实验通过 ≠ 项目结束</h2>
+<p>达到门槛后真正重要的是 Error Analysis。</p>
+<hr />
+<h2 id="把-fn-全拉出来">46. 把 FN 全拉出来</h2>
+<p>按 Hard Positive、上下文缺失、医疗知识、标签错、新型风险等分类。</p>
+<hr />
+<h2 id="root-cause-决定-experiment-002">47. Root Cause 决定 Experiment
+002</h2>
+<p>如果最大错误来源是上下文缺失，就提出“加入上下文降低 FN”的新假设。</p>
+<hr />
+<h2 id="controlled-experiment-1">48. Controlled Experiment</h2>
+<p>一次主要改变一个变量，才能知道提升因果来源。</p>
+<hr />
+<h2 id="实验日志是知识资产">49. 实验日志是知识资产</h2>
+<p>EXP001、002、003 的成功/失败共同形成团队经验。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型⑤：真正能力来自实验积累，而非某次幸运训练。</p>
+</blockquote>
+<hr />
+<h2 id="experiment-card">50. Experiment Card</h2>
+<p>Question、Hypothesis、Dataset、Split、Baseline、Model、Metric、Success、Result、Error
+Analysis、Next Experiment 全部记录。</p>
+<hr />
+<h2 id="experiment-tracking">51. Experiment Tracking</h2>
+<p>实验多起来后使用 MLflow/W&amp;B/TensorBoard
+或自建数据库跟踪参数、指标和 artifacts。</p>
+<hr />
+<h2 id="data-version">52. Data Version</h2>
+<p>没有 dataset_v0.1/v0.2，就无法判断模型提升来自数据还是代码。</p>
+<hr />
+<h2 id="reproducibility">53. Reproducibility</h2>
+<p>记录 Random Seed、Dataset Version、Code Version、Base
+Model、Environment、Hyperparameters。</p>
+<hr />
+<h2 id="experiment-001-完整闭环">54. Experiment 001 完整闭环</h2>
+<p>业务问题→X/Y→Schema→采集标注→Project
+Split→Baseline→Train→Validation→Threshold→Test→Slice→Error Analysis→Root
+Cause→Experiment002。</p>
+<hr />
+<h2 id="第八阶段五个心智模型">55. 第八阶段五个心智模型</h2>
+<p>小实验；Test 模拟未来；Baseline；预注册成功标准；实验积累是知识。</p>
+<hr />
+<h2 id="阶段掌握标准-3">56. 阶段掌握标准</h2>
+<p>给你“训练评分标准审查模型”的需求时，你应自然追问
+X/Y、标签、Split、Baseline、主指标、FN/FP成本、成功门槛、错误归因和下一轮实验。</p>
+<hr />
+<hr />
+<h2 id="experiment-001-的完整实验卡">57. Experiment 001
+的完整实验卡</h2>
+<p><strong>Question</strong>：仅根据供应商资格条件文本，能否识别潜在不合理限制风险？</p>
+<p><strong>Hypothesis</strong>：高质量专家标注数据训练出的文本分类模型，能在项目级隔离测试集上显著超过关键词规则。</p>
+<p><strong>Dataset</strong>：10,000
+条；Train/Val/Test=8000/1000/1000；同一 project_id 不跨集合。</p>
+<p><strong>Primary
+Metric</strong>：Recall；Secondary：Precision、F1/F2、High-Risk
+Recall。</p>
+<p><strong>Success Criteria</strong>：例如
+Recall≥90%、Precision≥80%，且相比关键词 Baseline 的 F1 至少提高 10
+个百分点。成功标准必须在看到结果之前写下。</p>
+<h2 id="baseline-012-为什么都值得做">58. Baseline 0、1、2
+为什么都值得做</h2>
+<p>Baseline 0 永远预测正常，用于暴露类别不平衡；Baseline 1
+使用关键词规则，体现现有人工规则系统能做到什么；Baseline 2 使用 TF-IDF +
+Logistic Regression，验证复杂模型是否真的带来语义增益。</p>
+<p>如果 7B LLM F1=0.82，而 Logistic
+Regression=0.81，就要重新审视复杂度成本；若
+Baseline=0.63、LLM=0.88，增益才非常明确。</p>
+<h2 id="数据-schema-是未来评测基础设施">59. 数据 Schema
+是未来评测基础设施</h2>
+<p>sample_id、project_id、industry、region、case_date、difficulty、source_type、expert_confidence
+等字段不是装饰。project_id 用于防泄漏；industry 用于 Slice；date
+用于时间泛化；difficulty 用于 Hard Cases；label_confidence
+用于标签复核。</p>
+<p>设计 Schema 时其实已经在设计未来可以问哪些评测问题。</p>
+<h2 id="challenge-set-与普通-test-的作用不同">60. Challenge Set 与普通
+Test 的作用不同</h2>
+<p>普通 Test 模拟主流真实部署；Challenge Set 可以故意放未见行业、Hard
+Positive/Negative、同义改写、长文本、特殊地区和
+OOD，用来测鲁棒性。不要把两者合成一个平均分，否则容易失去诊断价值。</p>
+<h2 id="训练前先写-success-criteria-可以防止-metric-gaming">61.
+训练前先写 Success Criteria 可以防止 Metric Gaming</h2>
+<p>如果结果 Accuracy=94%、Recall=61%，没有预注册目标时团队很容易宣传
+Accuracy；若训练前已经规定
+Recall≥90%，实验就明确失败。科学实验的价值之一，就是让结果不能事后挑指标解释。</p>
+<h2 id="一个-epoch-表格应该怎样读">62. 一个 Epoch 表格应该怎样读</h2>
+<p>假设 Epoch 1～3：Train Loss 0.63→0.36，Val Loss 0.59→0.38，Recall
+78%→90%，Precision 76%→82%；Epoch 4～5 Train Loss 继续下降，但 Val Loss
+上升、Precision 跌到 71%。最佳模型更可能是 Epoch 3，而不是最后一轮。</p>
+<h2 id="test-之后才真正开始-error-analysis">63. Test 之后才真正开始
+Error Analysis</h2>
+<p>如果 Test TP=270、FN=30、FP=60、TN=640，则
+Recall=90%、Precision≈81.8%。即使达到 Success Criteria，也应把 30 个 FN
+全部分类：Hard Positive、上下文缺失、医疗知识、标签错、新型风险等。</p>
+<p>这张错误分布表才决定 Experiment 002 做什么。</p>
+<h2 id="experiment-002-的控制实验示例">64. Experiment 002
+的控制实验示例</h2>
+<p>若最大根因是上下文缺失，提出 Hypothesis
+002：“加入采购标的和上下文可显著降低 FN”。只改变 X，从单条条款升级为
+[条款,采购标的,上下文]，其余数据、模型、阈值尽量保持不变。</p>
+<p>若 Recall 从 90% 提高到 94%，才有证据支持“上下文有效”。</p>
+<h2 id="experiment-log-也是模型资产">65. Experiment Log
+也是模型资产</h2>
+<p>真正有价值的不是只剩一个 <code>model_v27.pt</code>，而是知道
+Experiment 001 什么有效、002 什么无效、003
+为什么失败。随着实验积累，团队形成的是 Empirical
+Knowledge，而不是一次幸运训练。</p>
+<h2 id="第八阶段五个核心心智模型">66. 第八阶段五个核心心智模型</h2>
+<ol type="1">
+<li>大模型项目应该拆成一串可证伪的小实验。</li>
+<li>Test Set 不是剩余数据，而是未来使用场景模拟器。</li>
+<li>模型价值来自相对 Baseline 的提升和成本差异。</li>
+<li>成功标准必须在看到结果之前定义。</li>
+<li>实验记录、失败结论和错误分析都是研发资产。</li>
+</ol>
+<hr /><div class="nav"><a class="btn" href="stage07.html">← 第 7 阶段</a><a class="btn" href="stage09.html">第 9 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

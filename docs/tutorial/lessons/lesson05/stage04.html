@@ -1,0 +1,1282 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第4阶段：Packing：怎样减少 GPU 浪费？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>对齐 Tensor。</li><li>尽量让 GPU 算真实训练 Token，而不是 PAD。</li><li>为了提高 GPU 利用率，把多个独立 Sample 放进同一个计算容器。</li></ul></div><h1 id="第五课-第-4-阶段">第五课 · 第 4 阶段</h1>
+<h1 id="packing怎样减少-gpu-浪费-1">Packing：怎样减少 GPU 浪费？</h1>
+<h2
+id="多条短样本怎样安全装进同一条训练-sequence而又不互相串台">多条短样本怎样安全装进同一条训练
+Sequence，而又不互相“串台”？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>对齐 Tensor。</strong></li>
+<li><strong>尽量让 GPU 算真实训练 Token，而不是 PAD。</strong></li>
+<li><strong>为了提高 GPU 利用率，把多个独立 Sample
+放进同一个计算容器。</strong></li>
+<li><strong>可能仍然能够 Attention 到 A。</strong></li>
+<li><strong>A A A PAD PAD PAD</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>Padding</code></td>
+<td>补齐：把不同长度序列补到统一批次长度</td>
+</tr>
+<tr class="odd">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 3 阶段我们解决了：</p>
+<blockquote>
+<p><strong>单条样本太长怎么办，以及不同长度样本怎样通过 Padding 组成
+Batch。</strong></p>
+</blockquote>
+<p>但现在出现相反的问题。</p>
+<p>假设我们的训练长度：</p>
+<pre class="text"><code>max_sequence_length = 4096</code></pre>
+<p>大量政府采购样本却只有：</p>
+<pre class="text"><code>Sample A    180 Tokens
+Sample B    260 Tokens
+Sample C    420 Tokens
+Sample D    310 Tokens</code></pre>
+<p>如果每条样本都大量 Padding：</p>
+<blockquote>
+<p>GPU 会花很多算力处理没有信息价值的空位。</p>
+</blockquote>
+<p>于是出现今天的核心技术：</p>
+<h1 id="packing">Packing</h1>
+<h2 id="样本装箱-序列打包">样本装箱 / 序列打包</h2>
+<p>本阶段最终形成：</p>
+<h1 id="sftpackingpolicy_v0.1"><code>SFTPackingPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-3">一、本阶段只解决一个核心问题</h1>
+<blockquote>
+<p><strong>怎样把多条短 SFT 样本尽可能紧凑地放进固定长度
+Sequence，同时保持每条样本自己的对话边界、Loss 边界和必要的 Attention
+隔离？</strong></p>
+</blockquote>
+<p>整个过程只需要记住这一张图：</p>
+<pre class="text"><code>Sample A
+180 Tokens
+      ┐
+Sample B
+260 Tokens
+      │
+Sample C
+420 Tokens
+      ├──── Packing ────► Packed Sequence
+Sample D                         │
+310 Tokens                      │
+      ┘                         ▼
+                         Sample Boundaries
+                                │
+                     ┌──────────┼──────────┐
+                     ▼          ▼          ▼
+                   EOS       Loss Mask   Attention
+                  边界         正确         隔离
+                     │          │          │
+                     └──────────┼──────────┘
+                                ▼
+                              GPU</code></pre>
+<p>中文只记一句：</p>
+<blockquote>
+<p><strong>Packing
+的目标是减少空算，而不是把不同训练样本混成一条业务对话。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二先锁死-5-个核心心智模型">二、先锁死 5 个核心心智模型</h1>
+<h2 id="心智模型-1packing-padding">心智模型 1：Packing ≠ Padding</h2>
+<p>这两个看起来都在解决长度问题，但方向正好相反。</p>
+<h3 id="padding-1">Padding</h3>
+<p>短样本后面：</p>
+<pre class="text"><code>补空位</code></pre>
+<p>例如：</p>
+<pre class="text"><code>A A A PAD PAD PAD</code></pre>
+<p>目的是：</p>
+<blockquote>
+<p>对齐 Tensor。</p>
+</blockquote>
+<h3 id="packing-1">Packing</h3>
+<p>把多个真实样本：</p>
+<pre class="text"><code>A + B + C</code></pre>
+<p>紧凑放到同一 Sequence。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>F</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>E</mi><mi>m</mi><mi>p</mi><mi>t</mi><mi>y</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Padding
+=
+FillWithEmptyTokens
+}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>F</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Packing
+=
+FillWithRealTokens
+}
+</annotation></semantics></math></p>
+<p>Packing 的价值就是：</p>
+<blockquote>
+<p><strong>尽量让 GPU 算真实训练 Token，而不是 PAD。</strong></p>
+</blockquote>
+<hr />
+<h2 id="心智模型-2packed-sequence-是计算容器不是一条新业务样本">心智模型
+2：Packed Sequence 是计算容器，不是一条新业务样本</h2>
+<p>这是今天最重要的一句话。</p>
+<p>假设：</p>
+<pre class="text"><code>Sample A
+=
+供应商资格审查
+
+Sample B
+=
+评分办法审查</code></pre>
+<p>Packing 后可能物理上变成：</p>
+<pre class="text"><code>[A Tokens][EOS][B Tokens][EOS]</code></pre>
+<p>但语义上：</p>
+<pre class="text"><code>A 和 B
+仍然是两条独立样本</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>e</mi><mi>d</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>O</mi><mi>n</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>E</mi><mi>x</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OnePackedSequence
+\neq
+OneSemanticExample
+}
+</annotation></semantics></math></p>
+<p>它只是：</p>
+<blockquote>
+<p><strong>为了提高 GPU 利用率，把多个独立 Sample
+放进同一个计算容器。</strong></p>
+</blockquote>
+<hr />
+<h2 id="心智模型-3packing-真正危险的不是拼接而是边界泄漏">心智模型
+3：Packing 真正危险的不是拼接，而是“边界泄漏”</h2>
+<p>如果只是简单：</p>
+<pre class="text"><code>A + EOS + B</code></pre>
+<p>然后使用普通 Causal Attention，</p>
+<p>那么 B 后面的 Token：</p>
+<blockquote>
+<p>可能仍然能够 Attention 到 A。</p>
+</blockquote>
+<p>也就是：</p>
+<pre class="text"><code>Sample B
+← 可以看到 Sample A</code></pre>
+<p>这叫：</p>
+<h1 id="cross-sample-attention">Cross-sample Attention</h1>
+<h2 id="跨样本注意力">跨样本注意力</h2>
+<p>于是模型可能在训练 Sample B 时：</p>
+<blockquote>
+<p>使用本来不属于 B 的 Sample A 信息。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>必</mi><mi>须</mi><mi>同</mi><mi>时</mi><mi>考</mi><mi>虑</mi><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Packing
+必须同时考虑
+SampleBoundary
+}
+</annotation></semantics></math></p>
+<p>不是拼起来就完事。</p>
+<hr />
+<h2 id="心智模型-4eosloss-maskattention-mask-各管一件不同的事">心智模型
+4：EOS、Loss Mask、Attention Mask 各管一件不同的事</h2>
+<p>Packing 后至少有三个边界。</p>
+<h3 id="eos-1">EOS</h3>
+<p>告诉语言模型：</p>
+<blockquote>
+<p><strong>前一条序列结束了。</strong></p>
+</blockquote>
+<h3 id="loss-mask-1">Loss Mask</h3>
+<p>告诉训练系统：</p>
+<blockquote>
+<p><strong>哪些 Token 计算 Loss。</strong></p>
+</blockquote>
+<h3 id="attention-boundary">Attention Boundary</h3>
+<p>告诉模型：</p>
+<blockquote>
+<p><strong>哪些 Token 可以看到哪些 Token。</strong></p>
+</blockquote>
+<p>三者不能混成一个概念。</p>
+<hr />
+<h2
+id="心智模型-5packing-优化的是-token-utilization不应该改变训练语义">心智模型
+5：Packing 优化的是 Token Utilization，不应该改变训练语义</h2>
+<p>如果实现正确：</p>
+<pre class="text"><code>不Packing训练</code></pre>
+<p>和：</p>
+<pre class="text"><code>Packing训练</code></pre>
+<p>应该学习：</p>
+<blockquote>
+<p>基本相同的 Sample → Target 关系。</p>
+</blockquote>
+<p>Packing 只是让计算更紧凑。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Packing
+=
+ComputeOptimization
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+Packing
+=
+ChangeTaskMeaning
+</annotation></semantics></math></p>
+<p>如果打开 Packing 后模型学习内容发生巨大变化：</p>
+<blockquote>
+<p>首先应该怀疑边界、Mask 或实现。</p>
+</blockquote>
+<hr />
+<h1 id="三先看最简单的问题">三、先看最简单的问题</h1>
+<p>假设：</p>
+<pre class="text"><code>max_sequence_length = 2048</code></pre>
+<p>有四条数据：</p>
+<pre class="text"><code>A = 300 Tokens
+B = 400 Tokens
+C = 250 Tokens
+D = 500 Tokens</code></pre>
+<p>真实 Token 一共：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>300</mn><mo>+</mo><mn>400</mn><mo>+</mo><mn>250</mn><mo>+</mo><mn>500</mn><mo>=</mo><mn>1450</mn></mrow><annotation encoding="application/x-tex">
+300+400+250+500=1450
+</annotation></semantics></math></p>
+<p>如果分别独占一个 2048 Sequence：</p>
+<pre class="text"><code>A + 1748 PAD
+B + 1648 PAD
+C + 1798 PAD
+D + 1548 PAD</code></pre>
+<p>大量位置：</p>
+<blockquote>
+<p>没有真实训练内容。</p>
+</blockquote>
+<hr />
+<h1 id="四packing-做什么">四、Packing 做什么？</h1>
+<p>Packing 可以尝试把它们组成：</p>
+<pre class="text"><code>┌──────────────────────────────────────────────┐
+│ Sample A │ EOS │ Sample B │ EOS │ Sample C │
+└──────────────────────────────────────────────┘
+
+另一个 Sequence：
+
+┌─────────────────────┐
+│ Sample D │ EOS │ ...│
+└─────────────────────┘</code></pre>
+<p>也就是说：</p>
+<blockquote>
+<p>一条计算 Sequence 内可以装多条训练 Sample。</p>
+</blockquote>
+<p>这很像：</p>
+<h1 id="装箱问题">装箱问题</h1>
+<hr />
+<h1 id="五真正的目标指标packing-efficiency">五、真正的目标指标：Packing
+Efficiency</h1>
+<p>可以定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>=</mo><mfrac><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><mrow><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+PackingEfficiency
+=
+\frac{RealTokens}
+{AllocatedSequenceTokens}
+</annotation></semantics></math></p>
+<p>假设一个 2048 Sequence 最后放进去：</p>
+<pre class="text"><code>1950 个真实 Token</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>=</mo><mfrac><mn>1950</mn><mn>2048</mn></mfrac><mo>≈</mo><mn>95.2</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+PackingEfficiency
+=
+\frac{1950}{2048}
+\approx95.2\%
+</annotation></semantics></math></p>
+<p>这就是非常高的利用率。</p>
+<hr />
+<h1
+id="六但是我们已经学了-dynamic-padding为什么还需要-packing">六、但是我们已经学了
+Dynamic Padding，为什么还需要 Packing？</h1>
+<p>这是个关键问题。</p>
+<p>第 3 阶段：</p>
+<h1 id="dynamic-padding-1">Dynamic Padding</h1>
+<p>解决的是：</p>
+<blockquote>
+<p><strong>一个 Batch 中，不要全部 Pad 到全局最大长度。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>120
+180
+240
+300</code></pre>
+<p>只 Pad 到：</p>
+<pre class="text"><code>300</code></pre>
+<p>已经比 Pad 到 4096 好很多。</p>
+<p>但仍然会产生：</p>
+<pre class="text"><code>120 → 300
+180 → 300
+240 → 300
+300 → 300</code></pre>
+<p>真实 Token：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>840</mn><annotation encoding="application/x-tex">
+840
+</annotation></semantics></math></p>
+<p>计算位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1200</mn><annotation encoding="application/x-tex">
+1200
+</annotation></semantics></math></p>
+<p>仍有浪费。</p>
+<p>Packing 进一步问：</p>
+<blockquote>
+<p>能不能直接把多个短样本连续装起来？</p>
+</blockquote>
+<hr />
+<h1
+id="七所以-length-bucketingdynamic-paddingpacking-是三级优化">七、所以
+Length Bucketing、Dynamic Padding、Packing 是三级优化</h1>
+<p>可以这样理解：</p>
+<pre class="text"><code>最原始
+所有样本 Pad 到全局 max_length
+        ↓
+Dynamic Padding
+只 Pad 到当前 Batch 最大长度
+        ↓
+Length Bucketing
+让长度相近的样本组 Batch
+        ↓
+Packing
+把多个短样本直接塞进同一 Sequence</code></pre>
+<p>它们不是互斥技术。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>逐步减少无效 Token 计算。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="八现在看真正危险的地方sample-b-能不能看到-a">八、现在看真正危险的地方：Sample
+B 能不能看到 A？</h1>
+<p>假设：</p>
+<pre class="text"><code>Packed Sequence:
+
+[A1 A2 A3 EOS B1 B2 B3 EOS]</code></pre>
+<p>普通 Causal Attention 的规则只有：</p>
+<blockquote>
+<p>只能看当前位置左边。</p>
+</blockquote>
+<p>那么：</p>
+<pre class="text"><code>B1</code></pre>
+<p>左边包括：</p>
+<pre class="text"><code>A1 A2 A3 EOS</code></pre>
+<p>所以理论上：</p>
+<blockquote>
+<p>B 可以读取 A。</p>
+</blockquote>
+<p>这和我们真正希望的训练语义：</p>
+<pre class="text"><code>Sample B
+只依赖 Sample B 自己的Prompt</code></pre>
+<p>不完全一致。</p>
+<hr />
+<h1 id="九严格-packing-应该怎样理解">九、严格 Packing
+应该怎样理解？</h1>
+<p>最干净的规则是：</p>
+<blockquote>
+<p>一个 Sample 内保持 Causal Attention。</p>
+</blockquote>
+<blockquote>
+<p>不同 Sample 之间禁止 Attention。</p>
+</blockquote>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>i</mi><mo>,</mo><mi>j</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Attention(i,j)=0
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>i</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≠</mo><mi>s</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>j</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+sample(i)\neq sample(j)
+</annotation></semantics></math></p>
+<p>即使：</p>
+<pre class="text"><code>j</code></pre>
+<p>在物理位置上位于：</p>
+<pre class="text"><code>i</code></pre>
+<p>左边。</p>
+<hr />
+<h1 id="十这就形成-block-diagonal-attention">十、这就形成 Block-diagonal
+Attention</h1>
+<p>假设：</p>
+<pre class="text"><code>A1 A2 A3 | B1 B2 B3</code></pre>
+<p>理想 Attention 关系大致是：</p>
+<pre class="text"><code>        A1 A2 A3 | B1 B2 B3
+
+A1      ✓
+A2      ✓  ✓
+A3      ✓  ✓  ✓
+-----------------------
+B1               ✓
+B2               ✓  ✓
+B3               ✓  ✓  ✓</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>B1 → A
+B2 → A
+B3 → A</code></pre>
+<p>这叫：</p>
+<h1 id="block-diagonal-causal-attention">Block-diagonal Causal
+Attention</h1>
+<h2 id="分块对角因果注意力">分块对角因果注意力</h2>
+<hr />
+<h1 id="十一为什么这比单纯加-eos-更严格">十一、为什么这比单纯加 EOS
+更严格？</h1>
+<p>EOS 的意义是：</p>
+<blockquote>
+<p>文本上告诉模型“一个序列结束了”。</p>
+</blockquote>
+<p>但 EOS 本身通常并不意味着：</p>
+<blockquote>
+<p>Attention 数学上自动断开。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>O</mi><mi>S</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>I</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EOSBoundary
+\neq
+AttentionIsolation
+}
+</annotation></semantics></math></p>
+<p>这是今天一个非常重要的专业区别。</p>
+<hr />
+<h1 id="十二实际框架里有两类-packing">十二、实际框架里有两类
+Packing</h1>
+<p>你以后看到 <code>packing=True</code>，不要立即认为实现都一样。</p>
+<p>第一类大致是：</p>
+<h1 id="concatenation-packing">Concatenation Packing</h1>
+<pre class="text"><code>Sample A
++ EOS
++ Sample B
++ EOS</code></pre>
+<p>然后仍使用普通 Causal Attention。</p>
+<p>优点：</p>
+<blockquote>
+<p>实现简单。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>后面的样本理论上可能看到前面的样本。</p>
+</blockquote>
+<hr />
+<p>第二类是：</p>
+<h1 id="isolated-block-packing">Isolated / Block Packing</h1>
+<p>除了拼接，</p>
+<p>还建立：</p>
+<pre class="text"><code>sequence_id
+block_attention_mask
+position information</code></pre>
+<p>确保：</p>
+<blockquote>
+<p>不同 Sample 在 Attention 上彼此隔离。</p>
+</blockquote>
+<p>这是语义上更干净的做法。</p>
+<hr />
+<h1 id="十三那是不是-concatenation-packing-一定不能用">十三、那是不是
+Concatenation Packing 一定不能用？</h1>
+<p>不能这么绝对。</p>
+<p>现实中一些训练系统会：</p>
+<blockquote>
+<p>依赖 EOS 和大量随机样本边界，接受这种轻微跨样本上下文。</p>
+</blockquote>
+<p>很多模型也确实这样训练过。</p>
+<p>但我们的工程心智模型应该很清楚：</p>
+<blockquote>
+<p><strong>“有 EOS”与“严格隔离”不是同一件事。</strong></p>
+</blockquote>
+<p>所以真正使用某个 Trainer 时：</p>
+<blockquote>
+<p>必须确认它的 Packing 实现到底是哪一种。</p>
+</blockquote>
+<p>不要看到：</p>
+<div class="sourceCode" id="cb429"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb429-1"><a href="#cb429-1" aria-hidden="true" tabindex="-1"></a>packing<span class="op">=</span><span class="va">True</span></span></code></pre></div>
+<p>就以为所有边界问题自动解决了。</p>
+<hr />
+<h1 id="十四packing-后-loss-mask-也必须保留">十四、Packing 后 Loss Mask
+也必须保留</h1>
+<p>假设 A：</p>
+<pre class="text"><code>User A
+Assistant A</code></pre>
+<p>B：</p>
+<pre class="text"><code>User B
+Assistant B</code></pre>
+<p>Packing 后：</p>
+<pre class="text"><code>User A
+Assistant A
+EOS
+User B
+Assistant B
+EOS</code></pre>
+<p>我们的 Loss Policy 仍然应该是：</p>
+<pre class="text"><code>User A        -100
+Assistant A   Loss
+
+User B        -100
+Assistant B   Loss</code></pre>
+<p>Packing：</p>
+<blockquote>
+<p><strong>不能把原来每条样本的 Loss Mask 结构抹掉。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十五正确心智模型是先独立构造再-packing">十五、正确心智模型是“先独立构造，再
+Packing”</h1>
+<p>不要：</p>
+<pre class="text"><code>把一堆Raw Text拼起来
+        ↓
+再猜谁是User谁是Assistant</code></pre>
+<p>更专业的顺序：</p>
+<pre class="text"><code>Sample A
+Messages → Template → Token IDs → Labels
+
+Sample B
+Messages → Template → Token IDs → Labels
+
+Sample C
+Messages → Template → Token IDs → Labels
+        │
+        ▼
+然后再进行 Packing</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>B</mi><mi>e</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SemanticPreparation
+Before
+Packing
+}
+</annotation></semantics></math></p>
+<p>Packing 应该是：</p>
+<blockquote>
+<p>靠近训练 Batch 的计算优化层。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>破坏 Semantic Dataset 的预处理层。</p>
+</blockquote>
+<hr />
+<h1 id="十六一个-packed-sequence-实际要同步-packing-什么">十六、一个
+Packed Sequence 实际要同步 Packing 什么？</h1>
+<p>不仅是：</p>
+<pre class="text"><code>input_ids</code></pre>
+<p>还至少包括：</p>
+<pre class="text"><code>labels
+attention information
+sample boundaries</code></pre>
+<p>概念上：</p>
+<pre class="text"><code>PackedInputIDs
+=
+A.input_ids
++
+B.input_ids
++
+C.input_ids</code></pre>
+<p>同时：</p>
+<pre class="text"><code>PackedLabels
+=
+A.labels
++
+B.labels
++
+C.labels</code></pre>
+<p>边界也必须同步。</p>
+<p>否则可能出现：</p>
+<blockquote>
+<p>Token 已经属于 B，但 Label Mask 仍按照 A 的位置处理。</p>
+</blockquote>
+<p>那就属于非常危险的 Alignment Bug。</p>
+<hr />
+<h1 id="十七position-ids-怎么办">十七、Position IDs 怎么办？</h1>
+<p>Packed Sequence 还有一个更技术性的边界：</p>
+<h1 id="position-ids">Position IDs</h1>
+<h2 id="位置编号">位置编号</h2>
+<p>例如普通连续序列：</p>
+<pre class="text"><code>A:
+0 1 2 3
+
+B:
+4 5 6 7</code></pre>
+<p>某些严格隔离实现可能希望 B：</p>
+<pre class="text"><code>0 1 2 3</code></pre>
+<p>重新开始。</p>
+<p>是否重置 Position：</p>
+<blockquote>
+<p>和模型结构、RoPE、Trainer 及 Packing 实现有关。</p>
+</blockquote>
+<p>这里不需要死背实现。</p>
+<p>只记一个原则：</p>
+<blockquote>
+<p><strong>不要自己随便改 Position IDs；遵循当前模型和 Packing Framework
+的实现契约。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十八packing-最不应该做的一件事把样本从中间切断">十八、Packing
+最不应该做的一件事：把样本从中间切断</h1>
+<p>假设剩余空间：</p>
+<pre class="text"><code>200 Tokens</code></pre>
+<p>下一条 Sample：</p>
+<pre class="text"><code>350 Tokens</code></pre>
+<p>最简单的 Packing 算法可能想：</p>
+<pre class="text"><code>前200塞当前Sequence
+后150塞下一Sequence</code></pre>
+<p>但这会造成：</p>
+<pre class="text"><code>Prompt在前一个Sequence
+
+Assistant答案
+跑到下一个Sequence</code></pre>
+<p>非常危险。</p>
+<p>所以对我们第一版 ProcurementLM：</p>
+<h1 id="no-split-packing">No-split Packing</h1>
+<h2 id="样本完整打包">样本完整打包</h2>
+<p>是更稳妥的默认方案。</p>
+<p>原则：</p>
+<blockquote>
+<p>一条 Semantic Example 要么完整放进去，要么放到下一个 Container。</p>
+</blockquote>
+<hr />
+<h1 id="十九这和-truncation-是两个不同问题">十九、这和 Truncation
+是两个不同问题</h1>
+<p>如果 Sample 本身：</p>
+<pre class="text"><code>5000 Tokens</code></pre>
+<p>但：</p>
+<pre class="text"><code>max_length = 4096</code></pre>
+<p>这是：</p>
+<h1 id="truncation-long-sample-policy">Truncation / Long Sample
+Policy</h1>
+<p>不是 Packing 应该解决的。</p>
+<p>Packing 只应该处理：</p>
+<blockquote>
+<p><strong>已经满足 Sequence Contract 的样本怎样高效组合。</strong></p>
+</blockquote>
+<p>所以流程应该是：</p>
+<pre class="text"><code>Sample Validation
+      ↓
+Length Policy
+      ↓
+合法的独立Sample
+      ↓
+Packing</code></pre>
+<hr />
+<h1 id="二十一个最简单的-packing-algorithm">二十、一个最简单的 Packing
+Algorithm</h1>
+<p>可以想象：</p>
+<pre class="text"><code>Container = 4096 Tokens</code></pre>
+<p>按顺序加入：</p>
+<pre class="text"><code>Sample A = 800
+剩余3296
+
+Sample B = 1200
+剩余2096
+
+Sample C = 1700
+剩余396
+
+Sample D = 600
+放不下</code></pre>
+<p>于是：</p>
+<pre class="text"><code>Packed Sequence 1
+=
+A + B + C</code></pre>
+<p>然后：</p>
+<pre class="text"><code>Packed Sequence 2
+=
+D + ...</code></pre>
+<p>这就是最直观的：</p>
+<h1 id="greedy-packing">Greedy Packing</h1>
+<h2 id="贪心装箱">贪心装箱</h2>
+<hr />
+<h1 id="二十一还可以更聪明地装">二十一、还可以更聪明地装</h1>
+<p>例如：</p>
+<pre class="text"><code>A = 2000
+B = 1800
+C = 600
+D = 400</code></pre>
+<p>如果顺序不好：</p>
+<blockquote>
+<p>可能留下大量碎片。</p>
+</blockquote>
+<p>于是工程上还有：</p>
+<pre class="text"><code>First Fit
+Best Fit
+First Fit Decreasing</code></pre>
+<p>等装箱算法。</p>
+<p>这些名字现在不值得背。</p>
+<p>核心只需要知道：</p>
+<blockquote>
+<p><strong>Packing
+本质上也是一个“怎样减少剩余空位”的装箱问题。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十二但不要为了-100-利用率牺牲随机性">二十二、但不要为了 100%
+利用率牺牲随机性</h1>
+<p>这是一个容易走极端的地方。</p>
+<p>假设为了完美 Packing：</p>
+<blockquote>
+<p>永远把相同长度、相同任务类型绑定在一起。</p>
+</blockquote>
+<p>可能改变：</p>
+<pre class="text"><code>数据Shuffle特性
+Batch分布
+任务混合方式</code></pre>
+<p>所以工程目标不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>=</mo><mn>100</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+PackingEfficiency = 100\%
+</annotation></semantics></math></p>
+<p>不惜一切代价。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>效率足够高，同时训练数据仍然正常随机化。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十三packing-会改变batch-size的直觉">二十三、Packing
+会改变“Batch Size”的直觉</h1>
+<p>这是非常重要的一点。</p>
+<p>假设：</p>
+<pre class="text"><code>per_device_train_batch_size = 4</code></pre>
+<p>没有 Packing 时：</p>
+<pre class="text"><code>4 Sequences
+≈
+4 Samples</code></pre>
+<p>但 Packing 后：</p>
+<pre class="text"><code>Sequence 1
+包含3条Sample
+
+Sequence 2
+包含4条Sample
+
+Sequence 3
+包含2条Sample
+
+Sequence 4
+包含5条Sample</code></pre>
+<p>那么一个 Batch 实际可能包含：</p>
+<pre class="text"><code>14 条原始Sample</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>e</mi><mi>d</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>≠</mo><mi>O</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PackedBatchSize
+\neq
+OriginalSampleCount
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十四以后真正该关注的是-tokens-per-step">二十四、以后真正该关注的是
+Tokens per Step</h1>
+<p>Packing 以后：</p>
+<pre class="text"><code>Samples / Step</code></pre>
+<p>会变得比较不稳定。</p>
+<p>更加稳健的训练规模指标是：</p>
+<h1 id="tokens-per-step">Tokens per Step</h1>
+<p>甚至更进一步：</p>
+<h1 id="supervised-tokens-per-step">Supervised Tokens per Step</h1>
+<p>也就是：</p>
+<blockquote>
+<p>一个 Optimizer Step 到底消化了多少真实 Token，以及多少真正参与 Loss
+的 Token。</p>
+</blockquote>
+<hr />
+<h1 id="二十五这和-gradient-accumulation-会进一步连接">二十五、这和
+Gradient Accumulation 会进一步连接</h1>
+<p>未来我们会看到：</p>
+<pre class="text"><code>micro batch
+×
+gradient accumulation
+×
+packed sequence length</code></pre>
+<p>共同决定：</p>
+<blockquote>
+<p>每次参数更新实际使用多少训练信号。</p>
+</blockquote>
+<p>所以后面看配置：</p>
+<pre class="text"><code>batch_size=2</code></pre>
+<p>不能直接认为：</p>
+<blockquote>
+<p>“一次只学两条数据。”</p>
+</blockquote>
+<p>这在 Packing 场景里很可能完全错。</p>
+<hr />
+<h1 id="二十六packing-会不会改变-loss-权重">二十六、Packing 会不会改变
+Loss 权重？</h1>
+<p>这是个专业问题。</p>
+<p>假设：</p>
+<pre class="text"><code>Sample A
+Assistant Response = 20 Tokens
+
+Sample B
+Assistant Response = 200 Tokens</code></pre>
+<p>如果 Loss 是：</p>
+<blockquote>
+<p>对所有有效 Token 求平均，</p>
+</blockquote>
+<p>那么 Sample B：</p>
+<blockquote>
+<p>天然贡献更多监督 Token。</p>
+</blockquote>
+<p>这本来就是 Token-level Causal LM Loss 的常见行为。</p>
+<p>Packing 本身：</p>
+<blockquote>
+<p>不应该额外改变这件事。</p>
+</blockquote>
+<p>但如果你希望：</p>
+<pre class="text"><code>每条Sample等权</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>每个Token等权</code></pre>
+<p>那就是另一个：</p>
+<h1 id="loss-weighting-policy">Loss Weighting Policy</h1>
+<p>不能误以为 Packing 自动解决。</p>
+<hr />
+<h1
+id="二十七我们的第一版原则不要一次把三个复杂问题混起来">二十七、我们的第一版原则：不要一次把三个复杂问题混起来</h1>
+<p>第一版先保持：</p>
+<pre class="text"><code>Assistant-only Loss
++
+Token-level Mean Loss
++
+No-split Packing</code></pre>
+<p>先把训练跑清楚。</p>
+<p>以后真的有数据证明：</p>
+<blockquote>
+<p>长回答样本权重过高，</p>
+</blockquote>
+<p>再研究：</p>
+<pre class="text"><code>Sample Weighting
+Task Weighting
+Loss Reweighting</code></pre>
+<p>不要第一版就把所有技巧堆满。</p>
+<hr />
+<h1
+id="二十八政府采购场景中哪些样本特别适合-packing">二十八、政府采购场景中，哪些样本特别适合
+Packing？</h1>
+<p>最适合的是大量：</p>
+<pre class="text"><code>短条款审查
+结构化风险判断
+短理由
+Hard Negative Pair中的单条样本</code></pre>
+<p>例如：</p>
+<pre class="text"><code>300
+450
+220
+600
+380 Tokens</code></pre>
+<p>这类数据：</p>
+<blockquote>
+<p>Packing 收益通常比较明显。</p>
+</blockquote>
+<hr />
+<h1 id="二十九哪些数据-packing-收益不大">二十九、哪些数据 Packing
+收益不大？</h1>
+<p>如果样本本身经常：</p>
+<pre class="text"><code>3500
+3800
+4000
+4090 Tokens</code></pre>
+<p>而：</p>
+<pre class="text"><code>max_length = 4096</code></pre>
+<p>本来已经接近装满。</p>
+<p>此时 Packing：</p>
+<blockquote>
+<p>没多少空间可以优化。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>e</mi><mi>依</mi><mi>赖</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PackingValue
+依赖
+LengthDistribution
+}
+</annotation></semantics></math></p>
+<p>所以在开 Packing 前：</p>
+<blockquote>
+<p>先看第 3 阶段做的长度分布。</p>
+</blockquote>
+<hr />
+<h1 id="三十这就把-stage-3-和-stage-4-接起来了">三十、这就把 Stage 3 和
+Stage 4 接起来了</h1>
+<p>Stage 3 给我们：</p>
+<pre class="text"><code>P50
+P90
+P95
+P99</code></pre>
+<p>如果发现：</p>
+<pre class="text"><code>P50 = 350
+max_length = 4096</code></pre>
+<p>说明：</p>
+<blockquote>
+<p>大量样本很短。</p>
+</blockquote>
+<p>Packing：</p>
+<blockquote>
+<p>很值得考虑。</p>
+</blockquote>
+<p>如果：</p>
+<pre class="text"><code>P50 = 3700
+max_length = 4096</code></pre>
+<p>Packing 收益自然有限。</p>
+<hr />
+<h1 id="三十一evaluation-通常不要-packing">三十一、Evaluation 通常不要
+Packing</h1>
+<p>训练时 Packing：</p>
+<blockquote>
+<p>是为了提高计算利用率。</p>
+</blockquote>
+<p>但 Validation / Test：</p>
+<blockquote>
+<p>我们往往希望每条样本独立。</p>
+</blockquote>
+<p>这样方便：</p>
+<pre class="text"><code>生成
+指标计算
+错误分析
+sample_id对应
+Slice分析</code></pre>
+<p>所以第一版可以采用：</p>
+<pre class="text"><code>Train
+Packing = ON
+
+Validation
+Packing = OFF
+
+Test
+Packing = OFF</code></pre>
+<p>具体实现仍取决于框架。</p>
+<hr />
+<h1 id="三十二inference-也不属于今天这个-packing">三十二、Inference
+也不属于今天这个 Packing</h1>
+<p>这里讲的是：</p>
+<h1 id="training-packing">Training Packing</h1>
+<p>不是推理系统的：</p>
+<pre class="text"><code>Continuous Batching
+Paged Attention
+Request Batching</code></pre>
+<p>那些属于第 9 课部署。</p>
+<p>不要把：</p>
+<blockquote>
+<p>训练数据 Packing</p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p>推理请求 Batch</p>
+</blockquote>
+<p>混在一起。</p>
+<hr />
+<h1
+id="三十三现在给-procurementlm-定一个第一版-packing-contract">三十三、现在给
+ProcurementLM 定一个第一版 Packing Contract</h1>
+<h1 id="sftpackingpolicy_v0.1-1"><code>SFTPackingPolicy_V0.1</code></h1>
+<p>可以先规定：</p>
+<pre class="text"><code>packing_scope
+=
+train_only
+
+sample_integrity
+=
+no_split
+
+boundary_token
+=
+native EOS / template boundary
+
+loss_policy
+=
+preserve per-sample assistant mask
+
+attention_isolation
+=
+framework_verified
+
+max_sequence_length
+=
+follow SFTSequencePolicy_V0.1
+
+shuffle
+=
+enabled
+
+packing_algorithm
+=
+deterministic/versioned</code></pre>
+<p>最后两项意味着：</p>
+<blockquote>
+<p>Packing 过程本身也应该能够复现。</p>
+</blockquote>
+<hr />
+<h1 id="三十四为什么-packing-version-也值得记录">三十四、为什么 Packing
+Version 也值得记录？</h1>
+<p>假设实验 A：</p>
+<pre class="text"><code>packing = false</code></pre>
+<p>实验 B：</p>
+<pre class="text"><code>packing = true</code></pre>
+<p>或者：</p>
+<pre class="text"><code>concatenation packing</code></pre>
+<p>改成：</p>
+<pre class="text"><code>block-isolated packing</code></pre>
+<p>那么训练输入的实际计算结构已经发生变化。</p>
+<p>所以实验记录最好有：</p>
+<pre class="text"><code>packing_enabled
+packing_strategy
+packing_version</code></pre>
+<hr />
+<h1
+id="三十五训练前一定要做一次-packed-decode-audit">三十五、训练前一定要做一次
+Packed Decode Audit</h1>
+<p>就像前面检查：</p>
+<pre class="text"><code>input_ids
+labels</code></pre>
+<p>Packing 后也应该抽几条：</p>
+<blockquote>
+<p>Decode。</p>
+</blockquote>
+<p>看看是不是：</p>
+<pre class="text"><code>Sample A
+正常结束
+EOS
+
+Sample B
+正常开始
+...</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>Sample A回答
+直接黏到
+Sample B问题</code></pre>
+<p>或者：</p>
+<blockquote>
+<p>Assistant Mask 跨边界错位。</p>
+</blockquote>
+<hr />
+<h1 id="三十六最好还能打印-sample-boundary">三十六、最好还能打印 Sample
+Boundary</h1>
+<p>例如：</p>
+<pre class="text"><code>Token 0–319
+sample_id = A
+
+Token 320
+EOS
+
+Token 321–701
+sample_id = B
+
+Token 702
+EOS</code></pre>
+<p>并检查：</p>
+<pre class="text"><code>labels
+attention boundary
+position handling</code></pre>
+<p>这比只看：</p>
+<pre class="text"><code>packing=True</code></pre>
+<p>可靠得多。</p>
+<hr />
+<h1 id="三十七本阶段最危险的-6-个反例">三十七、本阶段最危险的 6
+个反例</h1>
+<p>第一，认为 Packing 就是把字符串直接 <code>join()</code>。</p>
+<blockquote>
+<p>错。还涉及模板边界、Label、EOS 和 Attention。</p>
+</blockquote>
+<p>第二，认为有 EOS 就一定不存在跨样本 Attention。</p>
+<blockquote>
+<p>错。EOS 是语义边界，不自动等于数学隔离。</p>
+</blockquote>
+<p>第三，让一个样本被随意切成两段塞进不同 Sequence。</p>
+<blockquote>
+<p>很容易破坏 Prompt / Response 完整性。</p>
+</blockquote>
+<p>第四，Packing 后重建 Loss Mask 时发生错位。</p>
+<blockquote>
+<p>可能训练 User、屏蔽 Assistant，或者跨 Sample 监督。</p>
+</blockquote>
+<p>第五，看到 <code>batch_size=4</code> 就认为一次训练只有 4
+条原始样本。</p>
+<blockquote>
+<p>Packing 后这个直觉不成立。</p>
+</blockquote>
+<p>第六，为追求 100% Packing Efficiency，破坏数据随机化和可复现性。</p>
+<blockquote>
+<p>计算效率不能凌驾于训练语义。</p>
+</blockquote>
+<hr />
+<h1 id="三十八现在把第-4-阶段压成最精准的-5-句话">三十八、现在把第 4
+阶段压成最精准的 5 句话</h1>
+<blockquote>
+<p><strong>第一，Packing 的目标不是改变数据，而是用真实 Token 替代
+Padding，让同样的 GPU 计算更多有效训练内容。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，一个 Packed Sequence 可以包含多条 Semantic
+Sample；它是计算容器，不是一条新的业务对话。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，EOS 只表示序列边界，不自动保证 Attention 隔离；严格
+Packing 还需要确认不同 Sample 的 Attention Boundary。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Packing 必须完整保留每条样本自己的
+<code>input_ids / labels / Loss Mask / sample boundary</code>，第一版优先采用
+No-split Packing。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Packing 以后不要只看 Samples/Batch，而应重点看 Token
+Utilization、Tokens per Step 和 Supervised Tokens per
+Step。</strong></p>
+</blockquote>
+<p>这五句掌握：</p>
+<blockquote>
+<p>今天最重要的东西已经拿到了。</p>
+</blockquote>
+<hr />
+<h1 id="三十九本阶段最核心的一张图">三十九、本阶段最核心的一张图</h1>
+<pre class="text"><code>Independent Samples
+独立训练样本
+
+A
+Messages → Template → Tokens → Labels
+                           │
+B                          │
+Messages → Template → Tokens → Labels
+                           │
+C                          │
+Messages → Template → Tokens → Labels
+                           │
+                           ▼
+                    Packing Layer
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+              ▼                         ▼
+       Sample Boundaries            EOS Boundaries
+              │                         │
+              └────────────┬────────────┘
+                           ▼
+                 Attention Isolation
+                           │
+                           ▼
+┌────────────────────────────────────────────┐
+│ A Tokens │ EOS │ B Tokens │ EOS │ C Tokens│
+└────────────────────────────────────────────┘
+                           │
+                           ▼
+                    Packed Sequence
+                           │
+                           ▼
+                     Less Padding
+                           │
+                           ▼
+                  Higher Token Utilization
+                           │
+                           ▼
+                          GPU</code></pre>
+<p>一句话：</p>
+<blockquote>
+<p><strong>独立建样本，安全做边界，高效装 Sequence。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十本阶段掌握测试">四十、本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Packing 和 Padding
+为什么不是一回事；为什么 Packed Sequence
+只是计算容器而不是新业务样本；Packing 为什么能够提高 Token
+Utilization；Dynamic Padding、Length Bucketing 和 Packing
+分别解决什么浪费；为什么 <code>A + EOS + B</code> 不等于 A/B 在
+Attention 上一定隔离；什么是 Cross-sample Attention；什么是
+Block-diagonal Causal Attention；为什么 EOS Boundary 和 Attention
+Isolation 不是同一个概念；Packing 后为什么必须同步组合
+<code>input_ids</code> 和 <code>labels</code>；为什么原有 Assistant-only
+Loss Mask 必须保持；为什么第一版优先采用 No-split Packing；为什么长于
+<code>max_length</code> 的样本应该由 Truncation Policy 处理而不是交给
+Packing 强拆；为什么 Packing 后 <code>batch_size=4</code> 不等于 4
+条原始 Sample；为什么 Tokens per Step 比 Samples per Step 更适合描述
+Packed Training；为什么 Training 可以 Packing，而 Evaluation
+通常更适合保持独立样本；以及为什么打开 <code>packing=True</code>
+之前必须弄清框架到底采用普通拼接还是严格 Sample Isolation。</p>
+<p>如果这些都能自己讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>4</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第4阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-3">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>Packing
+的本质，是在不改变每条训练样本语义和监督边界的前提下，把多个短 Sample
+安全装进同一个固定长度 Sequence，用真实训练 Token 替代
+Padding；真正专业的 Packing 不只是“拼起来”，而是同时守住 Sample
+Boundary、EOS、Loss Mask 和 Attention Isolation。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-5-阶段">下一阶段：第五课 · 第 5 阶段</h1>
+<h1 id="full-fine-tuning-与-peft">Full Fine-Tuning 与 PEFT</h1>
+<h2
+id="为什么一个-7b-14b-模型明明有几十亿参数我们却往往只训练其中极少的一部分">为什么一个
+7B / 14B 模型明明有几十亿参数，我们却往往只训练其中极少的一部分？</h2>
+<p>到目前为止我们已经把：</p>
+<pre class="text"><code>专家数据
+↓
+Chat Template
+↓
+Loss Mask
+↓
+Forward / Backward
+↓
+Sequence Length
+↓
+Truncation / Padding
+↓
+Packing</code></pre>
+<p>全部弄清楚。</p>
+<p>下一阶段开始进入真正的：</p>
+<h1 id="参数训练策略">参数训练策略</h1>
+<p>核心问题会变成：</p>
+<blockquote>
+<p><strong>为什么“不训练整个模型”，反而可能是政府采购项目第一版更合理的工程选择？</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

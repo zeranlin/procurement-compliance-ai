@@ -1,0 +1,1219 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第8课 · 第3阶段：Tokenizer Audit：领域术语怎样被切分，什么时候需要调整 Tokenizer？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第8课 · 第3阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>做 CPT、领域语料混合、能力保持、灾难性遗忘和 Synthetic Data。<ul><li>Token ≠ Word ≠ Concept。Token 是模型输入单位，不是天然语言学词，也不是一个完整知识概念。</li><li>High Fragmentation ≠ No Knowledge。切得碎首先意味着效率和表示成本上升，不等于模型一定不懂。</li><li>TokenizerVocabulary ↔ EmbeddingRows。Tokenizer 是模型架构的一部分，不是随便替换的文本工具。</li></ul></div><h1 id="第八课-第-3-阶段">第八课 · 第 3 阶段</h1>
+<h1
+id="tokenizer-audit领域术语怎样被切分什么时候需要调整-tokenizer-1">Tokenizer
+Audit：领域术语怎样被切分，什么时候需要调整 Tokenizer？</h1>
+<h2
+id="模型看见了一个采购术语到底意味着什么一个术语被切成-1-个-token3-个-token10-个-token会怎样影响-cpt-1">“模型看见了一个采购术语”到底意味着什么？一个术语被切成
+1 个 Token、3 个 Token、10 个 Token，会怎样影响 CPT？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-2">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-2">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Token ≠ Word ≠ Concept。Token
+是模型输入单位，不是天然语言学词，也不是一个完整知识概念。</strong></li>
+<li><strong>High Fragmentation ≠ No
+Knowledge。切得碎首先意味着效率和表示成本上升，不等于模型一定不懂。</strong></li>
+<li><strong>TokenizerVocabulary ↔︎ EmbeddingRows。Tokenizer
+是模型架构的一部分，不是随便替换的文本工具。</strong></li>
+<li><strong>Audit First, Modify Second。先量化碎片率、Token
+成本和真实错误，再决定是否动词表。</strong></li>
+<li><strong>AddToken ≠ AddKnowledge。新增 Token 只新增 ID
+和参数入口，知识必须通过 CPT 学出来。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-2">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="odd">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="even">
+<td><code>Tokenizer Audit</code></td>
+<td>分词器审计：检查专业术语、数字、符号的 Token 化质量</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-2">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 2 阶段我们已经把 CPT Corpus 从“文件堆”变成了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>质</mi><mi>量</mi><mi>可</mi><mi>控</mi><mo>+</mo><mi>覆</mi><mi>盖</mi><mi>可</mi><mi>解</mi><mi>释</mi><mo>+</mo><mi>重</mi><mi>复</mi><mi>受</mi><mi>控</mi><mo>+</mo><mi>版</mi><mi>本</mi><mi>可</mi><mi>复</mi><mi>现</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+质量可控
++
+覆盖可解释
++
+重复受控
++
+版本可复现
+}
+</annotation></semantics></math></p>
+<p>但真正送进模型训练的并不是“中文文本”。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>Token ID 序列。</strong></p>
+</blockquote>
+<p>所以第 3 阶段正式进入：</p>
+<h1 id="tokenizer-audit">Tokenizer Audit</h1>
+<h2 id="分词器审计">分词器审计</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementtokenizeraudit_v0.1-1"><code>ProcurementTokenizerAudit_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-2">一、先锁死本阶段最重要的一句话</h1>
+<p>Tokenizer 的职责不是：</p>
+<blockquote>
+<p><strong>理解采购术语。</strong></p>
+</blockquote>
+<p>Tokenizer 的职责是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Text
+\rightarrow
+Tokens
+\rightarrow
+TokenIDs
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>把字符串转换成模型可以读取的离散编号序列。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>I</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>e</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>I</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizerIssue
+\neq
+ModelKnowledgeIssue
+}
+</annotation></semantics></math></p>
+<p>模型“不懂某个术语”，可能有两类完全不同的问题：</p>
+<pre class="text"><code>A. Tokenizer切得很差
+输入表示成本高、碎片多
+
+B. Tokenizer切得没问题
+但模型参数没有学会这个概念</code></pre>
+<p>这两个问题的解决方法完全不同。</p>
+<hr />
+<h1 id="二tokenizer-的完整流程到底是什么">二、Tokenizer
+的完整流程到底是什么？</h1>
+<p>一个典型 Tokenization 流程可以概念化为：</p>
+<pre class="text"><code>Raw Text
+原始文本
+↓
+Normalization
+字符规范化
+↓
+Pre-tokenization / Segmentation
+初步切分
+↓
+Subword Encoding
+子词编码
+↓
+Token IDs
+词表编号
+↓
+Embedding Lookup
+查找对应向量
+↓
+Transformer
+进入模型</code></pre>
+<p>其中不同模型使用的 Tokenizer 算法可能不同，例如：</p>
+<pre class="text"><code>BPE
+Byte Pair Encoding
+字节对编码
+
+WordPiece
+子词切分方法
+
+Unigram
+基于概率的子词模型
+
+Byte-level Tokenization
+字节级编码</code></pre>
+<p>但无论算法叫什么，最终目标都一样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+String
+\rightarrow
+IntegerSequence
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三核心心智模型-①token-不是词token-是模型的输入单位">三、核心心智模型
+①：Token 不是“词”，Token 是模型的输入单位</h1>
+<p>例如：</p>
+<pre class="text"><code>“政府采购”</code></pre>
+<p>Tokenizer A 可能切成：</p>
+<pre class="text"><code>[&quot;政府&quot;, &quot;采购&quot;]</code></pre>
+<p>Tokenizer B 可能切成：</p>
+<pre class="text"><code>[&quot;政&quot;, &quot;府&quot;, &quot;采&quot;, &quot;购&quot;]</code></pre>
+<p>Tokenizer C 甚至可能有：</p>
+<pre class="text"><code>[&quot;政府采购&quot;]</code></pre>
+<p>这三种都可以工作。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>d</mi><mo>≠</mo><mi>O</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneWord
+\neq
+OneToken
+}
+</annotation></semantics></math></p>
+<p>进一步：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mo>≠</mo><mi>O</mi><mi>n</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneToken
+\neq
+OneConcept
+}
+</annotation></semantics></math></p>
+<p>模型的概念理解不是简单存放在某一个 Token 里。</p>
+<p>Transformer 可以通过多个 Token 的组合表示一个概念。</p>
+<hr />
+<h1
+id="四一个领域术语被切碎会产生什么真实成本">四、一个领域术语被切碎，会产生什么真实成本？</h1>
+<p>假设：</p>
+<pre class="text"><code>“中小企业声明函”</code></pre>
+<p>Tokenizer A：</p>
+<pre class="text"><code>[&quot;中小企业&quot;, &quot;声明函&quot;]</code></pre>
+<p>共 2 个 Token。</p>
+<p>Tokenizer B：</p>
+<pre class="text"><code>[&quot;中&quot;, &quot;小&quot;, &quot;企&quot;, &quot;业&quot;, &quot;声&quot;, &quot;明&quot;, &quot;函&quot;]</code></pre>
+<p>共 7 个 Token。</p>
+<p>这不意味着：</p>
+<blockquote>
+<p>B 一定理解不了。</p>
+</blockquote>
+<p>但会带来几个真实工程影响。</p>
+<p>第一：</p>
+<h1 id="sequence-length-cost">Sequence Length Cost</h1>
+<h2 id="序列长度成本">序列长度成本</h2>
+<p>同一篇文件需要更多 Token。</p>
+<p>第二：</p>
+<h1 id="context-efficiency">Context Efficiency</h1>
+<h2 id="上下文效率下降">上下文效率下降</h2>
+<p>固定 Context Window 内能装下的实际中文内容更少。</p>
+<p>第三：</p>
+<h1 id="training-compute">Training Compute</h1>
+<h2 id="训练计算量增加">训练计算量增加</h2>
+<p>训练按 Token 计费和计算。</p>
+<p>第四：</p>
+<h1 id="learning-signal-fragmentation">Learning Signal
+Fragmentation</h1>
+<h2 id="学习信号更分散">学习信号更分散</h2>
+<p>一个稳定术语的统计模式需要跨多个位置组合学习。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>d</mi><mi>F</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>主</mi><mi>要</mi><mi>首</mi><mi>先</mi><mi>表</mi><mi>现</mi><mi>为</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BadFragmentation
+主要首先表现为
+EfficiencyProblem
+}
+</annotation></semantics></math></p>
+<p>它可能进一步影响学习难度，</p>
+<p>但不能简单说：</p>
+<blockquote>
+<p>“多 Token = 模型不懂。”</p>
+</blockquote>
+<hr />
+<h1
+id="五核心心智模型-②fragmentation-是成本信号不是知识判决">五、核心心智模型
+②：Fragmentation 是成本信号，不是知识判决</h1>
+<p>这是本阶段非常重要的一条边界。</p>
+<p>如果：</p>
+<pre class="text"><code>“政府采购促进中小企业发展管理办法”</code></pre>
+<p>被切成很多 Token，</p>
+<p>我们可以说：</p>
+<blockquote>
+<p>Tokenization 成本高。</p>
+</blockquote>
+<p>但不能直接得出：</p>
+<blockquote>
+<p>模型不知道这个办法。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>F</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighFragmentation
+\neq
+NoKnowledge
+}
+</annotation></semantics></math></p>
+<p>真正专业的分析应该分成两层：</p>
+<pre class="text"><code>Tokenizer Layer
+切分是否高效？
+
+Model Layer
+模型是否真正理解？</code></pre>
+<p>不要混在一起。</p>
+<hr />
+<h1 id="六tokenizer-audit-到底审计什么">六、Tokenizer Audit
+到底审计什么？</h1>
+<p>第一版至少要审计六类对象：</p>
+<pre class="text"><code>1. 高频采购术语
+2. 低频但关键术语
+3. 法规名称与文号
+4. 数字、金额、百分比和单位
+5. 项目编号 / 统一社会信用代码等结构化字符串
+6. 中英混合缩写与行业专有名词</code></pre>
+<p>政府采购例子：</p>
+<pre class="text"><code>实质性响应
+政府采购政策功能
+采购标的所属行业
+中小企业声明函
+联合体投标
+履约保证金
+竞争性磋商
+单一来源采购</code></pre>
+<p>还要审计：</p>
+<pre class="text"><code>财库〔2020〕46号
+500万元
+3%
+30日历天
+GB/T 19001
+CPU/GPU
+API
+SaaS</code></pre>
+<p>因为这些模式对采购文本同样重要。</p>
+<hr />
+<h1 id="七专业指标-①term-fragment-count">七、专业指标 ①：Term Fragment
+Count</h1>
+<p>最简单的指标：</p>
+<h1 id="term-fragment-count">Term Fragment Count</h1>
+<h2 id="术语碎片数">术语碎片数</h2>
+<p>定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>F</mi><mrow><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><msub><mi>N</mi><mrow><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+F_{term}(x)
+=
+N_{tokens}(x)
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>“中小企业声明函”
+→ 7 tokens</code></pre>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>F</mi><mrow><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi></mrow></msub><mo>=</mo><mn>7</mn></mrow><annotation encoding="application/x-tex">
+F_{term}=7
+</annotation></semantics></math></p>
+<p>对于关键术语，</p>
+<p>可以统计：</p>
+<pre class="text"><code>Median Fragment Count
+P90 Fragment Count
+P95 Fragment Count</code></pre>
+<p>这样就不是凭感觉说：</p>
+<blockquote>
+<p>“切得有点碎。”</p>
+</blockquote>
+<p>而是有数据。</p>
+<hr />
+<h1 id="八专业指标-②token-fertility">八、专业指标 ②：Token
+Fertility</h1>
+<p>在 Tokenizer 研究中，</p>
+<h1 id="fertility">Fertility</h1>
+<h2 id="分词繁殖率">分词繁殖率</h2>
+<p>通常表示：</p>
+<blockquote>
+<p>一个原始语言单位平均被拆成多少个子词 Token。</p>
+</blockquote>
+<p>英语里常按 Word 统计。</p>
+<p>中文没有天然空格词边界，</p>
+<p>所以工程里可以同时保留两套指标：</p>
+<pre class="text"><code>Term Fertility
+关键领域术语平均Token数
+
+Character-normalized Token Rate
+每个中文字符对应多少Token</code></pre>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>R</mi><mrow><mi>c</mi><mi>h</mi><mi>a</mi><mi>r</mi></mrow></msub><mo>=</mo><mfrac><msub><mi>N</mi><mrow><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></msub><msub><mi>N</mi><mrow><mi>c</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow></msub></mfrac></mrow><annotation encoding="application/x-tex">
+R_{char}
+=
+\frac{N_{tokens}}{N_{characters}}
+</annotation></semantics></math></p>
+<p>这个指标主要用于：</p>
+<blockquote>
+<p>比较不同 Tokenizer 对同一批中文采购文本的编码效率。</p>
+</blockquote>
+<p>注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>不</mi><mi>自</mi><mi>动</mi><mi>等</mi><mi>于</mi><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Lower
+不自动等于Better
+}
+</annotation></semantics></math></p>
+<p>因为 Token 太粗也不自动意味着：</p>
+<blockquote>
+<p>语义更强。</p>
+</blockquote>
+<p>它只是效率指标之一。</p>
+<hr />
+<h1 id="九专业指标-③corpus-tokenization-cost">九、专业指标 ③：Corpus
+Tokenization Cost</h1>
+<p>CPT 最终训练的是整个 Corpus。</p>
+<p>所以必须看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mrow><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow></msub><mo>=</mo><msub><mi>N</mi><mrow><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+C_{token}
+=
+N_{tokens}(Corpus)
+</annotation></semantics></math></p>
+<p>假设同一个采购 Corpus：</p>
+<pre class="text"><code>Tokenizer A
+12.0B tokens
+
+Tokenizer B
+9.5B tokens</code></pre>
+<p>如果其他条件相近，</p>
+<p>B 的训练成本可能明显更低。</p>
+<p>因为：</p>
+<blockquote>
+<p>同样的原始文本被编码成了更短的 Token 序列。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>会</mi><mi>直</mi><mi>接</mi><mi>影</mi><mi>响</mi><mi>C</mi><mi>P</mi><mi>T</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenizer
+会直接影响CPT Token Budget
+}
+</annotation></semantics></math></p>
+<p>第 2 阶段的：</p>
+<blockquote>
+<p>Token Budget</p>
+</blockquote>
+<p>到了这里才真正落到：</p>
+<blockquote>
+<p>Tokenizer Version。</p>
+</blockquote>
+<hr />
+<h1
+id="十核心心智模型-③tokenizer-是模型架构的一部分不是随便换的文本工具">十、核心心智模型
+③：Tokenizer 是模型架构的一部分，不是随便换的文本工具</h1>
+<p>Tokenizer 文件看起来只是：</p>
+<pre class="text"><code>tokenizer.json
+vocab.json
+merges.txt
+special_tokens_map.json</code></pre>
+<p>但它和模型的：</p>
+<h1 id="embedding-matrix">Embedding Matrix</h1>
+<h2 id="输入嵌入矩阵">输入嵌入矩阵</h2>
+<p>直接绑定。</p>
+<p>如果词表大小是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>V</mi><annotation encoding="application/x-tex">
+V
+</annotation></semantics></math></p>
+<p>Embedding Dimension 是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>d</mi><annotation encoding="application/x-tex">
+d
+</annotation></semantics></math></p>
+<p>那么输入 Embedding：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><mi>V</mi><mo>×</mo><mi>d</mi></mrow></msup></mrow><annotation encoding="application/x-tex">
+E
+\in
+\mathbb{R}^{V\times d}
+</annotation></semantics></math></p>
+<p>每个 Token ID：</p>
+<blockquote>
+<p>都对应 Embedding Matrix 中的一行。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>V</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>y</mi><mo>↔</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>o</mi><mi>w</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizerVocabulary
+\leftrightarrow
+EmbeddingRows
+}
+</annotation></semantics></math></p>
+<p>这就是为什么：</p>
+<blockquote>
+<p>Tokenizer 不是可以随时替换的前处理插件。</p>
+</blockquote>
+<hr />
+<h1
+id="十一绝对不能做的事重新映射已有-token-id">十一、绝对不能做的事：重新映射已有
+Token ID</h1>
+<p>假设原模型：</p>
+<pre class="text"><code>Token 1001
+→ “政府”</code></pre>
+<p>模型已经训练了对应：</p>
+<pre class="text"><code>Embedding Row 1001</code></pre>
+<p>如果你重新训练一个词表，</p>
+<p>让：</p>
+<pre class="text"><code>Token 1001
+→ “医疗”</code></pre>
+<p>那么原来的 Weight 和 Tokenizer：</p>
+<blockquote>
+<p>彻底错位。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>M</mi><mi>a</mi><mi>p</mi><mi>p</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>必</mi><mi>须</mi><mi>保</mi><mi>持</mi><mi>稳</mi><mi>定</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExistingTokenIDMapping
+必须保持稳定
+}
+</annotation></semantics></math></p>
+<p>如果确实要扩展词表，</p>
+<p>通常更安全的方向是：</p>
+<blockquote>
+<p><strong>Append New Tokens</strong></p>
+</blockquote>
+<p>也就是：</p>
+<blockquote>
+<p>在现有 Vocabulary 后面追加。</p>
+</blockquote>
+<p>而不是重写旧 ID。</p>
+<hr />
+<h1 id="十二什么时候根本不需要改-tokenizer">十二、什么时候根本不需要改
+Tokenizer？</h1>
+<p>这是最重要的工程决策之一。</p>
+<p>很多项目做完 Audit 后，</p>
+<p>正确结论其实是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>e</mi><mi>e</mi><mi>p</mi><mi>E</mi><mi>x</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KeepExistingTokenizer
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>关键术语虽然拆成2～4个Token
+但整体Token成本可接受
+
+没有明显UNK问题
+
+中文覆盖正常
+
+训练预算可以接受
+
+下游模型理解并没有明显受限</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>不要为了“看起来更领域化”去改 Tokenizer。</p>
+</blockquote>
+<p>因为修改 Tokenizer 会引入：</p>
+<pre class="text"><code>Embedding兼容问题
+训练复杂度增加
+Serving版本风险
+已有Checkpoint兼容问题
+Adapter兼容问题
+数据需要重新Tokenize</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>必</mi><mi>须</mi><mi>有</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizerChange
+必须有MeasuredBenefit
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三核心心智模型-④audit-firstmodify-second">十三、核心心智模型
+④：Audit First，Modify Second</h1>
+<p>不要先问：</p>
+<blockquote>
+<p>“我们要不要做一个采购专用 Tokenizer？”</p>
+</blockquote>
+<p>先做：</p>
+<pre class="text"><code>Benchmark Corpus
+↓
+Critical Lexicon
+↓
+Tokenize
+↓
+Measure Fragmentation
+↓
+Measure Token Cost
+↓
+Inspect Rare Patterns
+↓
+Downstream Error Analysis
+↓
+Decide</code></pre>
+<p>中文解释：</p>
+<pre class="text"><code>先准备代表性文本
+↓
+建立关键术语清单
+↓
+用当前Tokenizer实际切分
+↓
+统计碎片程度
+↓
+计算Corpus Token成本
+↓
+检查数字、单位、文号等异常模式
+↓
+和真实模型错误做关联
+↓
+再决定是否修改</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>先</mi><mi>于</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizerAudit
+先于
+TokenizerExtension
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十四什么时候才值得考虑-vocabulary-extension">十四、什么时候才值得考虑
+Vocabulary Extension？</h1>
+<p>可以考虑扩展词表的典型条件是：</p>
+<pre class="text"><code>关键领域术语高频出现
+
+这些术语长期稳定
+
+现有Tokenizer持续严重碎片化
+
+碎片化显著增加Corpus Token成本
+
+CPT规模足够大，可以真正训练新Embedding
+
+有完整回归测试验证兼容性</code></pre>
+<p>例如一个术语：</p>
+<pre class="text"><code>“中小企业声明函”</code></pre>
+<p>在几十亿 Token 的 Corpus 中出现极高频率，</p>
+<p>并且长期被拆得非常碎，</p>
+<p>才可能值得考虑：</p>
+<blockquote>
+<p>增加一个 Normal Token。</p>
+</blockquote>
+<p>注意：</p>
+<blockquote>
+<p><strong>Normal Token</strong></p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>Special Token。</p>
+</blockquote>
+<hr />
+<h1 id="十五special-token-和-domain-token-不能混淆">十五、Special Token
+和 Domain Token 不能混淆</h1>
+<p>Special Token 通常用于：</p>
+<pre class="text"><code>BOS
+序列开始
+
+EOS
+序列结束
+
+PAD
+填充
+
+角色边界
+System / User / Assistant</code></pre>
+<p>它们具有：</p>
+<blockquote>
+<p>协议和结构功能。</p>
+</blockquote>
+<p>而：</p>
+<pre class="text"><code>“中小企业声明函”</code></pre>
+<p>即使加入 Vocabulary，</p>
+<p>通常也只是：</p>
+<blockquote>
+<p>普通领域 Token。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>T</mi><mi>e</mi><mi>r</mi><mi>m</mi><mo>≠</mo><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DomainTerm
+\neq
+SpecialToken
+}
+</annotation></semantics></math></p>
+<p>不要把采购术语全部做成 Special Token。</p>
+<hr />
+<h1 id="十六vocabulary-extension-以后发生什么">十六、Vocabulary
+Extension 以后发生什么？</h1>
+<p>假设原词表：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>=</mo><mn>128000</mn></mrow><annotation encoding="application/x-tex">
+V=128000
+</annotation></semantics></math></p>
+<p>新增：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>500</mn><annotation encoding="application/x-tex">
+500
+</annotation></semantics></math></p>
+<p>个 Token。</p>
+<p>新词表：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>′</mi><mo>=</mo><mn>128500</mn></mrow><annotation encoding="application/x-tex">
+V&#39;=128500
+</annotation></semantics></math></p>
+<p>那么 Embedding Matrix 从：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128000</mn><mo>×</mo><mi>d</mi></mrow><annotation encoding="application/x-tex">
+128000\times d
+</annotation></semantics></math></p>
+<p>扩展为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128500</mn><mo>×</mo><mi>d</mi></mrow><annotation encoding="application/x-tex">
+128500\times d
+</annotation></semantics></math></p>
+<p>新增的 500 行：</p>
+<blockquote>
+<p>一开始并没有经过原始预训练。</p>
+</blockquote>
+<p>所以必须初始化。</p>
+<p>常见思路包括：</p>
+<pre class="text"><code>Random Initialization
+随机初始化
+
+Average Initialization
+用组成子词Embedding的平均值初始化
+
+Weighted Composition
+根据原切分子词做加权组合初始化</code></pre>
+<p>但一定要记住：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Initialization
+\neq
+Knowledge
+}
+</annotation></semantics></math></p>
+<p>初始化只是：</p>
+<blockquote>
+<p>给新 Token 一个训练起点。</p>
+</blockquote>
+<p>真正的语义仍然需要后续 CPT 学出来。</p>
+<hr />
+<h1
+id="十七核心心智模型-⑤adding-token-不等于-adding-knowledge">十七、核心心智模型
+⑤：Adding Token 不等于 Adding Knowledge</h1>
+<p>假设我们新增：</p>
+<pre class="text"><code>“政府采购促进中小企业发展管理办法”</code></pre>
+<p>这个 Token。</p>
+<p>模型不会因为 Vocabulary 里出现了这个字符串，</p>
+<p>就自动知道：</p>
+<pre class="text"><code>它是什么
+有什么内容
+适用什么场景
+与哪些规则关联</code></pre>
+<p>新 Token 一开始只是：</p>
+<blockquote>
+<p>一个新 ID + 一行新 Embedding。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>d</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mo>≠</mo><mi>A</mi><mi>d</mi><mi>d</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AddToken
+\neq
+AddKnowledge
+}
+</annotation></semantics></math></p>
+<p>必须经过足够训练，</p>
+<p>才可能形成稳定表示。</p>
+<hr />
+<h1 id="十八lora-qlora-场景为什么尤其要小心新-token">十八、LoRA / QLoRA
+场景为什么尤其要小心新 Token？</h1>
+<p>如果新增 Token，</p>
+<p>但训练时只 LoRA：</p>
+<pre class="text"><code>q_proj
+k_proj
+v_proj
+o_proj</code></pre>
+<p>而新的：</p>
+<pre class="text"><code>Embedding Rows</code></pre>
+<p>根本没有被训练，</p>
+<p>那新增词表可能几乎没有意义。</p>
+<p>所以扩词表后必须明确：</p>
+<pre class="text"><code>Embedding是否Trainable？
+
+LM Head是否需要同步？
+
+是否Weight Tying？
+
+Adapter保存是否包含新增Embedding？
+
+最终Checkpoint怎样加载？</code></pre>
+<p>这里的具体实现取决于模型架构。</p>
+<p>但工程原则不变：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>w</mi><mi>V</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>有</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>承</mi><mi>接</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NewVocabulary
+必须有
+TrainableParameters
+承接
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十九数字金额和单位为什么要单独审计">十九、数字、金额和单位为什么要单独审计？</h1>
+<p>采购文本大量出现：</p>
+<pre class="text"><code>5万元
+5000000元
+3%
+30日历天
+1.5%
+2026年9月18日
+GB/T 19001-2016</code></pre>
+<p>如果 Tokenizer 对数字和符号切分很异常，</p>
+<p>会增加：</p>
+<pre class="text"><code>序列长度
+数值关系学习难度
+格式生成错误</code></pre>
+<p>所以 Tokenizer Audit 不应该只有：</p>
+<blockquote>
+<p>中文词语表。</p>
+</blockquote>
+<p>还要单独建立：</p>
+<h1 id="numeric-unit-test-set">Numeric / Unit Test Set</h1>
+<h2 id="数字与单位测试集">数字与单位测试集</h2>
+<p>检查：</p>
+<pre class="text"><code>金额
+百分比
+日期
+文号
+标准编号
+项目编号
+统一社会信用代码</code></pre>
+<hr />
+<h1 id="二十tokenizer-改了以后旧数据必须重新-tokenize">二十、Tokenizer
+改了以后，旧数据必须重新 Tokenize</h1>
+<p>这一点非常关键。</p>
+<p>如果：</p>
+<pre class="text"><code>Tokenizer_V1</code></pre>
+<p>生成了一批 Token IDs，</p>
+<p>后来升级：</p>
+<pre class="text"><code>Tokenizer_V2</code></pre>
+<p>那么旧的 Token ID Cache：</p>
+<blockquote>
+<p>不能默认继续使用。</p>
+</blockquote>
+<p>必须：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>→</mo><mi>N</mi><mi>e</mi><mi>w</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Text
+\rightarrow
+Retokenize
+\rightarrow
+NewTokenIDs
+}
+</annotation></semantics></math></p>
+<p>所以训练数据必须记录：</p>
+<pre class="text"><code>tokenizer_name
+tokenizer_version
+tokenizer_hash
+vocab_size
+special_token_config</code></pre>
+<p>否则：</p>
+<blockquote>
+<p>Corpus Version 和 Tokenizer Version 对不上。</p>
+</blockquote>
+<hr />
+<h1
+id="二十一核心心智模型-⑥tokenizer-version-是-model-version-的组成部分">二十一、核心心智模型
+⑥：Tokenizer Version 是 Model Version 的组成部分</h1>
+<p>一个模型版本不能只写：</p>
+<pre class="text"><code>ProcurementLM_V0.2</code></pre>
+<p>还应该能够追溯：</p>
+<pre class="text"><code>Base Model Version
+
+Tokenizer Version
+
+Vocabulary Hash
+
+CPT Corpus Version
+
+Training Config
+
+SFT Version</code></pre>
+<p>因为 Serving 如果加载错 Tokenizer，</p>
+<p>哪怕模型 Weight 完全正确：</p>
+<blockquote>
+<p>输出也可能彻底异常。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>=</mo><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi><mo>+</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelArtifact
+=
+Weights
++
+Tokenizer
++
+Config
+}
+</annotation></semantics></math></p>
+<p>而不是只有：</p>
+<blockquote>
+<p><code>model.safetensors</code>。</p>
+</blockquote>
+<hr />
+<h1 id="二十二到底有哪三种-tokenizer-决策">二十二、到底有哪三种
+Tokenizer 决策？</h1>
+<p>审计以后，通常有三条路径。</p>
+<h2 id="path-akeep">Path A：Keep</h2>
+<h3 id="保持原-tokenizer">保持原 Tokenizer</h3>
+<p>适合：</p>
+<pre class="text"><code>总体效率合理
+关键术语碎片可接受
+没有明显输入瓶颈</code></pre>
+<p>这是默认优先路径。</p>
+<hr />
+<h2 id="path-bextend">Path B：Extend</h2>
+<h3 id="在现有-vocabulary-后追加少量领域-token">在现有 Vocabulary
+后追加少量领域 Token</h3>
+<p>适合：</p>
+<pre class="text"><code>少数稳定高频术语严重碎片化
+收益能够量化
+有足够CPT训练新Embedding</code></pre>
+<hr />
+<h2 id="path-cretrain-tokenizer">Path C：Retrain Tokenizer</h2>
+<h3 id="重新训练整个-tokenizer">重新训练整个 Tokenizer</h3>
+<p>这是最高风险路径。</p>
+<p>因为它可能导致：</p>
+<blockquote>
+<p>整个 Token ID 空间改变。</p>
+</blockquote>
+<p>对于已有 Pretrained Model，</p>
+<p>通常意味着：</p>
+<blockquote>
+<p>极高兼容成本。</p>
+</blockquote>
+<p>所以除非：</p>
+<pre class="text"><code>重新从头训练模型
+或
+有非常充分的架构和训练资源</code></pre>
+<p>否则不应轻易采用。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>e</mi><mi>e</mi><mi>p</mi><mo>&gt;</mo><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>d</mi><mo>&gt;</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Keep
+&gt;
+Extend
+&gt;
+Retrain
+}
+</annotation></semantics></math></p>
+<p>这里的 <code>&gt;</code> 不是说性能一定更好，</p>
+<p>而是表达：</p>
+<blockquote>
+<p><strong>默认工程风险从低到高。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十三tokenizer-audit-的最终评测不能只看-token-数">二十三、Tokenizer
+Audit 的最终评测不能只看 Token 数</h1>
+<p>假设扩词表以后：</p>
+<pre class="text"><code>Corpus Token数下降 8%</code></pre>
+<p>这很好。</p>
+<p>但还要检查：</p>
+<pre class="text"><code>领域CPT Loss
+下游任务表现
+通用文本表现
+指令遵循
+生成稳定性
+Serving兼容性</code></pre>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizerMetricGain
+\neq
+ModelQualityGain
+}
+</annotation></semantics></math></p>
+<p>最终必须回到：</p>
+<blockquote>
+<p>模型实际能力。</p>
+</blockquote>
+<hr />
+<h1
+id="二十四本阶段工程产物procurementtokenizeraudit_v0.1">二十四、本阶段工程产物：<code>ProcurementTokenizerAudit_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>tokenizer_name
+
+tokenizer_version
+
+tokenizer_hash
+
+vocab_size
+
+algorithm_family
+
+special_tokens
+
+critical_lexicon
+
+term_fragment_count
+
+term_fertility
+
+character_normalized_token_rate
+
+corpus_token_count
+
+numeric_unit_test
+
+document_id_test
+
+regulation_reference_test
+
+high_fragmentation_terms
+
+candidate_new_tokens
+
+decision
+=
+keep / extend / retrain
+
+embedding_resize_required
+
+embedding_training_policy
+
+lm_head_policy
+
+retokenization_required
+
+compatibility_test
+
+serving_version_policy</code></pre>
+<p>如果选择 Extend，</p>
+<p>还要记录：</p>
+<pre class="text"><code>added_tokens
+
+old_vocab_size
+
+new_vocab_size
+
+token_id_range
+
+initialization_method
+
+training_exposure
+
+checkpoint_compatibility
+
+adapter_compatibility</code></pre>
+<p>这样 Tokenizer 才真正进入：</p>
+<blockquote>
+<p>可审计工程资产。</p>
+</blockquote>
+<hr />
+<h1 id="二十五本阶段最重要的-7-个核心心智模型">二十五、本阶段最重要的 7
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型 ①：<code>Token ≠ Word ≠ Concept</code>。Token
+是模型输入单位，不是天然语言学词，也不是一个完整知识概念。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>High Fragmentation ≠ No Knowledge</code>。切得碎首先意味着效率和表示成本上升，不等于模型一定不懂。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>TokenizerVocabulary ↔︎ EmbeddingRows</code>。Tokenizer
+是模型架构的一部分，不是随便替换的文本工具。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Audit First, Modify Second</code>。先量化碎片率、Token
+成本和真实错误，再决定是否动词表。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑤：<code>AddToken ≠ AddKnowledge</code>。新增 Token
+只新增 ID 和参数入口，知识必须通过 CPT 学出来。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>TokenizerVersion ∈ ModelVersion</code>。Weights、Tokenizer、Config
+必须作为一个整体发布和加载。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>TokenizerMetricGain ≠ ModelQualityGain</code>。Token
+数下降只是局部优化，最终必须用
+CPT、下游任务和回归测试证明收益。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十六把完整-tokenizer-audit-流程压成一张专业工程图">二十六、把完整
+Tokenizer Audit 流程压成一张专业工程图</h1>
+<pre class="text"><code>                  Representative CPT Corpus
+                    代表性CPT语料样本
+                            │
+                            ▼
+                     Critical Lexicon
+                 建立关键领域术语清单
+                            │
+                            ▼
+                    Current Tokenizer
+                   使用当前分词器编码
+                            │
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+      Term Fragment     Numeric / Unit   Corpus Cost
+        术语碎片率       数字单位测试      全语料Token成本
+             │              │              │
+             └──────────────┼──────────────┘
+                            ▼
+                     Error Correlation
+             与真实CPT / 下游错误做关联分析
+                            │
+                            ▼
+                       Decision Gate
+                  是否真的值得修改Tokenizer
+                 ┌──────────┼──────────┐
+                 ▼          ▼          ▼
+                Keep      Extend      Retrain
+              保持原版    追加少量词    重训词表
+                 │          │          │
+                 │          ▼          │
+                 │    Resize Embedding │
+                 │      扩展Embedding  │
+                 │          │          │
+                 │          ▼          │
+                 │    Train New Rows   │
+                 │      训练新增参数    │
+                 └──────────┼──────────┘
+                            ▼
+                    Retokenize Corpus
+                      重新编码训练语料
+                            │
+                            ▼
+                   Compatibility Tests
+               Checkpoint / Adapter / Serving
+                            │
+                            ▼
+                    CPT + Regression Eval
+                 CPT与下游回归评测
+                            │
+                            ▼
+                Tokenizer Release Decision</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Tokenizer Audit
+的目标不是做一个“更懂采购的分词器”，而是判断当前 Tokenizer
+是否正在制造可量化的领域表示成本；只有当这种成本足够大、收益能够验证、并且有足够
+CPT 训练新增参数时，才值得修改词表。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第八课-第-3-阶段掌握测试">第八课 · 第 3 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Tokenizer 为什么只负责
+<code>Text → Token IDs</code>；Token、Word、Concept
+为什么不能画等号；领域术语切成很多 Token 会产生哪些真实成本；为什么 High
+Fragmentation 不等于模型没有知识；Tokenizer Audit
+应该覆盖哪些采购语言模式；Term Fragment
+Count、Fertility、Character-normalized Token Rate 和 Corpus Tokenization
+Cost 分别测什么；为什么 Tokenizer Vocabulary 和 Embedding Matrix
+是绑定的；为什么绝对不能随便重排已有 Token ID；什么时候保持原 Tokenizer
+反而是专业选择；为什么应该先 Audit 再 Modify；什么条件下才值得
+Vocabulary Extension；为什么 Domain Token 不等于 Special Token；新增
+Token 后为什么必须训练新增 Embedding；为什么
+<code>Add Token ≠ Add Knowledge</code>；LoRA / QLoRA
+场景为什么尤其要检查 Embedding
+是否真的被训练；数字、金额、单位和文号为什么需要单独测试；Tokenizer
+变化以后为什么必须重新 Tokenize Corpus；以及为什么 Tokenizer Version
+必须作为 Model Version 的组成部分一起发布。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mi>第</mi><mn>3</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课第3阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第八课-第-4-阶段">下一阶段：第八课 · 第 4 阶段</h1>
+<h1
+id="cpt-training-objectivenext-token-predictionsequencecontext-length-与-loss">CPT
+Training Objective：Next Token Prediction、Sequence、Context Length 与
+Loss</h1>
+<h2
+id="cpt-明明还是-next-token-prediction为什么数据拼接方式sequence-lengthpacking-和-loss-masking-会直接改变模型到底在学什么">CPT
+明明还是 Next Token Prediction，为什么数据拼接方式、Sequence
+Length、Packing 和 Loss Masking 会直接改变模型到底在学什么？</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Next Token Prediction
+因果语言建模
+
+Sequence Construction
+训练序列构造
+
+Context Length
+上下文长度
+
+Packing
+多文档拼接
+
+Document Boundary
+文档边界
+
+EOS
+序列结束标记
+
+Loss Masking
+损失掩码
+
+Truncation
+截断
+
+Long-document Sampling
+长文档采样
+
+Effective Tokens
+有效训练Token
+
+Perplexity
+困惑度
+
+Training Objective Audit
+训练目标审计</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementcptobjectivepolicy_v0.1"><code>ProcurementCPTObjectivePolicy_V0.1</code></h1>
+<p>下一阶段最关键的边界是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mo>+</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameCorpus
++
+DifferentSequenceConstruction
+=
+DifferentLearningProblem
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>同一批文本，只要你怎样切 Sequence、怎样 Packing、哪里算 Loss
+不同，模型实际学习到的任务就已经不同。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage02.html">← 第 2 阶段</a><a class="btn" href="stage04.html">第 4 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

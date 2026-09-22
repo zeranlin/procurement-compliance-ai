@@ -1,0 +1,1169 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第9阶段：Failure Recovery、Retry 与 Human-in-the-loop</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，可靠 Agent 的目标不是“永不失败”，而是 Fails Explicitly + Recovers Safely + Escalates When Needed；Retry 只是 Recovery 的一种。</li><li>第二，失败必须先分类：Transient Failure 才适合 Retry，Validation Error 应修参数或 Replan，Authorization / Policy Failure 应停止或请求权限，Terminal Failure 应明确终止。</li><li>第三，有副作用的 Action 一旦超时，不能直接视为失败；Timeout ≠ DefinitelyFailed，必须先 Verify 执行状态，再决定是否用同一个 Idempotency Key 重试。</li></ul></div><h1 id="第七课-第-9-阶段">第七课 · 第 9 阶段</h1>
+<h1 id="failure-recoveryretry-与-human-in-the-loop-1">Failure
+Recovery、Retry 与 Human-in-the-loop</h1>
+<h2
+id="agent-已经会路由会调用工具会循环但真实系统一旦超时权限失败证据不足执行结果不确定怎样才能安全恢复">Agent
+已经会路由、会调用工具、会循环，但真实系统一旦超时、权限失败、证据不足、执行结果不确定，怎样才能安全恢复？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，可靠 Agent 的目标不是“永不失败”，而是 Fails Explicitly
++ Recovers Safely + Escalates When Needed；Retry 只是 Recovery
+的一种。</strong></li>
+<li><strong>第二，失败必须先分类：Transient Failure 才适合
+Retry，Validation Error 应修参数或 Replan，Authorization / Policy
+Failure 应停止或请求权限，Terminal Failure 应明确终止。</strong></li>
+<li><strong>第三，有副作用的 Action 一旦超时，不能直接视为失败；Timeout
+≠ DefinitelyFailed，必须先 Verify 执行状态，再决定是否用同一个
+Idempotency Key 重试。</strong></li>
+<li><strong>第四，Partial Failure、Rollback、Compensation 和 Circuit
+Breaker 都属于真实 Agent 必备的恢复机制；多步任务不能只有“成功 /
+失败”两个状态。</strong></li>
+<li><strong>第五，Human-in-the-loop 至少要区分 Clarification、Approval
+和 Escalation；需要人工时 Agent
+应进入正式暂停状态，而不是继续猜测或绕过控制。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Recovery</code></td>
+<td>恢复：工具失败或中断后安全重试、降级和继续</td>
+</tr>
+<tr class="even">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="odd">
+<td><code>Human-in-the-loop</code></td>
+<td>人在回路：高风险或不确定任务引入人工复核</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Idempotency</code></td>
+<td>幂等：重复执行不会产生不可控重复副作用</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 8 阶段，我们已经得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>O</mi><mi>f</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mo>→</mo><mi>R</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>A</mi><mi>G</mi><mi>/</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>/</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>/</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>/</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourceOfTruth
+\rightarrow
+Route
+\rightarrow
+RAG / Database / File / Compute / Action
+}
+</annotation></semantics></math></p>
+<p>这解决了：</p>
+<blockquote>
+<p><strong>Agent 应该走哪条路径。</strong></p>
+</blockquote>
+<p>但真实系统不会永远成功。</p>
+<p>你一定会遇到：</p>
+<pre class="text"><code>网络超时
+接口限流
+数据库暂时不可用
+权限不足
+参数合法但业务状态已变化
+只完成一半
+写操作是否成功不确定
+多个并行分支部分失败
+证据不足
+需要人工确认</code></pre>
+<p>所以一个真正可靠的 Agent，绝不能把目标定义成：</p>
+<blockquote>
+<p><strong>“永远不失败。”</strong></p>
+</blockquote>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>N</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableAgent
+\neq
+NeverFails
+}
+</annotation></semantics></math></p>
+<p>而应该是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>s</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>l</mi><mi>y</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>l</mi><mi>y</mi><mo>+</mo><mi>E</mi><mi>s</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>N</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableAgent
+=
+FailsExplicitly
++
+RecoversSafely
++
+EscalatesWhenNeeded
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementagentrecoverypolicy_v0.1-1"><code>ProcurementAgentRecoveryPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-8">一、先锁死本阶段最重要的一句话</h1>
+<p>错误发生以后，Agent 第一件事不是：</p>
+<blockquote>
+<p><strong>“重试。”</strong></p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>f</mi><mi>y</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>h</mi><mi>o</mi><mi>o</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClassifyFailure
+\rightarrow
+ChooseRecovery
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<pre class="text"><code>这是什么错误？
+↓
+它会不会自己恢复？
+↓
+原动作能不能安全重试？
+↓
+是否应该换策略？
+↓
+是否应该停止？
+↓
+是否必须交给人？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>只</mi><mi>是</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>的</mi><mi>一</mi><mi>种</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retry
+只是Recovery的一种
+}
+</annotation></semantics></math></p>
+<p>不是 Recovery 的全部。</p>
+<hr />
+<h1 id="二先把-failure-分成几类">二、先把 Failure 分成几类</h1>
+<p>第一版至少应该区分：</p>
+<pre class="text"><code>Transient Failure
+临时故障
+
+Validation Failure
+输入 / Schema / 业务校验失败
+
+Authorization Failure
+权限失败
+
+Policy Failure
+策略禁止
+
+Not Found / Empty Result
+没有找到数据
+
+Conflict Failure
+状态冲突 / 版本冲突
+
+Partial Failure
+部分步骤成功、部分失败
+
+Uncertain Execution
+不知道动作到底成功没有
+
+Terminal Failure
+当前条件下无法继续</code></pre>
+<p>不同错误：</p>
+<blockquote>
+<p>Recovery 策略完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="三transient-failure这类错误才真正适合-retry">三、Transient
+Failure：这类错误才真正适合 Retry</h1>
+<p>典型例子：</p>
+<pre class="text"><code>HTTP 503
+短暂网络错误
+Rate Limit
+连接重置
+临时锁
+服务过载</code></pre>
+<p>这种情况下：</p>
+<blockquote>
+<p>Action 本身可能没错。</p>
+</blockquote>
+<p>只是：</p>
+<blockquote>
+<p>执行环境暂时失败。</p>
+</blockquote>
+<p>所以可以：</p>
+<h1 id="retry-2">Retry</h1>
+<h2 id="重试-1">重试</h2>
+<p>但必须带：</p>
+<pre class="text"><code>max_attempts
+backoff
+jitter
+timeout
+retryable_error_types</code></pre>
+<p>核心原则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OnlyRetryRetryableErrors
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="四backoff为什么不能失败以后立刻疯狂重试">四、Backoff：为什么不能失败以后立刻疯狂重试？</h1>
+<p>假设服务已经过载。</p>
+<p>如果 100 个 Agent 同时：</p>
+<pre class="text"><code>失败
+↓
+立即重试
+↓
+再次失败
+↓
+立即重试</code></pre>
+<p>只会把服务压得更死。</p>
+<p>所以 Retry 通常需要：</p>
+<h1 id="backoff">Backoff</h1>
+<h2 id="退避">退避</h2>
+<p>例如概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>e</mi><mi>l</mi><mi>a</mi><msub><mi>y</mi><mi>n</mi></msub><mo>=</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>y</mi><mo>×</mo><msup><mn>2</mn><mi>n</mi></msup></mrow><annotation encoding="application/x-tex">
+Delay_n
+=
+BaseDelay
+\times
+2^n
+</annotation></semantics></math></p>
+<p>再加入随机扰动：</p>
+<h1 id="jitter">Jitter</h1>
+<h2 id="抖动">抖动</h2>
+<p>避免所有请求在同一时刻重新涌入。</p>
+<p>重点不是公式本身。</p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>受</mi><mi>节</mi><mi>奏</mi><mi>控</mi><mi>制</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retry
+必须受节奏控制
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五validation-failure参数错了重试原动作没有意义">五、Validation
+Failure：参数错了，重试原动作没有意义</h1>
+<p>假设 Tool 返回：</p>
+<pre class="text"><code>400 invalid project_id</code></pre>
+<p>如果 Agent 原样 Retry：</p>
+<pre class="text"><code>project_id = &quot;P-???&quot;</code></pre>
+<p>再试 5 次，</p>
+<p>不会变好。</p>
+<p>这种情况应该：</p>
+<pre class="text"><code>修正参数
+重新获取字段
+请求用户补充
+或
+Replan</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InvalidInput
+\neq
+RetryableFailure
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="六authorization-policy-failure不能靠重试绕过权限">六、Authorization
+/ Policy Failure：不能靠重试绕过权限</h1>
+<p>如果 Runtime 返回：</p>
+<pre class="text"><code>permission_denied</code></pre>
+<p>或者：</p>
+<pre class="text"><code>approval_required</code></pre>
+<p>正确做法不是：</p>
+<blockquote>
+<p>换个参数继续撞。</p>
+</blockquote>
+<p>而应该进入：</p>
+<pre class="text"><code>request_approval
+request_permission
+switch_to_read_only_path
+or
+stop</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>不</mi><mi>能</mi><mi>通</mi><mi>过</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>解</mi><mi>决</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AuthorizationFailure
+不能通过Retry解决
+}
+</annotation></semantics></math></p>
+<p>更不能：</p>
+<blockquote>
+<p>换一个名字相似的 Tool 绕过 Policy。</p>
+</blockquote>
+<hr />
+<h1 id="七retry-和-replan-再次精确区分">七、Retry 和 Replan
+再次精确区分</h1>
+<p>第 5 阶段我们已经讲过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mo>=</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>A</mi><mi>g</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Retry
+=
+SameActionAgain
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Replan
+=
+DifferentDecision
+</annotation></semantics></math></p>
+<p>这一阶段再加一层：</p>
+<blockquote>
+<p><strong>什么时候该 Retry，什么时候该 Replan？</strong></p>
+</blockquote>
+<p>可以按错误来源判断：</p>
+<pre class="text"><code>执行环境暂时失败
+→ Retry
+
+参数 / 路由 / Tool 选择错误
+→ Replan
+
+权限 / Policy 阻止
+→ Escalate / Stop
+
+证据长期不足
+→ Clarify / Human Review
+
+动作结果不确定
+→ Verify Before Retry</code></pre>
+<p>所以 Recovery 不是“一条重试规则”。</p>
+<p>而是一张：</p>
+<blockquote>
+<p><strong>错误类型 → 恢复动作</strong></p>
+</blockquote>
+<p>的映射表。</p>
+<hr />
+<h1
+id="八最危险的一类错误uncertain-execution">八、最危险的一类错误：Uncertain
+Execution</h1>
+<p>假设 Agent 调用：</p>
+<pre class="text"><code>publish_notice</code></pre>
+<p>请求超时。</p>
+<p>现在你不知道：</p>
+<pre class="text"><code>情况A：
+服务根本没收到
+
+情况B：
+服务已经执行成功
+只是响应丢了</code></pre>
+<p>如果直接 Retry：</p>
+<blockquote>
+<p>可能重复发布。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>o</mi><mi>u</mi><mi>t</mi><mo>≠</mo><mi>D</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>l</mi><mi>y</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Timeout
+\neq
+DefinitelyFailed
+}
+</annotation></semantics></math></p>
+<p>对有副作用的 Tool，</p>
+<p>超时后第一步应该是：</p>
+<h1 id="verify">Verify</h1>
+<h2 id="验证执行状态">验证执行状态</h2>
+<p>例如：</p>
+<pre class="text"><code>query_action_status
+check_idempotency_key
+read_current_external_state</code></pre>
+<p>只有确认未执行：</p>
+<blockquote>
+<p>才考虑 Retry。</p>
+</blockquote>
+<hr />
+<h1
+id="九idempotencyrecovery-能不能安全关键看重复执行会发生什么">九、Idempotency：Recovery
+能不能安全，关键看重复执行会发生什么</h1>
+<p>如果同一个动作重复两次：</p>
+<pre class="text"><code>create_draft_report
+create_draft_report</code></pre>
+<p>结果只是返回同一份报告，</p>
+<p>这叫：</p>
+<blockquote>
+<p>接近幂等。</p>
+</blockquote>
+<p>如果重复两次：</p>
+<pre class="text"><code>publish_notice
+publish_notice</code></pre>
+<p>产生两条正式公告，</p>
+<p>那就非常危险。</p>
+<p>所以写操作应尽量携带：</p>
+<pre class="text"><code>idempotency_key
+operation_id
+request_id</code></pre>
+<p>让 Runtime 能判断：</p>
+<blockquote>
+<p>这是不是同一个业务动作的重复提交。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>依</mi><mi>赖</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SafeRetry
+依赖
+Idempotency
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十partial-failure多步任务失败不一定意味着全部失败">十、Partial
+Failure：多步任务失败不一定意味着“全部失败”</h1>
+<p>假设一个采购文件审查任务有四个并行分支：</p>
+<pre class="text"><code>资格条件审查
+评分标准审查
+技术参数审查
+合同条款审查</code></pre>
+<p>结果：</p>
+<pre class="text"><code>资格 = success
+评分 = success
+技术 = failed
+合同 = success</code></pre>
+<p>这不是：</p>
+<blockquote>
+<p>全部成功。</p>
+</blockquote>
+<p>也不是：</p>
+<blockquote>
+<p>全部失败。</p>
+</blockquote>
+<p>而是：</p>
+<h1 id="partial-success">Partial Success</h1>
+<h2 id="部分成功">部分成功</h2>
+<p>所以 State 应明确：</p>
+<div class="sourceCode" id="cb464"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb464-1"><a href="#cb464-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb464-2"><a href="#cb464-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;partial_success&quot;</span><span class="fu">,</span></span>
+<span id="cb464-3"><a href="#cb464-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;completed&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb464-4"><a href="#cb464-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;qualification&quot;</span><span class="ot">,</span></span>
+<span id="cb464-5"><a href="#cb464-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;scoring&quot;</span><span class="ot">,</span></span>
+<span id="cb464-6"><a href="#cb464-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;contract&quot;</span></span>
+<span id="cb464-7"><a href="#cb464-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb464-8"><a href="#cb464-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;failed&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb464-9"><a href="#cb464-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;technical&quot;</span></span>
+<span id="cb464-10"><a href="#cb464-10" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb464-11"><a href="#cb464-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>然后决定：</p>
+<pre class="text"><code>只重试失败分支
+降低结果范围
+标记needs_review
+或
+请求人工补充</code></pre>
+<hr />
+<h1 id="十一rollback-和-compensation-不是一回事">十一、Rollback 和
+Compensation 不是一回事</h1>
+<p>如果事务还没真正提交，</p>
+<p>有时可以：</p>
+<h1 id="rollback">Rollback</h1>
+<h2 id="回滚">回滚</h2>
+<p>即：</p>
+<blockquote>
+<p>恢复到之前状态。</p>
+</blockquote>
+<p>但在分布式业务系统里，</p>
+<p>很多动作已经发生：</p>
+<pre class="text"><code>邮件已发
+文件已生成
+外部系统已接收
+审批已提交</code></pre>
+<p>这时往往不能真正“回滚时间”。</p>
+<p>只能做：</p>
+<h1 id="compensation">Compensation</h1>
+<h2 id="补偿动作">补偿动作</h2>
+<p>例如：</p>
+<pre class="text"><code>错误创建草稿
+→ 删除草稿
+
+错误提交审批
+→ 发起撤回
+
+错误写入临时记录
+→ 写入纠正记录</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mo>=</mo><mi>U</mi><mi>n</mi><mi>d</mi><mi>o</mi><mi>B</mi><mi>e</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>m</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rollback
+=
+UndoBeforeCommit
+}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Compensation
+=
+BusinessLevelCorrectiveAction
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十二circuit-breaker外部服务坏了不要让所有-agent-一直撞">十二、Circuit
+Breaker：外部服务坏了，不要让所有 Agent 一直撞</h1>
+<p>假设：</p>
+<pre class="text"><code>regulation.search</code></pre>
+<p>连续 50 次失败。</p>
+<p>继续让 Agent 调：</p>
+<blockquote>
+<p>没意义。</p>
+</blockquote>
+<p>这时可以触发：</p>
+<h1 id="circuit-breaker">Circuit Breaker</h1>
+<h2 id="熔断器">熔断器</h2>
+<p>状态可以简化为：</p>
+<pre class="text"><code>CLOSED
+正常调用
+
+OPEN
+暂时禁止调用
+
+HALF_OPEN
+少量探测恢复</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>r</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>应</mi><mi>该</mi><mi>进</mi><mi>入</mi><mi>系</mi><mi>统</mi><mi>级</mi><mi>保</mi><mi>护</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RepeatedInfrastructureFailure
+应该进入系统级保护
+}
+</annotation></semantics></math></p>
+<p>而不是让每个 Agent 自己傻重试。</p>
+<hr />
+<h1 id="十三human-in-the-loop-不只有审批">十三、Human-in-the-loop
+不只有“审批”</h1>
+<p>人类介入至少可以分三种：</p>
+<h2 id="clarification">1. Clarification</h2>
+<h3 id="澄清">澄清</h3>
+<p>缺少必要信息：</p>
+<pre class="text"><code>项目辖区不明
+文件版本不明
+用户意图不清</code></pre>
+<p>这时需要：</p>
+<blockquote>
+<p>用户补充事实。</p>
+</blockquote>
+<hr />
+<h2 id="approval">2. Approval</h2>
+<h3 id="审批">审批</h3>
+<p>动作本身清楚，</p>
+<p>但属于高风险：</p>
+<pre class="text"><code>发布公告
+发送正式函件
+修改正式数据
+提交审批</code></pre>
+<p>这时需要：</p>
+<blockquote>
+<p>人类授权执行。</p>
+</blockquote>
+<hr />
+<h2 id="escalation">3. Escalation</h2>
+<h3 id="升级人工处理">升级人工处理</h3>
+<p>Agent 已经尽力，但：</p>
+<pre class="text"><code>证据冲突
+规则解释不确定
+异常状态无法恢复
+高风险结论缺乏足够依据</code></pre>
+<p>这时需要：</p>
+<blockquote>
+<p>专业人员接管判断。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>≠</mo><mi>E</mi><mi>s</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Clarification
+\neq
+Approval
+\neq
+Escalation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十四human-in-the-loop-以后agent-应该进入正式暂停状态">十四、Human-in-the-loop
+以后，Agent 应该进入正式暂停状态</h1>
+<p>如果需要人工，</p>
+<p>Agent 不应该继续猜。</p>
+<p>State 应进入：</p>
+<pre class="text"><code>waiting_for_user
+
+waiting_for_approval
+
+waiting_for_expert</code></pre>
+<p>并保存：</p>
+<pre class="text"><code>为什么暂停？
+需要谁处理？
+需要什么输入？
+当前任务做到哪里？
+恢复后下一步是什么？</code></pre>
+<p>人类回复以后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>p</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>e</mi><mo>=</mo><mi>N</mi><mi>e</mi><mi>w</mi><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+HumanResponse
+=
+NewObservation
+</annotation></semantics></math></p>
+<p>再恢复 Loop。</p>
+<hr />
+<h1 id="十五recovery-state-machine恢复过程也应该是状态机">十五、Recovery
+State Machine：恢复过程也应该是状态机</h1>
+<p>可以定义：</p>
+<pre class="text"><code>RUNNING
+↓
+FAILED_RECOVERABLE
+↓
+RETRYING
+↓
+RUNNING</code></pre>
+<p>或者：</p>
+<pre class="text"><code>RUNNING
+↓
+FAILED_RECOVERABLE
+↓
+REPLANNING
+↓
+RUNNING</code></pre>
+<p>还可能：</p>
+<pre class="text"><code>RUNNING
+↓
+WAITING_FOR_APPROVAL
+↓
+APPROVED
+↓
+RUNNING</code></pre>
+<p>以及：</p>
+<pre class="text"><code>RUNNING
+↓
+FAILED_TERMINAL
+↓
+STOPPED</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>本</mi><mi>身</mi><mi>也</mi><mi>需</mi><mi>要</mi><mi>显</mi><mi>式</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Recovery
+本身也需要显式State
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六structured-error错误结果也必须结构化">十六、Structured
+Error：错误结果也必须结构化</h1>
+<p>Tool 不应该只返回：</p>
+<pre class="text"><code>“出错了”</code></pre>
+<p>更可靠的是：</p>
+<div class="sourceCode" id="cb480"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb480-1"><a href="#cb480-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb480-2"><a href="#cb480-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;error&quot;</span><span class="fu">,</span></span>
+<span id="cb480-3"><a href="#cb480-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;error_type&quot;</span><span class="fu">:</span> <span class="st">&quot;rate_limited&quot;</span><span class="fu">,</span></span>
+<span id="cb480-4"><a href="#cb480-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;retryable&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb480-5"><a href="#cb480-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;retry_after_ms&quot;</span><span class="fu">:</span> <span class="dv">2000</span><span class="fu">,</span></span>
+<span id="cb480-6"><a href="#cb480-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;operation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;OP_018&quot;</span><span class="fu">,</span></span>
+<span id="cb480-7"><a href="#cb480-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;side_effect_state&quot;</span><span class="fu">:</span> <span class="st">&quot;not_started&quot;</span><span class="fu">,</span></span>
+<span id="cb480-8"><a href="#cb480-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;message&quot;</span><span class="fu">:</span> <span class="st">&quot;服务限流&quot;</span></span>
+<span id="cb480-9"><a href="#cb480-9" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>或者：</p>
+<div class="sourceCode" id="cb481"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb481-1"><a href="#cb481-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb481-2"><a href="#cb481-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;error&quot;</span><span class="fu">,</span></span>
+<span id="cb481-3"><a href="#cb481-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;error_type&quot;</span><span class="fu">:</span> <span class="st">&quot;permission_denied&quot;</span><span class="fu">,</span></span>
+<span id="cb481-4"><a href="#cb481-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;retryable&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb481-5"><a href="#cb481-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;required_action&quot;</span><span class="fu">:</span> <span class="st">&quot;request_approval&quot;</span></span>
+<span id="cb481-6"><a href="#cb481-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>依</mi><mi>赖</mi><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RecoveryQuality
+依赖
+ErrorContractQuality
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十七recovery-budget恢复也不能无限花时间和成本">十七、Recovery
+Budget：恢复也不能无限花时间和成本</h1>
+<p>Agent 可能一直：</p>
+<pre class="text"><code>Retry
+Replan
+Fallback
+Search Again
+Ask Another Tool</code></pre>
+<p>如果没有预算，</p>
+<p>Recovery 本身也会失控。</p>
+<p>所以应该有：</p>
+<pre class="text"><code>max_retry_count
+max_replan_count
+max_recovery_steps
+recovery_time_budget
+recovery_cost_budget</code></pre>
+<p>超过以后进入：</p>
+<pre class="text"><code>partial_success
+needs_review
+failed_terminal</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>也</mi><mi>需</mi><mi>要</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Recovery
+也需要Budget
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十八fallback降级可以但不能装作没降级">十八、Fallback：降级可以，但不能装作没降级</h1>
+<p>例如主 Source：</p>
+<pre class="text"><code>project_database</code></pre>
+<p>不可用。</p>
+<p>Fallback：</p>
+<pre class="text"><code>latest_project_document</code></pre>
+<p>系统可以继续，</p>
+<p>但必须记录：</p>
+<pre class="text"><code>fallback_used = true
+confidence_degraded = true
+source_freshness_lower = true</code></pre>
+<p>否则用户看到的答案表面一样，</p>
+<p>实际上：</p>
+<blockquote>
+<p>可信度已经下降。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>必</mi><mi>须</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>s</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GracefulDegradation
+必须Transparent
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十九政府采购案例发布更正公告时发生超时">十九、政府采购案例：发布更正公告时发生超时</h1>
+<p>假设流程：</p>
+<pre class="text"><code>生成更正公告草稿
+↓
+人工审批通过
+↓
+调用 publish_notice</code></pre>
+<p>Runtime 返回：</p>
+<pre class="text"><code>timeout</code></pre>
+<p>错误做法：</p>
+<pre class="text"><code>立即再次 publish_notice</code></pre>
+<p>正确 Recovery：</p>
+<pre class="text"><code>Step 1
+根据 operation_id 查询发布状态
+
+Step 2
+如果已发布
+→ 标记 success
+
+Step 3
+如果明确未发布
+→ 使用相同 idempotency_key 重试
+
+Step 4
+如果状态无法确认
+→ waiting_for_expert / manual_check</code></pre>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>W</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>必</mi><mi>须</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>f</mi><mi>y</mi><mi>B</mi><mi>e</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UncertainWrite
+必须VerifyBeforeRetry
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十另一个案例法规检索连续为空">二十、另一个案例：法规检索连续为空</h1>
+<p>任务：</p>
+<blockquote>
+<p>“判断本地机构资格限制是否有依据。”</p>
+</blockquote>
+<p>第一次 RAG：</p>
+<pre class="text"><code>0 results</code></pre>
+<p>这不代表：</p>
+<blockquote>
+<p>“没有规则。”</p>
+</blockquote>
+<p>可能是：</p>
+<pre class="text"><code>Query写错
+Metadata Filter太严格
+辖区识别错误
+知识库缺失</code></pre>
+<p>所以 Recovery 可以是：</p>
+<pre class="text"><code>Replan Query
+↓
+放宽Filter
+↓
+Hybrid Retrieval
+↓
+仍为空
+↓
+标记EvidenceInsufficient
+↓
+Human Review</code></pre>
+<p>这里：</p>
+<blockquote>
+<p>不能把 Empty Retrieval 直接解释成“没有法律依据”。</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>也</mi><mi>必</mi><mi>须</mi><mi>尊</mi><mi>重</mi><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>T</mi><mi>a</mi><mi>x</mi><mi>o</mi><mi>n</mi><mi>o</mi><mi>m</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Recovery
+也必须尊重ErrorTaxonomy
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十一本阶段错误分类recovery-自己也会出错">二十一、本阶段错误分类：Recovery
+自己也会出错</h1>
+<p>至少要区分：</p>
+<pre class="text"><code>1. Retry Storm
+无限重试
+
+2. Wrong Retry
+不可重试错误被反复重试
+
+3. Missing Retry
+临时错误直接终止
+
+4. Retry Without Idempotency
+写操作重复产生副作用
+
+5. Wrong Replan
+本应重试却换策略
+
+6. Hidden Partial Failure
+部分失败被当成全部成功
+
+7. Failed Compensation
+补偿动作失败
+
+8. Approval Bypass
+需要人工却自动执行
+
+9. Escalation Too Late
+高风险异常拖太久才交给人
+
+10. Recovery State Loss
+恢复过程中状态丢失</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>Recovery Policy 本身也必须被评测。</p>
+</blockquote>
+<hr />
+<h1 id="二十二怎样评测-failure-recovery">二十二、怎样评测 Failure
+Recovery？</h1>
+<p>第一版至少可以记录：</p>
+<pre class="text"><code>retry_success_rate
+
+retry_precision
+真正可重试的错误中有多少被正确重试
+
+retry_false_positive_rate
+不可重试错误被错误重试比例
+
+replan_success_rate
+
+uncertain_execution_verification_rate
+
+duplicate_side_effect_rate
+
+partial_failure_detection_rate
+
+compensation_success_rate
+
+circuit_breaker_trigger_accuracy
+
+human_escalation_precision
+
+human_escalation_recall
+
+approval_bypass_rate
+
+recovery_completion_rate
+
+mean_recovery_steps
+
+recovery_cost
+
+terminal_failure_accuracy</code></pre>
+<p>最终仍然要看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TaskRecoveredSafely
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>“系统总算跑完了。”</p>
+</blockquote>
+<hr />
+<h1
+id="二十三本阶段工程产物procurementagentrecoverypolicy_v0.1">二十三、本阶段工程产物：<code>ProcurementAgentRecoveryPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>recovery_policy_version
+
+error_schema
+
+error_type_enum
+
+retryable_error_types
+
+terminal_error_types
+
+max_retry_count
+
+backoff_policy
+
+jitter_policy
+
+timeout_policy
+
+verify_before_retry_for_side_effect_tools
+=
+true
+
+idempotency_policy
+
+partial_failure_policy
+
+rollback_policy
+
+compensation_policy
+
+circuit_breaker_policy
+
+fallback_policy
+
+confidence_degradation_policy
+
+clarification_policy
+
+approval_policy
+
+human_escalation_policy
+
+recovery_state_schema
+
+recovery_step_budget
+
+recovery_time_budget
+
+recovery_cost_budget
+
+trace_logging
+=
+enabled</code></pre>
+<p>每次恢复至少记录：</p>
+<pre class="text"><code>failure_id
+
+step_id
+
+tool_call_id
+
+operation_id
+
+error_type
+
+retryable
+
+side_effect_state
+
+recovery_decision
+
+retry_count
+
+replan_reason
+
+fallback_used
+
+human_intervention_type
+
+state_before_recovery
+
+state_after_recovery
+
+final_recovery_status</code></pre>
+<p>这样才真正做到：</p>
+<blockquote>
+<p><strong>失败可见、恢复可控、过程可审计。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十四把本阶段压成最精准的-6-句话-2">二十四、把本阶段压成最精准的 6
+句话</h1>
+<blockquote>
+<p><strong>第一，可靠 Agent 的目标不是“永不失败”，而是
+<code>Fails Explicitly + Recovers Safely + Escalates When Needed</code>；Retry
+只是 Recovery 的一种。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，失败必须先分类：Transient Failure 才适合
+Retry，Validation Error 应修参数或 Replan，Authorization / Policy
+Failure 应停止或请求权限，Terminal Failure 应明确终止。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，有副作用的 Action
+一旦超时，不能直接视为失败；<code>Timeout ≠ DefinitelyFailed</code>，必须先
+Verify 执行状态，再决定是否用同一个 Idempotency Key 重试。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Partial Failure、Rollback、Compensation 和 Circuit
+Breaker 都属于真实 Agent 必备的恢复机制；多步任务不能只有“成功 /
+失败”两个状态。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Human-in-the-loop 至少要区分 Clarification、Approval 和
+Escalation；需要人工时 Agent
+应进入正式暂停状态，而不是继续猜测或绕过控制。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，Recovery 也必须有 Budget、State、Trace
+和独立评测；真正的指标不是“最后跑完”，而是任务是否在没有重复副作用、没有越权、没有隐藏降级的前提下安全恢复。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-8">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         Failure
+                            │
+                            ▼
+                      Classify Error
+                            │
+          ┌─────────────────┼─────────────────┐
+          ▼                 ▼                 ▼
+      Transient         Strategy Error    Permission/Policy
+          │                 │                 │
+          ▼                 ▼                 ▼
+        Retry             Replan          Human / Stop
+          │                 │                 │
+          └────────────┬────┴────┬────────────┘
+                       │         │
+                       ▼         ▼
+                 Side Effect?   Terminal?
+                       │         │
+                 ┌─────┴─────┐   │
+                 ▼           ▼   ▼
+                No          Yes Stop
+                 │           │
+                 │        Verify State
+                 │           │
+                 └─────┬─────┘
+                       ▼
+                 Recovery Action
+                       │
+                       ▼
+                   Update State
+                       │
+                       ▼
+              Continue / Escalate / Stop</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>真正可靠的
+Agent，不是碰到错误就重试，而是先判断错误属于哪一类，再选择
+Retry、Replan、Verify、Fallback、Compensation、Human Escalation 或
+Stop，并保证整个恢复过程没有重复副作用、没有越权、没有把失败伪装成成功。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-9-阶段掌握测试">第七课 · 第 9 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Retry 只是 Recovery
+的一种；Transient、Validation、Authorization、Partial、Uncertain
+Execution、Terminal Failure 有什么区别；Backoff 和 Jitter
+为什么必要；为什么 Invalid Input 不该原样 Retry；Authorization Failure
+为什么不能靠重试绕过；Retry 和 Replan 如何进一步区分；为什么 Timeout
+不等于 Definitely Failed；Idempotency
+为什么决定写操作能否安全重试；Partial Success 应怎样进入 State；Rollback
+和 Compensation 有什么本质区别；Circuit Breaker
+解决什么系统级问题；Clarification、Approval、Escalation 三种
+Human-in-the-loop 有什么区别；为什么 Recovery 需要显式状态机；Structured
+Error 为什么影响恢复质量；为什么 Recovery 也需要 Budget；Fallback
+时为什么必须暴露可信度下降；以及为什么最终目标是
+<code>TaskRecoveredSafely</code> 而不是“总算跑完”。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>9</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第9阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第七课-第-10-阶段">下一阶段：第七课 · 第 10 阶段</h1>
+<h1 id="agent-safety权限prompt-injectionapproval-与-audit-trail">Agent
+Safety：权限、Prompt Injection、Approval 与 Audit Trail</h1>
+<h2
+id="agent-已经会调用工具会恢复失败但当外部内容试图操纵模型权限配置错误写操作越权时怎样保证能做事不会变成乱做事">Agent
+已经会调用工具、会恢复失败，但当外部内容试图操纵模型、权限配置错误、写操作越权时，怎样保证“能做事”不会变成“乱做事”？</h2>
+<p>到第 9 阶段，我们已经拥有：</p>
+<pre class="text"><code>Failure Classification
+Retry
+Replan
+Idempotency
+Partial Failure
+Compensation
+Circuit Breaker
+Human Escalation
+Recovery State</code></pre>
+<p>下一阶段要正式进入：</p>
+<h1 id="agent-safety">Agent Safety</h1>
+<h2 id="智能体安全边界">智能体安全边界</h2>
+<p>我们会重点拆开：</p>
+<pre class="text"><code>Prompt Injection
+Indirect Prompt Injection
+Tool Result Injection
+Least Privilege
+Capability Isolation
+Read / Write Separation
+Approval Gate
+Data Boundary
+Secret Handling
+Audit Trail
+Action Confirmation
+Policy Enforcement</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementagentsafetypolicy_v0.1"><code>ProcurementAgentSafetyPolicy_V0.1</code></h1>
+<p>下一阶段最重要的一条边界会是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>I</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UntrustedContent
+\neq
+TrustedInstruction
+}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelDecision
+\neq
+Authorization
+}
+</annotation></semantics></math></p>
+<p>也就是让 Agent 从：</p>
+<blockquote>
+<p><strong>“能恢复失败”</strong></p>
+</blockquote>
+<p>继续推进到：</p>
+<blockquote>
+<p><strong>“即使面对恶意内容和高风险工具，也只能在明确权限、审批与审计边界内行动”。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

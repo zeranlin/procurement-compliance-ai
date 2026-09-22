@@ -1,0 +1,1500 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第5阶段：Full Fine-Tuning 与 PEFT</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>仍然使用整个 7B 模型。</li><li>模型有没有参加训练计算。</li><li>Optimizer 最后可以更新谁。</li></ul></div><h1 id="第五课-第-5-阶段">第五课 · 第 5 阶段</h1>
+<h1 id="full-fine-tuning-与-peft-1">Full Fine-Tuning 与 PEFT</h1>
+<h2
+id="为什么一个-7b-14b-模型有几十亿参数我们却往往只训练其中极少的一部分">为什么一个
+7B / 14B 模型有几十亿参数，我们却往往只训练其中极少的一部分？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>仍然使用整个 7B 模型。</strong></li>
+<li><strong>模型有没有参加训练计算。</strong></li>
+<li><strong>Optimizer 最后可以更新谁。</strong></li>
+<li><strong>从零重新学习语言和世界知识。</strong></li>
+<li><strong>未必是最合理的工程选择。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="even">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="odd">
+<td><code>Optimizer</code></td>
+<td>优化器：依据梯度规则更新参数</td>
+</tr>
+<tr class="even">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+<tr class="odd">
+<td><code>Checkpoint</code></td>
+<td>检查点：保存模型和训练状态以便恢复/发布</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前 4 个阶段，我们实际上一直在解决：</p>
+<blockquote>
+<p><strong>训练信号怎样正确进入模型。</strong></p>
+</blockquote>
+<p>现在链条已经到了这里：</p>
+<pre class="text"><code>ProcurementDataset_V0.1
+        ↓
+Messages
+        ↓
+Chat Template
+        ↓
+Loss Mask
+        ↓
+Length / Truncation
+        ↓
+Padding / Packing
+        ↓
+Forward
+        ↓
+Loss
+        ↓
+Backward
+        ↓
+Gradient</code></pre>
+<p>今天第一次回答：</p>
+<blockquote>
+<p><strong>这些 Gradient 最后到底允许修改哪些参数？</strong></p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="parameter-efficient-fine-tuning">Parameter-Efficient
+Fine-Tuning</h1>
+<h1 id="peft">PEFT</h1>
+<h2 id="参数高效微调">参数高效微调</h2>
+<p>本阶段最终形成一个工程决策：</p>
+<h1
+id="finetuningstrategy_v0.1"><code>FineTuningStrategy_V0.1</code></h1>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-4">一、本阶段只解决一个核心问题</h1>
+<p>假设我们的 Base Model 有：</p>
+<pre class="text"><code>7B
+=
+约 70 亿参数</code></pre>
+<p>训练时有两个完全不同的方向：</p>
+<pre class="text"><code>方案 A
+
+70亿参数
+几乎全部允许更新
+        ↓
+Full Fine-Tuning
+全参数微调</code></pre>
+<p>或者：</p>
+<pre class="text"><code>方案 B
+
+70亿 Base Model
+绝大多数冻结
+        +
+少量新增参数
+参与训练
+        ↓
+PEFT
+参数高效微调</code></pre>
+<p>今天真正要建立的判断能力是：</p>
+<blockquote>
+<p><strong>什么情况下值得修改整个模型，什么情况下只修改极少一部分参数反而更合理？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二先锁死-5-个核心心智模型-1">二、先锁死 5 个核心心智模型</h1>
+<h2 id="心智模型-1使用整个模型-训练整个模型">心智模型 1：使用整个模型 ≠
+训练整个模型</h2>
+<p>这是今天最重要的一句话。</p>
+<p>假设：</p>
+<pre class="text"><code>Base Model
+=
+7B Parameters</code></pre>
+<p>即使我们采用 PEFT，</p>
+<p>Forward 时：</p>
+<blockquote>
+<p>仍然使用整个 7B 模型。</p>
+</blockquote>
+<p>并不是：</p>
+<pre class="text"><code>只使用其中1%</code></pre>
+<p>真正发生的是：</p>
+<pre class="text"><code>整个模型参与计算
+
+但是
+
+只有少量参数允许更新</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelSize
+\neq
+TrainableParameterCount
+}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="心智模型-2full-fine-tuning-和-peft-的核心区别是谁允许被-gradient-改写">心智模型
+2：Full Fine-Tuning 和 PEFT 的核心区别，是“谁允许被 Gradient 改写”</h2>
+<p>Full Fine-Tuning：</p>
+<pre class="text"><code>Base Model
+████████████████████
+几乎全部 Trainable</code></pre>
+<p>PEFT：</p>
+<pre class="text"><code>Base Model
+████████████████████
+Frozen
+
+少量参数
+▓
+Trainable</code></pre>
+<p>所以真正的区别不是：</p>
+<blockquote>
+<p>模型有没有参加训练计算。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>Optimizer 最后可以更新谁。</strong></p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-3peft-不是低配版训练而是一个不同的参数更新策略">心智模型
+3：PEFT 不是“低配版训练”，而是一个不同的参数更新策略</h2>
+<p>很容易产生这种误解：</p>
+<pre class="text"><code>Full FT
+=
+专业
+
+PEFT
+=
+没钱时凑合</code></pre>
+<p>这不准确。</p>
+<p>对于很多领域适配任务，我们真正想改变的是：</p>
+<pre class="text"><code>回答格式
+风险判断习惯
+专业术语使用
+任务边界
+输出结构
+领域决策模式</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>从零重新学习语言和世界知识。</p>
+</blockquote>
+<p>这时让整个几十亿参数全部移动：</p>
+<blockquote>
+<p>未必是最合理的工程选择。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>E</mi><mi>F</mi><mi>T</mi><mo>=</mo><mi>S</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>A</mi><mi>d</mi><mi>a</mi><mi>p</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PEFT
+=
+SelectiveAdaptation
+}
+</annotation></semantics></math></p>
+<p>中文：</p>
+<blockquote>
+<p><strong>选择性适配。</strong></p>
+</blockquote>
+<hr />
+<h2 id="心智模型-4可训练参数越多不代表最终效果一定越好">心智模型
+4：可训练参数越多，不代表最终效果一定越好</h2>
+<p>更多 Trainable Parameters 意味着：</p>
+<pre class="text"><code>表达能力 ↑</code></pre>
+<p>但同时可能意味着：</p>
+<pre class="text"><code>显存 ↑
+计算量 ↑
+Checkpoint ↑
+训练风险 ↑
+过拟合风险 ↑
+遗忘原能力风险 ↑
+实验成本 ↑</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreTrainableParameters
+\neq
+AutomaticallyBetterModel
+}
+</annotation></semantics></math></p>
+<p>真正目标是：</p>
+<blockquote>
+<p><strong>用足够的参数容量完成任务，而不是把能训练的全训练一遍。</strong></p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-5微调方法选择本质是能力变化幅度-数据量-算力-风险的联合决策">心智模型
+5：微调方法选择，本质是“能力变化幅度 × 数据量 × 算力 ×
+风险”的联合决策</h2>
+<p>不能只问：</p>
+<blockquote>
+<p>“LoRA 和 Full FT 哪个更强？”</p>
+</blockquote>
+<p>应该问：</p>
+<pre class="text"><code>我要改变多少能力？
+        ×
+有多少高质量数据？
+        ×
+有多少GPU资源？
+        ×
+能承受多少训练风险？
+        ×
+需要多快迭代？</code></pre>
+<p>这才是：</p>
+<h1 id="fine-tuning-strategy">Fine-Tuning Strategy</h1>
+<hr />
+<h1 id="三先把参数重新放回-transformer">三、先把“参数”重新放回
+Transformer</h1>
+<p>第二课我们已经见过 Transformer 内部大量矩阵：</p>
+<pre class="text"><code>Attention
+
+Wq
+Wk
+Wv
+Wo
+
++
+
+MLP
+
+W_up
+W_gate
+W_down
+
++
+
+Embedding
+LayerNorm
+LM Head
+...</code></pre>
+<p>所有这些矩阵里的数字：</p>
+<blockquote>
+<p>都是参数。</p>
+</blockquote>
+<p>例如一个线性层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y = Wx
+</annotation></semantics></math></p>
+<p>这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>就是一组模型参数。</p>
+<hr />
+<h1 id="四full-fine-tuning-到底是什么意思">四、Full Fine-Tuning
+到底是什么意思？</h1>
+<h1 id="full-fine-tuning">Full Fine-Tuning</h1>
+<h2 id="全参数微调">全参数微调</h2>
+<p>简单理解：</p>
+<blockquote>
+<p>Base Model 绝大部分甚至全部可训练参数都允许接收 Gradient 并被
+Optimizer 更新。</p>
+</blockquote>
+<p>流程：</p>
+<pre class="text"><code>Base Model
+        ↓
+Forward
+        ↓
+Loss
+        ↓
+Backward
+        ↓
+几乎所有权重获得Gradient
+        ↓
+Optimizer
+        ↓
+大量Base Weight被修改</code></pre>
+<p>也就是说：</p>
+<blockquote>
+<p>你真的在重新塑造整个模型。</p>
+</blockquote>
+<hr />
+<h1 id="五例如一个极简模型">五、例如一个极简模型</h1>
+<p>假设只有：</p>
+<pre class="text"><code>Wq
+Wk
+Wv
+Wo
+MLP
+Embedding
+LM Head</code></pre>
+<p>Full Fine-Tuning：</p>
+<pre class="text"><code>Wq          ✓ update
+Wk          ✓ update
+Wv          ✓ update
+Wo          ✓ update
+MLP         ✓ update
+Embedding   ✓ update
+LM Head     ✓ update</code></pre>
+<p>真实 LLM 当然是：</p>
+<blockquote>
+<p>数十亿这样的参数。</p>
+</blockquote>
+<hr />
+<h1 id="六full-fine-tuning-最大的优势是什么">六、Full Fine-Tuning
+最大的优势是什么？</h1>
+<p>一句话：</p>
+<blockquote>
+<p><strong>自由度最大。</strong></p>
+</blockquote>
+<p>模型几乎所有参数都可以重新调整。</p>
+<p>如果领域变化非常大，数据极其充足，而且有足够算力：</p>
+<blockquote>
+<p>Full Fine-Tuning 可以提供非常高的适配容量。</p>
+</blockquote>
+<p>例如一个模型需要进行：</p>
+<pre class="text"><code>大规模语言迁移
+巨大领域分布变化
+大量专业语料行为重构</code></pre>
+<p>全参数训练可能有价值。</p>
+<hr />
+<h1 id="七但它为什么贵">七、但它为什么贵？</h1>
+<p>这里要分清三个不同东西：</p>
+<pre class="text"><code>Model Weights
+模型权重
+
+Gradients
+梯度
+
+Optimizer States
+优化器状态</code></pre>
+<p>Full Fine-Tuning 时：</p>
+<blockquote>
+<p>大量权重都需要训练。</p>
+</blockquote>
+<p>所以不仅要保存模型本身，</p>
+<p>还要保存：</p>
+<pre class="text"><code>Gradient
++
+Optimizer State</code></pre>
+<p>这会显著增加显存需求。</p>
+<hr />
+<h1 id="八只看模型权重大小是不够的">八、只看模型权重大小是不够的</h1>
+<p>假设：</p>
+<pre class="text"><code>7B Parameters</code></pre>
+<p>使用：</p>
+<pre class="text"><code>BF16
+≈
+2 bytes / parameter</code></pre>
+<p>仅模型权重大约就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn><mo>×</mo><msup><mn>10</mn><mn>9</mn></msup><mo>×</mo><mn>2</mn><mo>≈</mo><mn>14</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+7\times10^9 \times 2
+\approx14GB
+</annotation></semantics></math></p>
+<p>但训练绝不是：</p>
+<blockquote>
+<p>“我有 14GB 显存，所以 7B 一定能 Full Fine-Tune。”</p>
+</blockquote>
+<p>因为还需要：</p>
+<pre class="text"><code>Activation
+Gradient
+Optimizer State
+临时Tensor
+CUDA开销</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InferenceMemory
+\neq
+TrainingMemory
+}
+</annotation></semantics></math></p>
+<p>这是后面显存课程还会详细算的一句话。</p>
+<hr />
+<h1 id="九full-fine-tuning-还有一个风险原能力也在移动">九、Full
+Fine-Tuning 还有一个风险：原能力也在移动</h1>
+<p>假设 Base Model 原本已经会：</p>
+<pre class="text"><code>中文理解
+数学
+通用推理
+摘要
+写作
+代码</code></pre>
+<p>现在你拿一批相对狭窄的：</p>
+<pre class="text"><code>政府采购风险数据</code></pre>
+<p>让整个模型大量更新。</p>
+<p>可能得到：</p>
+<pre class="text"><code>政府采购能力 ↑</code></pre>
+<p>但如果训练控制不好，也可能：</p>
+<pre class="text"><code>通用能力 ↓</code></pre>
+<p>这类问题通常与：</p>
+<h1 id="catastrophic-forgetting">Catastrophic Forgetting</h1>
+<h2 id="灾难性遗忘">灾难性遗忘</h2>
+<p>相关。</p>
+<hr />
+<h1
+id="十不要把灾难性遗忘理解成模型突然失忆">十、不要把“灾难性遗忘”理解成模型突然失忆</h1>
+<p>更准确的理解是：</p>
+<blockquote>
+<p>新训练数据反复推动大量参数朝一个狭窄分布移动，使旧任务所依赖的参数结构受到破坏。</p>
+</blockquote>
+<p>比如：</p>
+<pre class="text"><code>原模型
+
+通用中文
+数学
+常识
+政府采购
+法律文本
+写作
+      │
+      ▼
+大量狭窄领域Gradient
+      │
+      ▼
+整个参数空间持续移动</code></pre>
+<p>结果：</p>
+<blockquote>
+<p>部分旧能力退化。</p>
+</blockquote>
+<hr />
+<h1 id="十一这并不是说-full-fine-tuning-不好">十一、这并不是说 Full
+Fine-Tuning 不好</h1>
+<p>关键是：</p>
+<blockquote>
+<p><strong>它的自由度很高，因此能力强，风险也高。</strong></p>
+</blockquote>
+<p>可以记成：</p>
+<pre class="text"><code>Full Fine-Tuning
+
+Adaptation Capacity
+高
+
+Compute Cost
+高
+
+Memory Cost
+高
+
+Checkpoint Size
+大
+
+Modification Scope
+大
+
+Risk Surface
+大</code></pre>
+<hr />
+<h1 id="十二现在进入-peft">十二、现在进入 PEFT</h1>
+<h1 id="peft-1">PEFT</h1>
+<h2 id="parameter-efficient-fine-tuning-1">Parameter-Efficient
+Fine-Tuning</h2>
+<h2 id="参数高效微调-1">参数高效微调</h2>
+<p>核心思想非常简单：</p>
+<blockquote>
+<p><strong>Base Model
+大量参数冻结，只训练非常少的一部分参数。</strong></p>
+</blockquote>
+<p>概念上：</p>
+<pre class="text"><code>Base Model
+████████████████████████
+Frozen
+
+        +
+
+Trainable Parameters
+▓▓</code></pre>
+<p>Forward：</p>
+<blockquote>
+<p>两者一起工作。</p>
+</blockquote>
+<p>Backward：</p>
+<blockquote>
+<p>产生训练信号。</p>
+</blockquote>
+<p>Optimizer：</p>
+<blockquote>
+<p>主要只更新 <code>▓▓</code>。</p>
+</blockquote>
+<hr />
+<h1
+id="十三冻结参数到底是什么意思">十三、“冻结参数”到底是什么意思？</h1>
+<p>在 PyTorch 心智模型里，大致对应：</p>
+<div class="sourceCode" id="cb524"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb524-1"><a href="#cb524-1" aria-hidden="true" tabindex="-1"></a>parameter.requires_grad <span class="op">=</span> <span class="va">False</span></span></code></pre></div>
+<p>表示：</p>
+<blockquote>
+<p>这个参数不作为常规可训练参数被 Optimizer 更新。</p>
+</blockquote>
+<p>而可训练参数：</p>
+<div class="sourceCode" id="cb525"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb525-1"><a href="#cb525-1" aria-hidden="true" tabindex="-1"></a>parameter.requires_grad <span class="op">=</span> <span class="va">True</span></span></code></pre></div>
+<p>才参与：</p>
+<blockquote>
+<p>训练参数更新链。</p>
+</blockquote>
+<p>所以我们可以定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>N</mi><mtext mathvariant="normal">trainable</mtext></msub><annotation encoding="application/x-tex">
+N_{\text{trainable}}
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>可训练参数数量。</p>
+</blockquote>
+<hr />
+<h1
+id="十四一个很重要的指标trainable-parameter-ratio">十四、一个很重要的指标：Trainable
+Parameter Ratio</h1>
+<p>定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mo>=</mo><mfrac><msub><mi>N</mi><mtext mathvariant="normal">trainable</mtext></msub><msub><mi>N</mi><mtext mathvariant="normal">total</mtext></msub></mfrac></mrow><annotation encoding="application/x-tex">
+TrainableRatio
+=
+\frac{N_{\text{trainable}}}
+{N_{\text{total}}}
+</annotation></semantics></math></p>
+<p>假设：</p>
+<pre class="text"><code>Base Model
+=
+7,000,000,000</code></pre>
+<p>可训练参数：</p>
+<pre class="text"><code>20,000,000</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mn>20</mn><mi>M</mi></mrow><mrow><mn>7000</mn><mi>M</mi></mrow></mfrac><mo>≈</mo><mn>0.286</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+\frac{20M}{7000M}
+\approx0.286\%
+</annotation></semantics></math></p>
+<p>意味着：</p>
+<blockquote>
+<p>整个模型仍然是 7B。</p>
+</blockquote>
+<p>但真正更新：</p>
+<blockquote>
+<p>不到 0.3%。</p>
+</blockquote>
+<p>这就是 PEFT 最让人觉得“反直觉”的地方。</p>
+<hr />
+<h1
+id="十五为什么这么少参数还能改变模型行为">十五、为什么这么少参数还能改变模型行为？</h1>
+<p>因为我们不是：</p>
+<blockquote>
+<p>从零训练语言模型。</p>
+</blockquote>
+<p>Base Model 已经拥有大量能力：</p>
+<pre class="text"><code>语言理解
+Token表示
+Attention模式
+知识结构
+生成能力
+推理基础</code></pre>
+<p>我们只需要：</p>
+<blockquote>
+<p><strong>对已有能力进行方向性的调整。</strong></p>
+</blockquote>
+<p>可以类比：</p>
+<pre class="text"><code>Base Model
+=
+已经受过完整教育的专业人员
+
+PEFT
+=
+给他进行针对性岗位培训</code></pre>
+<p>不是：</p>
+<blockquote>
+<p>重新从小学教一遍。</p>
+</blockquote>
+<hr />
+<h1 id="十六对-procurementlm我们到底想改变什么">十六、对
+ProcurementLM，我们到底想改变什么？</h1>
+<p>第一版真正希望改变的是：</p>
+<pre class="text"><code>看到采购条款以后
+        ↓
+更关注专业风险特征
+        ↓
+更少使用错误Shortcut
+        ↓
+学会Unknown / needs_review
+        ↓
+按照稳定结构输出
+        ↓
+给出更接近专家标注的理由</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>重新学习中文
+重新学习Transformer
+重新学习世界知识</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>这是非常典型的“领域行为适配”问题。</p>
+</blockquote>
+<hr />
+<h1 id="十七peft-是一个家族不等于-lora">十七、PEFT 是一个家族，不等于
+LoRA</h1>
+<p>这个概念必须精准。</p>
+<h1 id="peft-2">PEFT</h1>
+<p>是一个大类。</p>
+<p>其中可以有：</p>
+<pre class="text"><code>Adapters
+
+Prompt Tuning
+
+Prefix Tuning
+
+LoRA
+
+其他参数高效方法</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mo>⊂</mo><mi>P</mi><mi>E</mi><mi>F</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LoRA
+\subset
+PEFT
+}
+</annotation></semantics></math></p>
+<p>LoRA 是：</p>
+<blockquote>
+<p>PEFT 中最重要、最常见的一类方法之一。</p>
+</blockquote>
+<p>下一阶段才真正拆 LoRA 数学。</p>
+<hr />
+<h1
+id="十八为什么我们的课程重点选择-lora-qlora">十八、为什么我们的课程重点选择
+LoRA / QLoRA？</h1>
+<p>因为它们在实际 LLM 领域适配里非常实用。</p>
+<p>可以同时获得：</p>
+<pre class="text"><code>较少可训练参数
++
+较低训练显存
++
+较小Adapter文件
++
+较快实验迭代
++
+容易保留多个领域版本</code></pre>
+<p>特别适合我们这种：</p>
+<blockquote>
+<p>需要不断实验、评测、修正政府采购行为的项目。</p>
+</blockquote>
+<hr />
+<h1
+id="十九peft-还有一个非常大的工程优势一个-base-model-可以挂多个-adapter">十九、PEFT
+还有一个非常大的工程优势：一个 Base Model 可以挂多个 Adapter</h1>
+<p>想象：</p>
+<pre class="text"><code>Base Model
+Qwen / Llama / 其他模型
+       │
+       ├── Procurement Adapter V0.1
+       │
+       ├── Procurement Adapter V0.2
+       │
+       ├── Contract Review Adapter
+       │
+       └── Evaluation Experiment Adapter</code></pre>
+<p>如果每一次实验都是 Full Fine-Tuning：</p>
+<blockquote>
+<p>每次都可能得到一个完整几十 GB 的模型副本。</p>
+</blockquote>
+<p>如果是 PEFT：</p>
+<blockquote>
+<p>很多情况下只需要保存小得多的 Adapter。</p>
+</blockquote>
+<hr />
+<h1 id="二十这对版本治理非常重要">二十、这对版本治理非常重要</h1>
+<p>例如：</p>
+<pre class="text"><code>Base Model
+=
+BASE-001</code></pre>
+<p>上面有：</p>
+<pre class="text"><code>Adapter A
+=
+ProcurementLM_V0.1
+
+Adapter B
+=
+ProcurementLM_V0.1-hardcase
+
+Adapter C
+=
+ProcurementLM_V0.1-schema2</code></pre>
+<p>我们可以快速比较：</p>
+<pre class="text"><code>A vs B vs C</code></pre>
+<p>而不必复制很多完整 Base Model。</p>
+<p>这和第四课 Dataset Versioning：</p>
+<blockquote>
+<p>是同一种工程思想。</p>
+</blockquote>
+<hr />
+<h1 id="二十一但是-adapter-不是完整模型">二十一、但是 Adapter
+不是完整模型</h1>
+<p>这是非常重要的边界。</p>
+<p>如果只保存：</p>
+<pre class="text"><code>LoRA Adapter</code></pre>
+<p>通常不能脱离：</p>
+<pre class="text"><code>Compatible Base Model</code></pre>
+<p>独立工作。</p>
+<p>逻辑是：</p>
+<pre class="text"><code>Base Model
++
+Adapter
+=
+Fine-tuned Behavior</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>d</mi><mi>a</mi><mi>p</mi><mi>t</mi><mi>e</mi><mi>r</mi><mo>≠</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>l</mi><mi>o</mi><mi>n</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Adapter
+\neq
+StandaloneBaseModel
+}
+</annotation></semantics></math></p>
+<p>除非后面：</p>
+<blockquote>
+<p>Merge 成完整权重。</p>
+</blockquote>
+<p>这会在后面专门讲。</p>
+<hr />
+<h1 id="二十二因此必须记录-base-model-identity">二十二、因此必须记录
+Base Model Identity</h1>
+<p>一个 Adapter 最低限度必须知道：</p>
+<pre class="text"><code>base_model_name
+
+base_model_revision
+
+tokenizer_version
+
+chat_template
+
+adapter_config</code></pre>
+<p>否则：</p>
+<blockquote>
+<p>以后可能连 Adapter 应该挂在哪个 Base Model 上都说不清。</p>
+</blockquote>
+<p>这也是为什么：</p>
+<h1 id="reproducibility-1">Reproducibility</h1>
+<p>从 Dataset 一直延伸到 Model。</p>
+<hr />
+<h1 id="二十三现在比较-full-ft-与-peft">二十三、现在比较 Full FT 与
+PEFT</h1>
+<table>
+<thead>
+<tr class="header">
+<th>维度</th>
+<th>Full Fine-Tuning</th>
+<th>PEFT</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base 参数</td>
+<td>大量更新</td>
+<td>大量冻结</td>
+</tr>
+<tr class="even">
+<td>Trainable 参数</td>
+<td>很多</td>
+<td>很少</td>
+</tr>
+<tr class="odd">
+<td>训练显存</td>
+<td>高</td>
+<td>通常更低</td>
+</tr>
+<tr class="even">
+<td>Optimizer State</td>
+<td>大</td>
+<td>小很多</td>
+</tr>
+<tr class="odd">
+<td>Checkpoint</td>
+<td>大</td>
+<td>通常小</td>
+</tr>
+<tr class="even">
+<td>实验迭代</td>
+<td>较重</td>
+<td>较快</td>
+</tr>
+<tr class="odd">
+<td>参数自由度</td>
+<td>高</td>
+<td>较低</td>
+</tr>
+<tr class="even">
+<td>原模型扰动范围</td>
+<td>大</td>
+<td>较小</td>
+</tr>
+<tr class="odd">
+<td>多 Adapter 管理</td>
+<td>不自然</td>
+<td>很适合</td>
+</tr>
+<tr class="even">
+<td>第一版领域适配</td>
+<td>成本较高</td>
+<td>常很合适</td>
+</tr>
+</tbody>
+</table>
+<p>这里没有：</p>
+<blockquote>
+<p>谁永远优于谁。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>适合不同条件。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十四什么时候更可能考虑-full-fine-tuning">二十四、什么时候更可能考虑
+Full Fine-Tuning？</h1>
+<p>可以先用四个条件判断。</p>
+<p>如果：</p>
+<pre class="text"><code>1
+拥有大量高质量领域训练数据
+
+2
+任务与Base Model原分布差异非常大
+
+3
+拥有足够GPU与训练工程能力
+
+4
+评测证明PEFT容量明显不足</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>Full Fine-Tuning 的价值开始上升。</p>
+</blockquote>
+<hr />
+<h1 id="二十五什么时候-peft-特别合理">二十五、什么时候 PEFT
+特别合理？</h1>
+<p>如果：</p>
+<pre class="text"><code>高质量数据有限
+        +
+模型本身已经很强
+        +
+主要做领域行为适配
+        +
+GPU资源有限
+        +
+需要快速实验</code></pre>
+<p>那么：</p>
+<h1 id="peft-3">PEFT</h1>
+<p>通常非常有吸引力。</p>
+<p>这正好很符合：</p>
+<blockquote>
+<p><code>ProcurementLM_V0.1</code> 的第一版目标。</p>
+</blockquote>
+<hr />
+<h1
+id="二十六为什么数据有限时-full-ft-反而可能更危险">二十六、为什么“数据有限”时
+Full FT 反而可能更危险？</h1>
+<p>因为你给模型：</p>
+<pre class="text"><code>很大的可训练自由度</code></pre>
+<p>却只有：</p>
+<pre class="text"><code>很少的数据约束</code></pre>
+<p>模型可能非常容易：</p>
+<blockquote>
+<p>把训练集学得很好。</p>
+</blockquote>
+<p>但泛化：</p>
+<blockquote>
+<p>未必好。</p>
+</blockquote>
+<p>这和统计学习里一直存在的问题一样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+Capacity
+\uparrow
+</annotation></semantics></math></p>
+<p>而数据量不足时，</p>
+<p>可能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>i</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+OverfittingRisk
+\uparrow
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十七这并不意味着-peft-自动不会过拟合">二十七、这并不意味着
+PEFT 自动不会过拟合</h1>
+<p>注意这句话。</p>
+<p>LoRA 一样可以：</p>
+<pre class="text"><code>过拟合
+记住训练表达
+学习错误Shortcut
+学到Label噪声</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>E</mi><mi>F</mi><mi>T</mi><mo>≠</mo><mi>A</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>i</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>M</mi><mi>a</mi><mi>g</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PEFT
+\neq
+AntiOverfittingMagic
+}
+</annotation></semantics></math></p>
+<p>它只是：</p>
+<blockquote>
+<p>限制了可训练参数空间。</p>
+</blockquote>
+<p>并没有取消：</p>
+<pre class="text"><code>Validation
+Hard Case
+Benchmark</code></pre>
+<p>的重要性。</p>
+<hr />
+<h1 id="二十八peft-也不会自动解决错误数据">二十八、PEFT
+也不会自动解决错误数据</h1>
+<p>第四课的一条原则仍然成立：</p>
+<pre class="text"><code>Garbage Data
+      ↓
+Garbage Gradient
+      ↓
+Garbage Adapter</code></pre>
+<p>LoRA 不是：</p>
+<blockquote>
+<p>自动纠错器。</p>
+</blockquote>
+<p>所以我们前面为什么花整整一课做 Dataset？</p>
+<p>答案就在这里。</p>
+<hr />
+<h1 id="二十九peft-最大的价值可以用一句话概括">二十九、PEFT
+最大的价值可以用一句话概括</h1>
+<blockquote>
+<p><strong>尽可能复用 Base Model
+已经拥有的能力，只训练完成新任务所必需的最小参数增量。</strong></p>
+</blockquote>
+<p>数学上可以先抽象成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W&#39;
+=
+W
++
+\Delta W
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>代表：</p>
+<blockquote>
+<p>Base Model 已经学好的权重。</p>
+</blockquote>
+<p>我们尽量不直接大范围改它。</p>
+<p>而学习：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>为政府采购任务增加的“变化量”。</p>
+</blockquote>
+<hr />
+<h1 id="三十这已经开始靠近-lora-的核心了">三十、这已经开始靠近 LoRA
+的核心了</h1>
+<p>注意：</p>
+<p>今天我们只先建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W&#39;
+=
+W+\Delta W
+</annotation></semantics></math></p>
+<p>这个心智模型。</p>
+<p>Full FT：</p>
+<blockquote>
+<p>直接让
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+本身大量更新。</p>
+</blockquote>
+<p>LoRA：</p>
+<blockquote>
+<p>试图用一种非常高效的方法表示和学习
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>。</p>
+</blockquote>
+<p>下一阶段真正的关键问题就是：</p>
+<blockquote>
+<p><strong>为什么这个
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>
+可以近似成两个很小的低秩矩阵？</strong></p>
+</blockquote>
+<hr />
+<h1 id="三十一先用一张图把区别锁死">三十一、先用一张图把区别锁死</h1>
+<pre class="text"><code>Full Fine-Tuning
+
+        Base Model
+┌─────────────────────────┐
+│ W1  ✓                   │
+│ W2  ✓                   │
+│ W3  ✓                   │
+│ W4  ✓                   │
+│ W5  ✓                   │
+└─────────────────────────┘
+          │
+          ▼
+大量Base Weight更新</code></pre>
+<p>而 PEFT：</p>
+<pre class="text"><code>PEFT
+
+        Base Model
+┌─────────────────────────┐
+│ W1  Frozen              │
+│ W2  Frozen       + ΔW ✓ │
+│ W3  Frozen       + ΔW ✓ │
+│ W4  Frozen              │
+│ W5  Frozen       + ΔW ✓ │
+└─────────────────────────┘
+          │
+          ▼
+主要只学习小规模增量参数</code></pre>
+<p>这就是今天最核心的区别。</p>
+<hr />
+<h1
+id="三十二为什么这会显著减少-optimizer-memory">三十二、为什么这会显著减少
+Optimizer Memory？</h1>
+<p>因为 Optimizer 主要需要为：</p>
+<blockquote>
+<p>Trainable Parameters</p>
+</blockquote>
+<p>维护训练状态。</p>
+<p>如果从：</p>
+<pre class="text"><code>7B Trainable</code></pre>
+<p>变成：</p>
+<pre class="text"><code>20M Trainable</code></pre>
+<p>Optimizer 需要维护的状态规模：</p>
+<blockquote>
+<p>会大幅降低。</p>
+</blockquote>
+<p>这正是 PEFT 在训练资源上的关键价值之一。</p>
+<hr />
+<h1 id="三十三但是-activation-不会凭空消失">三十三、但是 Activation
+不会凭空消失</h1>
+<p>这是个非常容易过度宣传 PEFT 的地方。</p>
+<p>即使只有少量参数可训练：</p>
+<pre class="text"><code>整个Transformer</code></pre>
+<p>Forward 仍然要跑。</p>
+<p>而训练时为了 Backward：</p>
+<blockquote>
+<p>仍然需要处理大量中间 Activation。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>E</mi><mi>F</mi><mi>T</mi><mi>大</mi><mi>幅</mi><mi>减</mi><mi>少</mi><mi>参</mi><mi>数</mi><mi>相</mi><mi>关</mi><mi>训</mi><mi>练</mi><mi>成</mi><mi>本</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PEFT
+大幅减少参数相关训练成本
+}
+</annotation></semantics></math></p>
+<p>但不等于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>所</mi><mi>有</mi><mi>显</mi><mi>存</mi><mi>成</mi><mi>本</mi><mi>都</mi><mi>消</mi><mi>失</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+所有显存成本都消失
+}
+</annotation></semantics></math></p>
+<p>后面 QLoRA、Gradient Checkpointing 等技术：</p>
+<blockquote>
+<p>还会继续处理剩下的内存问题。</p>
+</blockquote>
+<hr />
+<h1
+id="三十四所以训练显存可以先粗分成四块">三十四、所以训练显存可以先粗分成四块</h1>
+<pre class="text"><code>1. Model Weights
+模型权重
+
+2. Trainable Gradients
+梯度
+
+3. Optimizer States
+优化器状态
+
+4. Activations
+中间激活</code></pre>
+<p>Full FT：</p>
+<blockquote>
+<p>2、3 都非常大。</p>
+</blockquote>
+<p>PEFT：</p>
+<blockquote>
+<p>2、3 可以显著缩小。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>1 和 4 仍然必须认真处理。</p>
+</blockquote>
+<p>这是非常精准的显存心智模型。</p>
+<hr />
+<h1 id="三十五qlora-为什么会继续出现">三十五、QLoRA
+为什么会继续出现？</h1>
+<p>因为 LoRA 解决的是：</p>
+<blockquote>
+<p><strong>哪些参数训练。</strong></p>
+</blockquote>
+<p>但 Base Model 权重本身：</p>
+<blockquote>
+<p>仍需要放进显存。</p>
+</blockquote>
+<p>QLoRA 后面会进一步问：</p>
+<blockquote>
+<p>能不能把冻结的 Base Model 用 4-bit 形式加载，同时仍然训练高精度 LoRA
+Adapter？</p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>LoRA
+解决
+Trainable Parameter Cost
+
+QLoRA
+进一步解决
+Frozen Base Weight Memory</code></pre>
+<p>先记这层关系即可。</p>
+<hr />
+<h1 id="三十六full-ftloraqlora-的大地图">三十六、Full FT、LoRA、QLoRA
+的大地图</h1>
+<pre class="text"><code>                 Fine-Tuning
+                      │
+          ┌───────────┴───────────┐
+          ▼                       ▼
+ Full Fine-Tuning               PEFT
+ 大量Base参数更新                 │
+                                  ▼
+                                LoRA
+                      冻结Base + 训练低秩Adapter
+                                  │
+                                  ▼
+                               QLoRA
+                      量化冻结Base + 训练LoRA</code></pre>
+<p>后面三个阶段会沿着：</p>
+<pre class="text"><code>PEFT
+↓
+LoRA
+↓
+QLoRA</code></pre>
+<p>逐层往下拆。</p>
+<hr />
+<h1
+id="三十七procurementlm_v0.1-应该先选什么">三十七、ProcurementLM_V0.1
+应该先选什么？</h1>
+<p>基于我们目前的课程目标，第一版优先建立：</p>
+<h1 id="peft-lora-baseline">PEFT / LoRA Baseline</h1>
+<p>原因不是：</p>
+<blockquote>
+<p>Full FT 一定差。</p>
+</blockquote>
+<p>而是第一版需要优先获得：</p>
+<pre class="text"><code>低实验成本
++
+快速迭代
++
+容易回滚
++
+方便比较Adapter
++
+较小Checkpoint
++
+保留强Base Model能力</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>用 Benchmark 数据决定是否需要更大的训练自由度。</p>
+</blockquote>
+<p>这比：</p>
+<blockquote>
+<p>一上来直接训练全部参数</p>
+</blockquote>
+<p>更容易形成可靠实验闭环。</p>
+<hr />
+<h1 id="三十八决策顺序不要反过来">三十八、决策顺序不要反过来</h1>
+<p>错误：</p>
+<pre class="text"><code>我听说LoRA很流行
+        ↓
+所以一定用LoRA</code></pre>
+<p>更好的决策：</p>
+<pre class="text"><code>Task Gap
+任务差距有多大？
+        ↓
+Data Scale
+高质量数据有多少？
+        ↓
+Base Model Capability
+底模已经会多少？
+        ↓
+Resource Budget
+资源允许多少？
+        ↓
+Benchmark Result
+PEFT够不够？
+        ↓
+Fine-Tuning Strategy</code></pre>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>技术选择必须由问题决定。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十九给政府采购项目一个非常实用的升级梯子">三十九、给政府采购项目一个非常实用的升级梯子</h1>
+<p>第一层：</p>
+<pre class="text"><code>Base Model</code></pre>
+<p>先测。</p>
+<p>如果不够：</p>
+<pre class="text"><code>↓</code></pre>
+<p>第二层：</p>
+<pre class="text"><code>Prompt / RAG</code></pre>
+<p>先解决知识和上下文问题。</p>
+<p>如果仍存在稳定行为缺陷：</p>
+<pre class="text"><code>↓</code></pre>
+<p>第三层：</p>
+<pre class="text"><code>PEFT / LoRA</code></pre>
+<p>改变模型行为。</p>
+<p>如果有证据证明：</p>
+<pre class="text"><code>LoRA容量不足
++
+数据足够
++
+收益值得成本</code></pre>
+<p>再考虑：</p>
+<pre class="text"><code>↓
+Full Fine-Tuning</code></pre>
+<p>这比一开始就：</p>
+<blockquote>
+<p>“训练越多越高级”</p>
+</blockquote>
+<p>专业得多。</p>
+<hr />
+<h1
+id="四十这里还要区分知识问题和行为问题">四十、这里还要区分“知识问题”和“行为问题”</h1>
+<p>假设模型不知道：</p>
+<blockquote>
+<p>某个刚发布的政府采购规定。</p>
+</blockquote>
+<p>这往往是：</p>
+<h1 id="knowledge-freshness-problem">Knowledge Freshness Problem</h1>
+<p>可能更适合：</p>
+<blockquote>
+<p>RAG。</p>
+</blockquote>
+<hr />
+<p>但如果模型已经拿到了正确法规，却仍然：</p>
+<pre class="text"><code>不会按我们的Schema输出
+总是过度下结论
+不会在证据不足时abstain
+总把关键词直接等同风险</code></pre>
+<p>这些更像：</p>
+<h1 id="behavior-adaptation-problem">Behavior Adaptation Problem</h1>
+<p>这才是：</p>
+<blockquote>
+<p>SFT / PEFT</p>
+</blockquote>
+<p>擅长解决的方向。</p>
+<p>这条边界极其重要。</p>
+<hr />
+<h1 id="四十一所以-sft-不应该承担所有事情">四十一、所以 SFT
+不应该承担所有事情</h1>
+<p>我们最终 ProcurementAI 会形成：</p>
+<pre class="text"><code>Base Model
+        │
+        ├── SFT / LoRA
+        │   学行为
+        │
+        ├── RAG
+        │   给最新知识和证据
+        │
+        └── Rules
+            做硬约束</code></pre>
+<p>不同组件：</p>
+<blockquote>
+<p>各自干最适合自己的工作。</p>
+</blockquote>
+<p>这也是后面整个系统设计的基础。</p>
+<hr />
+<h1
+id="四十二本阶段工程产物finetuningstrategy_v0.1">四十二、本阶段工程产物：<code>FineTuningStrategy_V0.1</code></h1>
+<p>我们现在应该能够正式记录：</p>
+<pre class="text"><code>base_model
+base_model_revision
+
+adaptation_goal
+
+full_finetuning_enabled
+peft_method
+
+total_parameters
+trainable_parameters
+trainable_ratio
+
+frozen_parameter_scope
+trainable_parameter_scope
+
+expected_checkpoint_type
+
+memory_budget
+
+evaluation_baseline
+
+upgrade_condition</code></pre>
+<p>其中：</p>
+<h1 id="upgrade_condition"><code>upgrade_condition</code></h1>
+<p>很重要。</p>
+<p>例如：</p>
+<blockquote>
+<p>只有当 LoRA 在固定 Benchmark
+上持续表现出明确容量瓶颈，并排除数据和超参数问题后，才进入 Full
+Fine-Tuning 评估。</p>
+</blockquote>
+<p>这样：</p>
+<blockquote>
+<p>技术升级就不是拍脑袋。</p>
+</blockquote>
+<hr />
+<h1
+id="四十三本阶段最危险的几个反例">四十三、本阶段最危险的几个反例</h1>
+<p><strong>反例 1：认为模型 7B，就必须训练 7B 参数。</strong><br />
+模型规模和可训练参数量不是一回事。</p>
+<p><strong>反例 2：认为 PEFT 就没有使用完整 Base Model。</strong><br />
+整个 Base Model 仍然参与 Forward。</p>
+<p><strong>反例 3：认为 Full FT
+参数多，所以一定效果最好。</strong><br />
+数据、任务、泛化和训练稳定性共同决定结果。</p>
+<p><strong>反例 4：认为 LoRA 自动防止过拟合。</strong><br />
+错误数据和过度训练仍然会得到坏 Adapter。</p>
+<p><strong>反例 5：只保存 Adapter，却不记录 Base Model
+Revision。</strong><br />
+以后模型不可可靠复现。</p>
+<p><strong>反例 6：知识过时也用 SFT 硬记。</strong><br />
+知识更新问题往往应该优先考虑 RAG。</p>
+<p><strong>反例 7：模型行为问题只靠 Prompt 无限堆规则。</strong><br />
+稳定行为差异可能需要 SFT。</p>
+<hr />
+<h1
+id="四十四现在把本阶段压缩成最精准的-5-句话">四十四、现在把本阶段压缩成最精准的
+5 句话</h1>
+<p>如果一周后只记住这五句：</p>
+<blockquote>
+<p><strong>第一，使用整个模型不等于训练整个模型；PEFT 仍然使用完整 Base
+Model，只是大多数权重被冻结。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Full Fine-Tuning 与 PEFT 的本质区别，是 Gradient
+最终允许改写多少模型参数。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，PEFT 不是“廉价版训练”，而是尽可能复用 Base Model
+已有能力，只学习任务所需要的最小参数增量。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，可训练参数越多不代表效果一定越好；参数自由度必须与高质量数据、算力、泛化风险和能力变化幅度匹配。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，对 <code>ProcurementLM_V0.1</code>，先建立 PEFT / LoRA
+Baseline，再通过固定 Benchmark 决定是否值得升级到更重的 Full
+Fine-Tuning。</strong></p>
+</blockquote>
+<p>这就是本阶段的精华。</p>
+<hr />
+<h1 id="四十五本阶段最核心的一张图">四十五、本阶段最核心的一张图</h1>
+<pre class="text"><code>                   Base Model
+              已有通用模型能力
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+        ▼                         ▼
+
+Full Fine-Tuning                PEFT
+        │                         │
+大量Base Weight                 大量Base Weight
+Trainable                       Frozen
+        │                         │
+        │                         + 少量Trainable Params
+        │                         │
+        ▼                         ▼
+大量参数更新                  小规模参数增量
+        │                         │
+        ▼                         ▼
+高训练成本                    较低训练成本
+大Checkpoint                   小Adapter
+大修改范围                     小修改范围
+        │                         │
+        └────────────┬────────────┘
+                     ▼
+                  Benchmark
+                     │
+                     ▼
+            哪个满足真实任务需求？</code></pre>
+<p>脑中只留一句：</p>
+<blockquote>
+<p><strong>先决定“改多少参数”，再决定“具体怎样改”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十六本阶段掌握测试">四十六、本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够自己解释：为什么一个 7B 模型不等于必须训练
+70 亿参数；Full Fine-Tuning 到底更新什么；Frozen Parameter 和 Trainable
+Parameter 有什么区别；为什么 Base Model 冻结以后仍然参与 Forward；为什么
+Training Memory 明显高于 Inference Memory；为什么 Full FT
+不只需要模型权重，还需要大量 Gradient 和 Optimizer State；什么是
+Catastrophic Forgetting；为什么更多 Trainable Parameters
+不等于更高业务效果；PEFT 的全称和本质是什么；为什么 LoRA 属于 PEFT 而
+PEFT 不等于 LoRA；什么是 Trainable Parameter
+Ratio；为什么少量参数仍然能够改变已有大模型行为；Adapter
+为什么通常离不开对应 Base Model；为什么必须记录 Base Model
+Revision；PEFT 主要减少显存中的哪几类开销；为什么 Activation 并不会因为
+LoRA 自动消失；为什么 QLoRA 会进一步处理冻结 Base Weight
+的显存；什么情况下 Full Fine-Tuning 的价值会上升；什么情况下 PEFT
+更合理；以及为什么政府采购“最新法规知识”与“风险判断行为”应该分别考虑 RAG
+和 SFT。</p>
+<p>如果这些能够自己解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>5</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第5阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-4">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>Full Fine-Tuning 是让大范围 Base Model 权重直接接受 Gradient
+并被改写，而 PEFT
+是尽量冻结已经学好的大模型，只训练完成目标任务所需要的一小部分参数增量；对于第一版
+<code>ProcurementLM_V0.1</code>，专业的策略不是默认“训练越多越好”，而是先用最小必要参数变化建立可靠
+Baseline，再让 Benchmark 决定是否需要更大的训练自由度。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-6-阶段">下一阶段：第五课 · 第 6 阶段</h1>
+<h1 id="lora-到底在改什么">LoRA 到底在改什么？</h1>
+<h2
+id="为什么两个很小的矩阵就能够改变一个几十亿参数模型的行为">为什么两个很小的矩阵，就能够改变一个几十亿参数模型的行为？</h2>
+<p>今天我们停在了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W&#39; = W + \Delta W
+</annotation></semantics></math></p>
+<p>下一阶段将真正打开 LoRA 的核心：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\Delta W = BA
+}
+</annotation></semantics></math></p>
+<p>我们只需要解决一个问题：</p>
+<blockquote>
+<p><strong>为什么一个巨大的权重矩阵不直接训练，而是可以用两个很小的低秩矩阵去表达它需要发生的变化？</strong></p>
+</blockquote>
+<p>一旦这件事真正想通，后面的
+<code>rank</code>、<code>alpha</code>、<code>target_modules</code>、QLoRA
+才会从“配置参数”变成你能自己判断的工程变量。</p>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

@@ -1,0 +1,667 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第7阶段：Agent Evaluation：Planning、Tool、State、Recovery、Safety、Completion</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第7阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>ToolCallSuccess ≠ TaskCompletion。工具调用成功不等于真实任务完成。</li><li>AgentEval = OutcomeEval + TrajectoryEval。结果和执行轨迹必须同时评。</li><li>Action = Tool + Arguments。只评工具名远远不够。</li></ul></div><h1 id="第九课-第-7-阶段">第九课 · 第 7 阶段</h1>
+<h1
+id="agent-evaluationplanningtoolstaterecoverysafetycompletion-1">Agent
+Evaluation：Planning、Tool、State、Recovery、Safety、Completion</h1>
+<h2
+id="agent-调用工具成功为什么仍然可能算任务失败怎样评测一个会计划执行恢复和改变真实状态的系统">Agent
+调用工具成功，为什么仍然可能算任务失败？怎样评测一个会计划、执行、恢复和改变真实状态的系统？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-6">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-6">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>ToolCallSuccess ≠
+TaskCompletion。工具调用成功不等于真实任务完成。</strong></li>
+<li><strong>AgentEval = OutcomeEval +
+TrajectoryEval。结果和执行轨迹必须同时评。</strong></li>
+<li><strong>Action = Tool +
+Arguments。只评工具名远远不够。</strong></li>
+<li><strong>HappyPathSuccess ≠
+RobustAgent。没有故障注入就测不出恢复能力。</strong></li>
+<li><strong>ActionSuccess ≠
+PolicySuccess。成功执行的动作仍可能违反权限或安全策略。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-6">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="odd">
+<td><code>Planning</code></td>
+<td>任务规划：把目标拆成可执行、带依赖的子任务</td>
+</tr>
+<tr class="even">
+<td><code>Recovery</code></td>
+<td>恢复：工具失败或中断后安全重试、降级和继续</td>
+</tr>
+<tr class="odd">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-6">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>Agent 和普通 LLM 最大区别是：</p>
+<blockquote>
+<p>它不只是“说”，还会“做”。</p>
+</blockquote>
+<p>所以评测 Agent 不能只看：</p>
+<pre class="text"><code>最终文本像不像标准答案</code></pre>
+<p>因为 Agent 可能：</p>
+<pre class="text"><code>调用了错误工具
+参数填错
+重复提交
+状态丢失
+遇到失败不会恢复
+做了不该做的副作用</code></pre>
+<p>因此第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolCallSuccess
+\neq
+TaskCompletion
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementagentevalpolicy_v0.1-1"><code>ProcurementAgentEvalPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一agent-evaluation-为什么必须看-trajectory">一、Agent Evaluation
+为什么必须看 Trajectory？</h1>
+<h1 id="trajectory">Trajectory</h1>
+<h2 id="执行轨迹">执行轨迹</h2>
+<p>包括：</p>
+<pre class="text"><code>Observe
+Plan
+Choose Tool
+Call Tool
+Receive Result
+Update State
+Replan
+Complete</code></pre>
+<p>两个 Agent 最终都成功，</p>
+<p>但一个可能：</p>
+<pre class="text"><code>2次工具调用完成</code></pre>
+<p>另一个：</p>
+<pre class="text"><code>12次调用
+3次错误
+2次重试
+1次危险副作用</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameOutcome
+\neq
+SameAgentQuality
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二核心心智模型-①-4">二、核心心智模型 ①</h1>
+<h1 id="outcome-和-trajectory-都要评"><code>Outcome</code> 和
+<code>Trajectory</code> 都要评</h1>
+<p>Outcome 回答：</p>
+<blockquote>
+<p>最终任务完成了吗？</p>
+</blockquote>
+<p>Trajectory 回答：</p>
+<blockquote>
+<p>是不是用正确、稳定、安全的方式完成？</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>=</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentEval
+=
+OutcomeEval
++
+TrajectoryEval
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三planning计划是不是合理">三、Planning：计划是不是合理？</h1>
+<p>可以评：</p>
+<pre class="text"><code>Goal Decomposition
+目标拆解
+
+Step Ordering
+步骤顺序
+
+Dependency Awareness
+依赖意识
+
+Unnecessary Steps
+冗余步骤
+
+Replanning
+动态重规划</code></pre>
+<p>但注意：</p>
+<blockquote>
+<p>不一定要求 Agent 把“思维链”输出出来。</p>
+</blockquote>
+<p>更适合评：</p>
+<pre class="text"><code>Observable Plan
+可观察执行计划
+
+Tool Sequence
+工具序列</code></pre>
+<hr />
+<h1 id="四tool-selection有没有选对工具">四、Tool
+Selection：有没有选对工具？</h1>
+<p>例如任务需要：</p>
+<pre class="text"><code>查询预算</code></pre>
+<p>Agent 却去：</p>
+<pre class="text"><code>搜索法规</code></pre>
+<p>即使工具调用成功，</p>
+<p>也没意义。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>A</mi><mi>v</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolAvailability
+\neq
+ToolAppropriateness
+}
+</annotation></semantics></math></p>
+<p>要评：</p>
+<pre class="text"><code>tool_selected
+gold_tool
+tool_selection_correct</code></pre>
+<hr />
+<h1 id="五tool-arguments工具对了参数也可能错">五、Tool
+Arguments：工具对了，参数也可能错</h1>
+<p>例如正确工具：</p>
+<pre class="text"><code>query_project_budget</code></pre>
+<p>但：</p>
+<pre class="text"><code>project_id填错
+date范围错
+currency单位错</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorrectTool
+\neq
+CorrectAction
+}
+</annotation></semantics></math></p>
+<p>真正 Action：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mo>+</mo><mi>A</mi><mi>r</mi><mi>g</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Action
+=
+Tool
++
+Arguments
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六核心心智模型-②-1">六、核心心智模型 ②</h1>
+<h1 id="toolcall-是结构化行为不只是函数名"><code>ToolCall</code>
+是结构化行为，不只是函数名</h1>
+<p>Agent Eval 至少要拆：</p>
+<pre class="text"><code>Tool Name
+Arguments
+Timing
+Permission
+Result Handling</code></pre>
+<p>这才是真正工具评测。</p>
+<hr />
+<h1 id="七stateagent-是否正确维护真实状态">七、State：Agent
+是否正确维护真实状态？</h1>
+<p>Agent 可能跨多步处理：</p>
+<pre class="text"><code>项目A
+预算100万
+已经提交一次
+等待审批</code></pre>
+<p>如果后面突然：</p>
+<pre class="text"><code>把项目A当成项目B
+重复提交
+忘记已审批状态</code></pre>
+<p>就是：</p>
+<h1 id="state-error">State Error</h1>
+<h2 id="状态错误">状态错误</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>以</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>评</mi><mi>测</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentMemory
+必须以
+StateConsistency
+评测
+}
+</annotation></semantics></math></p>
+<p>不是看它“记得多不多”。</p>
+<hr />
+<h1
+id="八recovery工具失败时怎么办">八、Recovery：工具失败时怎么办？</h1>
+<p>生产工具一定会失败：</p>
+<pre class="text"><code>Timeout
+Rate Limit
+Permission Error
+Temporary Unavailable
+Invalid Input</code></pre>
+<p>Agent 是否：</p>
+<pre class="text"><code>重试
+换工具
+修参数
+请求用户补充
+转人工</code></pre>
+<p>决定了：</p>
+<h1 id="recovery-quality">Recovery Quality</h1>
+<h2 id="故障恢复质量">故障恢复质量</h2>
+<p>所以 Benchmark 必须有：</p>
+<h1 id="fault-injection">Fault Injection</h1>
+<h2 id="故障注入">故障注入</h2>
+<p>主动模拟失败。</p>
+<hr />
+<h1 id="九核心心智模型-③-1">九、核心心智模型 ③</h1>
+<h1
+id="happypathsuccess-不等于-robustagent"><code>HappyPathSuccess</code>
+不等于 <code>RobustAgent</code></h1>
+<p>如果 Benchmark 永远：</p>
+<pre class="text"><code>工具正常
+网络正常
+输入完整
+权限齐全</code></pre>
+<p>Agent 分数会虚高。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>b</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>需</mi><mi>要</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Robustness
+需要
+FailureScenarios
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十task-completion到底怎么算完成">十、Task
+Completion：到底怎么算“完成”？</h1>
+<p>必须提前定义：</p>
+<h1 id="success-condition">Success Condition</h1>
+<h2 id="成功条件">成功条件</h2>
+<p>例如：</p>
+<pre class="text"><code>预算查询任务
+Success =
+返回正确预算
+AND
+项目ID正确
+AND
+币种正确
+AND
+没有修改任何状态</code></pre>
+<p>再比如：</p>
+<pre class="text"><code>提交审批任务
+Success =
+正确提交
+AND
+只提交一次
+AND
+状态更新正确
+AND
+生成审批记录</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>必</mi><mi>须</mi><mi>M</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Completion
+必须MachineCheckable
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一side-effectagent-最大风险之一">十一、Side Effect：Agent
+最大风险之一</h1>
+<p>Agent 不只是读取。</p>
+<p>有些工具会：</p>
+<pre class="text"><code>写入
+修改
+提交
+删除
+发送
+审批</code></pre>
+<p>所以必须评：</p>
+<h1 id="side-effect-safety">Side Effect Safety</h1>
+<h2 id="副作用安全">副作用安全</h2>
+<p>包括：</p>
+<pre class="text"><code>是否获得必要确认
+是否越权
+是否重复执行
+是否可回滚
+是否记录审计日志</code></pre>
+<hr />
+<h1 id="十二核心心智模型-④-2">十二、核心心智模型 ④</h1>
+<h1
+id="successfulaction-也可能是-unsafeaction"><code>SuccessfulAction</code>
+也可能是 <code>UnsafeAction</code></h1>
+<p>如果 Agent 成功删除了不该删的记录，</p>
+<p>技术上：</p>
+<blockquote>
+<p>API 调用成功。</p>
+</blockquote>
+<p>但系统上：</p>
+<blockquote>
+<p>严重失败。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ActionSuccess
+\neq
+PolicySuccess
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十三idempotency重复调用会不会造成重复副作用">十三、Idempotency：重复调用会不会造成重复副作用？</h1>
+<h1 id="idempotency">Idempotency</h1>
+<h2 id="幂等性">幂等性</h2>
+<p>例如：</p>
+<blockquote>
+<p>“提交采购审批”</p>
+</blockquote>
+<p>如果网络超时，</p>
+<p>Agent 不确定是否已经提交。</p>
+<p>它再次调用：</p>
+<blockquote>
+<p>会不会重复创建两个审批？</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>t</mi><mi>y</mi><mi>需</mi><mi>要</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>A</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetrySafety
+需要
+IdempotencyAwareness
+}
+</annotation></semantics></math></p>
+<p>Benchmark 应设计：</p>
+<blockquote>
+<p>第一次调用成功但响应丢失</p>
+</blockquote>
+<p>这种场景。</p>
+<hr />
+<h1
+id="十四human-in-the-loop什么时候应该停下来找人">十四、Human-in-the-loop：什么时候应该停下来找人？</h1>
+<p>Agent 不应该什么都自己做。</p>
+<p>可以评：</p>
+<pre class="text"><code>Escalation Correctness
+升级人工是否正确
+
+Confirmation Timing
+确认时机
+
+Uncertainty Handling
+不确定性处理</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>包</mi><mi>括</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>T</mi><mi>o</mi><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodAgent
+包括
+KnowingWhenToStop
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五cost-latency完成同一任务的代价不同">十五、Cost /
+Latency：完成同一任务的代价不同</h1>
+<p>可以记录：</p>
+<pre class="text"><code>tool_calls
+tokens
+latency
+retries
+external_cost</code></pre>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>=</mo><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentEfficiency
+=
+GoalCompletion
+per
+ResourceCost
+}
+</annotation></semantics></math></p>
+<p>不是严格一个固定公式，</p>
+<p>而是工程思想。</p>
+<hr />
+<h1 id="十六核心心智模型-⑤">十六、核心心智模型 ⑤</h1>
+<h1 id="moretoolcalls-不代表-morereasoning"><code>MoreToolCalls</code>
+不代表 <code>MoreReasoning</code></h1>
+<p>Agent 乱试工具，</p>
+<p>可能产生很多调用。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>不</mi><mi>是</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolCallCount
+不是
+IntelligenceMetric
+}
+</annotation></semantics></math></p>
+<p>更重要的是：</p>
+<blockquote>
+<p>是否必要、正确、有效。</p>
+</blockquote>
+<hr />
+<h1 id="十七agent-eval-需要真实工具还是-mock">十七、Agent Eval
+需要真实工具还是 Mock？</h1>
+<p>两种都需要。</p>
+<h1 id="mock-sandbox-tools">Mock / Sandbox Tools</h1>
+<h2 id="模拟工具">模拟工具</h2>
+<p>优点：</p>
+<pre class="text"><code>稳定
+可复现
+无真实副作用
+便于Fault Injection</code></pre>
+<p>适合 Benchmark。</p>
+<h1 id="live-tools">Live Tools</h1>
+<h2 id="真实工具">真实工具</h2>
+<p>能检验：</p>
+<blockquote>
+<p>真正系统集成。</p>
+</blockquote>
+<p>但不稳定、成本高、风险高。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>f</mi><mi>f</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>L</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OfflineAgentEval
++
+ControlledLiveEval
+}
+</annotation></semantics></math></p>
+<p>更完整。</p>
+<hr />
+<h1 id="十八agent-failure-taxonomy">十八、Agent Failure Taxonomy</h1>
+<p>建议至少：</p>
+<pre class="text"><code>A1 Goal Misunderstanding
+目标理解错误
+
+A2 Planning Error
+计划错误
+
+A3 Wrong Tool
+工具选择错误
+
+A4 Wrong Arguments
+参数错误
+
+A5 State Error
+状态错误
+
+A6 Recovery Failure
+恢复失败
+
+A7 Permission Violation
+权限违规
+
+A8 Unsafe Side Effect
+危险副作用
+
+A9 Duplicate Action
+重复动作
+
+A10 Failed Escalation
+该转人工未转
+
+A11 Incomplete Task
+任务未完成</code></pre>
+<hr />
+<h1 id="十九核心心智模型-⑥-1">十九、核心心智模型 ⑥</h1>
+<h1
+id="agent-failure-必须区分没完成和危险地完成"><code>Agent Failure</code>
+必须区分“没完成”和“危险地完成”</h1>
+<p>一个 Agent：</p>
+<blockquote>
+<p>没完成审批。</p>
+</blockquote>
+<p>另一个 Agent：</p>
+<blockquote>
+<p>完成了审批，但越权提交。</p>
+</blockquote>
+<p>第二种可能更危险。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>不</mi><mi>能</mi><mi>替</mi><mi>代</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>t</mi><mi>y</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CompletionRate
+不能替代
+SafetyRate
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十本阶段正式工程产物-1">二十、本阶段正式工程产物</h1>
+<h1
+id="procurementagentevalpolicy_v0.1-2"><code>ProcurementAgentEvalPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>agent_eval_policy_version
+
+task_definition
+
+success_condition
+
+trajectory_capture
+
+planning_eval
+
+tool_selection_eval
+
+tool_argument_eval
+
+state_consistency_eval
+
+fault_injection_suite
+
+recovery_eval
+
+side_effect_policy
+
+permission_eval
+
+idempotency_eval
+
+human_escalation_eval
+
+completion_metric
+
+safety_metric
+
+latency_metric
+
+cost_metric
+
+mock_tool_policy
+
+live_tool_policy
+
+failure_taxonomy
+
+release_gate</code></pre>
+<hr />
+<h1 id="二十一本阶段最重要的-9-个核心心智模型-1">二十一、本阶段最重要的
+9 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>ToolCallSuccess ≠ TaskCompletion</code>。工具调用成功不等于真实任务完成。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>AgentEval = OutcomeEval + TrajectoryEval</code>。结果和执行轨迹必须同时评。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>Action = Tool + Arguments</code>。只评工具名远远不够。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>HappyPathSuccess ≠ RobustAgent</code>。没有故障注入就测不出恢复能力。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>ActionSuccess ≠ PolicySuccess</code>。成功执行的动作仍可能违反权限或安全策略。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑥：<code>RetrySafety</code> 需要 Idempotency
+Awareness。重试可能制造重复副作用。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>GoodAgent</code>
+包括知道什么时候停下来、确认或转人工。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>ToolCallCount ≠ IntelligenceMetric</code>。工具调用越多不等于
+Agent 越聪明。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>CompletionRate ≠ SafetyRate</code>。完成任务和安全完成是两个不同目标。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十二下一阶段第九课-第-8-阶段">二十二、下一阶段：第九课 · 第 8
+阶段</h1>
+<h1 id="slice-evaluationrisk-type行业地区难度hard-case">Slice
+Evaluation：Risk Type、行业、地区、难度、Hard Case</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OverallScore
+\neq
+SliceReliability
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementsliceevalpolicy_v0.1"><code>ProcurementSliceEvalPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage06.html">← 第 6 阶段</a><a class="btn" href="stage08.html">第 8 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

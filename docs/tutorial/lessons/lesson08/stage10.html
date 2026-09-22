@@ -1,0 +1,1686 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第8课 · 第10阶段：真正训练 `ProcurementLM_V0.2`：端到端 CPT、评测、回归测试与 Release Gate</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第8课 · 第10阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>做 CPT、领域语料混合、能力保持、灾难性遗忘和 Synthetic Data。<ul><li>CPTExperiment ≠ ModelRelease。训练跑完只是得到实验 Checkpoint，不代表模型可以发布。</li><li>ModelRelease ≠ WeightsOnly。真正模型版本必须包含 Tokenizer、配置、数据血缘、评测证据和 Release Manifest。</li><li>NoFrozenBaseline = NoReliableComparison。没有固定基线，就无法可靠证明模型到底变好还是变坏。</li></ul></div><h1 id="第八课-第-10-阶段">第八课 · 第 10 阶段</h1>
+<h1
+id="真正训练-procurementlm_v0.2端到端-cpt评测回归测试与-release-gate-1">真正训练
+<code>ProcurementLM_V0.2</code>：端到端 CPT、评测、回归测试与 Release
+Gate</h1>
+<h2
+id="怎样把前-9-个阶段全部接成一个真正可运行可复现可审计可回滚的-cpt-工程系统-1">怎样把前
+9 个阶段全部接成一个真正可运行、可复现、可审计、可回滚的 CPT
+工程系统？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-9">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-9">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>CPTExperiment ≠ ModelRelease。训练跑完只是得到实验
+Checkpoint，不代表模型可以发布。</strong></li>
+<li><strong>ModelRelease ≠ WeightsOnly。真正模型版本必须包含
+Tokenizer、配置、数据血缘、评测证据和 Release Manifest。</strong></li>
+<li><strong>NoFrozenBaseline =
+NoReliableComparison。没有固定基线，就无法可靠证明模型到底变好还是变坏。</strong></li>
+<li><strong>Scale amplifies Signal and
+Error。扩大训练规模会同时放大正确方向和错误配置，所以 Full Run
+前必须先做 Pilot。</strong></li>
+<li><strong>BestCheckpoint = MultiObjectiveDecision。最优发布 Checkpoint
+不是 Loss
+最低，而是领域收益、通用保持、成本和兼容性的综合折中。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-9">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="even">
+<td><code>Checkpoint</code></td>
+<td>检查点：保存模型和训练状态以便恢复/发布</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="even">
+<td><code>Regression</code></td>
+<td>回归测试：更新后验证旧能力和关键切片没有退化</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-9">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前 9 个阶段，我们已经分别解决了：</p>
+<ul>
+<li>CPT 到底在学什么；</li>
+<li>什么样的领域 Corpus 才值得训练；</li>
+<li>Tokenizer 要不要改；</li>
+<li>Sequence、Context Length、Packing 和 Loss
+怎样定义真实训练任务；</li>
+<li>Data Mixture 怎样分配训练预算；</li>
+<li>怎样检测 Catastrophic Forgetting；</li>
+<li>怎样通过 Replay、Regularization 和参数约束保持能力；</li>
+<li>Synthetic Data 与 Curriculum 怎样补覆盖而不是制造“假数据世界”；</li>
+<li>CPT、SFT、RAG、Agent 到底分别解决什么问题。</li>
+</ul>
+<p>第 10 阶段不再增加一个孤立概念。</p>
+<p>它要做的是：</p>
+<blockquote>
+<p><strong>把这些东西真正接成一条可以执行、可以停止、可以恢复、可以比较、可以发布的模型工程流水线。</strong></p>
+</blockquote>
+<p>本阶段最终交付：</p>
+<h1 id="procurementlm_v0.2-1"><code>ProcurementLM_V0.2</code></h1>
+<p>并正式完成第八课。</p>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-9">一、先锁死本阶段最重要的一句话</h1>
+<p>一次 CPT 训练成功跑完，只代表：</p>
+<blockquote>
+<p><strong>得到一个实验 Checkpoint。</strong></p>
+</blockquote>
+<p>它不等于：</p>
+<blockquote>
+<p><strong>得到一个可以发布的模型。</strong></p>
+</blockquote>
+<p>所以本阶段最重要的总边界是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPTExperiment
+\neq
+ModelRelease
+}
+</annotation></semantics></math></p>
+<p>真正的模型发布至少还需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mo>+</mo><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Reproducibility
++
+Evaluation
++
+RegressionControl
++
+ArtifactCompleteness
++
+ReleaseGate
++
+Rollbackability
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>能复现、能评测、能证明没把旧能力弄坏、产物完整、通过发布门槛，而且出问题能回滚。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二核心心智模型-①model-release-是证据包不是一个-model.safetensors">二、核心心智模型
+①：Model Release 是“证据包”，不是一个
+<code>model.safetensors</code></h1>
+<p>很多人把模型发布理解成：</p>
+<pre class="text"><code>训练结束
+↓
+保存权重
+↓
+上传模型</code></pre>
+<p>这远远不够。</p>
+<p>一个真正可发布的模型至少应该能回答：</p>
+<pre class="text"><code>它从哪个 Base Model 来？
+
+用了哪个 Corpus Version？
+
+用了哪个 Tokenizer Version？
+
+Sequence Builder 是哪一版？
+
+Mixture 怎么配的？
+
+训练了多少 Effective Tokens？
+
+选的是哪个 Checkpoint？
+
+为什么选它？
+
+CPT 后重新做了哪版 SFT？
+
+领域能力涨了多少？
+
+通用能力掉了多少？
+
+Release Gate 为什么通过？
+
+如果出问题，回滚到哪里？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>≠</mo><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelArtifact
+\neq
+WeightsOnly
+}
+</annotation></semantics></math></p>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>=</mo><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi><mo>+</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>g</mi><mo>+</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>B</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>l</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>f</mi><mi>e</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelRelease
+=
+Weights
++
+Tokenizer
++
+Config
++
+DataLineage
++
+EvalBundle
++
+ReleaseManifest
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三端到端总流程从-domain-gap-到-procurementlm_v0.2">三、端到端总流程：从
+Domain Gap 到 <code>ProcurementLM_V0.2</code></h1>
+<p>先给完整英文工程链，再逐步翻译。</p>
+<pre class="text"><code>Failure Evidence
+↓
+Domain Gap Diagnosis
+↓
+CPT Go / No-Go
+↓
+Freeze Baseline
+↓
+Corpus Build &amp; Benchmark Firewall
+↓
+Tokenizer Audit
+↓
+Sequence Construction
+↓
+Mixture &amp; Replay Design
+↓
+Pilot CPT
+↓
+Checkpoint Evaluation
+↓
+Full CPT
+↓
+Forgetting / Retention Control
+↓
+Checkpoint Selection
+↓
+SFT on CPT Base
+↓
+Foundation + Behavior + Regression Evaluation
+↓
+Release Gate
+↓
+Release Bundle
+↓
+ProcurementLM_V0.2</code></pre>
+<p>中文解释：</p>
+<pre class="text"><code>先从真实失败案例出发
+↓
+证明问题确实属于领域底座不足
+↓
+判断是否值得进入CPT
+↓
+冻结训练前基线模型和评测结果
+↓
+建设可训练Corpus并隔离未来Benchmark
+↓
+审计Tokenizer是否真的构成瓶颈
+↓
+定义Sequence、Context、Packing、Loss规则
+↓
+设计领域数据、Replay和各数据桶训练比例
+↓
+先做小规模Pilot验证路线
+↓
+周期性评测Checkpoint
+↓
+确认路线有效后再做正式CPT
+↓
+持续监控遗忘并动态调Retention
+↓
+从多个Checkpoint中选择最合适的领域底座
+↓
+在新底座上重新做SFT
+↓
+分别评测底座能力、任务行为和通用回归
+↓
+通过Release Gate
+↓
+打包完整模型发布资产
+↓
+形成ProcurementLM_V0.2</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>=</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>+</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingPipeline
+=
+DecisionPipeline
++
+ExecutionPipeline
++
+EvidencePipeline
+}
+</annotation></semantics></math></p>
+<p>训练流水线不只是“执行训练”。</p>
+<p>它同时是一条：</p>
+<blockquote>
+<p><strong>技术决策链 + 计算执行链 + 证据链。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四phase-0先冻结-baseline不然以后根本不知道模型有没有变好">四、Phase
+0：先冻结 Baseline，不然以后根本不知道模型有没有变好</h1>
+<p>在任何新 CPT Run 开始之前，先冻结：</p>
+<h1 id="baseline">Baseline</h1>
+<h2 id="基线">基线</h2>
+<p>至少包括：</p>
+<pre class="text"><code>base_model_id
+
+base_model_hash
+
+tokenizer_version
+
+baseline_domain_metrics
+
+baseline_general_metrics
+
+baseline_instruction_metrics
+
+baseline_generation_config
+
+baseline_eval_config</code></pre>
+<p>为什么？</p>
+<p>因为如果 CPT 前后：</p>
+<pre class="text"><code>Prompt变了
+Decoding参数变了
+评测集变了
+Tokenizer变了
+Scoring Rule变了</code></pre>
+<p>你就无法确定：</p>
+<blockquote>
+<p>分数变化到底来自模型，还是来自评测条件变化。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>F</mi><mi>r</mi><mi>o</mi><mi>z</mi><mi>e</mi><mi>n</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>=</mo><mi>N</mi><mi>o</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>s</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoFrozenBaseline
+=
+NoReliableComparison
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五核心心智模型-②reproducibility-不是我还记得大概怎么训的">五、核心心智模型
+②：Reproducibility 不是“我还记得大概怎么训的”</h1>
+<p>真正的：</p>
+<h1 id="reproducibility">Reproducibility</h1>
+<h2 id="可复现性">可复现性</h2>
+<p>不是：</p>
+<blockquote>
+<p>“我大概记得用了 2e-5 学习率。”</p>
+</blockquote>
+<p>而是至少冻结：</p>
+<pre class="text"><code>Base Model Version
+
+Tokenizer Version
+
+Corpus Version
+
+Sequence Builder Version
+
+Mixture Policy Version
+
+Training Config
+
+Code Commit
+
+Environment
+
+Random Seed
+
+Checkpoint Policy
+
+Evaluation Config</code></pre>
+<p>可以把一次 Run 表示成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>M</mi><mn>0</mn></msub><mo>,</mo><mi>T</mi><mo>,</mo><mi>D</mi><mo>,</mo><mi>S</mi><mo>,</mo><mi>P</mi><mo>,</mo><mi>C</mi><mo>,</mo><mi>E</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+R
+=
+(
+M_0,
+T,
+D,
+S,
+P,
+C,
+E
+)
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>M</mi><mn>0</mn></msub><annotation encoding="application/x-tex">M_0</annotation></semantics></math>：Base
+Model；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>T</mi><annotation encoding="application/x-tex">T</annotation></semantics></math>：Tokenizer；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>D</mi><annotation encoding="application/x-tex">D</annotation></semantics></math>：Corpus；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>S</mi><annotation encoding="application/x-tex">S</annotation></semantics></math>：Sequence
+/ Sampling Policy；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>P</mi><annotation encoding="application/x-tex">P</annotation></semantics></math>：训练参数；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>C</mi><annotation encoding="application/x-tex">C</annotation></semantics></math>：代码与环境；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>E</mi><annotation encoding="application/x-tex">E</annotation></semantics></math>：评测协议。</li>
+</ul>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>t</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>h</mi><mi>a</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>s</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Reproducibility
+=
+VersionEverythingThatChangesOutcome
+}
+</annotation></semantics></math></p>
+<p>注意：</p>
+<blockquote>
+<p>固定 Seed 不代表所有 GPU / Kernel 场景都能做到逐 bit 完全一致。</p>
+</blockquote>
+<p>工程目标首先是：</p>
+<blockquote>
+<p><strong>配置、数据、代码、环境和评测都可追溯，结果能够在合理误差内被重复验证。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六phase-1先做-pilot-cpt不要一上来烧完整-token-budget">六、Phase
+1：先做 Pilot CPT，不要一上来烧完整 Token Budget</h1>
+<p>如果正式计划：</p>
+<pre class="text"><code>100B CPT tokens</code></pre>
+<p>不应该第一步就把 100B 全跑完。</p>
+<p>先做：</p>
+<h1 id="pilot-run">Pilot Run</h1>
+<h2 id="小规模试验训练">小规模试验训练</h2>
+<p>例如只使用正式预算的一小部分，</p>
+<p>主要验证：</p>
+<pre class="text"><code>Data Loader是否正确
+
+Tokenizer / Sequence是否兼容
+
+Loss是否正常下降
+
+Mixture是否符合配置
+
+Replay是否真正进入训练
+
+Checkpoint是否可恢复
+
+Domain Metric是否有正向趋势
+
+General Regression是否开始失控</code></pre>
+<p>Pilot 的目的不是：</p>
+<blockquote>
+<p>得到最终最好模型。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>i</mi><mi>l</mi><mi>o</mi><mi>t</mi><mo>=</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>H</mi><mi>y</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Pilot
+=
+ValidateTrainingHypothesis
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>验证整条训练假设值得继续放大。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="七核心心智模型-③scale-up-之前先证明-direction-correct">七、核心心智模型
+③：Scale Up 之前先证明 Direction Correct</h1>
+<p>一条错误路线：</p>
+<pre class="text"><code>小规模已经看不到收益
+↓
+那就多训十倍看看</code></pre>
+<p>通常不是好工程。</p>
+<p>因为规模放大会同时放大：</p>
+<pre class="text"><code>计算成本
+数据偏差
+遗忘风险
+错误配置
+Benchmark污染
+重复曝光</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>放</mi><mi>大</mi><mi>的</mi><mi>是</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>也</mi><mi>放</mi><mi>大</mi><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Scale
+放大的是
+Signal
+也放大
+Error
+}
+</annotation></semantics></math></p>
+<p>正式 Full Run 之前至少应该看到：</p>
+<pre class="text"><code>领域指标有稳定正向趋势
+
+通用回归仍在阈值内
+
+数据分布符合预期
+
+训练数值稳定
+
+恢复流程可用</code></pre>
+<hr />
+<h1
+id="八phase-2正式-cpt-run-不是一条直线而是一串-checkpoint-decision">八、Phase
+2：正式 CPT Run 不是一条直线，而是一串 Checkpoint Decision</h1>
+<p>正式训练过程中：</p>
+<pre class="text"><code>Checkpoint_01
+Checkpoint_02
+Checkpoint_03
+...
+Checkpoint_N</code></pre>
+<p>每个 Checkpoint 都应该进入统一评测。</p>
+<p>至少记录：</p>
+<pre class="text"><code>tokens_seen
+
+effective_training_tokens
+
+training_loss
+
+validation_loss
+
+domain_perplexity
+
+domain_probe_metrics
+
+general_regression_metrics
+
+instruction_regression_metrics
+
+mixture_observed_share
+
+replay_share
+
+parameter_drift
+
+training_cost</code></pre>
+<p>然后形成：</p>
+<h1 id="training-trajectory">Training Trajectory</h1>
+<h2 id="训练轨迹">训练轨迹</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FinalCheckpoint
+\neq
+AutomaticallyBestCheckpoint
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="九checkpoint-selection怎样选择真正值得进入-sft-的-cpt-底座">九、Checkpoint
+Selection：怎样选择真正值得进入 SFT 的 CPT 底座？</h1>
+<p>不要只选：</p>
+<blockquote>
+<p>Domain Score 最高。</p>
+</blockquote>
+<p>要同时看：</p>
+<pre class="text"><code>Domain Gain
+领域收益
+
+General Retention
+通用能力保持
+
+Training Stability
+训练稳定性
+
+Cost
+训练成本
+
+Marginal Gain
+边际收益
+
+Compatibility
+Tokenizer / Serving兼容</code></pre>
+<p>可以把它理解成：</p>
+<h1 id="pareto-selection">Pareto Selection</h1>
+<h2 id="多目标折中选择">多目标折中选择</h2>
+<p>也就是说：</p>
+<blockquote>
+<p>找不到“所有指标都绝对最好”的模型时，选择在多个目标之间没有被明显支配的
+Checkpoint。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BestCheckpoint
+=
+MultiObjectiveDecision
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LowestLoss
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十核心心智模型-④loss-是训练信号不是发布裁判">十、核心心智模型
+④：Loss 是训练信号，不是发布裁判</h1>
+<p>CPT Loss 很重要。</p>
+<p>因为它告诉我们：</p>
+<blockquote>
+<p>模型是否越来越适应训练分布。</p>
+</blockquote>
+<p>但它不能回答：</p>
+<pre class="text"><code>采购任务是否真的更好？
+
+通用能力是否退化？
+
+指令遵循是否保持？
+
+长文档能力是否真的提升？
+
+结构化输出是否仍稳定？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingLoss
+\neq
+ReleaseMetric
+}
+</annotation></semantics></math></p>
+<p>同理：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>e</mi><mi>r</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Perplexity
+\neq
+ReleaseDecision
+}
+</annotation></semantics></math></p>
+<p>Loss / PPL 是：</p>
+<blockquote>
+<p>训练层指标。</p>
+</blockquote>
+<p>Release Gate 需要：</p>
+<blockquote>
+<p>多层证据。</p>
+</blockquote>
+<hr />
+<h1
+id="十一phase-3cpt-后不要直接宣布-procurementlm_v0.2先重新-sft">十一、Phase
+3：CPT 后不要直接宣布 <code>ProcurementLM_V0.2</code>，先重新 SFT</h1>
+<p>第 9 阶段已经锁定：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>P</mi><mi>T</mi><mo>→</mo><mi>S</mi><mi>F</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Base
+\rightarrow
+CPT
+\rightarrow
+SFT
+}
+</annotation></semantics></math></p>
+<p>所以选定 CPT Checkpoint 以后，</p>
+<p>它只是：</p>
+<h1 id="domain-adapted-base">Domain-adapted Base</h1>
+<h2 id="领域适配底座">领域适配底座</h2>
+<p>接下来必须重新做：</p>
+<h1 id="sft">SFT</h1>
+<h2 id="任务行为对齐">任务行为对齐</h2>
+<p>重新让模型恢复 / 学习：</p>
+<pre class="text"><code>Instruction Following
+指令遵循
+
+Structured Output
+结构化输出
+
+Risk Classification
+风险分类
+
+Rationale
+理由生成
+
+Abstention
+拒答与不确定性
+
+Task Schema
+任务协议</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.2</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPTCheckpoint
+\neq
+ProcurementLM\_V0.2
+}
+</annotation></semantics></math></p>
+<p>真正链路是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>S</mi><mi>F</mi><mi>T</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPTCheckpoint
+\rightarrow
+SFT
+\rightarrow
+ReleaseCandidate
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二cpt-后重新-sft-的关键原则重新验证不机械复用">十二、CPT
+后重新 SFT 的关键原则：重新验证，不机械复用</h1>
+<p>可以复用原来的：</p>
+<pre class="text"><code>SFT Dataset
+Task Schema
+Evaluation Set</code></pre>
+<p>但必须重新验证：</p>
+<pre class="text"><code>Tokenizer Compatibility
+
+Prompt Template
+
+Max Sequence Length
+
+Loss Mask
+
+Adapter Target Modules
+
+Embedding Training Policy
+
+Learning Rate
+
+SFT Baseline</code></pre>
+<p>特别是如果第 3 阶段最终真的：</p>
+<blockquote>
+<p>修改了 Tokenizer / Vocabulary，</p>
+</blockquote>
+<p>那旧 SFT Token Cache：</p>
+<blockquote>
+<p>必须重新生成。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>≠</mo><mi>B</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>l</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReusableArtifact
+\neq
+BlindlyReusableArtifact
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十三phase-4评测必须分三层而不是把所有指标搅成一个总分">十三、Phase
+4：评测必须分三层，而不是把所有指标搅成一个总分</h1>
+<p>第一层：</p>
+<h1 id="foundation-evaluation-1">Foundation Evaluation</h1>
+<h2 id="底座能力评测-1">底座能力评测</h2>
+<p>回答：</p>
+<blockquote>
+<p>CPT 真的让领域底座变强了吗？</p>
+</blockquote>
+<p>看：</p>
+<pre class="text"><code>Domain Perplexity
+领域困惑度
+
+Domain Probe
+领域理解探针
+
+Long-document Probe
+长文档探针
+
+Terminology Understanding
+术语理解</code></pre>
+<hr />
+<p>第二层：</p>
+<h1 id="behavior-evaluation-1">Behavior Evaluation</h1>
+<h2 id="任务行为评测">任务行为评测</h2>
+<p>回答：</p>
+<blockquote>
+<p>重新 SFT 后，模型会不会完成目标任务？</p>
+</blockquote>
+<p>看：</p>
+<pre class="text"><code>Task Accuracy / F1
+
+Schema Compliance
+
+Instruction Following
+
+Abstention
+
+Reason Quality
+
+Citation / Evidence Use</code></pre>
+<hr />
+<p>第三层：</p>
+<h1 id="regression-evaluation">Regression Evaluation</h1>
+<h2 id="回归评测">回归评测</h2>
+<p>回答：</p>
+<blockquote>
+<p>为了更懂采购，损坏了什么？</p>
+</blockquote>
+<p>看：</p>
+<pre class="text"><code>General Language
+
+Reasoning
+
+Math
+
+Code
+
+Structured Output
+
+Instruction Following</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>F</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>B</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseEvidence
+=
+Foundation
++
+Behavior
++
+Regression
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十四核心心智模型-⑤一个模型必须有收益证明和损失证明">十四、核心心智模型
+⑤：一个模型必须有“收益证明”和“损失证明”</h1>
+<p>只证明：</p>
+<blockquote>
+<p>“采购能力更高”</p>
+</blockquote>
+<p>是不够的。</p>
+<p>还要证明：</p>
+<blockquote>
+<p>“关键原能力没有退化到不可接受”。</p>
+</blockquote>
+<p>所以一次 Release Candidate 至少要形成两份证据：</p>
+<h1 id="gain-evidence">Gain Evidence</h1>
+<h2 id="收益证据">收益证据</h2>
+<p>证明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+DomainCapability\uparrow
+</annotation></semantics></math></p>
+<p>以及：</p>
+<h1 id="regression-evidence">Regression Evidence</h1>
+<h2 id="回归证据">回归证据</h2>
+<p>证明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>e</mi><mi>s</mi><mo>↓̸</mo><mi>B</mi><mi>e</mi><mi>y</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+CriticalCapabilities
+\not\downarrow
+BeyondThreshold
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>=</mo><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Release
+=
+GainEvidence
++
+RegressionEvidence
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五release-gate把感觉可以发布变成机器可检查规则">十五、Release
+Gate：把“感觉可以发布”变成机器可检查规则</h1>
+<p>真正的：</p>
+<h1 id="release-gate">Release Gate</h1>
+<h2 id="发布门槛">发布门槛</h2>
+<p>应该是明确条件。</p>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><msub><mi>G</mi><mrow><mi>d</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>b</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>r</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>a</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>r</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+ReleaseGate
+=
+G_{domain}
+\land
+G_{behavior}
+\land
+G_{regression}
+\land
+G_{artifact}
+\land
+G_{reproducibility}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<pre class="text"><code>G_domain
+领域收益达到最低门槛
+
+G_behavior
+任务行为达到最低门槛
+
+G_regression
+关键能力退化不超过阈值
+
+G_artifact
+发布资产完整
+
+G_reproducibility
+训练和评测可追溯</code></pre>
+<p>只有全部为 True：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseGate=True
+}
+</annotation></semantics></math></p>
+<p>才允许升级成正式模型版本。</p>
+<hr />
+<h1
+id="十六核心心智模型-⑥release-gate-必须在训练前定义而不是训练后看结果再定标准">十六、核心心智模型
+⑥：Release Gate 必须在训练前定义，而不是训练后“看结果再定标准”</h1>
+<p>如果训练完以后才说：</p>
+<blockquote>
+<p>“这个指标掉 3% 好像也能接受。”</p>
+</blockquote>
+<p>那很容易产生：</p>
+<h1 id="post-hoc-rationalization">Post-hoc Rationalization</h1>
+<h2 id="事后合理化">事后合理化</h2>
+<p>所以真正专业的方式是：</p>
+<blockquote>
+<p><strong>训练前就定义成功和失败标准。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Domain Gain
+必须达到预设最低改善
+
+General Regression
+不得超过预设阈值
+
+Critical Task
+不得出现严重退化
+
+Artifact Completeness
+必须全部通过</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>&gt;</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>H</mi><mi>o</mi><mi>c</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PredefinedGate
+&gt;
+PostHocJudgment
+}
+</annotation></semantics></math></p>
+<p>这里的 <code>&gt;</code> 表示：</p>
+<blockquote>
+<p>工程决策可信度更高。</p>
+</blockquote>
+<hr />
+<h1 id="十七release-candidate-和-released-model-必须分开">十七、Release
+Candidate 和 Released Model 必须分开</h1>
+<p>训练 + SFT 完成以后得到的是：</p>
+<h1 id="release-candidate">Release Candidate</h1>
+<h2 id="发布候选模型">发布候选模型</h2>
+<p>例如：</p>
+<pre class="text"><code>ProcurementLM_V0.2-RC1</code></pre>
+<p>它还要经历：</p>
+<pre class="text"><code>完整评测
+回归
+兼容性
+可复现检查
+模型资产检查</code></pre>
+<p>通过以后才晋级：</p>
+<pre class="text"><code>ProcurementLM_V0.2</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseCandidate
+\neq
+ReleasedModel
+}
+</annotation></semantics></math></p>
+<p>这能防止：</p>
+<blockquote>
+<p>“刚训练出来的模型直接覆盖线上版本”。</p>
+</blockquote>
+<hr />
+<h1 id="十八完整-release-bundle-应该包含什么">十八、完整 Release Bundle
+应该包含什么？</h1>
+<p>最终不要只交付一个权重目录。</p>
+<p>第一版至少应该包含：</p>
+<pre class="text"><code>ProcurementLM_V0.2/
+
+├── model/
+│   ├── weights
+│   ├── config
+│   └── generation_config
+│
+├── tokenizer/
+│   ├── tokenizer files
+│   └── tokenizer_manifest
+│
+├── training/
+│   ├── cpt_config
+│   ├── sft_config
+│   ├── mixture_policy
+│   ├── retention_policy
+│   └── checkpoint_manifest
+│
+├── data_lineage/
+│   ├── corpus_manifest
+│   ├── synthetic_manifest
+│   └── benchmark_firewall_report
+│
+├── evaluation/
+│   ├── foundation_eval
+│   ├── behavior_eval
+│   ├── regression_eval
+│   └── release_gate_report
+│
+├── provenance/
+│   ├── base_model
+│   ├── code_commit
+│   ├── environment
+│   └── run_manifest
+│
+└── MODEL_CARD.md</code></pre>
+<p>这就是：</p>
+<h1 id="release-bundle">Release Bundle</h1>
+<h2 id="发布资产包">发布资产包</h2>
+<hr />
+<h1
+id="十九核心心智模型-⑦模型版本其实是一张-artifact-graph">十九、核心心智模型
+⑦：模型版本其实是一张 Artifact Graph</h1>
+<p>一个模型不是孤立文件。</p>
+<p>它依赖：</p>
+<pre class="text"><code>Base Model
+↓
+Tokenizer
+↓
+Corpus
+↓
+Sequence Builder
+↓
+Mixture Policy
+↓
+CPT Run
+↓
+Checkpoint
+↓
+SFT Run
+↓
+Evaluation Bundle
+↓
+Release Manifest</code></pre>
+<p>这其实是一张：</p>
+<h1 id="artifact-graph">Artifact Graph</h1>
+<h2 id="工程产物依赖图">工程产物依赖图</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>p</mi><mi>h</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelVersion
+=
+ArtifactGraphVersion
+}
+</annotation></semantics></math></p>
+<p>如果其中任何关键节点无法追溯，</p>
+<p>这个模型版本就不完整。</p>
+<hr />
+<h1
+id="二十rollback真正能发布的系统必须先设计好怎么退回去">二十、Rollback：真正能发布的系统必须先设计好怎么退回去</h1>
+<p>发布 <code>ProcurementLM_V0.2</code> 前，</p>
+<p>必须知道：</p>
+<pre class="text"><code>上一个稳定版本是谁？
+
+回滚需要换哪些文件？
+
+Tokenizer是否同时回滚？
+
+Adapter是否同时回滚？
+
+RAG / Agent是否依赖某个输出Schema？
+
+回滚后服务是否还能兼容？</code></pre>
+<p>所以：</p>
+<h1 id="rollback-plan">Rollback Plan</h1>
+<h2 id="回滚方案">回滚方案</h2>
+<p>至少包含：</p>
+<pre class="text"><code>previous_stable_model
+
+previous_tokenizer
+
+previous_adapter
+
+compatibility_matrix
+
+rollback_trigger
+
+rollback_procedure
+
+rollback_validation</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>⇒</mo><mi>R</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Deployable
+\Rightarrow
+Rollbackable
+}
+</annotation></semantics></math></p>
+<p>如果一个模型：</p>
+<blockquote>
+<p>只能升级，不能可靠回退，</p>
+</blockquote>
+<p>那它还没有达到成熟发布状态。</p>
+<hr />
+<h1
+id="二十一resume训练中断后也必须可恢复">二十一、Resume：训练中断后也必须可恢复</h1>
+<p>CPT 往往很长。</p>
+<p>训练可能因为：</p>
+<pre class="text"><code>节点故障
+网络故障
+存储故障
+作业超时
+人工停止</code></pre>
+<p>中断。</p>
+<p>所以每个 Checkpoint 不只是模型 Weight，</p>
+<p>还要尽量保存：</p>
+<pre class="text"><code>optimizer_state
+
+scheduler_state
+
+global_step
+
+tokens_seen
+
+sampler_state
+
+rng_state
+
+data_shard_position</code></pre>
+<p>这样才能：</p>
+<h1 id="resume-training">Resume Training</h1>
+<h2 id="断点续训">断点续训</h2>
+<p>真正目标是：</p>
+<blockquote>
+<p>恢复后尽量继续原来的训练轨迹，而不是从一个模糊状态重新开始。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Checkpoint
+=
+ModelState
++
+TrainingState
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十二核心心智模型-⑧checkpoint-的价值不只是保存模型而是保存决策点和恢复点">二十二、核心心智模型
+⑧：Checkpoint 的价值不只是“保存模型”，而是保存决策点和恢复点</h1>
+<p>每个重要 Checkpoint 同时有三种角色：</p>
+<pre class="text"><code>Recovery Point
+故障恢复点
+
+Evaluation Point
+能力评测点
+
+Decision Point
+继续/停止/回滚决策点</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Checkpoint
+=
+Recovery
++
+Evaluation
++
+Decision
+}
+</annotation></semantics></math></p>
+<p>这也是为什么：</p>
+<blockquote>
+<p>Checkpoint Policy 必须在训练前定义。</p>
+</blockquote>
+<hr />
+<h1
+id="二十三训练-trace以后必须能回答这个模型为什么变成现在这样">二十三、训练
+Trace：以后必须能回答“这个模型为什么变成现在这样”</h1>
+<p>一次完整 Run 至少要生成：</p>
+<h1 id="run-trace">Run Trace</h1>
+<h2 id="训练追踪记录">训练追踪记录</h2>
+<p>包含：</p>
+<pre class="text"><code>run_id
+
+parent_model_id
+
+corpus_version
+
+tokenizer_version
+
+sequence_policy_version
+
+mixture_policy_version
+
+retention_policy_version
+
+training_config_hash
+
+code_commit
+
+environment_id
+
+checkpoint_ids
+
+tokens_seen
+
+observed_mixture
+
+domain_metrics
+
+regression_metrics
+
+sft_run_id
+
+release_candidate_id
+
+release_decision</code></pre>
+<p>这样以后出现问题时，</p>
+<p>不是靠：</p>
+<blockquote>
+<p>“我记得当时大概这么配的。”</p>
+</blockquote>
+<p>而是可以真正重建：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Decision
+\rightarrow
+Training
+\rightarrow
+Checkpoint
+\rightarrow
+Evaluation
+\rightarrow
+Release
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十四真正的-procurementlm_v0.2-到底是什么">二十四、真正的
+<code>ProcurementLM_V0.2</code> 到底是什么？</h1>
+<p>现在可以给出正式定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.2</mn><mo>=</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>C</mi><mi>P</mi><mi>T</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>S</mi><mi>F</mi><mi>T</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.2
+=
+BaseModel
++
+DomainCPT
++
+Retention
++
+SFT
++
+Evaluation
++
+ReleaseGovernance
+}
+</annotation></semantics></math></p>
+<p>更工程化一点：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.2</mn><mo>=</mo><msub><mi>M</mi><mrow><mi>b</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>D</mi><mrow><mi>C</mi><mi>P</mi><mi>T</mi></mrow></msub><mo>+</mo><mi>T</mi><mo>+</mo><msub><mi>P</mi><mrow><mi>s</mi><mi>e</mi><mi>q</mi></mrow></msub><mo>+</mo><msub><mi>P</mi><mrow><mi>m</mi><mi>i</mi><mi>x</mi></mrow></msub><mo>+</mo><msub><mi>P</mi><mrow><mi>r</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub><mo>+</mo><mi>C</mi><mi>P</mi><mi>T</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>S</mi><mi>F</mi><mi>T</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>B</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>l</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>f</mi><mi>e</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.2
+=
+M_{base}
++
+D_{CPT}
++
+T
++
+P_{seq}
++
+P_{mix}
++
+P_{retention}
++
+CPTCheckpoint
++
+SFT
++
+EvalBundle
++
+ReleaseManifest
+}
+</annotation></semantics></math></p>
+<p>它不是：</p>
+<blockquote>
+<p>“比 V0.1 多训了一轮”。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>第一次形成完整的高级领域适配模型版本。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十五一个完整的政府采购-cpt-run-示例">二十五、一个完整的政府采购
+CPT Run 示例</h1>
+<p>假设真实诊断发现：</p>
+<pre class="text"><code>多个采购任务都存在：
+长文档术语理解弱
+行业表达不稳定
+复杂采购结构建模不足</code></pre>
+<p>于是：</p>
+<h2 id="step-1domain-gap-diagnosis">Step 1：Domain Gap Diagnosis</h2>
+<h3 id="领域差距诊断">领域差距诊断</h3>
+<p>确认：</p>
+<blockquote>
+<p>问题不是单一 SFT 行为问题。</p>
+</blockquote>
+<hr />
+<h2 id="step-2corpus-freeze">Step 2：Corpus Freeze</h2>
+<h3 id="冻结训练语料">冻结训练语料</h3>
+<p>形成：</p>
+<pre class="text"><code>ProcurementCPTCorpus_V0.1</code></pre>
+<p>完成：</p>
+<pre class="text"><code>质量过滤
+去重
+Lineage
+Benchmark Firewall
+Token统计</code></pre>
+<hr />
+<h2 id="step-3tokenizer-audit">Step 3：Tokenizer Audit</h2>
+<h3 id="分词器审计-1">分词器审计</h3>
+<p>结果：</p>
+<pre class="text"><code>Keep Existing Tokenizer</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>领域碎片率可接受，修改收益不足以覆盖兼容成本。</p>
+</blockquote>
+<hr />
+<h2 id="step-4sequence-policy">Step 4：Sequence Policy</h2>
+<h3 id="序列构造策略">序列构造策略</h3>
+<p>采用：</p>
+<pre class="text"><code>Section-aware Split
+章节优先切分
+
+EOS Boundary
+显式文档边界
+
+Length-aware Packing
+按长度拼接
+
+Padding Loss Mask
+Padding不计Loss</code></pre>
+<hr />
+<h2 id="step-5mixture">Step 5：Mixture</h2>
+<h3 id="数据混合-2">数据混合</h3>
+<p>设计：</p>
+<pre class="text"><code>Domain Corpus
++
+General Replay</code></pre>
+<p>并控制：</p>
+<pre class="text"><code>行业比例
+高质量桶
+重复曝光
+Observed Mixture</code></pre>
+<hr />
+<h2 id="step-6pilot">Step 6：Pilot</h2>
+<h3 id="小规模试训">小规模试训</h3>
+<p>先验证：</p>
+<pre class="text"><code>Loss趋势
+领域PPL
+通用回归
+Mixture
+Resume</code></pre>
+<p>通过后再进入 Full Run。</p>
+<hr />
+<h2 id="step-7full-cpt">Step 7：Full CPT</h2>
+<h3 id="正式继续预训练">正式继续预训练</h3>
+<p>持续保存 Checkpoint。</p>
+<p>每个 Checkpoint 都执行：</p>
+<pre class="text"><code>Domain Eval
+General Regression
+Instruction Regression
+Forgetting Curve</code></pre>
+<hr />
+<h2 id="step-8checkpoint-selection">Step 8：Checkpoint Selection</h2>
+<h3 id="选择领域底座">选择领域底座</h3>
+<p>不是选：</p>
+<blockquote>
+<p>最后一个。</p>
+</blockquote>
+<p>而是选：</p>
+<blockquote>
+<p>领域收益足够、通用回归仍受控的 Pareto Checkpoint。</p>
+</blockquote>
+<hr />
+<h2 id="step-9sft">Step 9：SFT</h2>
+<h3 id="重新监督微调">重新监督微调</h3>
+<p>在新 CPT 底座上重新训练：</p>
+<pre class="text"><code>Procurement SFT Dataset</code></pre>
+<p>恢复 / 强化：</p>
+<pre class="text"><code>任务Schema
+风险分类
+结构化输出
+拒答
+任务行为</code></pre>
+<hr />
+<h2 id="step-10release-evaluation">Step 10：Release Evaluation</h2>
+<h3 id="发布评测">发布评测</h3>
+<p>同时检查：</p>
+<pre class="text"><code>Foundation
+Behavior
+Regression
+Compatibility
+Artifact Completeness</code></pre>
+<hr />
+<h2 id="step-11release-gate">Step 11：Release Gate</h2>
+<h3 id="发布门槛-1">发布门槛</h3>
+<p>全部通过以后：</p>
+<pre class="text"><code>ProcurementLM_V0.2-RC1
+↓
+ProcurementLM_V0.2</code></pre>
+<p>这才算真正完成。</p>
+<hr />
+<h1 id="二十六第八课最终-10-个工程产物怎样接起来">二十六、第八课最终 10
+个工程产物怎样接起来？</h1>
+<p>第 1 阶段：</p>
+<pre class="text"><code>ProcurementCPTBoundaryModel_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>要不要做 CPT？</p>
+</blockquote>
+<p>第 2 阶段：</p>
+<pre class="text"><code>ProcurementCPTCorpusPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>什么数据可以进 CPT？</p>
+</blockquote>
+<p>第 3 阶段：</p>
+<pre class="text"><code>ProcurementTokenizerAudit_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>Tokenizer 要不要改？</p>
+</blockquote>
+<p>第 4 阶段：</p>
+<pre class="text"><code>ProcurementCPTObjectivePolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>Token 怎样组成真实训练任务？</p>
+</blockquote>
+<p>第 5 阶段：</p>
+<pre class="text"><code>ProcurementCPTMixturePolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>每类数据获得多少训练预算？</p>
+</blockquote>
+<p>第 6 阶段：</p>
+<pre class="text"><code>ProcurementCPTForgettingPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>模型什么时候开始遗忘？</p>
+</blockquote>
+<p>第 7 阶段：</p>
+<pre class="text"><code>ProcurementCPTRetentionPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>怎样主动控制遗忘？</p>
+</blockquote>
+<p>第 8 阶段：</p>
+<pre class="text"><code>ProcurementCPTSyntheticCurriculumPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>怎样补覆盖并安排训练难度？</p>
+</blockquote>
+<p>第 9 阶段：</p>
+<pre class="text"><code>ProcurementCPTSFTDecisionPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>什么时候 CPT、什么时候 SFT、怎样串联？</p>
+</blockquote>
+<p>第 10 阶段：</p>
+<pre class="text"><code>ProcurementLM_V0.2</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>怎样真正发布一个经过领域适配的模型版本？</p>
+</blockquote>
+<p>所以第八课可以压成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>M</mi><mi>i</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>→</mo><mi>F</mi><mi>o</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>y</mi><mi>n</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>/</mi><mi>C</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>u</mi><mi>l</mi><mi>u</mi><mi>m</mi><mo>→</mo><mi>C</mi><mi>P</mi><mi>T</mi><mi>/</mi><mi>S</mi><mi>F</mi><mi>T</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Decision
+\rightarrow
+Data
+\rightarrow
+Tokenizer
+\rightarrow
+Objective
+\rightarrow
+Mixture
+\rightarrow
+Forgetting
+\rightarrow
+Retention
+\rightarrow
+Synthetic/Curriculum
+\rightarrow
+CPT/SFT
+\rightarrow
+Release
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十七本阶段最重要的-10-个核心心智模型">二十七、本阶段最重要的
+10 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>CPTExperiment ≠ ModelRelease</code>。训练跑完只是得到实验
+Checkpoint，不代表模型可以发布。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>ModelRelease ≠ WeightsOnly</code>。真正模型版本必须包含
+Tokenizer、配置、数据血缘、评测证据和 Release Manifest。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>NoFrozenBaseline = NoReliableComparison</code>。没有固定基线，就无法可靠证明模型到底变好还是变坏。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Scale amplifies Signal and Error</code>。扩大训练规模会同时放大正确方向和错误配置，所以
+Full Run 前必须先做 Pilot。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>BestCheckpoint = MultiObjectiveDecision</code>。最优发布
+Checkpoint 不是 Loss
+最低，而是领域收益、通用保持、成本和兼容性的综合折中。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑥：<code>TrainingLoss ≠ ReleaseMetric</code>。Loss /
+PPL 是训练信号，不是模型发布裁判。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>Release = GainEvidence + RegressionEvidence</code>。既要证明学会了新的，也要证明没有把关键旧能力破坏到不可接受。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>ReleaseCandidate ≠ ReleasedModel</code>。候选模型必须通过预先定义的
+Release Gate 才能晋级正式版本。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>ModelVersion = ArtifactGraphVersion</code>。模型版本本质是一整张依赖图，而不是一个权重文件。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑩：<code>Deployable ⇒ Rollbackable</code>。真正可发布的模型必须同时具备明确的回滚路径。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十八把整门第八课压成一张最终工程图">二十八、把整门第八课压成一张最终工程图</h1>
+<pre class="text"><code>                        Real Failure Cases
+                          真实失败案例
+                               │
+                               ▼
+                       Domain Gap Diagnosis
+                         领域差距诊断
+                               │
+                               ▼
+                         CPT Go / No-Go
+                         是否进入CPT
+                               │
+                               ▼
+                    Procurement CPT Corpus
+                      建设领域训练语料
+                               │
+                               ▼
+                        Tokenizer Audit
+                         分词器审计
+                               │
+                               ▼
+                     Sequence Construction
+                       构造训练序列
+                               │
+                               ▼
+                    Mixture + Replay Design
+                     数据混合与通用回放
+                               │
+                               ▼
+                           Pilot CPT
+                         小规模试验训练
+                               │
+                               ▼
+                            Full CPT
+                         正式继续预训练
+                               │
+                               ▼
+                     Checkpoint Evaluation
+                        周期性检查点评测
+                               │
+               ┌───────────────┼───────────────┐
+               ▼               ▼               ▼
+          Domain Gain     General Retention   Training Cost
+           领域收益          通用能力保持          训练成本
+               │               │               │
+               └───────────────┼───────────────┘
+                               ▼
+                       Checkpoint Selection
+                         选择CPT底座
+                               │
+                               ▼
+                              SFT
+                        重新任务行为对齐
+                               │
+                               ▼
+                       Release Candidate
+                          发布候选模型
+                               │
+                 ┌─────────────┼─────────────┐
+                 ▼             ▼             ▼
+           Foundation Eval  Behavior Eval  Regression Eval
+             底座评测        行为评测         回归评测
+                 │             │             │
+                 └─────────────┼─────────────┘
+                               ▼
+                          Release Gate
+                           发布门槛
+                               │
+                    ┌──────────┴──────────┐
+                    ▼                     ▼
+                  Reject                 Pass
+                   否决                   通过
+                                          │
+                                          ▼
+                               ProcurementLM_V0.2</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>真正的 CPT
+工程，不是“拿政府采购数据继续训练一次”，而是从领域差距诊断开始，用版本化
+Corpus、Tokenizer、Sequence、Mixture、Retention 和 Checkpoint
+控制训练过程，再通过重新 SFT、分层评测、通用回归、Release Gate 与
+Rollback，把一个实验 Checkpoint 变成真正可发布的领域模型。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第八课-第-10-阶段掌握测试">第八课 · 第 10 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么
+<code>CPTExperiment ≠ ModelRelease</code>；为什么发布模型不能只有
+Weight；Baseline 为什么必须训练前冻结；Reproducibility
+到底要版本化哪些东西；为什么正式 Full Run 前要先做 Pilot；为什么 Scale
+会同时放大 Signal 和 Error；Checkpoint
+为什么既是恢复点又是评测点和决策点；为什么最终 Checkpoint
+不一定最好；为什么 Loss / Perplexity 不能直接决定发布；为什么 CPT
+后还要重新 SFT；Foundation、Behavior、Regression
+三层评测分别回答什么；为什么 Release Gate 要训练前定义；Release
+Candidate 和 Released Model 有什么区别；完整 Release Bundle
+应该包含哪些资产；为什么模型版本本质上是一张 Artifact
+Graph；为什么可发布模型必须可回滚；为什么 Checkpoint 还应该保存 Training
+State；以及 <code>ProcurementLM_V0.2</code> 为什么不是“V0.1
+多训一轮”，而是一个带完整领域适配、评测和发布治理的模型版本。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mi>第</mi><mn>10</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课第10阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="第八课正式完成">第八课正式完成</h1>
+<p>到这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mo>=</mo><mn>10</mn><mi>/</mi><mn>10</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课
+=
+10/10
+}
+</annotation></semantics></math></p>
+<p>最终工程交付：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.2</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.2
+}
+</annotation></semantics></math></p>
+<p>课程系统演化到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.2</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementDataset\_V0.1
+\rightarrow
+ProcurementLM\_V0.1
+\rightarrow
+ProcurementRAG\_V0.1
+\rightarrow
+ProcurementAgent\_V0.1
+\rightarrow
+ProcurementLM\_V0.2
+}
+</annotation></semantics></math></p>
+<p>下一课正式进入：</p>
+<h1 id="第九课gold-benchmark评测与可靠性">第九课：Gold
+Benchmark、评测与可靠性</h1>
+<h2
+id="怎样建立-procurementbench_v1真正证明模型ragagent-到底哪里变好了哪里退化了能不能上线">怎样建立
+<code>ProcurementBench_V1</code>，真正证明模型、RAG、Agent
+到底哪里变好了、哪里退化了、能不能上线？</h2>
+<p>第八课解决的是：</p>
+<blockquote>
+<p><strong>怎样把模型本体进一步适配到政府采购领域。</strong></p>
+</blockquote>
+<p>第九课开始解决：</p>
+<blockquote>
+<p><strong>怎样用冻结、可版本化、可切片、可回归的 Gold
+Benchmark，证明这些提升是真的，而不是训练集记忆、指标幻觉或测试污染。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage09.html">← 第 9 阶段</a><a class="btn" href="../lesson09/stage01.html">第 9 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

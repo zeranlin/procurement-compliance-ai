@@ -1,0 +1,1157 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第5阶段：Agent Loop：Plan → Act → Observe → Continue / Stop</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，Tool Calling 解决“这一刻调用什么”，Agent Loop 解决“怎样持续执行直到整个任务完成”；Action Success ≠ Task Success。</li><li>第二，可靠 Agent Loop 的最小结构是 State → Plan → Act → Observe → Update State → Continue / Stop，而 Plan 应该依赖当前真实 State，不应假装一开始就知道未来全部步骤。</li><li>第三，Stop Condition 和 Completion Check 必须分开：停止可以因为完成、预算耗尽、不可恢复错误或等待人工，而只有 Completion Requirements 全部满足才叫任务完成。</li></ul></div><h1 id="第七课-第-5-阶段">第七课 · 第 5 阶段</h1>
+<h1 id="agent-loopplan-act-observe-continue-stop-1">Agent Loop：Plan →
+Act → Observe → Continue / Stop</h1>
+<h2
+id="tool-calling-已经会了为什么还不等于一个真正会完成多步任务的-agent-1">Tool
+Calling 已经会了，为什么还不等于一个真正会完成多步任务的 Agent？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Tool Calling 解决“这一刻调用什么”，Agent Loop
+解决“怎样持续执行直到整个任务完成”；Action Success ≠ Task
+Success。</strong></li>
+<li><strong>第二，可靠 Agent Loop 的最小结构是 State → Plan → Act →
+Observe → Update State → Continue / Stop，而 Plan 应该依赖当前真实
+State，不应假装一开始就知道未来全部步骤。</strong></li>
+<li><strong>第三，Stop Condition 和 Completion Check
+必须分开：停止可以因为完成、预算耗尽、不可恢复错误或等待人工，而只有
+Completion Requirements 全部满足才叫任务完成。</strong></li>
+<li><strong>第四，Retry 适合“动作正确但执行暂时失败”，Replan
+适合“原策略本身需要改变”；两者混用会导致死循环或无效重试。</strong></li>
+<li><strong>第五，Agent 必须检测 Repeated Action 和 No-progress，并为
+Write Tool 考虑 Idempotency、Checkpoint 和
+Resume，否则重试可能造成重复副作用或任务重跑。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Tool Calling</code></td>
+<td>工具调用：模型按受控协议选择工具并构造参数</td>
+</tr>
+<tr class="even">
+<td><code>Observe</code></td>
+<td>Observe/观察：读取当前状态和工具结果</td>
+</tr>
+<tr class="odd">
+<td><code>Tool Registry</code></td>
+<td>工具注册表：管理工具能力、权限和版本</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 4 阶段，我们已经具备：</p>
+<pre class="text"><code>Tool Registry
+Tool Discovery
+Structured Arguments
+Runtime Validation
+Authorization
+Approval Boundary</code></pre>
+<p>也就是说，模型现在已经能够：</p>
+<blockquote>
+<p><strong>在受控权限下，选择一个 Tool，并生成可执行参数。</strong></p>
+</blockquote>
+<p>但这仍然可能只是一次：</p>
+<pre class="text"><code>User
+↓
+Model
+↓
+Tool Call
+↓
+Tool Result
+↓
+Answer</code></pre>
+<p>真正的 Agent 必须解决另一个问题：</p>
+<blockquote>
+<p><strong>如果任务需要 5 步、10
+步，甚至某一步失败以后要重新规划，系统怎样持续运行，直到任务真正完成？</strong></p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="agent-loop-1">Agent Loop</h1>
+<h2 id="智能体循环">智能体循环</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementagentlooppolicy_v0.1-1"><code>ProcurementAgentLoopPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-4">一、先锁死本阶段最重要的一句话</h1>
+<p>一个 Agent Loop 的本质不是：</p>
+<blockquote>
+<p><strong>“让模型连续说很多次。”</strong></p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><msub><mi>e</mi><mi>t</mi></msub><mo>→</mo><mi>P</mi><mi>l</mi><mi>a</mi><msub><mi>n</mi><mi>t</mi></msub><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mi>t</mi></msub><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>→</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><msub><mi>e</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+State_t
+\rightarrow
+Plan_t
+\rightarrow
+Action_t
+\rightarrow
+Observation_{t+1}
+\rightarrow
+State_{t+1}
+}
+</annotation></semantics></math></p>
+<p>然后系统判断：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>e</mi><mspace width="1.0em"></mspace><mi>o</mi><mi>r</mi><mspace width="1.0em"></mspace><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Continue
+\quad or \quad
+Stop
+}
+</annotation></semantics></math></p>
+<p>所以真正的循环是：</p>
+<pre class="text"><code>读取当前状态
+↓
+决定下一步
+↓
+执行真实动作
+↓
+读取真实结果
+↓
+更新状态
+↓
+检查是否完成
+↓
+继续 / 停止</code></pre>
+<hr />
+<h1 id="二为什么会-tool-calling还不够">二、为什么“会 Tool
+Calling”还不够？</h1>
+<p>Tool Calling 只解决：</p>
+<blockquote>
+<p><strong>这一刻该调用什么工具。</strong></p>
+</blockquote>
+<p>Agent Loop 还必须解决：</p>
+<pre class="text"><code>前面已经做了什么？
+当前缺什么？
+下一步为什么这样做？
+工具失败后怎么办？
+重复调用怎么办？
+是否已经完成？
+何时停止？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolCalling
+=
+LocalAction
+}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>o</mi><mi>o</mi><mi>p</mi><mo>=</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentLoop
+=
+TaskLevelControlFlow
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三plan计划不是一次写死而是当前状态下的下一步意图">三、Plan：计划不是一次写死，而是当前状态下的下一步意图</h1>
+<p>很多人把 Agent Planning 理解成：</p>
+<blockquote>
+<p>一开始先生成 20 步完整计划。</p>
+</blockquote>
+<p>这不一定可靠。</p>
+<p>因为后面的步骤可能依赖：</p>
+<blockquote>
+<p>前面工具真实返回什么。</p>
+</blockquote>
+<p>所以第一版更稳的方式通常是：</p>
+<h1 id="short-horizon-planning">Short-horizon Planning</h1>
+<h2 id="短视野规划">短视野规划</h2>
+<p>例如当前状态：</p>
+<pre class="text"><code>目标：
+审查资格条件
+
+已完成：
+读取采购文件
+
+当前观察：
+发现3条资格条件
+
+下一步：
+逐条检索适用规则</code></pre>
+<p>这里只规划：</p>
+<blockquote>
+<p><strong>下一步或少量后续步骤。</strong></p>
+</blockquote>
+<p>而不是假装已经知道整个任务未来会发生什么。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><msub><mi>n</mi><mi>t</mi></msub><mi>依</mi><mi>赖</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><msub><mi>e</mi><mi>t</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plan_t
+依赖
+State_t
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四actaction-必须是系统可以真实执行的动作">四、Act：Action
+必须是“系统可以真实执行的动作”</h1>
+<p>一个合法 Action 应该来自：</p>
+<pre class="text"><code>Visible Tools
+∩
+Authorized Tools</code></pre>
+<p>例如：</p>
+<div class="sourceCode" id="cb228"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb228-1"><a href="#cb228-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb228-2"><a href="#cb228-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;action&quot;</span><span class="fu">:</span> <span class="st">&quot;regulation.search&quot;</span><span class="fu">,</span></span>
+<span id="cb228-3"><a href="#cb228-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;arguments&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb228-4"><a href="#cb228-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;投标前本地机构限制&quot;</span></span>
+<span id="cb228-5"><a href="#cb228-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb228-6"><a href="#cb228-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>而不是：</p>
+<pre class="text"><code>“去查一下相关政策”</code></pre>
+<p>因为后者只是：</p>
+<blockquote>
+<p>自然语言意图，</p>
+</blockquote>
+<p>不能直接进入 Runtime。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Action
+=
+ExecutableDecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五observeagent-必须读取真实结果不是自己猜">五、Observe：Agent
+必须读取“真实结果”，不是自己猜</h1>
+<p>Action 执行以后，</p>
+<p>Agent 得到新的 Observation：</p>
+<pre class="text"><code>success
+error
+empty_result
+permission_denied
+timeout
+partial_result</code></pre>
+<p>或者具体内容：</p>
+<pre class="text"><code>找到3份规则
+其中1份已失效
+1份为当前有效
+1份辖区不匹配</code></pre>
+<p>这个 Observation 必须来自：</p>
+<blockquote>
+<p>Tool Runtime / Environment。</p>
+</blockquote>
+<p>不是模型自己编。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Observation
+=
+ExternalRealityReturnedToAgent
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六update-state工具结果不应该只塞进聊天历史">六、Update
+State：工具结果不应该只塞进聊天历史</h1>
+<p>假设 Agent 已经完成：</p>
+<pre class="text"><code>文件读取
+资格条件抽取
+条件1检索
+条件2检索</code></pre>
+<p>如果系统只靠 Conversation History 记住这些，</p>
+<p>会越来越混乱。</p>
+<p>更稳的是维护：</p>
+<h1 id="task-state">Task State</h1>
+<h2 id="任务状态">任务状态</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb233"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb233-1"><a href="#cb233-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb233-2"><a href="#cb233-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb233-3"><a href="#cb233-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;goal&quot;</span><span class="fu">:</span> <span class="st">&quot;审查采购文件资格条件&quot;</span><span class="fu">,</span></span>
+<span id="cb233-4"><a href="#cb233-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;completed_steps&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb233-5"><a href="#cb233-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;read_file&quot;</span><span class="ot">,</span></span>
+<span id="cb233-6"><a href="#cb233-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;extract_requirements&quot;</span><span class="ot">,</span></span>
+<span id="cb233-7"><a href="#cb233-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;review_requirement_1&quot;</span><span class="ot">,</span></span>
+<span id="cb233-8"><a href="#cb233-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;review_requirement_2&quot;</span></span>
+<span id="cb233-9"><a href="#cb233-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb233-10"><a href="#cb233-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pending_steps&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb233-11"><a href="#cb233-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;review_requirement_3&quot;</span><span class="ot">,</span></span>
+<span id="cb233-12"><a href="#cb233-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;create_report&quot;</span></span>
+<span id="cb233-13"><a href="#cb233-13" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb233-14"><a href="#cb233-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;artifacts&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb233-15"><a href="#cb233-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;requirements&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;R1&quot;</span><span class="ot">,</span> <span class="st">&quot;R2&quot;</span><span class="ot">,</span> <span class="st">&quot;R3&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb233-16"><a href="#cb233-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;E1&quot;</span><span class="ot">,</span> <span class="st">&quot;E2&quot;</span><span class="ot">]</span></span>
+<span id="cb233-17"><a href="#cb233-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb233-18"><a href="#cb233-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">false</span></span>
+<span id="cb233-19"><a href="#cb233-19" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ConversationHistory
+\neq
+TaskState
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="七continue为什么不能每次-tool-result-后立刻结束">七、Continue：为什么不能每次
+Tool Result 后立刻结束？</h1>
+<p>假设用户要求：</p>
+<blockquote>
+<p>“审查整份采购文件并生成报告。”</p>
+</blockquote>
+<p>Agent 第一次调用：</p>
+<pre class="text"><code>read_file</code></pre>
+<p>结果成功。</p>
+<p>如果此时直接输出：</p>
+<blockquote>
+<p>“文件已经读取完成。”</p>
+</blockquote>
+<p>那只是：</p>
+<blockquote>
+<p><strong>局部动作成功。</strong></p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p><strong>用户任务完成。</strong></p>
+</blockquote>
+<p>所以每轮都要判断：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ActionSuccess
+\neq
+TaskSuccess
+}
+</annotation></semantics></math></p>
+<p>系统必须继续检查：</p>
+<blockquote>
+<p>Goal 是否真的已经满足。</p>
+</blockquote>
+<hr />
+<h1 id="八stop-conditionagent-为什么必须有明确停止条件">八、Stop
+Condition：Agent 为什么必须有明确停止条件？</h1>
+<p>没有 Stop Condition，</p>
+<p>Agent 很容易：</p>
+<pre class="text"><code>继续搜索
+继续确认
+继续调用
+继续重试
+继续规划</code></pre>
+<p>最后进入死循环。</p>
+<p>第一版至少应该有：</p>
+<pre class="text"><code>goal_completed
+
+max_steps_reached
+
+time_budget_exceeded
+
+cost_budget_exceeded
+
+no_progress
+
+repeated_action
+
+unrecoverable_error
+
+human_approval_required</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi><mi>不</mi><mi>是</mi><mi>模</mi><mi>型</mi><mo>“</mo><mi>觉</mi><mi>得</mi><mi>差</mi><mi>不</mi><mi>多</mi><mi>了</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Stop
+不是模型“觉得差不多了”
+}
+</annotation></semantics></math></p>
+<p>而应该是：</p>
+<blockquote>
+<p><strong>Runtime 可检查的结束条件。</strong></p>
+</blockquote>
+<hr />
+<h1 id="九completion-check停止之前必须验证任务真的完成了">九、Completion
+Check：停止之前必须验证“任务真的完成了”</h1>
+<p>假设任务要求：</p>
+<pre class="text"><code>审查3类风险
++
+输出证据
++
+生成报告</code></pre>
+<p>但 Agent 只完成：</p>
+<pre class="text"><code>审查3类风险</code></pre>
+<p>然后说：</p>
+<blockquote>
+<p>“任务完成。”</p>
+</blockquote>
+<p>这是：</p>
+<h1 id="premature-completion">Premature Completion</h1>
+<h2 id="过早完成">过早完成</h2>
+<p>所以可以定义：</p>
+<pre class="text"><code>completion_requirements:
+- qualification_review_done
+- evidence_attached
+- report_generated</code></pre>
+<p>只有全部满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CompletionCheck=True
+}
+</annotation></semantics></math></p>
+<p>才允许结束。</p>
+<hr />
+<h1 id="十step-budget为什么-agent-必须限制最大步数">十、Step
+Budget：为什么 Agent 必须限制最大步数？</h1>
+<p>假设没有：</p>
+<pre class="text"><code>max_steps</code></pre>
+<p>Agent 可能因为：</p>
+<pre class="text"><code>搜索结果不满意
+工具反复超时
+模型不断重新规划</code></pre>
+<p>跑上几百轮。</p>
+<p>所以需要：</p>
+<h1 id="step-budget">Step Budget</h1>
+<h2 id="步数预算">步数预算</h2>
+<p>例如：</p>
+<pre class="text"><code>max_steps = 20</code></pre>
+<p>它不是为了：</p>
+<blockquote>
+<p>粗暴截断任务。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>防止失控，并强迫系统在达到上限时进入可解释状态。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>status = incomplete
+reason = max_steps_reached</code></pre>
+<hr />
+<h1
+id="十一no-progress-detection最危险的不是失败而是看起来一直在做事">十一、No-progress
+Detection：最危险的不是失败，而是“看起来一直在做事”</h1>
+<p>Agent 可能出现：</p>
+<pre class="text"><code>Step 7
+搜索A
+
+Step 8
+还是搜索A
+
+Step 9
+换个措辞搜索A
+
+Step 10
+继续搜索A</code></pre>
+<p>表面上：</p>
+<blockquote>
+<p>一直在行动。</p>
+</blockquote>
+<p>实际上：</p>
+<blockquote>
+<p>没有新增信息。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="no-progress-loop">No-progress Loop</h1>
+<h2 id="无进展循环">无进展循环</h2>
+<p>可以定义：</p>
+<pre class="text"><code>最近N步
+没有新增Evidence
+没有新增Artifact
+没有State变化</code></pre>
+<p>则触发：</p>
+<pre class="text"><code>replan
+or
+stop</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Activity
+\neq
+Progress
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二repeated-action-detection重复调用要被识别">十二、Repeated
+Action Detection：重复调用要被识别</h1>
+<p>如果 Agent 连续生成相同：</p>
+<pre class="text"><code>tool_name
++
+arguments</code></pre>
+<p>例如：</p>
+<div class="sourceCode" id="cb248"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb248-1"><a href="#cb248-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb248-2"><a href="#cb248-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool&quot;</span><span class="fu">:</span> <span class="st">&quot;regulation.search&quot;</span><span class="fu">,</span></span>
+<span id="cb248-3"><a href="#cb248-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;arguments&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb248-4"><a href="#cb248-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;本地机构限制&quot;</span></span>
+<span id="cb248-5"><a href="#cb248-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb248-6"><a href="#cb248-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>重复 5 次，</p>
+<p>系统应该识别：</p>
+<h1 id="repeated-action">Repeated Action</h1>
+<p>而不是傻傻继续执行。</p>
+<p>可以记录：</p>
+<pre class="text"><code>action_hash</code></pre>
+<p>如果：</p>
+<pre class="text"><code>same_action_count &gt; threshold</code></pre>
+<p>就触发：</p>
+<pre class="text"><code>replan
+fallback
+stop</code></pre>
+<hr />
+<h1
+id="十三replanning计划失败以后不是所有情况都应该重试原动作">十三、Replanning：计划失败以后，不是所有情况都应该重试原动作</h1>
+<p>假设：</p>
+<pre class="text"><code>regulation.search</code></pre>
+<p>返回：</p>
+<pre class="text"><code>0 results</code></pre>
+<p>Agent 有几种选择：</p>
+<pre class="text"><code>换Query
+换Tool
+扩大检索范围
+删除错误Filter
+请求用户补充信息
+停止并标记证据不足</code></pre>
+<p>这就是：</p>
+<h1 id="replanning">Replanning</h1>
+<h2 id="重新规划">重新规划</h2>
+<p>它的本质是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>w</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>C</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>,</mo><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>,</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NewPlan
+=
+f(
+CurrentState,
+FailedAction,
+Observation
+)
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>“同一个动作再试一次看看。”</p>
+</blockquote>
+<hr />
+<h1 id="十四retry-和-replan-不是一回事">十四、Retry 和 Replan
+不是一回事</h1>
+<h2 id="retry-1">Retry</h2>
+<h3 id="重试">重试</h3>
+<p>适合：</p>
+<pre class="text"><code>网络超时
+临时限流
+偶发服务错误</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>Action 本身没错，</p>
+</blockquote>
+<p>只是执行暂时失败。</p>
+<hr />
+<h2 id="replan">Replan</h2>
+<h3 id="重新规划-1">重新规划</h3>
+<p>适合：</p>
+<pre class="text"><code>查询策略错误
+工具选择错误
+过滤条件太严格
+当前路线无法完成任务</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>不是执行偶发失败，</p>
+</blockquote>
+<p>而是原策略本身需要改变。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mo>=</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>A</mi><mi>g</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retry
+=
+SameActionAgain
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Replan
+=
+DifferentDecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五failure-state失败也必须是正式状态">十五、Failure
+State：失败也必须是正式状态</h1>
+<p>Agent 不应该只有：</p>
+<pre class="text"><code>running
+completed</code></pre>
+<p>还应该有：</p>
+<pre class="text"><code>waiting_for_user
+waiting_for_approval
+blocked
+partial_success
+failed_recoverable
+failed_terminal</code></pre>
+<p>例如：</p>
+<div class="sourceCode" id="cb259"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb259-1"><a href="#cb259-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb259-2"><a href="#cb259-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;waiting_for_user&quot;</span><span class="fu">,</span></span>
+<span id="cb259-3"><a href="#cb259-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;jurisdiction_missing&quot;</span><span class="fu">,</span></span>
+<span id="cb259-4"><a href="#cb259-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;required_input&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb259-5"><a href="#cb259-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;项目所在地区&quot;</span></span>
+<span id="cb259-6"><a href="#cb259-6" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb259-7"><a href="#cb259-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这比模型硬猜一个地区：</p>
+<blockquote>
+<p>可靠得多。</p>
+</blockquote>
+<hr />
+<h1 id="十六human-approval-进入-loop-以后发生什么">十六、Human Approval
+进入 Loop 以后发生什么？</h1>
+<p>如果 Agent 要执行：</p>
+<pre class="text"><code>publish_notice</code></pre>
+<p>系统检查：</p>
+<pre class="text"><code>approval_required = true</code></pre>
+<p>Agent Loop 不应该：</p>
+<blockquote>
+<p>继续往下执行。</p>
+</blockquote>
+<p>而应该进入：</p>
+<pre class="text"><code>waiting_for_approval</code></pre>
+<p>流程：</p>
+<pre class="text"><code>Agent proposes action
+↓
+Loop pauses
+↓
+Human approves / rejects
+↓
+New Observation
+↓
+Agent resumes</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>p</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>也</mi><mi>是</mi><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HumanResponse
+也是Observation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十七idempotency为什么重复执行-write-tool-很危险">十七、Idempotency：为什么重复执行
+Write Tool 很危险？</h1>
+<p>假设 Agent 调用：</p>
+<pre class="text"><code>create_report</code></pre>
+<p>Runtime 超时，</p>
+<p>Agent 不知道：</p>
+<blockquote>
+<p>报告到底创建成功没有。</p>
+</blockquote>
+<p>如果直接 Retry，</p>
+<p>可能生成：</p>
+<pre class="text"><code>Report_001
+Report_002
+Report_003</code></pre>
+<p>这就需要：</p>
+<h1 id="idempotency">Idempotency</h1>
+<h2 id="幂等性">幂等性</h2>
+<p>例如给动作一个：</p>
+<pre class="text"><code>idempotency_key</code></pre>
+<p>使同一个业务动作重复提交时：</p>
+<blockquote>
+<p>不产生重复副作用。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mo>≠</mo><mi>A</mi><mi>l</mi><mi>w</mi><mi>a</mi><mi>y</mi><mi>s</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetrySafe
+\neq
+AlwaysRetry
+}
+</annotation></semantics></math></p>
+<p>尤其 Write / External Action Tool 必须考虑幂等性。</p>
+<hr />
+<h1
+id="十八checkpoint长任务为什么要保存中间状态">十八、Checkpoint：长任务为什么要保存中间状态？</h1>
+<p>假设一个任务跑了：</p>
+<pre class="text"><code>18步</code></pre>
+<p>第 19 步系统崩了。</p>
+<p>如果没有 Checkpoint：</p>
+<blockquote>
+<p>可能全部重来。</p>
+</blockquote>
+<p>所以应该定期保存：</p>
+<h1 id="checkpoint">Checkpoint</h1>
+<h2 id="检查点">检查点</h2>
+<p>至少包括：</p>
+<pre class="text"><code>task_state
+completed_actions
+artifacts
+tool_results
+pending_actions
+approval_state</code></pre>
+<p>这样恢复时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>F</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ResumeFromCheckpoint
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>t</mi><mi>F</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>Z</mi><mi>e</mi><mi>r</mi><mi>o</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RestartFromZero
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十九agent-loop-不是无限自主而是受控状态机">十九、Agent Loop
+不是无限“自主”，而是受控状态机</h1>
+<p>到这里可以看清：</p>
+<p>Agent Loop 本质上非常像：</p>
+<h1 id="state-machine">State Machine</h1>
+<h2 id="状态机">状态机</h2>
+<p>例如：</p>
+<pre class="text"><code>RUNNING
+↓
+WAITING_FOR_TOOL
+↓
+RUNNING
+↓
+WAITING_FOR_APPROVAL
+↓
+RUNNING
+↓
+COMPLETED</code></pre>
+<p>或者：</p>
+<pre class="text"><code>RUNNING
+↓
+FAILED_RECOVERABLE
+↓
+REPLANNING
+↓
+RUNNING</code></pre>
+<p>所以真正可靠的 Agent：</p>
+<blockquote>
+<p>不是“让模型自由发挥”。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>在</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>M</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>里</mi><mi>运</mi><mi>行</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLMDecision
+在
+ExplicitStateMachine
+里运行
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十政府采购案例完整审查-loop">二十、政府采购案例：完整审查
+Loop</h1>
+<p>用户目标：</p>
+<blockquote>
+<p>“审查采购文件中的资格条件，并生成带依据的风险报告。”</p>
+</blockquote>
+<p>初始状态：</p>
+<div class="sourceCode" id="cb271"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb271-1"><a href="#cb271-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb271-2"><a href="#cb271-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;running&quot;</span><span class="fu">,</span></span>
+<span id="cb271-3"><a href="#cb271-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;goal&quot;</span><span class="fu">:</span> <span class="st">&quot;qualification_review&quot;</span><span class="fu">,</span></span>
+<span id="cb271-4"><a href="#cb271-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;step&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb271-5"><a href="#cb271-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;completed&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb271-6"><a href="#cb271-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pending&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb271-7"><a href="#cb271-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;read_file&quot;</span><span class="ot">,</span></span>
+<span id="cb271-8"><a href="#cb271-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;extract_requirements&quot;</span><span class="ot">,</span></span>
+<span id="cb271-9"><a href="#cb271-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;review_requirements&quot;</span><span class="ot">,</span></span>
+<span id="cb271-10"><a href="#cb271-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;create_report&quot;</span></span>
+<span id="cb271-11"><a href="#cb271-11" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb271-12"><a href="#cb271-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Step 1：</p>
+<pre class="text"><code>Plan:
+读取采购文件
+
+Act:
+procurement.read_file</code></pre>
+<p>Observation：</p>
+<pre class="text"><code>读取成功</code></pre>
+<p>Update State：</p>
+<pre class="text"><code>read_file = completed</code></pre>
+<p>Step 2：</p>
+<pre class="text"><code>Plan:
+抽取资格条件
+
+Act:
+procurement.extract_requirements</code></pre>
+<p>Observation：</p>
+<pre class="text"><code>R1 本地机构
+R2 注册满3年
+R3 认证要求</code></pre>
+<p>Step 3～5：</p>
+<pre class="text"><code>分别检索R1 / R2 / R3</code></pre>
+<p>其中 R3 返回：</p>
+<pre class="text"><code>evidence insufficient</code></pre>
+<p>Agent 更新：</p>
+<pre class="text"><code>R1 = reviewed
+R2 = reviewed
+R3 = needs_review</code></pre>
+<p>最后：</p>
+<pre class="text"><code>create_report</code></pre>
+<p>Completion Check：</p>
+<pre class="text"><code>qualification_review_done = true
+evidence_attached = true
+report_generated = true</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Stop=True
+</annotation></semantics></math></p>
+<p>这才叫：</p>
+<blockquote>
+<p><strong>任务级完成。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十一本阶段错误分类agent-loop-会怎样坏掉">二十一、本阶段错误分类：Agent
+Loop 会怎样坏掉？</h1>
+<p>至少要区分：</p>
+<pre class="text"><code>1. Premature Stop
+任务没完成就结束
+
+2. Endless Loop
+无限循环
+
+3. Repeated Action
+重复同一动作
+
+4. No-progress Loop
+一直执行但没有新进展
+
+5. Wrong Retry
+本应Replan却一直Retry
+
+6. Wrong Replan
+临时失败却频繁换策略
+
+7. State Drift
+状态记录与真实执行不一致
+
+8. Lost Observation
+Tool Result没有进入State
+
+9. Duplicate Side Effect
+重试造成重复写入
+
+10. Completion False Positive
+Completion Check错误通过</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>Agent Loop 的稳定性</p>
+</blockquote>
+<p>必须单独评测。</p>
+<hr />
+<h1 id="二十二怎样评测-agent-loop">二十二、怎样评测 Agent Loop？</h1>
+<p>第一版至少记录：</p>
+<pre class="text"><code>task_completion_rate
+
+average_steps
+
+p95_steps
+
+premature_stop_rate
+
+max_step_termination_rate
+
+repeated_action_rate
+
+no_progress_rate
+
+retry_success_rate
+
+replan_success_rate
+
+state_consistency_rate
+
+duplicate_side_effect_rate
+
+checkpoint_resume_success_rate
+
+human_approval_resume_rate</code></pre>
+<p>同时必须测：</p>
+<h1 id="task-success">Task Success</h1>
+<p>而不只是：</p>
+<h1 id="tool-success">Tool Success</h1>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>所</mi><mi>有</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>都</mi><mi>成</mi><mi>功</mi><mi>也</mi><mi>可</mi><mi>能</mi><mi>任</mi><mi>务</mi><mi>失</mi><mi>败</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+所有Tool都成功
+也可能任务失败
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十三本阶段工程产物procurementagentlooppolicy_v0.1">二十三、本阶段工程产物：<code>ProcurementAgentLoopPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>loop_policy_version
+
+initial_state_schema
+
+agent_status_enum
+
+plan_horizon
+=
+short
+
+max_steps
+
+time_budget
+
+cost_budget
+
+progress_definition
+
+no_progress_window
+
+repeated_action_threshold
+
+retry_policy
+
+replan_policy
+
+retryable_errors
+
+terminal_errors
+
+completion_requirements
+
+stop_conditions
+
+human_approval_pause_policy
+
+checkpoint_interval
+
+resume_policy
+
+idempotency_required_for_write_tools
+=
+true
+
+trace_logging
+=
+enabled</code></pre>
+<p>每一步至少记录：</p>
+<pre class="text"><code>step_id
+
+state_before
+
+plan
+
+selected_action
+
+arguments
+
+tool_result
+
+observation
+
+state_after
+
+progress_delta
+
+retry_count
+
+replan_reason
+
+stop_check
+
+completion_check</code></pre>
+<p>这样 Agent 才真正可以：</p>
+<blockquote>
+<p>重放、调试、恢复、评测。</p>
+</blockquote>
+<hr />
+<h1
+id="二十四把本阶段压成最精准的-6-句话-1">二十四、把本阶段压成最精准的 6
+句话</h1>
+<blockquote>
+<p><strong>第一，Tool Calling 解决“这一刻调用什么”，Agent Loop
+解决“怎样持续执行直到整个任务完成”；<code>Action Success ≠ Task Success</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，可靠 Agent Loop 的最小结构是
+<code>State → Plan → Act → Observe → Update State → Continue / Stop</code>，而
+Plan 应该依赖当前真实
+State，不应假装一开始就知道未来全部步骤。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Stop Condition 和 Completion Check
+必须分开：停止可以因为完成、预算耗尽、不可恢复错误或等待人工，而只有
+Completion Requirements 全部满足才叫任务完成。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Retry 适合“动作正确但执行暂时失败”，Replan
+适合“原策略本身需要改变”；两者混用会导致死循环或无效重试。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Agent 必须检测 Repeated Action 和 No-progress，并为
+Write Tool 考虑 Idempotency、Checkpoint 和
+Resume，否则重试可能造成重复副作用或任务重跑。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，真正可靠的 Agent Loop 本质上是“LLM
+决策运行在显式状态机中”，而不是让模型无限自由地继续思考和调用工具。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-4">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         User Goal
+                            │
+                            ▼
+                       Initial State
+                            │
+                            ▼
+                           Plan
+                            │
+                            ▼
+                           Act
+                            │
+                            ▼
+                       Tool Runtime
+                            │
+                            ▼
+                        Observation
+                            │
+                            ▼
+                       Update State
+                            │
+                 ┌──────────┴──────────┐
+                 │                     │
+                 ▼                     ▼
+             Progress?              Stop Check
+                 │                     │
+          ┌──────┴──────┐        ┌─────┴─────┐
+          ▼             ▼        ▼           ▼
+         Yes            No     Continue      Stop
+          │             │        │           │
+          │         Replan /     └─────┐     ▼
+          │          Retry             │ Completion
+          │             │              │   Check
+          └─────────────┴──────────────┘</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Agent Loop
+的目标不是“让模型一直做事”，而是让每一步都能产生可验证进展，并在任务真正完成、无法继续或需要人工介入时正确停止。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-5-阶段掌握测试">第七课 · 第 5 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Tool Calling 不等于 Agent
+Loop；Plan 为什么更适合短视野而不是一次生成完整未来；Action
+为什么必须是可执行决策；Observation 为什么必须来自真实
+Runtime；Conversation History 为什么不能替代 Task State；为什么 Action
+Success 不等于 Task Success；Stop Condition 和 Completion Check
+有什么区别；Step Budget 为什么必要；怎样识别 No-progress 和 Repeated
+Action；Retry 与 Replan 的根本区别是什么；为什么 Failure State
+必须正式建模；Human Approval 怎样让 Loop 暂停和恢复；Write Tool
+为什么需要 Idempotency；Checkpoint 为什么重要；为什么可靠 Agent 更像“LLM
+决策 + 状态机”而不是无限自由循环；以及为什么最终评测必须看 Task
+Completion Rate。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>5</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第5阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第七课-第-6-阶段">下一阶段：第七课 · 第 6 阶段</h1>
+<h1 id="planning-与-task-decomposition复杂采购任务怎样拆步骤">Planning
+与 Task Decomposition：复杂采购任务怎样拆步骤？</h1>
+<h2
+id="agent-已经会循环了但它到底怎样把一个模糊大任务拆成可执行的子任务">Agent
+已经会循环了，但它到底怎样把一个模糊大任务拆成可执行的子任务？</h2>
+<p>到第 5 阶段，我们已经有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>e</mi><mi>/</mi><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plan
+\rightarrow
+Act
+\rightarrow
+Observe
+\rightarrow
+UpdateState
+\rightarrow
+Continue/Stop
+}
+</annotation></semantics></math></p>
+<p>下一阶段要进一步解决：</p>
+<blockquote>
+<p><strong>Plan 到底是怎么产生的？</strong></p>
+</blockquote>
+<p>例如用户说：</p>
+<pre class="text"><code>“帮我完整审查这份采购文件。”</code></pre>
+<p>这不是一个 Tool 能完成的。</p>
+<p>Agent 必须拆成：</p>
+<pre class="text"><code>读取文件
+↓
+识别文件结构
+↓
+抽取资格条件
+↓
+抽取评分标准
+↓
+抽取技术参数
+↓
+抽取合同要求
+↓
+分别检索规则
+↓
+识别风险
+↓
+整合证据
+↓
+生成报告</code></pre>
+<p>下一阶段我们会正式进入：</p>
+<pre class="text"><code>Goal
+Subgoal
+Task Graph
+Dependency
+Sequential / Parallel
+Critical Path
+Dynamic Decomposition
+Plan Revision
+Over-decomposition
+Under-decomposition</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementtaskplanningpolicy_v0.1"><code>ProcurementTaskPlanningPolicy_V0.1</code></h1>
+<p>这会把 Agent 从：</p>
+<blockquote>
+<p>“知道下一步怎么循环”</p>
+</blockquote>
+<p>推进到：</p>
+<blockquote>
+<p><strong>“知道复杂任务应该被拆成什么结构，哪些步骤先做、哪些可以并行、哪些依赖前一步结果”。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

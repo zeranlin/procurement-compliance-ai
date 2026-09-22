@@ -1,0 +1,2651 @@
+# 第十一课 · 第 11 阶段
+# Hybrid Compliance Engine：Rules + LLM + RAG + Calculator
+## 哪些问题必须规则算，哪些需要模型判断，哪些需要法规检索，哪些必须转人工？怎样把 D01～D22、资格、技术、评分、政策、竞争、证据和人工复核真正接成一个政府采购合规引擎？
+
+第 10 阶段我们已经建立：
+
+\[
+\boxed{
+ParsedText
+\neq
+ReliableComplianceFact
+}
+\]
+
+**中文业务释义：** 从 PDF / Word 中成功提取出文字 ≠ 已经得到可以直接用于政府采购合规判断的可靠业务事实。
+
+并建立：
+
+\[
+\boxed{
+RawFiles
+\rightarrow
+FileRegistry
+\rightarrow
+VersionGraph
+\rightarrow
+PageRouting
+\rightarrow
+LayoutExtraction
+\rightarrow
+TableReconstruction
+\rightarrow
+SectionTree
+\rightarrow
+ClauseSegmentation
+\rightarrow
+RequirementExtraction
+\rightarrow
+Normalization
+\rightarrow
+CrossReferenceResolution
+\rightarrow
+EvidenceLinking
+\rightarrow
+QualityGate
+\rightarrow
+ComplianceReadyDataset
+}
+\]
+
+**中文业务释义：** 原始采购文件 → 文件注册与哈希 → 版本关系 → 页面解析路由 → 版面结构 → 表格恢复 → 章节树 → 条款切分 → 独立要求抽取 → 标准化 → 交叉引用 → 原文证据绑定 → 数据质量门 → 可供合规系统正式使用的数据集。
+
+现在才真正具备条件回答：
+
+> **有了可靠事实以后，政府采购合规到底应该由谁来判断？**
+
+答案不是：
+
+> 全部交给大语言模型。
+
+本阶段第一条核心边界正式锁定为：
+
+\[
+\boxed{
+OneModel
+\neq
+ComplianceSystem
+}
+\]
+
+**中文业务释义：** 一个大语言模型 ≠ 一个完整、可靠、可审计的政府采购合规系统。
+
+本阶段最终形成：
+
+# `ProcurementComplianceEngine_V1`
+
+---
+
+# 一、为什么不能直接做 `Document → LLM → Answer`？
+
+最简单的架构是：
+
+\[
+\boxed{
+Document
+\rightarrow
+LLM
+\rightarrow
+Answer
+}
+\]
+
+**中文业务释义：** 采购文件 → 直接交给大语言模型 → 输出一个答案。
+
+这条链的问题不是：
+
+> LLM 一定不聪明。
+
+而是政府采购合规同时存在完全不同性质的问题：
+
+```text
+deterministic_numeric_rule    # 中文：确定性数值规则，例如异常低价阈值、添购比例、政策价格计算
+
+explicit_prohibition_rule    # 中文：明确禁止性规则，例如某些资格条件、评分条件、地域限制
+
+temporal_policy_resolution    # 中文：法规政策在项目时点是否生效、失效或被替代
+
+jurisdiction_resolution    # 中文：中央 / 地方、不同地区规则的适用范围
+
+semantic_relevance_judgment    # 中文：某项条件是否与采购需求、合同履约真正相关
+
+market_evidence_judgment    # 中文：是否存在合理竞争、唯一供应商、技术替代路径
+
+document_evidence_validation    # 中文：结论是否真正有采购文件原文支持
+
+legal_basis_retrieval    # 中文：当前结论应由哪一条有效法规政策支持
+
+human_adjudication    # 中文：边界、高风险、证据冲突案件的人工专业复核
+```
+
+这些任务：
+
+> 不应该全部使用同一种技术处理。
+
+---
+
+# 二、核心心智模型 ①
+# `ProblemType` 决定 `DecisionComponent`
+
+\[
+\boxed{
+ProblemType
+\rightarrow
+BestDecisionComponent
+}
+\]
+
+**中文业务释义：** 先识别问题属于哪一种决策类型，再把它路由给最适合的规则、计算器、检索、模型或人工组件。
+
+一个最基本的分工表：
+
+| 业务问题 | 优先组件 | 中文说明 |
+|---|---|---|
+| 明确数值门槛 | Rule + Calculator | 规则确定适用条件，计算器负责精确算术 |
+| D01～D22 明确文本条件 | Rule Engine | 用结构化规则识别明确命中 |
+| 法规是否当前有效 | Policy Registry / Resolver | 按时点、地区、效力状态解析 |
+| 找到相关法规条文 | Legal RAG | 从有效法源中检索候选依据 |
+| 是否与采购需求合理相关 | LLM Judge + Evidence | 需要理解项目上下文和业务关系 |
+| 是否存在等效替代路径 | LLM + Market Evidence | 需要语义和市场事实共同判断 |
+| 是否命中政策例外 | Rule + RAG + LLM | 先找例外规则，再核对事实 |
+| 高风险最终确认 | Human Review | 专家对边界、冲突和高影响结论复核 |
+
+---
+
+# 三、真正的混合架构
+
+本阶段正式采用：
+
+\[
+\boxed{
+DocumentFacts
+\rightarrow
+TaskRouter
+\rightarrow
+\{
+RuleEngine,
+Calculator,
+PolicyResolver,
+LegalRAG,
+LLMJudge
+\}
+\rightarrow
+EvidenceValidator
+\rightarrow
+ConflictResolver
+\rightarrow
+HumanReview
+\rightarrow
+Finding
+}
+\]
+
+**中文业务释义：** 采购文件事实 → 任务路由器 → 分别调用规则引擎、计算器、政策解析器、法规 RAG、LLM 语义判断 → 证据验证 → 冲突解析 → 必要时人工复核 → 形成最终合规发现项。
+
+因此：
+
+\[
+\boxed{
+ComplianceEngine
+=
+Rules
++
+Calculator
++
+PolicyResolver
++
+LegalRAG
++
+LLM
++
+Evidence
++
+Human
+}
+\]
+
+**中文业务释义：** 合规引擎 = 规则 + 计算器 + 政策适用解析 + 法规检索 + 大语言模型 + 证据验证 + 人工专家。
+
+---
+
+# 四、核心心智模型 ②
+# `LLM` 不是合规引擎，只是其中一个判断组件
+
+\[
+\boxed{
+LLM
+\neq
+ComplianceEngine
+}
+\]
+
+**中文业务释义：** 大语言模型 ≠ 完整合规引擎；LLM 主要负责难以完全规则化的语义理解、关系判断和解释辅助。
+
+这意味着：
+
+> “模型更大”并不能替代“系统设计正确”。
+
+---
+
+# 五、系统启动前的第一个 Gate：Data Readiness
+
+Stage 10 已经建立：
+
+```text
+READY_FOR_COMPLIANCE    # 中文：数据质量达到合规审查门槛
+
+PARTIAL_REVIEW_ONLY    # 中文：只能进行部分审查，不能声明全量完成
+
+HUMAN_REPAIR_REQUIRED    # 中文：原始解析存在关键缺失，需要先人工修复
+```
+
+所以 Stage 11 的入口必须是：
+
+\[
+\boxed{
+DataQualityGate
+\rightarrow
+ComplianceEngine
+}
+\]
+
+**中文业务释义：** 只有通过数据质量门的事实，才能进入完整合规引擎。
+
+如果状态是：
+
+```text
+PARTIAL_REVIEW_ONLY    # 中文：只能部分审查
+```
+
+引擎必须输出：
+
+> “当前可完成哪些检查、哪些检查因为数据缺失无法完成。”
+
+而不是：
+
+> “未发现风险”。
+
+---
+
+# 六、核心心智模型 ③
+# `MissingEvidence` 不等于 `NoRisk`
+
+\[
+\boxed{
+MissingEvidence
+\neq
+NoFinding
+}
+\]
+
+**中文业务释义：** 没有足够证据 ≠ 已经确认没有风险。
+
+因此必须区分：
+
+```text
+NOT_CHECKED    # 中文：尚未完成该项检查
+
+CHECKED_NO_FINDING    # 中文：已经完整检查，未发现该类风险
+
+EVIDENCE_INSUFFICIENT    # 中文：证据不足，无法形成结论
+
+CANDIDATE_FINDING    # 中文：发现候选风险，需要进一步验证
+
+SUPPORTED_FINDING    # 中文：证据和适用规则支持风险发现
+
+HUMAN_REVIEW_REQUIRED    # 中文：需要人工专业判断
+```
+
+---
+
+# 七、Task Router
+## 任务路由器到底做什么？
+
+Task Router 不判断最终合规。
+
+它回答：
+
+> **这个问题应该交给谁处理？**
+
+建议至少输出：
+
+```text
+task_id    # 中文：合规子任务标识
+
+task_type    # 中文：规则匹配 / 数值计算 / 法规检索 / 语义判断 / 证据验证等类型
+
+review_domain    # 中文：资格 / 技术 / 评分 / 政策 / 竞争 / 合同等审查域
+
+candidate_rule_ids    # 中文：可能关联的D01-D22或其他规则
+
+required_fact_ids    # 中文：完成该任务需要哪些结构化事实
+
+required_policy_ids    # 中文：需要解析哪些法规政策
+
+required_tools    # 中文：需要调用哪些规则、计算器、RAG或模型组件
+
+risk_level    # 中文：任务潜在影响等级
+
+human_review_policy    # 中文：该类任务什么情况下必须转人工
+```
+
+---
+
+# 八、核心心智模型 ④
+# `Routing` 和 `Judgment` 必须分开
+
+\[
+\boxed{
+TaskRouting
+\neq
+ComplianceJudgment
+}
+\]
+
+**中文业务释义：** 决定“交给哪个组件处理” ≠ 决定“最终是否构成风险”。
+
+如果 Router 一开始就输出：
+
+> “D05 违规”
+
+那么：
+
+> 路由器已经偷偷承担了裁判角色。
+
+---
+
+# 九、Clause Classifier
+## 条款业务分类为什么仍然重要？
+
+同样一句：
+
+> “具有某项证书”
+
+可能出现在：
+
+```text
+QUALIFICATION    # 中文：资格准入章节
+
+TECHNICAL_REQUIREMENT    # 中文：采购需求 / 技术要求
+
+SCORING    # 中文：评分因素
+
+CONTRACT    # 中文：合同履约要求
+
+RESPONSE_FORMAT    # 中文：投标 / 响应文件格式说明
+```
+
+不同位置：
+
+> 法律和业务后果完全不同。
+
+所以：
+
+\[
+\boxed{
+SameText
++
+DifferentBusinessRole
+=
+DifferentComplianceMeaning
+}
+\]
+
+**中文业务释义：** 同样文本 + 不同业务角色 = 可能产生完全不同的合规含义。
+
+---
+
+# 十、Rule Engine
+## 规则引擎到底负责什么？
+
+Rule Engine 最适合处理：
+
+```text
+explicit_condition_match    # 中文：明确条件匹配
+
+prohibited_field_combination    # 中文：禁止性字段组合
+
+numeric_threshold_precondition    # 中文：数值规则的触发前提
+
+state_transition_rule    # 中文：业务状态转换规则
+
+cross_section_overlap    # 中文：资格 / 评分 / 合同等跨章节重复条件
+
+policy_precondition    # 中文：政策适用的明确前置条件
+
+required_evidence_presence    # 中文：某类结论必须存在什么证明材料
+```
+
+---
+
+# 十一、核心心智模型 ⑤
+# `RuleEngine` 不等于 `KeywordEngine`
+
+\[
+\boxed{
+RuleEngine
+\neq
+KeywordEngine
+}
+\]
+
+**中文业务释义：** 规则引擎 ≠ 关键词命中器。
+
+例如出现：
+
+> “本地业绩”
+
+可能是：
+
+```text
+require_local_experience    # 中文：要求本地业绩，可能形成地域限制
+
+prohibit_local_experience_requirement    # 中文：明确禁止要求本地业绩
+
+example_of_illegal_clause    # 中文：法规或模板中列举的违规示例
+
+clarification_removing_local_requirement    # 中文：澄清文件取消原本的本地业绩条件
+```
+
+只靠关键词：
+
+> 四种情况都会误报。
+
+---
+
+# 十二、Rule Engine 的输入应该是结构化事实
+
+错误输入：
+
+```text
+raw_document_text    # 中文：整份采购文件原始长文本
+```
+
+推荐输入：
+
+```text
+requirement_id    # 中文：独立业务要求标识
+
+business_function    # 中文：资格 / 评分 / 技术 / 履约等业务角色
+
+subject    # 中文：条件作用对象
+
+operator    # 中文：必须 / 不得 / >= / <= 等逻辑
+
+value    # 中文：标准化数值或文本值
+
+region_constraint    # 中文：地域限制
+
+industry_constraint    # 中文：行业限制
+
+ownership_constraint    # 中文：所有制 / 股权等限制
+
+evidence_span_ids    # 中文：原文证据定位
+
+document_version_id    # 中文：适用文档版本
+```
+
+所以：
+
+\[
+\boxed{
+StructuredFact
+\rightarrow
+RuleEvaluation
+}
+\]
+
+**中文业务释义：** 先把采购条款恢复为结构化业务事实，再执行规则判断。
+
+---
+
+# 十三、Calculator
+## 计算器为什么必须独立？
+
+以下任务不应该让 LLM 自由心算：
+
+```text
+score_calculation    # 中文：明确评分公式计算
+
+price_score_calculation    # 中文：价格分计算
+
+policy_price_adjustment    # 中文：本国产品 / 小微企业等政策价格调整
+
+abnormal_low_price_trigger    # 中文：异常低价数值阈值计算
+
+additional_purchase_ratio    # 中文：原供应商添购比例计算
+
+reserved_share_calculation    # 中文：中小企业预留份额计算
+
+date_duration_calculation    # 中文：明确日期、工作日、期限计算
+```
+
+因此：
+
+\[
+\boxed{
+DeterministicArithmetic
+\Rightarrow
+CalculatorFirst
+}
+\]
+
+**中文业务释义：** 明确的确定性算术 ⇒ 优先使用计算器，而不是依赖大语言模型心算。
+
+---
+
+# 十四、核心心智模型 ⑥
+# `Calculator` 不负责判断政策是否适用
+
+\[
+\boxed{
+Calculator
+\neq
+PolicyResolver
+}
+\]
+
+**中文业务释义：** 计算器 ≠ 政策适用解析器。
+
+例如：
+
+> “小微企业价格扣除 15%”
+
+计算器只能算：
+
+\[
+\boxed{
+DeductionAmount
+=
+OriginalPrice
+\times
+15\%
+}
+\]
+
+**中文业务释义：** 扣除金额 = 原始报价 × 15%。
+
+但它不能自己判断：
+
+> 当前项目是不是应当适用小微企业政策、采购文件是否依法选择 15%、供应商 / 制造商是否符合条件。
+
+这些属于：
+
+# Policy Resolver
+## 政策适用解析器
+
+---
+
+# 十五、Policy Resolver
+## 政策适用解析器的职责
+
+至少处理：
+
+```text
+effective_date    # 中文：政策生效 / 失效时点
+
+jurisdiction    # 中文：中央 / 地方及具体适用区域
+
+policy_scope    # 中文：货物 / 服务 / 工程、品目、金额等适用范围
+
+subject_status    # 中文：供应商 / 制造商 / 产品是否满足政策身份
+
+exception_status    # 中文：是否存在例外
+
+stacking_status    # 中文：是否允许与其他政策叠加
+
+supersession_status    # 中文：旧规则是否已经被新规则替代
+```
+
+Stage 12 会进一步把这一部分升级为：
+
+# `ProcurementLegalRAG_V1`
+
+---
+
+# 十六、核心心智模型 ⑦
+# `PolicyTextFound` 不等于 `ApplicablePolicy`
+
+\[
+\boxed{
+PolicyTextFound
+\neq
+ApplicablePolicy
+}
+\]
+
+**中文业务释义：** 检索到一份政策文本 ≠ 这份政策就适用于当前项目。
+
+必须继续验证：
+
+> 时点、地区、采购对象、政策效力、适用主体和例外。
+
+---
+
+# 十七、Legal RAG
+## 法规 RAG 在引擎里做什么？
+
+Legal RAG 的核心职责不是：
+
+> “替模型回答所有法律问题”。
+
+而是：
+
+```text
+retrieve_candidate_basis    # 中文：检索可能相关的法律政策依据
+
+retrieve_current_version    # 中文：优先定位当前项目时点适用版本
+
+retrieve_article_context    # 中文：返回条文前后文和必要定义
+
+retrieve_exception_clause    # 中文：检索例外 / 但书 / 特殊情形
+
+retrieve_source_metadata    # 中文：返回发文机关、文号、效力和来源信息
+```
+
+---
+
+# 十八、核心心智模型 ⑧
+# `RetrievedLaw` 不是最终法律适用结论
+
+\[
+\boxed{
+RetrievedLegalText
+\neq
+LegalApplicabilityDecision
+}
+\]
+
+**中文业务释义：** RAG 检索到相关条文 ≠ 已经完成“该条文是否适用于当前项目”的法律适用判断。
+
+Stage 12 会重点解决：
+
+> Temporal / Jurisdiction / Validity / Supersession。
+
+---
+
+# 十九、LLM Judge
+## LLM 应该负责什么？
+
+LLM 最适合处理那些：
+
+> 需要理解语义关系，但又无法完全规则化的问题。
+
+例如：
+
+```text
+business_relevance    # 中文：某项资格 / 评分 / 技术要求是否与项目真实需要相关
+
+functional_equivalence    # 中文：不同技术实现是否属于等效实现路径
+
+capability_similarity    # 中文：历史业绩与当前项目是否真正证明相似履约能力
+
+subjective_rubric_interpretation    # 中文：方案评分描述是否具有明确可观察锚点
+
+market_explanation_analysis    # 中文：供应商 / 采购人的市场说明是否具有逻辑和证据支持
+
+exception_fact_mapping    # 中文：项目事实是否符合某个政策例外的自然语言条件
+
+cross_clause_semantic_conflict    # 中文：多个条款在语义上是否存在冲突
+```
+
+---
+
+# 二十、核心心智模型 ⑨
+# LLM 应判断 `Relation`，而不是自由发明 `Rule`
+
+\[
+\boxed{
+LLMRole
+=
+SemanticRelationJudgment
+\neq
+RuleInvention
+}
+\]
+
+**中文业务释义：** LLM 的核心角色 = 语义关系判断 ≠ 自己创造政府采购规则。
+
+例如它可以判断：
+
+> “该技术要求与采购功能目标之间是否有充分关联”。
+
+但不应该自己创造：
+
+> “超过某金额就一定违规”
+
+这种不存在于规则库的阈值。
+
+---
+
+# 二十一、LLM Judge 的输入必须受约束
+
+不应该直接给模型：
+
+```text
+“请检查这份采购文件是否合法。”
+# 中文：任务边界过宽，没有结构、法源和输出约束
+```
+
+推荐输入：
+
+```text
+task_type    # 中文：具体需要判断的任务类型
+
+project_context    # 中文：项目类型、采购标的、采购方式等上下文
+
+clause_fact    # 中文：已经结构化的条款事实
+
+related_requirements    # 中文：关联采购需求、评分、合同要求
+
+candidate_rules    # 中文：候选规则及其结构化条件
+
+retrieved_legal_basis    # 中文：当前候选法规政策依据
+
+evidence_spans    # 中文：采购文件原文证据
+
+required_output_schema    # 中文：模型必须遵守的结构化输出格式
+```
+
+---
+
+# 二十二、核心心智模型 ⑩
+# `Prompt` 不是法规数据库
+
+\[
+\boxed{
+Prompt
+\neq
+PolicyRegistry
+}
+\]
+
+**中文业务释义：** Prompt ≠ 法规政策注册表。
+
+不能靠 System Prompt 写：
+
+> “记住政府采购所有现行规则”。
+
+真正规则来源必须：
+
+> 可版本化、可更新、可追溯、可按时点和地区解析。
+
+---
+
+# 二十三、Candidate Finding
+## 为什么先生成候选风险，而不是直接下结论？
+
+为了提高 Recall——召回率，
+
+第一步可以宽一些：
+
+```text
+candidate_generation    # 中文：尽量找出所有可能风险
+
+candidate_rule_ids    # 中文：候选关联规则
+
+candidate_evidence    # 中文：初步证据
+
+candidate_reason    # 中文：为什么值得继续检查
+```
+
+然后再做：
+
+# Evidence Validation
+## 证据验证
+
+---
+
+# 二十四、核心心智模型 ⑪
+# `CandidateFinding` 不等于 `SupportedFinding`
+
+\[
+\boxed{
+CandidateFinding
+\neq
+SupportedFinding
+}
+\]
+
+**中文业务释义：** 候选风险 ≠ 已有足够证据支持的正式风险发现。
+
+因此推荐两阶段：
+
+\[
+\boxed{
+RecallFirstCandidateGeneration
+\rightarrow
+PrecisionFirstEvidenceValidation
+}
+\]
+
+**中文业务释义：** 第一阶段偏高召回发现候选风险 → 第二阶段偏高精度验证证据，减少误报。
+
+---
+
+# 二十五、Evidence Validator
+## 证据验证器检查什么？
+
+一个风险候选至少检查：
+
+```text
+source_clause_exists    # 中文：采购文件原始条款确实存在
+
+applicable_version_confirmed    # 中文：该条款属于当前适用版本
+
+business_role_confirmed    # 中文：资格 / 技术 / 评分等业务角色已确认
+
+fact_extraction_confirmed    # 中文：结构化事实没有把否定、数值、主体解析错
+
+legal_basis_available    # 中文：存在对应有效法源 / 规则依据
+
+rule_applicability_confirmed    # 中文：当前规则确实适用于该项目事实
+
+exception_checked    # 中文：相关例外已检查
+
+contradictory_evidence_checked    # 中文：是否存在相反证据 / 澄清文件
+
+evidence_span_complete    # 中文：原文定位完整
+```
+
+---
+
+# 二十六、核心心智模型 ⑫
+# `NoEvidence` 就不能升级成正式 Finding
+
+\[
+\boxed{
+NoEvidence
+\Rightarrow
+NoSupportedFinding
+}
+\]
+
+**中文业务释义：** 没有可验证证据 ⇒ 不能把候选风险升级成“证据支持的正式发现项”。
+
+注意：
+
+> 这不等于“确认合规”。
+
+可能的状态是：
+
+```text
+EVIDENCE_INSUFFICIENT    # 中文：证据不足，无法形成结论
+```
+
+---
+
+# 二十七、Evidence Gate
+## 正式发现项必须过什么门？
+
+建议：
+
+\[
+\boxed{
+SupportedFinding
+=
+SourceEvidence
++
+ApplicableRule
++
+FactMatch
++
+ReasoningTrace
++
+ExceptionCheck
+}
+\]
+
+**中文业务释义：** 证据支持的风险发现 = 采购文件原文证据 + 当前适用规则 + 事实与规则匹配 + 推理轨迹 + 例外检查。
+
+---
+
+# 二十八、Conflict Resolver
+## 多组件意见冲突怎么办？
+
+最危险的做法是：
+
+> “谁置信度高就听谁。”
+
+因为：
+
+```text
+rule_result    # 中文：可能是确定性规则结果
+
+llm_result    # 中文：可能是语义判断
+
+rag_result    # 中文：只是检索结果
+
+calculator_result    # 中文：只是数值计算
+
+human_label    # 中文：人工专业结论
+```
+
+这些结果：
+
+> 权限和语义不一样。
+
+---
+
+# 二十九、核心心智模型 ⑬
+# `ConfidenceScore` 不等于 `DecisionAuthority`
+
+\[
+\boxed{
+ConfidenceScore
+\neq
+DecisionAuthority
+}
+\]
+
+**中文业务释义：** 某组件的置信度分数 ≠ 它拥有覆盖其他组件的决策权。
+
+例如：
+
+> Calculator 计算 `0.49 < 0.50` 是确定性算术；
+
+LLM 即使输出：
+
+> “我有 99% 把握没有触发”
+
+也不能覆盖数学结果。
+
+---
+
+# 三十、Deterministic Scope
+## 确定性规则的优先边界
+
+如果同时满足：
+
+```text
+fact_quality_confirmed    # 中文：输入事实可靠
+
+policy_version_confirmed    # 中文：适用规则版本可靠
+
+rule_condition_complete    # 中文：规则所需前置条件完整
+
+calculator_trace_valid    # 中文：计算轨迹可复现
+```
+
+那么：
+
+\[
+\boxed{
+ValidatedDeterministicResult
+\Rightarrow
+LLMCannotOverride
+}
+\]
+
+**中文业务释义：** 经验证的确定性规则结果 ⇒ LLM 不能凭语义感觉直接覆盖。
+
+但如果：
+
+> 输入事实本身不可靠，
+
+正确动作不是让 LLM “猜一个结果”，而是：
+
+\[
+\boxed{
+UncertainFact
+\Rightarrow
+RepairOrHumanReview
+}
+\]
+
+**中文业务释义：** 关键事实不确定 ⇒ 修复数据或升级人工复核。
+
+---
+
+# 三十一、LLM 和 Rule 冲突时的四种典型情况
+
+### 情形 A：Rule 明确命中，LLM 不同意
+
+先检查：
+
+```text
+rule_scope_correct    # 中文：规则是否适用当前业务角色
+
+input_fact_correct    # 中文：结构化事实是否解析正确
+
+exception_exists    # 中文：是否存在例外
+
+policy_version_correct    # 中文：是否用了正确规则版本
+```
+
+如果全部确认：
+
+> 以确定性规则结果为基础，LLM 不能直接覆盖。
+
+### 情形 B：Rule 未命中，LLM 发现语义风险
+
+例如：
+
+> 没有出现品牌名，但技术参数组合高度指向特定产品。
+
+这属于：
+
+```text
+semantic_candidate    # 中文：语义型候选风险
+```
+
+进入：
+
+> Evidence + Market Evidence + Human Review。
+
+### 情形 C：RAG 找到两份互相冲突的规则
+
+不能让 LLM 自行选一个。
+
+需要：
+
+```text
+temporal_resolution    # 中文：时点解析
+
+jurisdiction_resolution    # 中文：地区适用解析
+
+supersession_resolution    # 中文：新旧规则替代关系解析
+```
+
+### 情形 D：Calculator 正确，但政策适用性未确认
+
+计算结果只能标记：
+
+```text
+CALCULATION_VALID_APPLICABILITY_PENDING    # 中文：算术正确，但政策是否适用仍待确认
+```
+
+---
+
+# 三十二、核心心智模型 ⑭
+# `Conflict` 是需要解析的状态，不是让模型“投票”
+
+\[
+\boxed{
+ComponentConflict
+\neq
+MajorityVote
+}
+\]
+
+**中文业务释义：** 多组件冲突 ≠ 谁多听谁；必须根据组件职责、证据质量、规则适用性和人工权限解析。
+
+---
+
+# 三十三、Human Review
+## 人工复核不是系统失败
+
+高风险合规系统如果设计成：
+
+> “永远不能转人工”
+
+反而不专业。
+
+因此：
+
+\[
+\boxed{
+HumanReview
+\neq
+SystemFailure
+}
+\]
+
+**中文业务释义：** 人工复核 ≠ 自动化系统失败；对于高影响、边界性、证据冲突案件，人工复核是系统设计的一部分。
+
+---
+
+# 三十四、什么时候必须转人工？
+
+建议至少：
+
+```text
+high_impact_finding    # 中文：可能导致供应商被排除、评分显著变化、采购方式改变等高影响问题
+
+policy_conflict    # 中文：法规政策之间存在冲突或适用关系不明确
+
+evidence_conflict    # 中文：采购文件、澄清、更正之间证据冲突
+
+low_data_quality    # 中文：关键原文 / 表格 / OCR质量不足
+
+semantic_borderline    # 中文：与采购需求相关性、技术必要性等边界判断
+
+market_uniqueness_borderline    # 中文：唯一供应商 / 替代方案存在争议
+
+exception_unclear    # 中文：政策例外是否成立不清楚
+
+low_calibrated_confidence    # 中文：经过校准后的判断置信度不足
+
+out_of_distribution_case    # 中文：明显超出已知训练 / Benchmark分布的案例
+```
+
+---
+
+# 三十五、核心心智模型 ⑮
+# `Uncertain` 不等于 `Compliant`
+
+\[
+\boxed{
+Uncertain
+\neq
+Compliant
+}
+\]
+
+**中文业务释义：** 系统无法确定是否有问题 ≠ 可以自动判定为合规。
+
+同样：
+
+\[
+\boxed{
+Uncertain
+\neq
+Violation
+}
+\]
+
+**中文业务释义：** 系统无法确定 ≠ 可以自动判定违规。
+
+正确状态：
+
+> `HUMAN_REVIEW_REQUIRED`
+
+---
+
+# 三十六、Risk × Confidence Routing
+## 风险与置信度路由
+
+可以建立工程矩阵：
+
+| 潜在影响 | 置信度 | 处理方式 |
+|---|---|---|
+| 低 | 高 | 自动形成低风险提示或无风险结论 |
+| 高 | 高 | 可形成强候选，但重要结论仍按治理策略抽检 / 复核 |
+| 低 | 低 | 可以降级提示或要求补充证据 |
+| 高 | 低 | 必须转人工 |
+
+注意：
+
+> 这是系统治理策略，不是法律结论公式。
+
+---
+
+# 三十七、核心心智模型 ⑯
+# `HighConfidence` 不等于 `NoHumanNeeded`
+
+\[
+\boxed{
+HighConfidence
+\neq
+NoHumanReviewNeeded
+}
+\]
+
+**中文业务释义：** 模型置信度高 ≠ 高影响事项一定可以取消人工复核；是否人工复核还取决于业务影响、风险等级和组织治理要求。
+
+---
+
+# 三十八、Cross-domain Reasoning
+## 为什么合规检查不能按章节完全割裂？
+
+一个条件可能：
+
+```text
+Qualification    # 中文：资格条件里出现
+
+Scoring    # 中文：评分标准里再次出现
+
+Contract    # 中文：合同履约里再次出现
+```
+
+例如：
+
+> “项目经理具有某证书”。
+
+如果只看单章：
+
+> 你看不到资格评分化、重复计分、履约承诺脱节等问题。
+
+所以：
+
+\[
+\boxed{
+ComplianceFinding
+=
+LocalClauseReview
++
+CrossDomainConsistency
+}
+\]
+
+**中文业务释义：** 合规发现 = 单条款检查 + 跨资格、技术、评分、合同等业务域一致性检查。
+
+---
+
+# 三十九、Canonical Requirement Graph
+## 同一业务要求要跨章节归一化
+
+建议：
+
+```text
+canonical_requirement_id    # 中文：跨章节归一化后的同一业务要求
+
+qualification_instances    # 中文：该要求在资格章节的实例
+
+technical_instances    # 中文：该要求在采购需求中的实例
+
+scoring_instances    # 中文：该要求在评分标准中的实例
+
+contract_instances    # 中文：该要求在合同履约中的实例
+
+consistency_state    # 中文：各章节之间是否一致
+
+role_conflict_state    # 中文：同一条件是否承担冲突业务角色
+```
+
+---
+
+# 四十、核心心智模型 ⑰
+# `Clause-by-Clause` 不等于完整合规审查
+
+\[
+\boxed{
+ClauseByClauseReview
+\neq
+SystemLevelComplianceReview
+}
+\]
+
+**中文业务释义：** 逐条看每个 Clause ≠ 完整合规审查；很多问题只在跨章节、跨文件、跨版本关系中出现。
+
+---
+
+# 四十一、典型跨域检查 1：资格条件评分化
+
+流程：
+
+\[
+\boxed{
+QualificationRequirement
+\rightarrow
+CanonicalRequirement
+\rightarrow
+ScoringSearch
+\rightarrow
+RoleConflictCheck
+}
+\]
+
+**中文业务释义：** 资格要求 → 归一化同一业务条件 → 在评分标准中搜索对应项 → 检查是否发生资格条件评分化。
+
+---
+
+# 四十二、典型跨域检查 2：高分承诺有没有进入合同？
+
+流程：
+
+\[
+\boxed{
+HighScorePromise
+\rightarrow
+ContractSearch
+\rightarrow
+AcceptanceSearch
+\rightarrow
+PerformanceLinkCheck
+}
+\]
+
+**中文业务释义：** 高分承诺 → 检查合同 → 检查验收标准 → 判断该承诺是否真正进入履约约束。
+
+---
+
+# 四十三、典型跨域检查 3：技术参数与评分是否重复放大同一种优势？
+
+例如：
+
+```text
+technical_gate    # 中文：技术参数先把竞争范围收窄
+
+scoring_bonus    # 中文：评分表又对同一能力额外加分
+```
+
+所以：
+
+\[
+\boxed{
+GateAdvantage
++
+ScoreAdvantage
+\rightarrow
+CombinedCompetitionImpact
+}
+\]
+
+**中文业务释义：** 准入 / 实质性技术优势 + 评分优势 → 可能形成叠加竞争影响，需要统一评估。
+
+---
+
+# 四十四、Finding State Machine
+## 合规发现项状态机
+
+建议：
+
+```text
+NOT_CHECKED    # 中文：尚未检查
+
+CHECKING    # 中文：正在执行规则 / 检索 / 模型判断
+
+CANDIDATE    # 中文：发现候选风险
+
+EVIDENCE_COLLECTING    # 中文：正在补充原文、法规、市场等证据
+
+SUPPORTED    # 中文：证据足以支持风险发现
+
+REJECTED_CANDIDATE    # 中文：候选风险经验证后被排除
+
+CHECKED_NO_FINDING    # 中文：完成检查且未发现该类风险
+
+EVIDENCE_INSUFFICIENT    # 中文：证据不足，无法判断
+
+HUMAN_REVIEW_REQUIRED    # 中文：需要人工复核
+
+HUMAN_CONFIRMED    # 中文：人工确认风险
+
+HUMAN_REJECTED    # 中文：人工否定候选风险
+
+REMEDIATED    # 中文：采购文件已修改并完成复核
+```
+
+---
+
+# 四十五、核心心智模型 ⑱
+# `NotDetected` 不等于 `CheckedNoFinding`
+
+\[
+\boxed{
+NotDetected
+\neq
+CheckedNoFinding
+}
+\]
+
+**中文业务释义：** 系统没有检测到 ≠ 系统已经完整检查并确认未发现问题。
+
+这是生产系统必须非常严格的一条边界。
+
+---
+
+# 四十六、Rule Coverage Matrix
+## D01～D22 必须有覆盖状态
+
+每一个项目都可以建立：
+
+```text
+D01_status    # 中文：D01当前审查状态
+
+D02_status    # 中文：D02当前审查状态
+
+D03_status    # 中文：D03当前审查状态
+
+...    # 中文：中间各项规则状态
+
+D22_status    # 中文：D22当前审查状态
+```
+
+每项至少属于：
+
+```text
+NOT_APPLICABLE    # 中文：根据项目类型明确不适用
+
+NOT_CHECKED    # 中文：尚未完成检查
+
+CHECKED_NO_FINDING    # 中文：已检查未发现
+
+CANDIDATE    # 中文：存在候选风险
+
+SUPPORTED_FINDING    # 中文：证据支持风险发现
+
+HUMAN_REVIEW_REQUIRED    # 中文：需人工复核
+```
+
+这样最后系统才能回答：
+
+> **22 项到底检查了多少项？**
+
+而不是只展示：
+
+> “发现 3 个问题”。
+
+---
+
+# 四十七、核心心智模型 ⑲
+# `FindingCount` 不等于 `ReviewCoverage`
+
+\[
+\boxed{
+FindingCount
+\neq
+ReviewCoverage
+}
+\]
+
+**中文业务释义：** 发现了几个问题 ≠ 到底检查了多少规则和业务域。
+
+---
+
+# 四十八、Audit Trace
+## 为什么每一次判断都必须留下决策轨迹？
+
+正式 Finding 至少应该回答：
+
+```text
+what_fact    # 中文：系统使用了哪些项目事实
+
+what_rule    # 中文：使用了哪条规则 / 法规
+
+what_version    # 中文：使用的是哪一个政策版本和采购文件版本
+
+what_component    # 中文：哪个组件做了哪一步判断
+
+what_calculation    # 中文：进行了什么确定性计算
+
+what_evidence    # 中文：依据哪些原文 / 市场 / 政策证据
+
+what_exception_check    # 中文：检查了哪些例外
+
+what_conflict    # 中文：是否存在组件或证据冲突
+
+what_human_action    # 中文：是否经过人工复核及处理结果
+```
+
+---
+
+# 四十九、核心心智模型 ⑳
+# `FinalAnswer` 不等于 `AuditTrace`
+
+\[
+\boxed{
+FinalAnswer
+\neq
+AuditTrace
+}
+\]
+
+**中文业务释义：** 最终报告中的一句“存在风险” ≠ 完整审计轨迹；系统必须能重新解释它是怎样得到这个结论的。
+
+---
+
+# 五十、Decision Trace Schema
+## 决策轨迹 Schema
+
+```text
+trace_id    # 中文：决策轨迹标识
+
+project_id    # 中文：采购项目
+
+task_id    # 中文：合规子任务
+
+finding_id    # 中文：最终发现项，如已形成
+
+input_fact_ids    # 中文：输入结构化事实
+
+input_evidence_span_ids    # 中文：输入原文证据
+
+policy_snapshot_id    # 中文：法规政策快照
+
+candidate_rule_ids    # 中文：候选规则
+
+rule_results    # 中文：规则引擎执行结果
+
+calculator_trace_ids    # 中文：确定性计算过程
+
+rag_retrieval_ids    # 中文：法规 / 证据检索记录
+
+llm_judgment_id    # 中文：LLM语义判断记录
+
+evidence_validation_result    # 中文：证据验证结果
+
+conflict_resolution_result    # 中文：冲突解析结果
+
+human_review_id    # 中文：人工复核记录
+
+final_state    # 中文：最终状态
+
+created_at    # 中文：生成时间
+```
+
+---
+
+# 五十一、LLM 输出必须是 Schema，不是自由作文
+
+建议 LLM Judge 输出：
+
+```text
+judgment_id    # 中文：模型判断标识
+
+task_id    # 中文：对应任务
+
+decision_candidate    # 中文：候选判断，不直接等于最终结论
+
+reasoning_summary    # 中文：可审计的简要理由，不要求保存私有思维过程
+
+fact_refs    # 中文：使用的结构化事实引用
+
+evidence_span_refs    # 中文：采购文件证据引用
+
+legal_basis_refs    # 中文：引用的法规政策依据
+
+missing_facts    # 中文：仍缺哪些关键事实
+
+exception_candidates    # 中文：可能适用的例外
+
+confidence    # 中文：经过定义的模型置信度
+
+human_review_recommended    # 中文：是否建议人工复核
+```
+
+---
+
+# 五十二、核心心智模型 ㉑
+# `FreeTextReasoning` 不等于 `Machine-usable Decision`
+
+\[
+\boxed{
+FreeTextReasoning
+\neq
+MachineUsableDecision
+}
+\]
+
+**中文业务释义：** 一大段自然语言解释 ≠ 可供系统继续验证、比较、回归测试和审计的结构化决策。
+
+---
+
+# 五十三、Confidence 到底怎么用？
+
+不能把：
+
+```text
+confidence = 0.93    # 中文：模型输出一个0.93分数
+```
+
+直接解释成：
+
+> “93% 的法律正确率”。
+
+Lesson 9 已经建立 Calibration。
+
+所以 Stage 11 必须使用：
+
+```text
+calibrated_confidence    # 中文：经过Benchmark校准后具有业务含义的置信度
+
+slice_id    # 中文：该置信度对应哪一类风险切片
+
+coverage_policy    # 中文：在什么置信度下允许自动处理
+
+abstention_policy    # 中文：什么时候必须拒答 / 转人工
+```
+
+---
+
+# 五十四、核心心智模型 ㉒
+# `ModelConfidence` 不等于 `LegalCertainty`
+
+\[
+\boxed{
+ModelConfidence
+\neq
+LegalCertainty
+}
+\]
+
+**中文业务释义：** 模型置信度 ≠ 法律上的确定性。
+
+置信度主要用来：
+
+> 决定自动化程度和人工升级策略。
+
+---
+
+# 五十五、Abstention
+## 合规系统必须会“不确定”
+
+一个专业系统应该允许：
+
+```text
+ABSTAIN_INSUFFICIENT_EVIDENCE    # 中文：证据不足，拒绝形成确定结论
+
+ABSTAIN_POLICY_CONFLICT    # 中文：法规政策冲突 / 适用关系未解析
+
+ABSTAIN_DATA_QUALITY    # 中文：文档解析质量不足
+
+ABSTAIN_OOD    # 中文：超出已知分布 / 未覆盖案例
+
+ABSTAIN_HIGH_RISK_BORDERLINE    # 中文：高风险边界案例转人工
+```
+
+---
+
+# 五十六、核心心智模型 ㉓
+# `CanAbstain` 是能力，不是缺陷
+
+\[
+\boxed{
+ReliableCompliance
+=
+CanDecide
++
+CanAbstain
++
+CanEscalate
+}
+\]
+
+**中文业务释义：** 可靠合规系统 = 能判断 + 能在证据不足时拒绝武断判断 + 能把复杂问题升级给人工。
+
+---
+
+# 五十七、Tool Contract
+## 各组件必须通过明确接口协作
+
+例如 Rule Engine 工具：
+
+```text
+tool_name = evaluate_rule    # 中文：执行结构化合规规则
+
+input = structured_fact + policy_snapshot    # 中文：输入结构化事实和政策快照
+
+output = matched / not_matched / unresolved    # 中文：输出命中 / 未命中 / 无法判断
+```
+
+Calculator 工具：
+
+```text
+tool_name = calculate_formula    # 中文：执行确定性公式计算
+
+input = formula_id + numeric_inputs    # 中文：公式标识和数值输入
+
+output = result + calculation_trace    # 中文：计算结果和完整计算轨迹
+```
+
+Legal RAG 工具：
+
+```text
+tool_name = retrieve_legal_basis    # 中文：检索法规政策依据
+
+input = legal_query + project_time + jurisdiction    # 中文：法律问题、项目时点、适用地区
+
+output = candidate_sources + applicability_metadata    # 中文：候选法源和适用性元数据
+```
+
+---
+
+# 五十八、核心心智模型 ㉔
+# `Tool Output` 必须可验证，而不是只返回一句话
+
+\[
+\boxed{
+ToolResult
+=
+Value
++
+Source
++
+Version
++
+Trace
+}
+\]
+
+**中文业务释义：** 工具结果 = 输出值 + 数据来源 + 工具 / 规则版本 + 可重放执行轨迹。
+
+---
+
+# 五十九、State
+## 引擎为什么需要状态？
+
+完整审查不可能一次模型调用完成。
+
+需要保存：
+
+```text
+project_review_state    # 中文：整个项目审查进度
+
+domain_review_state    # 中文：资格 / 技术 / 评分 / 政策 / 竞争等域的状态
+
+rule_coverage_state    # 中文：D01-D22各规则覆盖状态
+
+pending_evidence_tasks    # 中文：待补证据任务
+
+pending_human_reviews    # 中文：待人工复核事项
+
+resolved_findings    # 中文：已经确认 / 排除的发现项
+
+unresolved_conflicts    # 中文：尚未解决的组件或证据冲突
+```
+
+---
+
+# 六十、核心心智模型 ㉕
+# `StatelessPrompt` 不适合完整项目审查
+
+\[
+\boxed{
+ComplianceWorkflow
+\Rightarrow
+PersistentState
+}
+\]
+
+**中文业务释义：** 完整政府采购合规工作流 ⇒ 必须持久保存审查状态，而不是每次都从一个无状态 Prompt 重新开始。
+
+---
+
+# 六十一、Engine Passes
+## 一个项目可以分几轮跑？
+
+推荐至少五轮：
+
+### Pass 1：Deterministic Scan
+## 第一轮：确定性扫描
+
+```text
+D01-D22 explicit rules    # 中文：22项规则中可明确规则化的部分
+
+numeric thresholds    # 中文：确定性数值门槛
+
+cross_section duplicates    # 中文：跨章节重复 / 角色冲突
+
+required evidence presence    # 中文：必备证据是否存在
+```
+
+### Pass 2：Policy / Legal Retrieval
+## 第二轮：政策与法规检索
+
+```text
+applicable policy candidates    # 中文：候选适用法规政策
+
+effective version    # 中文：有效版本
+
+exceptions    # 中文：例外和特别规则
+```
+
+### Pass 3：Semantic Judgment
+## 第三轮：语义判断
+
+```text
+business relevance    # 中文：与采购需求和合同履约关联
+
+technical necessity    # 中文：技术要求必要性
+
+functional equivalence    # 中文：等效替代路径
+
+experience similarity    # 中文：业绩能力相似性
+```
+
+### Pass 4：Cross-domain Review
+## 第四轮：跨域一致性检查
+
+```text
+qualification_to_scoring    # 中文：资格条件评分化
+
+score_to_contract    # 中文：高分承诺与合同履约关联
+
+technical_to_scoring    # 中文：技术门槛和评分优势叠加
+
+policy_to_price    # 中文：政策适用和价格计算一致性
+```
+
+### Pass 5：Evidence / Human Gate
+## 第五轮：证据和人工门
+
+```text
+evidence validation    # 中文：证据完整性验证
+
+conflict resolution    # 中文：组件冲突解析
+
+human escalation    # 中文：高风险 / 边界事项升级人工
+
+final coverage check    # 中文：最终审查覆盖率检查
+```
+
+---
+
+# 六十二、核心心智模型 ㉖
+# `OnePassReview` 不等于完整合规审查
+
+\[
+\boxed{
+OnePassReview
+\neq
+CompleteComplianceReview
+}
+\]
+
+**中文业务释义：** 一次扫描 / 一次模型调用 ≠ 完整政府采购合规审查；可靠系统需要多阶段决策和验证。
+
+---
+
+# 六十三、完整 Finding Schema 第一版
+
+```text
+finding_id    # 中文：合规发现项标识
+
+project_id    # 中文：采购项目
+
+review_domain    # 中文：资格 / 技术 / 评分 / 政策 / 竞争 / 合同等审查域
+
+rule_ids    # 中文：关联D01-D22或其他规则
+
+finding_type    # 中文：差别歧视 / 量化不足 / 政策错误 / 竞争不足等发现类型
+
+finding_state    # 中文：候选 / 支持 / 人工确认 / 已排除等状态
+
+title    # 中文：风险标题
+
+business_summary    # 中文：面向采购业务人员的风险摘要
+
+source_requirement_ids    # 中文：关联业务要求
+
+source_evidence_span_ids    # 中文：采购文件原文证据
+
+applicable_policy_refs    # 中文：适用法规政策依据
+
+policy_snapshot_id    # 中文：项目时点政策快照
+
+rule_evaluation_refs    # 中文：规则执行记录
+
+calculator_trace_refs    # 中文：确定性计算记录
+
+rag_retrieval_refs    # 中文：法规检索记录
+
+llm_judgment_refs    # 中文：模型语义判断记录
+
+exception_check_result    # 中文：例外检查结果
+
+conflict_state    # 中文：是否存在组件 / 证据冲突
+
+risk_level    # 中文：业务影响等级
+
+calibrated_confidence    # 中文：经过Benchmark校准的置信度
+
+human_review_required    # 中文：是否必须人工复核
+
+human_review_result    # 中文：人工复核结论
+
+recommended_revision    # 中文：采购文件修改建议
+
+audit_trace_id    # 中文：完整决策轨迹
+```
+
+---
+
+# 六十四、Engine Decision Record
+## 不只保存 Finding，还要保存“未发现”
+
+建议：
+
+```text
+review_item_id    # 中文：一个规则 / 一个检查任务的记录
+
+rule_id    # 中文：对应规则
+
+applicability_state    # 中文：适用 / 不适用 / 不确定
+
+check_state    # 中文：未检查 / 已检查 / 待证据 / 待人工
+
+finding_state    # 中文：无发现 / 候选 / 支持等
+
+evidence_refs    # 中文：检查所依据的证据
+
+decision_trace_id    # 中文：决策轨迹
+```
+
+这样：
+
+> `CHECKED_NO_FINDING`
+
+也有证据。
+
+---
+
+# 六十五、核心心智模型 ㉗
+# `NoFinding` 也应该可解释
+
+\[
+\boxed{
+CheckedNoFinding
+\Rightarrow
+ReviewEvidence
+}
+\]
+
+**中文业务释义：** 已检查未发现风险 ⇒ 也应保存本次检查范围、依据和证据，而不是只有风险项才留下记录。
+
+---
+
+# 六十六、一个完整例子：D05 企业规模条件被放入评分表
+
+假设评分表写：
+
+> “注册资本达到 5000 万元得 5 分。”
+
+系统不能一步输出：
+
+> “违规”。
+
+正确流程：
+
+\[
+\boxed{
+Clause
+\rightarrow
+Requirement
+\rightarrow
+BusinessRole
+\rightarrow
+D05Candidate
+\rightarrow
+PolicyCheck
+\rightarrow
+EvidenceValidation
+\rightarrow
+Finding
+}
+\]
+
+**中文业务释义：** 评分条款 → 独立要求 → 确认其评分业务角色 → 生成 D05 候选 → 检查适用规则和可能例外 → 验证原文与法源 → 形成正式发现项。
+
+具体组件：
+
+```text
+Parser    # 中文：抽取“注册资本≥5000万元、得5分”
+
+ClauseClassifier    # 中文：确认它属于评分因素
+
+RuleEngine    # 中文：匹配企业规模条件进入评审因素的候选规则
+
+LegalRAG    # 中文：检索当前有效法规和专项整治依据
+
+LLMJudge    # 中文：辅助判断是否存在项目必要性 / 特殊依据等语义问题
+
+EvidenceValidator    # 中文：核对原文、文档版本、评分分值和法源
+
+HumanReview    # 中文：高影响 / 边界情形按治理策略人工复核
+```
+
+---
+
+# 六十七、一个完整例子：没有品牌名，但技术参数组合可能指向特定产品
+
+这里 Keyword Rule 往往抓不到。
+
+流程：
+
+\[
+\boxed{
+TechnicalRequirements
+\rightarrow
+ParameterCombination
+\rightarrow
+MarketEvidence
+\rightarrow
+FunctionalGoal
+\rightarrow
+EquivalentPathAnalysis
+\rightarrow
+SemanticFindingCandidate
+}
+\]
+
+**中文业务释义：** 技术要求 → 参数组合 → 市场可满足性证据 → 真实功能目标 → 等效实现路径分析 → 形成语义型候选风险。
+
+这里：
+
+```text
+RuleEngine    # 中文：负责明显品牌、唯一授权、特定型号等明确规则
+
+LLMJudge    # 中文：理解参数组合与功能目标的关系
+
+MarketTool    # 中文：提供市场可替代产品 / 方案证据
+
+HumanExpert    # 中文：对专业技术必要性和竞争影响进行最终高风险复核
+```
+
+---
+
+# 六十八、一个完整例子：异常低价
+
+财库〔2026〕2号类确定性数值规则已经在 Stage 9 建模。
+
+Stage 11 的职责是正确分工：
+
+```text
+PolicyResolver    # 中文：确认项目时点适用的异常低价规则和采购文件配置阈值
+
+Calculator    # 中文：计算是否命中数值触发条件
+
+RuleEngine    # 中文：根据计算结果生成“需要启动审查”的程序状态
+
+LLMJudge    # 中文：不负责覆盖数值结果，可辅助整理供应商成本说明和市场理由
+
+EvidenceValidator    # 中文：检查成本说明、证明材料、市场证据和审查记录
+
+HumanCommittee    # 中文：评审委员会完成最终报价合理性判断
+```
+
+因此：
+
+\[
+\boxed{
+TriggerCalculator
+\neq
+FinalCommitteeDecision
+}
+\]
+
+**中文业务释义：** 异常低价计算器负责判断是否触发数值审查条件 ≠ 替代评审委员会形成最终报价合理性判断。
+
+---
+
+# 六十九、一个完整例子：合法政策优惠不能被误报为差别歧视
+
+例如：
+
+> 当前项目依法对符合条件的小微企业执行价格评审优惠。
+
+系统应：
+
+```text
+PolicyResolver    # 中文：确认政策、项目类型、供应商 / 制造商身份和具体比例
+
+Calculator    # 中文：计算政策价格调整
+
+RuleEngine    # 中文：确认是否存在政策执行错误
+
+LLMJudge    # 中文：仅在复杂适用事实 / 例外说明中辅助判断
+
+D01-D22CrossCheck    # 中文：避免把合法政策机制误报成采购人自行设置的规模歧视
+```
+
+所以：
+
+\[
+\boxed{
+AuthorizedPolicyDifference
+\neq
+PurchaserCreatedDiscrimination
+}
+\]
+
+**中文业务释义：** 有明确政策授权的差异化处理 ≠ 采购人自行设计的不合理差别歧视。
+
+---
+
+# 七十、Failure Handling
+## 组件失败时怎么办？
+
+不能：
+
+> 某个工具失败，就悄悄跳过。
+
+必须显式记录：
+
+```text
+RULE_ENGINE_FAILED    # 中文：规则引擎执行失败
+
+CALCULATOR_FAILED    # 中文：计算器执行失败
+
+POLICY_RESOLUTION_FAILED    # 中文：政策适用解析失败
+
+RAG_RETRIEVAL_FAILED    # 中文：法规 / 证据检索失败
+
+LLM_JUDGMENT_FAILED    # 中文：模型判断失败
+
+EVIDENCE_VALIDATION_FAILED    # 中文：证据验证失败
+
+HUMAN_QUEUE_FAILED    # 中文：人工复核任务未成功创建 / 流转
+```
+
+---
+
+# 七十一、核心心智模型 ㉘
+# `ComponentFailure` 不能被包装成“未发现风险”
+
+\[
+\boxed{
+ComponentFailure
+\neq
+CheckedNoFinding
+}
+\]
+
+**中文业务释义：** 某个关键组件失败 ≠ 可以输出“已检查未发现风险”。
+
+正确状态：
+
+> `INCOMPLETE_REVIEW`
+
+---
+
+# 七十二、Retry / Fallback
+## 降级策略必须保持语义安全
+
+例如：
+
+```text
+legal_rag_primary_failed    # 中文：主法规检索失败
+
+legal_rag_secondary_retry    # 中文：允许使用第二检索路径重试
+
+still_failed    # 中文：仍然无法获取可靠法源
+
+final_action = HUMAN_REVIEW_REQUIRED    # 中文：最终升级人工，不允许模型凭记忆补法源
+```
+
+---
+
+# 七十三、核心心智模型 ㉙
+# `Fallback` 不是“让 LLM 自己补齐”
+
+\[
+\boxed{
+SafeFallback
+\neq
+HallucinatedCompletion
+}
+\]
+
+**中文业务释义：** 安全降级 ≠ 工具失败以后让模型依靠记忆编造缺失的规则、证据或计算结果。
+
+---
+
+# 七十四、Engine Benchmark
+## Stage 11 应该测什么？
+
+`ProcurementComplianceEngine_V1` 至少测：
+
+```text
+routing_accuracy    # 中文：任务路由到正确组件的准确率
+
+rule_execution_accuracy    # 中文：确定性规则执行准确率
+
+calculator_accuracy    # 中文：确定性计算准确率
+
+policy_resolution_accuracy    # 中文：政策适用解析准确率
+
+rag_basis_retrieval_recall    # 中文：正确法源召回率
+
+semantic_judgment_accuracy    # 中文：语义相关性 / 等效性等判断准确率
+
+candidate_recall    # 中文：候选风险召回率
+
+evidence_validation_precision    # 中文：证据验证后正式发现项精确率
+
+false_positive_after_gate    # 中文：通过证据门后仍存在的误报率
+
+false_negative_critical_rules    # 中文：关键规则漏检率
+
+human_escalation_accuracy    # 中文：应转人工案件升级准确率
+
+abstention_accuracy    # 中文：应拒绝武断判断时的正确弃权率
+
+cross_domain_detection_recall    # 中文：跨资格 / 技术 / 评分 / 合同问题召回率
+
+coverage_accounting_accuracy    # 中文：NOT_CHECKED / CHECKED_NO_FINDING等覆盖状态准确率
+
+conflict_resolution_accuracy    # 中文：多组件冲突解析准确率
+
+audit_trace_completeness    # 中文：决策轨迹完整率
+
+reproducibility_rate    # 中文：相同输入和版本能否重放得到一致确定性结果
+
+component_failure_detection_recall    # 中文：组件失败被显式识别的召回率
+
+silent_failure_rate    # 中文：静默失败率，目标应尽可能接近0
+
+critical_slice_reliability    # 中文：D01-D22及高影响业务切片可靠性
+```
+
+---
+
+# 七十五、核心心智模型 ㉚
+# `ComponentAccuracy` 不等于 `SystemReliability`
+
+\[
+\boxed{
+ComponentAccuracy
+\neq
+EndToEndReliability
+}
+\]
+
+**中文业务释义：** 单个 LLM / Rule / RAG 准确率高 ≠ 整个合规系统端到端可靠；路由、证据、冲突、状态和人工升级同样会决定最终质量。
+
+---
+
+# 七十六、`ProcurementComplianceEngine_V1` 建议目录
+
+```text
+ProcurementComplianceEngine_V1/
+# 中文：政府采购混合合规引擎根目录
+
+├── router/
+│   # 中文：任务识别和组件路由
+│   ├── task_router.py    # 中文：任务路由器
+│   └── routing_policy.json    # 中文：路由和人工升级策略
+│
+├── rules/
+│   # 中文：确定性合规规则
+│   ├── D01_D22/    # 中文：附件9二十二项差别歧视规则
+│   ├── qualification/    # 中文：资格条件规则
+│   ├── technical/    # 中文：技术参数规则
+│   ├── scoring/    # 中文：评分规则
+│   ├── policy/    # 中文：政府采购政策前置规则
+│   └── competition/    # 中文：采购方式、竞争和异常低价规则
+│
+├── calculator/
+│   # 中文：确定性公式和金额、比例、期限计算
+│   ├── scoring.py    # 中文：评分计算
+│   ├── pricing.py    # 中文：价格和政策优惠计算
+│   ├── thresholds.py    # 中文：异常低价等阈值计算
+│   └── dates.py    # 中文：日期和期限计算
+│
+├── policy_resolver/
+│   # 中文：政策时点、地区、范围、例外和版本解析
+│   ├── resolver.py    # 中文：政策适用解析器
+│   └── snapshots/    # 中文：法规政策快照
+│
+├── legal_rag/
+│   # 中文：法规和政策依据检索接口，Stage12继续深化
+│   ├── retriever.py    # 中文：法源检索器
+│   └── citation_validator.py    # 中文：法源引用验证
+│
+├── llm_judge/
+│   # 中文：语义关系判断
+│   ├── task_schemas/    # 中文：不同判断任务的结构化Schema
+│   ├── prompts/    # 中文：受控提示模板
+│   └── judge.py    # 中文：LLM判断器
+│
+├── evidence/
+│   # 中文：原文、法源、市场证据验证
+│   ├── validator.py    # 中文：证据验证器
+│   └── gate_policy.json    # 中文：证据门规则
+│
+├── conflict/
+│   # 中文：规则、计算、RAG、LLM之间的冲突解析
+│   ├── resolver.py    # 中文：冲突解析器
+│   └── precedence_policy.json    # 中文：组件职责和优先边界
+│
+├── human_review/
+│   # 中文：人工复核任务和结果
+│   ├── queue.py    # 中文：人工复核队列
+│   └── review_schema.json    # 中文：人工复核数据结构
+│
+├── state/
+│   # 中文：项目、审查域、规则覆盖和待办状态
+│   ├── project_state.json    # 中文：项目审查状态
+│   └── finding_state.json    # 中文：发现项状态机
+│
+├── audit/
+│   # 中文：决策轨迹和执行日志
+│   ├── decision_trace.json    # 中文：决策轨迹Schema
+│   └── tool_trace.json    # 中文：工具执行轨迹
+│
+├── tests/
+│   # 中文：端到端合规引擎测试集
+│   ├── deterministic/    # 中文：确定性规则与计算
+│   ├── semantic/    # 中文：语义判断
+│   ├── conflict/    # 中文：组件冲突
+│   ├── human_escalation/    # 中文：人工升级
+│   ├── cross_domain/    # 中文：跨域一致性
+│   └── failure_modes/    # 中文：工具失败和安全降级
+│
+└── manifest.json
+    # 中文：组件版本、规则版本、模型版本、政策快照和测试状态
+```
+
+---
+
+# 七十七、Engine Task Schema 第一版
+
+```text
+task_id    # 中文：合规子任务标识
+
+project_id    # 中文：采购项目
+
+review_domain    # 中文：资格 / 技术 / 评分 / 政策 / 竞争 / 合同
+
+task_type    # 中文：规则 / 计算 / 法规检索 / 语义判断 / 证据验证 / 人工复核
+
+source_clause_ids    # 中文：来源条款
+
+source_requirement_ids    # 中文：来源独立要求
+
+candidate_rule_ids    # 中文：候选规则
+
+required_fact_ids    # 中文：需要的结构化事实
+
+required_policy_ids    # 中文：需要的政策规则
+
+required_evidence_types    # 中文：需要的证据类型
+
+preferred_component    # 中文：优先处理组件
+
+fallback_component    # 中文：安全降级组件
+
+risk_level    # 中文：任务潜在影响
+
+automatic_decision_allowed    # 中文：治理策略是否允许自动形成结论
+
+human_review_policy    # 中文：人工复核触发策略
+
+task_state    # 中文：任务执行状态
+```
+
+---
+
+# 七十八、Finding State Schema 第一版
+
+```text
+finding_id    # 中文：发现项标识
+
+candidate_created_at    # 中文：候选发现产生时间
+
+candidate_source    # 中文：规则 / LLM / 跨域检查等候选来源
+
+candidate_rule_ids    # 中文：候选规则
+
+evidence_status    # 中文：证据收集和验证状态
+
+policy_applicability_status    # 中文：法规政策适用状态
+
+exception_check_status    # 中文：例外检查状态
+
+conflict_status    # 中文：组件 / 证据冲突状态
+
+calibrated_confidence    # 中文：校准置信度
+
+risk_level    # 中文：业务风险影响等级
+
+human_review_required    # 中文：是否必须人工复核
+
+human_review_status    # 中文：人工复核进度
+
+final_state    # 中文：支持 / 排除 / 无法判断 / 已整改等最终状态
+
+audit_trace_id    # 中文：完整决策轨迹
+```
+
+---
+
+# 七十九、本阶段最重要的 30 个核心心智模型
+
+> **心智模型 ①：`OneModel ≠ ComplianceSystem`。单个大语言模型不是政府采购合规系统。**
+
+> **心智模型 ②：`ProblemType → BestDecisionComponent`。问题类型决定应该交给规则、计算器、RAG、LLM还是人工。**
+
+> **心智模型 ③：`MissingEvidence ≠ NoFinding`。证据缺失不能被解释成没有风险。**
+
+> **心智模型 ④：`TaskRouting ≠ ComplianceJudgment`。路由决定“谁处理”，不是直接下结论。**
+
+> **心智模型 ⑤：`RuleEngine ≠ KeywordEngine`。规则引擎处理结构化条件，不是关键词报警器。**
+
+> **心智模型 ⑥：`DeterministicArithmetic ⇒ CalculatorFirst`。确定性算术优先交给计算器。**
+
+> **心智模型 ⑦：`Calculator ≠ PolicyResolver`。算术正确不代表政策适用性正确。**
+
+> **心智模型 ⑧：`PolicyTextFound ≠ ApplicablePolicy`。检索到政策文本不代表当前项目适用。**
+
+> **心智模型 ⑨：`RetrievedLegalText ≠ LegalApplicabilityDecision`。法规RAG召回不是最终法律适用结论。**
+
+> **心智模型 ⑩：`LLMRole = SemanticRelationJudgment ≠ RuleInvention`。LLM判断语义关系，不创造规则。**
+
+> **心智模型 ⑪：`Prompt ≠ PolicyRegistry`。Prompt不能替代可版本化法规规则库。**
+
+> **心智模型 ⑫：`CandidateFinding ≠ SupportedFinding`。候选风险必须经过证据验证才能升级。**
+
+> **心智模型 ⑬：`NoEvidence ⇒ NoSupportedFinding`。没有证据不能形成正式风险发现。**
+
+> **心智模型 ⑭：`ConfidenceScore ≠ DecisionAuthority`。置信度不能决定组件权力。**
+
+> **心智模型 ⑮：`ValidatedDeterministicResult ⇒ LLMCannotOverride`。输入和规则都确认后的确定性结果不能被LLM凭感觉覆盖。**
+
+> **心智模型 ⑯：`ComponentConflict ≠ MajorityVote`。组件冲突不能靠投票解决。**
+
+> **心智模型 ⑰：`HumanReview ≠ SystemFailure`。人工复核是高风险系统的正式能力。**
+
+> **心智模型 ⑱：`Uncertain ≠ Compliant`。不确定不能自动当成合规。**
+
+> **心智模型 ⑲：`HighConfidence ≠ NoHumanReviewNeeded`。高置信度不自动取消高影响事项人工复核。**
+
+> **心智模型 ⑳：`ClauseByClauseReview ≠ SystemLevelComplianceReview`。逐条检查不能替代跨章节、跨文件、跨版本一致性检查。**
+
+> **心智模型 ㉑：`NotDetected ≠ CheckedNoFinding`。没检测到和完成检查未发现是两种状态。**
+
+> **心智模型 ㉒：`FindingCount ≠ ReviewCoverage`。发现项数量不代表规则覆盖程度。**
+
+> **心智模型 ㉓：`FinalAnswer ≠ AuditTrace`。最终报告不是完整决策轨迹。**
+
+> **心智模型 ㉔：`FreeTextReasoning ≠ MachineUsableDecision`。自由文本解释不能代替结构化决策对象。**
+
+> **心智模型 ㉕：`ModelConfidence ≠ LegalCertainty`。模型置信度不是法律确定性。**
+
+> **心智模型 ㉖：`ReliableCompliance = CanDecide + CanAbstain + CanEscalate`。可靠系统既能判断，也能弃权并升级人工。**
+
+> **心智模型 ㉗：`ToolResult = Value + Source + Version + Trace`。工具结果必须有来源、版本和轨迹。**
+
+> **心智模型 ㉘：`ComplianceWorkflow ⇒ PersistentState`。完整项目审查需要持久状态。**
+
+> **心智模型 ㉙：`ComponentFailure ≠ CheckedNoFinding`。组件失败不能包装成“未发现风险”。**
+
+> **心智模型 ㉚：`ComponentAccuracy ≠ EndToEndReliability`。单组件准确不代表系统端到端可靠。**
+
+---
+
+# 八十、把整个 Hybrid Compliance Engine 压成一张工程图
+
+```text
+ProcurementComplianceDataset_V1
+# 中文：经过版本、结构、证据和质量门处理的采购事实底座
+↓
+Data Quality Gate
+# 中文：确认当前数据允许完整审查还是只能部分审查
+↓
+Task Router + Clause Classifier
+# 中文：识别业务域、问题类型和最合适处理组件
+↓
+┌────────────────────────────────────────────────────────┐
+│ Rule Engine                                            │
+│ # 中文：D01-D22、资格、评分、政策前提等确定性规则      │
+│                                                       │
+│ Calculator                                             │
+│ # 中文：金额、比例、价格、评分、期限等确定性计算        │
+│                                                       │
+│ Policy Resolver                                        │
+│ # 中文：政策时点、地区、范围、例外和版本解析            │
+│                                                       │
+│ Legal RAG                                              │
+│ # 中文：检索当前候选法源和条文上下文                    │
+│                                                       │
+│ LLM Judge                                              │
+│ # 中文：业务相关性、必要性、等效性等语义关系判断        │
+└────────────────────────────────────────────────────────┘
+↓
+Candidate Findings
+# 中文：高召回发现候选风险
+↓
+Evidence Validator
+# 中文：验证采购原文、法源、规则适用、例外和相反证据
+↓
+Conflict Resolver
+# 中文：处理规则、RAG、LLM、计算和证据之间的冲突
+↓
+Risk + Confidence + Governance Router
+# 中文：根据业务影响、校准置信度和治理策略决定自动处理或人工复核
+↓
+Human Review
+# 中文：边界、高风险和证据冲突案件人工专业确认
+↓
+Supported Finding / Checked No Finding / Abstain
+# 中文：证据支持风险 / 已检查未发现 / 证据不足拒绝武断判断
+↓
+Audit Trace + Coverage Matrix
+# 中文：保存完整决策轨迹和D01-D22等规则覆盖状态
+↓
+ProcurementComplianceEngine_V1
+# 中文：形成可计算、可解释、可追溯、可人工治理的政府采购混合合规引擎
+```
+
+---
+
+# 八十一、脑中最后只留一句
+
+> **政府采购合规引擎的本质，不是让一个大语言模型“判断整份采购文件是否合法”，而是先把每一个问题拆成确定性规则、确定性计算、法规政策适用、法规检索、语义关系判断、证据验证和人工裁决等不同任务，再让最合适的组件承担自己擅长且权限明确的一部分；任何正式风险结论都必须经过适用规则、原文证据、例外检查和审计轨迹验证，而任何数据缺失、组件失败、政策冲突或高风险不确定性都必须显式弃权或升级人工。**
+
+---
+
+# 第十一课 · 第 11 阶段掌握测试
+
+现在不回看正文，你应该能够解释：
+
+```text
+One Model 为什么不等于 Compliance System？
+# 中文：为什么不能把整份采购文件直接交给LLM然后相信一个总答案？
+
+Problem Type 为什么要决定 Best Decision Component？
+# 中文：规则、Calculator、RAG、LLM、人工分别擅长什么？
+
+Data Quality Gate 为什么必须在引擎最前面？
+# 中文：PARTIAL_REVIEW_ONLY 为什么不能输出“未发现风险”？
+
+Missing Evidence 为什么不等于 No Finding？
+# 中文：证据不足和已检查无风险怎样区分？
+
+Task Routing 为什么不等于 Compliance Judgment？
+# 中文：路由器为什么不能偷偷成为裁判？
+
+Rule Engine 为什么不等于 Keyword Engine？
+# 中文：为什么“本地业绩”关键词可能出现在要求、禁止、示例或澄清中？
+
+Rule Engine 为什么应该吃 Structured Fact，而不是整份Raw Text？
+# 中文：Requirement、Business Role、Operator、Evidence怎样帮助规则可靠执行？
+
+Calculator 为什么必须和 Policy Resolver 分开？
+# 中文：算术正确和政策适用正确为什么是两件事？
+
+Policy Text Found 为什么不等于 Applicable Policy？
+# 中文：为什么时点、地区、范围、例外、替代关系还必须继续解析？
+
+Legal RAG 在系统里的职责到底是什么？
+# 中文：它为什么负责找法源，而不是直接成为最终裁判？
+
+LLM Judge 最适合判断什么？
+# 中文：业务相关性、技术必要性、等效路径、业绩相似性为什么需要语义模型？
+
+LLM 为什么不能创造新的Rule？
+# 中文：Semantic Relation Judgment和Rule Invention的边界在哪里？
+
+Prompt 为什么不能替代 Policy Registry？
+# 中文：为什么现行规则必须版本化，而不能靠System Prompt记忆？
+
+Candidate Finding 为什么不等于 Supported Finding？
+# 中文：高召回候选发现为什么必须经过证据验证？
+
+Evidence Validator 要检查哪几层？
+# 中文：采购原文、版本、业务角色、法源、例外和相反证据怎样共同进入证据门？
+
+No Evidence 为什么意味着 No Supported Finding？
+# 中文：为什么无证据不能形成正式风险结论，但也不能自动判合规？
+
+Confidence Score 为什么不等于 Decision Authority？
+# 中文：LLM高置信度为什么不能覆盖确定性Calculator结果？
+
+Validated Deterministic Result 为什么不能被LLM直接Override？
+# 中文：什么时候确定性结果具有稳定优先边界？
+
+Component Conflict 为什么不能Majority Vote？
+# 中文：Rule、RAG、Calculator、LLM的结果为什么不能简单投票？
+
+Human Review 为什么不等于 System Failure？
+# 中文：高风险合规系统为什么必须把人工复核设计成正式组件？
+
+Uncertain 为什么既不等于 Compliant，也不等于 Violation？
+# 中文：什么时候应该进入HUMAN_REVIEW_REQUIRED？
+
+High Confidence 为什么不等于 No Human Review Needed？
+# 中文：风险影响和组织治理为什么也决定自动化程度？
+
+为什么需要Canonical Requirement Graph？
+# 中文：同一条件出现在资格、评分、合同里怎样做跨域一致性检查？
+
+Clause-by-Clause Review 为什么不等于 System-level Review？
+# 中文：哪些风险只会在跨章节、跨文件、跨版本时出现？
+
+Not Detected 为什么不等于 Checked No Finding？
+# 中文：系统没发现和系统完整检查未发现为什么必须分状态？
+
+Finding Count 为什么不等于 Review Coverage？
+# 中文：为什么最终还需要D01-D22 Coverage Matrix？
+
+Final Answer 为什么不等于 Audit Trace？
+# 中文：一个风险结论怎样回放到事实、法源、计算、模型、证据和人工步骤？
+
+Free-text Reasoning 为什么不等于 Machine-usable Decision？
+# 中文：为什么LLM输出必须进入结构化Schema？
+
+Model Confidence 为什么不等于 Legal Certainty？
+# 中文：置信度真正应该用于什么？
+
+Can Abstain 为什么是能力？
+# 中文：可靠系统为什么必须能拒绝在证据不足时武断下结论？
+
+Tool Result 为什么必须包含Value + Source + Version + Trace？
+# 中文：为什么工具输出要可复现和可审计？
+
+为什么Compliance Workflow需要Persistent State？
+# 中文：一个完整项目为什么不能一次Prompt做完？
+
+为什么一个项目建议至少经过Deterministic、Policy/RAG、Semantic、Cross-domain、Evidence/Human五轮？
+# 中文：每一轮分别解决什么错误来源？
+
+Component Failure 为什么不能包装成 Checked No Finding？
+# 中文：工具失败后安全降级应该怎样做？
+
+ProcurementComplianceEngine_V1 最核心的职责是什么？
+# 中文：它怎样把前10个阶段的规则、数据、政策、证据和模型真正组合起来？
+```
+
+如果这些能够完整解释：
+
+\[
+\boxed{
+第十一课第11阶段真正掌握
+}
+\]
+
+**中文业务释义：** 如果能够清楚说明一个政府采购合规问题应该由哪个组件负责、每个组件的权限边界在哪里、候选风险怎样经过证据门升级、冲突和不确定性怎样进入人工、最终结论怎样留下审计轨迹，就说明真正掌握了本阶段。
+
+---
+
+# 下一阶段：第十一课 · 第 12 阶段
+# 法规 RAG 与 Temporal / Jurisdiction Reasoning
+## 怎么保证引用的是正确法规、正确条文、正确版本、正确地区、正确生效时间？
+
+下一阶段将正式建立：
+
+# `ProcurementLegalRAG_V1`
+
+最重要的边界：
+
+\[
+\boxed{
+RelevantLaw
+\neq
+ApplicableLaw
+}
+\]
+
+**中文业务释义：** 语义上相关的法规政策 ≠ 当前采购项目真正适用的法规政策；下一阶段要把法规版本、效力状态、生效时间、地区层级、上位规则、例外和引用证据完整建模。

@@ -1,0 +1,653 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第9阶段：Calibration、Abstention、OOD 与 Risk-Coverage</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>ConfidenceScore ≠ ProbabilityOfBeingCorrect。置信分必须通过真实数据校准。</li><li>Accuracy ≠ Calibration。答得准和知道自己有多确定是两个能力。</li><li>ReliableAI = AnswerCorrectly + AbstainAppropriately。合理拒答是可靠性的一部分。</li></ul></div><h1 id="第九课-第-9-阶段">第九课 · 第 9 阶段</h1>
+<h1
+id="calibrationabstentionood-与-risk-coverage-1">Calibration、Abstention、OOD
+与 Risk-Coverage</h1>
+<h2
+id="模型什么时候应该说我不知道一个-0.9-的置信度真的代表-90-正确吗怎样把不确定性变成可控制的业务风险">模型什么时候应该说“我不知道”？一个
+0.9 的置信度真的代表 90%
+正确吗？怎样把不确定性变成可控制的业务风险？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>ConfidenceScore ≠
+ProbabilityOfBeingCorrect。置信分必须通过真实数据校准。</strong></li>
+<li><strong>Accuracy ≠
+Calibration。答得准和知道自己有多确定是两个能力。</strong></li>
+<li><strong>ReliableAI = AnswerCorrectly +
+AbstainAppropriately。合理拒答是可靠性的一部分。</strong></li>
+<li><strong>AccuracyWithoutCoverage 可能误导，拒答系统必须同时报告
+Coverage。</strong></li>
+<li><strong>RiskCoverage 是选择性预测的核心权衡。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Calibration</code></td>
+<td>校准：使模型置信度更接近实际正确率</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>OOD</code></td>
+<td>分布外数据：明显偏离训练/验证分布的新输入</td>
+</tr>
+<tr class="even">
+<td><code>Threshold</code></td>
+<td>阈值：把连续分数转成业务动作的决策门槛</td>
+</tr>
+<tr class="odd">
+<td><code>Accuracy</code></td>
+<td>准确率：全部样本中判断正确的比例</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>一个系统最危险的状态，不一定是：</p>
+<blockquote>
+<p>经常答错。</p>
+</blockquote>
+<p>而可能是：</p>
+<blockquote>
+<p><strong>答错时仍然非常自信。</strong></p>
+</blockquote>
+<p>所以第九课走到这里，必须正式处理：</p>
+<h1 id="calibration">Calibration</h1>
+<h2 id="置信度校准">置信度校准</h2>
+<h1 id="abstention">Abstention</h1>
+<h2 id="拒答-暂不判断">拒答 / 暂不判断</h2>
+<h1 id="ood">OOD</h1>
+<h2 id="分布外输入">分布外输入</h2>
+<p>本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>O</mi><mi>f</mi><mi>B</mi><mi>e</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ConfidenceScore
+\neq
+ProbabilityOfBeingCorrect
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementcalibrationabstentionpolicy_v0.1-1"><code>ProcurementCalibrationAbstentionPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一calibration-到底在校准什么">一、Calibration
+到底在校准什么？</h1>
+<p>假设模型对 100 个样本都给：</p>
+<pre class="text"><code>confidence = 0.8</code></pre>
+<p>如果这些样本中大约：</p>
+<pre class="text"><code>80%</code></pre>
+<p>真的正确，</p>
+<p>我们可以说：</p>
+<blockquote>
+<p>在这个区间里校准较好。</p>
+</blockquote>
+<p>如果只有：</p>
+<pre class="text"><code>50%</code></pre>
+<p>正确，</p>
+<p>模型就：</p>
+<h1 id="overconfident">Overconfident</h1>
+<h2 id="过度自信">过度自信</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>与</mi><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mi>的</mi><mi>一</mi><mi>致</mi><mi>程</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Calibration
+=
+Confidence
+与
+ObservedAccuracy
+的一致程度
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二核心心智模型-①-6">二、核心心智模型 ①</h1>
+<h1 id="confidence-必须被经验数据验证"><code>Confidence</code>
+必须被经验数据验证</h1>
+<p>模型自己输出：</p>
+<pre class="text"><code>0.95</code></pre>
+<p>不代表客观上：</p>
+<blockquote>
+<p>95% 正确。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>l</mi><mi>f</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>需</mi><mi>要</mi><mi>E</mi><mi>m</mi><mi>p</mi><mi>i</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SelfReportedConfidence
+需要
+EmpiricalCalibration
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三reliability-diagram怎样直观看校准">三、Reliability
+Diagram：怎样直观看校准？</h1>
+<p>把预测置信度分桶：</p>
+<pre class="text"><code>0.5~0.6
+0.6~0.7
+0.7~0.8
+0.8~0.9
+0.9~1.0</code></pre>
+<p>每个桶比较：</p>
+<pre class="text"><code>平均Confidence
+vs
+真实Accuracy</code></pre>
+<p>画出来就是：</p>
+<h1 id="reliability-diagram">Reliability Diagram</h1>
+<h2 id="可靠性图">可靠性图</h2>
+<p>理想情况：</p>
+<blockquote>
+<p>接近对角线。</p>
+</blockquote>
+<hr />
+<h1 id="四eceexpected-calibration-error">四、ECE：Expected Calibration
+Error</h1>
+<h1 id="ece">ECE</h1>
+<h2 id="期望校准误差">期望校准误差</h2>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>C</mi><mi>E</mi><mo>=</mo><munder><mo>∑</mo><mi>b</mi></munder><mfrac><mrow><mo stretchy="true" form="prefix">|</mo><msub><mi>B</mi><mi>b</mi></msub><mo stretchy="true" form="postfix">|</mo></mrow><mi>N</mi></mfrac><mrow><mo stretchy="true" form="prefix">|</mo><mi>a</mi><mi>c</mi><mi>c</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>B</mi><mi>b</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>c</mi><mi>o</mi><mi>n</mi><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>B</mi><mi>b</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">|</mo></mrow></mrow><annotation encoding="application/x-tex">
+ECE
+=
+\sum_b
+\frac{|B_b|}{N}
+\left|
+acc(B_b)-conf(B_b)
+\right|
+</annotation></semantics></math></p>
+<p>它衡量：</p>
+<blockquote>
+<p>各置信度区间的预测置信与真实正确率差距。</p>
+</blockquote>
+<p>ECE 越低：</p>
+<blockquote>
+<p>通常表示校准更好。</p>
+</blockquote>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>C</mi><mi>E</mi><mi>依</mi><mi>赖</mi><mi>B</mi><mi>i</mi><mi>n</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ECE
+依赖
+Binning
+}
+</annotation></semantics></math></p>
+<p>所以必须记录分桶策略。</p>
+<hr />
+<h1 id="五brier-score概率预测也可以看平方误差">五、Brier
+Score：概率预测也可以看平方误差</h1>
+<p>二分类时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>r</mi><mo>=</mo><mfrac><mn>1</mn><mi>N</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><msup><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>p</mi><mi>i</mi></msub><mo>−</mo><msub><mi>y</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+Brier
+=
+\frac{1}{N}
+\sum_i
+(p_i-y_i)^2
+</annotation></semantics></math></p>
+<p>它同时惩罚：</p>
+<blockquote>
+<p>错误概率和过度自信。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>不</mi><mi>止</mi><mi>一</mi><mi>个</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CalibrationMetric
+不止一个
+}
+</annotation></semantics></math></p>
+<p>不要把 ECE 当唯一真理。</p>
+<hr />
+<h1 id="六核心心智模型-②-2">六、核心心智模型 ②</h1>
+<h1 id="accuracy-高不代表-calibration-好"><code>Accuracy</code> 高不代表
+<code>Calibration</code> 好</h1>
+<p>一个模型可能：</p>
+<pre class="text"><code>Accuracy = 90%</code></pre>
+<p>但每次都输出：</p>
+<pre class="text"><code>confidence = 0.99</code></pre>
+<p>它仍然可能：</p>
+<blockquote>
+<p>严重过度自信。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Discrimination
+\neq
+Calibration
+}
+</annotation></semantics></math></p>
+<p>会不会分对，</p>
+<p>和知不知道自己有多确定，</p>
+<p>是两个能力。</p>
+<hr />
+<h1
+id="七abstention为什么拒答是一种能力">七、Abstention：为什么拒答是一种能力？</h1>
+<p>如果模型不确定，</p>
+<p>可以输出：</p>
+<pre class="text"><code>当前证据不足，建议人工复核</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>硬猜。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="abstention-1">Abstention</h1>
+<h2 id="拒答-暂不判断-1">拒答 / 暂不判断</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>I</mi><mo>=</mo><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>l</mi><mi>y</mi><mo>+</mo><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableAI
+=
+AnswerCorrectly
++
+AbstainAppropriately
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八abstention-threshold什么时候拒答">八、Abstention
+Threshold：什么时候拒答？</h1>
+<p>例如：</p>
+<pre class="text"><code>confidence &lt; 0.65
+→ abstain</code></pre>
+<p>但阈值不能拍脑袋。</p>
+<p>应该在 Validation 上根据：</p>
+<pre class="text"><code>风险成本
+人工复核容量
+目标Coverage
+错误容忍度</code></pre>
+<p>选择。</p>
+<hr />
+<h1
+id="九coverage系统到底回答多少问题">九、Coverage：系统到底回答多少问题？</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>=</mo><mfrac><mrow><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>I</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>s</mi></mrow><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>I</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>s</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Coverage
+=
+\frac{AnsweredItems}{TotalItems}
+</annotation></semantics></math></p>
+<p>如果系统：</p>
+<blockquote>
+<p>所有难题都拒答，</p>
+</blockquote>
+<p>准确率可能非常高。</p>
+<p>但 Coverage 很低。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>可</mi><mi>能</mi><mi>误</mi><mi>导</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AccuracyWithoutCoverage
+可能误导
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十risk-coverage-curve">十、Risk-Coverage Curve</h1>
+<p>随着 Abstention Threshold 调整：</p>
+<pre class="text"><code>Coverage下降
+但错误风险也可能下降</code></pre>
+<p>于是可以画：</p>
+<h1 id="risk-coverage-curve">Risk-Coverage Curve</h1>
+<h2 id="风险覆盖率曲线">风险—覆盖率曲线</h2>
+<p>它回答：</p>
+<blockquote>
+<p>如果只让系统回答最有把握的 80% 样本，剩余错误率是多少？</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>=</mo><mi>S</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>e</mi><mi>o</mi><mi>f</mi><mi>f</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RiskCoverage
+=
+SelectivePredictionTradeoff
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一核心心智模型-③">十一、核心心智模型 ③</h1>
+<h1 id="bestmodel-可能取决于目标-coverage"><code>BestModel</code>
+可能取决于目标 Coverage</h1>
+<p>模型 A：</p>
+<blockquote>
+<p>100% Coverage 时更好。</p>
+</blockquote>
+<p>模型 B：</p>
+<blockquote>
+<p>只回答最有把握的 70% 时更可靠。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>R</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>可</mi><mi>能</mi><mi>随</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>变</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelRanking
+可能随
+Coverage
+变化
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二selective-risk只在已回答样本上看风险">十二、Selective
+Risk：只在已回答样本上看风险</h1>
+<p>可以定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>=</mo><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> on answered items</mtext></mrow></mrow><annotation encoding="application/x-tex">
+SelectiveRisk
+=
+ErrorRate
+\text{ on answered items}
+</annotation></semantics></math></p>
+<p>随着 Coverage 改变，</p>
+<p>Selective Risk 也改变。</p>
+<p>这对于：</p>
+<blockquote>
+<p>人机协同</p>
+</blockquote>
+<p>尤其重要。</p>
+<hr />
+<h1 id="十三ood什么是-out-of-distribution">十三、OOD：什么是
+Out-of-Distribution？</h1>
+<h1 id="ood-1">OOD</h1>
+<h2 id="分布外输入-1">分布外输入</h2>
+<p>例如训练和 Benchmark 主要是：</p>
+<pre class="text"><code>政府采购文本</code></pre>
+<p>突然输入：</p>
+<pre class="text"><code>医学诊断
+证券交易
+完全不同语言
+极端新格式</code></pre>
+<p>系统可能仍然给出：</p>
+<blockquote>
+<p>高置信回答。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>不</mi><mi>能</mi><mi>直</mi><mi>接</mi><mi>代</mi><mi>表</mi><mi>O</mi><mi>O</mi><mi>D</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InDistributionConfidence
+不能直接代表
+OODReliability
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十四核心心智模型-④">十四、核心心智模型 ④</h1>
+<h1 id="lowconfidence-和-ood-不是同一个概念"><code>LowConfidence</code>
+和 <code>OOD</code> 不是同一个概念</h1>
+<p>有些 OOD 输入：</p>
+<blockquote>
+<p>模型仍然非常自信。</p>
+</blockquote>
+<p>有些 In-Distribution 难题：</p>
+<blockquote>
+<p>模型置信度很低。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>O</mi><mi>D</mi><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OODDetection
+\neq
+ConfidenceThresholdOnly
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五ood-benchmark-应该包含什么">十五、OOD Benchmark
+应该包含什么？</h1>
+<p>可以构造：</p>
+<pre class="text"><code>Near-OOD
+相近但超出训练边界
+
+Far-OOD
+完全不同领域
+
+Novel Format
+新文档格式
+
+Novel Policy Pattern
+新型规则表达
+
+Adversarial Input
+刻意诱导</code></pre>
+<p>并评：</p>
+<pre class="text"><code>是否识别异常
+是否降低置信
+是否拒答
+是否转人工</code></pre>
+<hr />
+<h1 id="十六abstention-的错误也要分类">十六、Abstention
+的错误也要分类</h1>
+<h3 id="over-abstention">Over-Abstention</h3>
+<p>过度拒答</p>
+<blockquote>
+<p>本来能答，却总拒答。</p>
+</blockquote>
+<h3 id="under-abstention">Under-Abstention</h3>
+<p>拒答不足</p>
+<blockquote>
+<p>明明没把握还强答。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>A</mi><mi>v</mi><mi>o</mi><mi>i</mi><mi>d</mi><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>+</mo><mi>A</mi><mi>v</mi><mi>o</mi><mi>i</mi><mi>d</mi><mi>U</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AbstentionQuality
+=
+AvoidOverAbstain
++
+AvoidUnderAbstain
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十七核心心智模型-⑤">十七、核心心智模型 ⑤</h1>
+<h1
+id="alwaysanswer-和-alwaysabstain-都不是可靠系统"><code>AlwaysAnswer</code>
+和 <code>AlwaysAbstain</code> 都不是可靠系统</h1>
+<p>真正目标是：</p>
+<blockquote>
+<p>在错误成本和人工成本之间找到合适 Operating Point。</p>
+</blockquote>
+<hr />
+<h1 id="十八人机协同abstain-以后发生什么">十八、人机协同：Abstain
+以后发生什么？</h1>
+<p>拒答不是终点。</p>
+<p>应该进入：</p>
+<pre class="text"><code>Human Review
+人工复核
+
+Additional Retrieval
+补充检索
+
+Ask User
+请求补充信息
+
+Escalation
+升级处理</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>R</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Abstention
+=
+RoutingDecision
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<blockquote>
+<p>“模型失败”。</p>
+</blockquote>
+<hr />
+<h1
+id="十九calibration-by-slice总体校准好不代表每个-slice-都好">十九、Calibration
+by Slice：总体校准好，不代表每个 Slice 都好</h1>
+<p>可能：</p>
+<pre class="text"><code>总体ECE很低</code></pre>
+<p>但：</p>
+<pre class="text"><code>医疗场景严重过度自信
+OCR差样本严重过度自信</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>也</mi><mi>需</mi><mi>要</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Calibration
+也需要
+SliceEvaluation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十核心心智模型-⑥">二十、核心心智模型 ⑥</h1>
+<h1
+id="wellcalibratedoverall-不等于-wellcalibratedeverywhere"><code>WellCalibratedOverall</code>
+不等于 <code>WellCalibratedEverywhere</code></h1>
+<p>这和前一阶段完全衔接。</p>
+<p>关键高风险 Slice：</p>
+<blockquote>
+<p>需要单独看 Calibration。</p>
+</blockquote>
+<hr />
+<h1 id="二十一threshold-版本化">二十一、Threshold 版本化</h1>
+<p>一旦上线使用：</p>
+<pre class="text"><code>abstain_threshold = 0.67</code></pre>
+<p>它就是系统行为的一部分。</p>
+<p>必须记录：</p>
+<pre class="text"><code>threshold_version
+selection_dataset
+objective
+effective_date</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Threshold
+=
+ProductionPolicy
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十二本阶段正式工程产物-2">二十二、本阶段正式工程产物</h1>
+<h1
+id="procurementcalibrationabstentionpolicy_v0.1-2"><code>ProcurementCalibrationAbstentionPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>calibration_policy_version
+
+confidence_source
+
+calibration_dataset
+
+reliability_diagram
+
+ece_policy
+
+brier_score_policy
+
+binning_policy
+
+abstention_enabled
+
+abstention_threshold
+
+threshold_selection_policy
+
+coverage_metric
+
+selective_risk_metric
+
+risk_coverage_curve
+
+over_abstention_metric
+
+under_abstention_metric
+
+ood_taxonomy
+
+near_ood_set
+
+far_ood_set
+
+ood_detection_policy
+
+human_escalation_policy
+
+slice_calibration
+
+release_gate</code></pre>
+<hr />
+<h1 id="二十三本阶段最重要的-9-个核心心智模型-2">二十三、本阶段最重要的
+9 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>ConfidenceScore ≠ ProbabilityOfBeingCorrect</code>。置信分必须通过真实数据校准。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>Accuracy ≠ Calibration</code>。答得准和知道自己有多确定是两个能力。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>ReliableAI = AnswerCorrectly + AbstainAppropriately</code>。合理拒答是可靠性的一部分。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ④：<code>AccuracyWithoutCoverage</code>
+可能误导，拒答系统必须同时报告 Coverage。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑤：<code>RiskCoverage</code>
+是选择性预测的核心权衡。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>OODDetection ≠ ConfidenceThresholdOnly</code>。分布外输入不一定低置信。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>AlwaysAnswer</code> 和
+<code>AlwaysAbstain</code> 都不是好策略。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>Abstention = RoutingDecision</code>。拒答应该进入人工、补检索或补信息流程。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑨：<code>Calibration</code> 也必须做 Slice
+Evaluation，关键场景不能被总体校准掩盖。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四下一阶段第九课-第-10-阶段">二十四、下一阶段：第九课 · 第
+10 阶段</h1>
+<h1
+id="benchmark-leakagecontaminationfirewall-与-test-governance">Benchmark
+Leakage、Contamination、Firewall 与 Test Governance</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>E</mi><mi>x</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>D</mi><mi>u</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoExactDuplicate
+\neq
+NoContamination
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementbenchmarkfirewallpolicy_v0.1"><code>ProcurementBenchmarkFirewallPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

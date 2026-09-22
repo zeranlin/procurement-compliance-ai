@@ -1,0 +1,2808 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第1阶段：Task Schema 与数据单元设计</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第1阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>文件 ≠ 数据样本</li><li>Schema = 我们对“一个样本是什么”的正式契约</li><li>先定义任务，再定义样本，再开始收数据</li></ul></div><h1 id="第四课-第-1-阶段task-schema-与数据单元设计">第四课 · 第 1
+阶段：Task Schema 与数据单元设计</h1>
+<h2
+id="为什么先收集-10-万份采购文件可能从第一天就把整个数据工程做错">为什么“先收集
+10 万份采购文件”可能从第一天就把整个数据工程做错？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>文件 ≠ 数据样本</strong></li>
+<li><strong>Schema = 我们对“一个样本是什么”的正式契约</strong></li>
+<li><strong>先定义任务，再定义样本，再开始收数据</strong></li>
+<li><strong>一个原始采购文件可以产生很多不同任务的数据</strong></li>
+<li><strong>Input、Label、Evidence、Metadata 必须分清楚</strong></li>
+<li><strong>数据最重要的不是“多少条”，
+而是每一条到底代表什么</strong></li>
+<li><strong>数据最重要的不是“多少条”，</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="even">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+<tr class="odd">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="even">
+<td><code>Hard Negative</code></td>
+<td>高难负例：表面像风险但正确结论不应判风险</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="odd">
+<td><code>Raw Document</code></td>
+<td>原始文档：未经结构化处理的采购文件源材料</td>
+</tr>
+<tr class="even">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第三课结束的时候，我们已经拥有了一件很重要的东西：</p>
+<pre class="text"><code>可运行的基础模型
+        ↓
+可以做Baseline
+        ↓
+可以开始发现模型错误</code></pre>
+<p>从第四课开始，我们要处理另一个世界：</p>
+<h1 id="data">Data</h1>
+<p>很多团队第一次做行业大模型，会马上开始：</p>
+<pre class="text"><code>下载PDF
+下载PDF
+下载PDF
+下载PDF
+……</code></pre>
+<p>硬盘迅速变成：</p>
+<pre class="text"><code>200GB
+500GB
+2TB</code></pre>
+<p>然后非常兴奋地说：</p>
+<blockquote>
+<p>“我们已经有海量政府采购数据了。”</p>
+</blockquote>
+<p>但这里有一个非常致命的问题：</p>
+<blockquote>
+<p><strong>这些 PDF 到底准备拿来教模型学什么？</strong></p>
+</blockquote>
+<p>如果这句话回答不清楚，那么：</p>
+<blockquote>
+<p>文件越多，后面可能越乱。</p>
+</blockquote>
+<p>所以第四课第一阶段，我们暂时：</p>
+<p><strong>不解析 PDF。</strong></p>
+<p><strong>不做 OCR。</strong></p>
+<p><strong>不做 LoRA。</strong></p>
+<p>甚至：</p>
+<p><strong>先不写数据清洗代码。</strong></p>
+<p>我们先解决最根本的问题：</p>
+<h1
+id="一条真正的机器学习样本到底应该长什么样">一条真正的机器学习样本，到底应该长什么样？</h1>
+<hr />
+<h1
+id="一本阶段真正要解决的一个核心问题">一、本阶段真正要解决的一个核心问题</h1>
+<p>今天只解决：</p>
+<blockquote>
+<p><strong>如何把“政府采购业务问题”翻译成一个机器能够训练、评测、追踪的数据结构？</strong></p>
+</blockquote>
+<p>最后要得到的不是一堆文件。</p>
+<p>而是一份：</p>
+<h1
+id="procurementtaskschema_v0.1"><code>ProcurementTaskSchema_V0.1</code></h1>
+<p>也就是：</p>
+<blockquote>
+<p><strong>ProcurementAI 数据世界的第一份“宪法”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二先记住今天最重要的-6-个核心心智模型">二、先记住今天最重要的 6
+个核心心智模型</h1>
+<pre class="text"><code>① 文件 ≠ 数据样本
+
+② Schema = 我们对“一个样本是什么”的正式契约
+
+③ 先定义任务，再定义样本，再开始收数据
+
+④ 一个原始采购文件可以产生很多不同任务的数据
+
+⑤ Input、Label、Evidence、Metadata 必须分清楚
+
+⑥ 数据最重要的不是“多少条”，
+   而是每一条到底代表什么</code></pre>
+<p>这六句话如果真正吃透，</p>
+<p>第四课后面的：</p>
+<ul>
+<li>文档解析；</li>
+<li>清洗；</li>
+<li>去重；</li>
+<li>标注；</li>
+<li>Hard Negative；</li>
+<li>Train/Test Split；</li>
+</ul>
+<p>都会突然清晰很多。</p>
+<hr />
+<h1 id="三第一个核心心智模型文件-样本">三、第一个核心心智模型：文件 ≠
+样本</h1>
+<p>假设我们下载了一份：</p>
+<pre class="text"><code>某市智慧交通系统采购项目招标文件.pdf</code></pre>
+<p>200 页。</p>
+<p>这是：</p>
+<h1 id="raw-document">Raw Document</h1>
+<p>也就是：</p>
+<blockquote>
+<p>原始文件。</p>
+</blockquote>
+<p>但它是不是一条训练样本？</p>
+<p>通常不是。</p>
+<hr />
+<h1 id="四为什么不是">四、为什么不是？</h1>
+<p>因为这份文件里面可能同时包含：</p>
+<pre class="text"><code>采购公告
+资格条件
+采购需求
+技术参数
+商务要求
+评分办法
+合同条款
+附件
+格式模板</code></pre>
+<p>如果直接把整本 PDF 扔给模型说：</p>
+<blockquote>
+<p>“学习吧。”</p>
+</blockquote>
+<p>机器到底要学什么？</p>
+<p>非常模糊。</p>
+<hr />
+<h1
+id="五真正的机器学习样本通常需要一个清楚的问题">五、真正的机器学习样本通常需要一个清楚的问题</h1>
+<p>比如：</p>
+<blockquote>
+<p><strong>这条供应商资格条件是否存在潜在不合理限制？</strong></p>
+</blockquote>
+<p>这时候：</p>
+<p>输入是什么？</p>
+<pre class="text"><code>供应商须在本市注册成立5年以上。</code></pre>
+<p>目标是什么？</p>
+<pre class="text"><code>存在潜在风险</code></pre>
+<p>风险类型是什么？</p>
+<pre class="text"><code>供应商资格 / 地域性限制</code></pre>
+<p>这才开始像：</p>
+<h1 id="sample">Sample</h1>
+<hr />
+<h1
+id="六所以要先把三个概念彻底分开">六、所以要先把三个概念彻底分开</h1>
+<pre class="text"><code>Raw Document
+原始文件
+
+        ↓
+
+Data Unit
+从文件中切出的业务单元
+
+        ↓
+
+Training / Evaluation Sample
+具有明确输入和目标的数据样本</code></pre>
+<p>不要混。</p>
+<hr />
+<h1 id="七举一个非常直观的例子">七、举一个非常直观的例子</h1>
+<p>原始文件里有一句：</p>
+<blockquote>
+<p>“供应商应在项目所在地设立售后服务机构。”</p>
+</blockquote>
+<p>这是：</p>
+<blockquote>
+<p>文档中的一段文字。</p>
+</blockquote>
+<p>但我们可以围绕它制造很多不同任务。</p>
+<hr />
+<h1 id="八任务-a风险分类">八、任务 A：风险分类</h1>
+<p>输入：</p>
+<pre class="text"><code>供应商应在项目所在地设立售后服务机构。</code></pre>
+<p>输出：</p>
+<pre class="text"><code>潜在风险</code></pre>
+<hr />
+<h1 id="九任务-b风险类型识别">九、任务 B：风险类型识别</h1>
+<p>输入：</p>
+<pre class="text"><code>供应商应在项目所在地设立售后服务机构。</code></pre>
+<p>输出：</p>
+<pre class="text"><code>资格/商务条件中的地域性要求</code></pre>
+<hr />
+<h1 id="十任务-c理由生成">十、任务 C：理由生成</h1>
+<p>输入：</p>
+<blockquote>
+<p>条款 + 必要上下文</p>
+</blockquote>
+<p>输出：</p>
+<blockquote>
+<p>为什么这个条件需要审查。</p>
+</blockquote>
+<hr />
+<h1 id="十一任务-d修改建议">十一、任务 D：修改建议</h1>
+<p>输入：</p>
+<blockquote>
+<p>原条款</p>
+</blockquote>
+<p>输出可能是：</p>
+<blockquote>
+<p>将“必须设立本地机构”改为与实际履约需求相关的响应时限、服务能力等要求。</p>
+</blockquote>
+<hr />
+<h1 id="十二任务-e法规证据检索">十二、任务 E：法规证据检索</h1>
+<p>输入：</p>
+<blockquote>
+<p>风险条款</p>
+</blockquote>
+<p>目标：</p>
+<blockquote>
+<p>找到真正相关的法规、规章或规范性依据。</p>
+</blockquote>
+<hr />
+<h1 id="十三注意发生了什么">十三、注意发生了什么</h1>
+<p>完全同一句原始文字：</p>
+<pre class="text"><code>供应商应在项目所在地设立售后服务机构。</code></pre>
+<p>可以产生：</p>
+<pre class="text"><code>分类数据
+抽取数据
+推理数据
+RAG检索数据
+SFT数据
+评测数据</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>一</mi><mi>份</mi><mi>文</mi><mi>件</mi><mo>≠</mo><mi>一</mi><mi>个</mi><mi>任</mi><mi>务</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+一份文件
+\neq
+一个任务
+}
+</annotation></semantics></math></p>
+<p>也：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>一</mi><mi>段</mi><mi>文</mi><mi>字</mi><mo>≠</mo><mi>只</mi><mi>有</mi><mi>一</mi><mi>种</mi><mi>训</mi><mi>练</mi><mi>用</mi><mi>途</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+一段文字
+\neq
+只有一种训练用途
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十四第二个核心心智模型schema-是数据契约">十四、第二个核心心智模型：Schema
+是数据契约</h1>
+<p>Schema 这个词以后会反复出现。</p>
+<p>先不要把它理解成复杂数据库术语。</p>
+<p>最简单：</p>
+<blockquote>
+<p><strong>Schema
+就是在正式规定：“一条样本必须有哪些字段，每个字段是什么意思。”</strong></p>
+</blockquote>
+<hr />
+<h1 id="十五像身份证表格">十五、像身份证表格</h1>
+<p>如果没有固定 Schema：</p>
+<p>有人记录：</p>
+<pre class="text"><code>姓名：
+出生日期：</code></pre>
+<p>有人记录：</p>
+<pre class="text"><code>Name：
+Age：</code></pre>
+<p>有人只记录：</p>
+<pre class="text"><code>张三，男，北京</code></pre>
+<p>最后：</p>
+<blockquote>
+<p>很难统一处理。</p>
+</blockquote>
+<hr />
+<h1 id="十六政府采购数据也是一样">十六、政府采购数据也是一样</h1>
+<p>有人标：</p>
+<pre class="text"><code>违法</code></pre>
+<p>有人标：</p>
+<pre class="text"><code>不合理</code></pre>
+<p>有人标：</p>
+<pre class="text"><code>有倾向性</code></pre>
+<p>有人标：</p>
+<pre class="text"><code>高风险</code></pre>
+<p>有人写：</p>
+<pre class="text"><code>建议核验</code></pre>
+<p>如果没有 Schema，</p>
+<p>这五个人可能：</p>
+<blockquote>
+<p>其实表达的是完全不同层次的事情。</p>
+</blockquote>
+<hr />
+<h1 id="十七所以-schema-的第一项作用">十七、所以 Schema
+的第一项作用</h1>
+<h1 id="统一语言">统一语言</h1>
+<p>它告诉所有人：</p>
+<pre class="text"><code>risk_present
+到底是什么意思？
+
+risk_type
+有哪些合法值？
+
+risk_level
+怎么定义？
+
+needs_review
+什么时候为true？
+
+evidence
+放什么？
+
+reason
+写到什么粒度？</code></pre>
+<hr />
+<h1 id="十八schema-的第二项作用">十八、Schema 的第二项作用</h1>
+<h1 id="让机器知道每个字段是什么">让机器知道每个字段是什么</h1>
+<p>例如：</p>
+<div class="sourceCode" id="cb27"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;supplier_qualification&quot;</span><span class="fu">,</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_level&quot;</span><span class="fu">:</span> <span class="st">&quot;high&quot;</span></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>模型训练、评测程序：</p>
+<blockquote>
+<p>可以直接使用。</p>
+</blockquote>
+<hr />
+<h1 id="十九schema-的第三项作用">十九、Schema 的第三项作用</h1>
+<h1 id="让不同团队能够协作">让不同团队能够协作</h1>
+<p>以后会有：</p>
+<pre class="text"><code>数据工程师
+采购专家
+算法工程师
+标注人员
+评测人员
+后端工程师</code></pre>
+<p>如果大家没有同一份 Schema，</p>
+<p>项目很容易变成：</p>
+<blockquote>
+<p>六个人心里有六套 ProcurementAI。</p>
+</blockquote>
+<hr />
+<h1 id="二十所以-schema-本质上是一个跨团队合同">二十、所以 Schema
+本质上是一个跨团队合同</h1>
+<p>可以这样理解：</p>
+<pre class="text"><code>业务专家
+   │
+   ▼
+定义业务含义
+   │
+   ▼
+Schema
+   │
+   ├── 数据工程
+   ├── 标注
+   ├── SFT
+   ├── RAG
+   ├── Evaluation
+   └── API</code></pre>
+<p>所有模块：</p>
+<blockquote>
+<p>围绕同一套数据语言工作。</p>
+</blockquote>
+<hr />
+<h1
+id="二十一现在开始设计-procurementai-的第一版-task-schema">二十一、现在开始设计
+ProcurementAI 的第一版 Task Schema</h1>
+<p>我们暂时不要贪大。</p>
+<p>第一版继续围绕第三课确定的：</p>
+<h1 id="政府采购文件合规风险审查">政府采购文件合规风险审查</h1>
+<p>五个主要风险域：</p>
+<pre class="text"><code>A 供应商资格
+
+B 技术参数
+
+C 商务要求
+
+D 评分标准
+
+E 采购需求</code></pre>
+<hr />
+<h1
+id="二十二首先要决定最小业务单元是什么">二十二、首先要决定：最小业务单元是什么？</h1>
+<p>这是整个阶段最关键的问题之一。</p>
+<p>我们可以选择：</p>
+<pre class="text"><code>整份文件
+一章
+一节
+一条
+一句
+一个短语</code></pre>
+<p>哪一个最好？</p>
+<p>答案：</p>
+<blockquote>
+<p>没有永远正确的粒度。</p>
+</blockquote>
+<p>要看任务。</p>
+<hr />
+<h1
+id="二十三整份文件做一条样本有什么问题">二十三、整份文件做一条样本有什么问题？</h1>
+<p>比如：</p>
+<pre class="text"><code>200页招标文件</code></pre>
+<p>对应：</p>
+<pre class="text"><code>风险 = 有</code></pre>
+<p>这几乎没什么学习价值。</p>
+<p>模型会问：</p>
+<blockquote>
+<p>到底哪儿有？</p>
+</blockquote>
+<hr />
+<h1 id="二十四就像医学诊断数据">二十四、就像医学诊断数据</h1>
+<p>如果一份 500 页病历只标：</p>
+<pre class="text"><code>有问题</code></pre>
+<p>机器也很难学。</p>
+<p>真正有价值的是：</p>
+<pre class="text"><code>具体异常在哪里
+是什么异常
+依据是什么</code></pre>
+<hr />
+<h1 id="二十五所以第一版-procurementai-更适合采用">二十五、所以第一版
+ProcurementAI 更适合采用</h1>
+<h1 id="clause-level">Clause-level</h1>
+<p>也就是：</p>
+<blockquote>
+<p><strong>条款级样本</strong></p>
+</blockquote>
+<p>作为非常重要的基础单位。</p>
+<hr />
+<h1 id="二十六例如">二十六、例如</h1>
+<p>原文：</p>
+<pre class="text"><code>供应商须在本市注册并连续经营满5年。</code></pre>
+<p>作为一个：</p>
+<pre class="text"><code>clause_text</code></pre>
+<p>然后给它：</p>
+<pre class="text"><code>risk_present
+risk_type
+risk_level
+reason</code></pre>
+<hr />
+<h1
+id="二十七但是只保留一句条款又会产生另一个问题">二十七、但是只保留一句条款又会产生另一个问题</h1>
+<p>上下文可能丢失。</p>
+<p>例如：</p>
+<blockquote>
+<p>“应在两小时内到达现场。”</p>
+</blockquote>
+<p>单独看：</p>
+<blockquote>
+<p>不知道谁到现场。</p>
+</blockquote>
+<hr />
+<h1 id="二十八如果加上下文">二十八、如果加上下文</h1>
+<pre class="text"><code>项目类型：
+核心生产系统7×24小时维护服务
+
+条款：
+故障发生后，供应商技术人员应在2小时内到达项目现场。</code></pre>
+<p>这时意义就不同。</p>
+<hr />
+<h1
+id="二十九所以第三个重要心智模型出现了">二十九、所以第三个重要心智模型出现了</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>最</mi><mi>小</mi><mi>判</mi><mi>断</mi><mi>单</mi><mi>元</mi><mo>≠</mo><mi>最</mi><mi>小</mi><mi>文</mi><mi>本</mi><mi>片</mi><mi>段</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+最小判断单元
+\neq
+最小文本片段
+}
+</annotation></semantics></math></p>
+<p>判断对象可以是：</p>
+<blockquote>
+<p>一条条款。</p>
+</blockquote>
+<p>但判断它可能需要：</p>
+<blockquote>
+<p>更大的 Context。</p>
+</blockquote>
+<hr />
+<h1
+id="三十这就产生一个很重要的数据结构">三十、这就产生一个很重要的数据结构</h1>
+<pre class="text"><code>Target Clause
++
+Surrounding Context
++
+Document Metadata</code></pre>
+<p>也就是：</p>
+<pre class="text"><code>我们判断谁
++
+判断时需要看什么
++
+它来自哪里</code></pre>
+<hr />
+<h1 id="三十一用法官类比">三十一、用法官类比</h1>
+<p>法官真正要判断的是：</p>
+<blockquote>
+<p>某一个争议点。</p>
+</blockquote>
+<p>但法官不能只看：</p>
+<blockquote>
+<p>争议句子。</p>
+</blockquote>
+<p>还需要：</p>
+<ul>
+<li>合同背景；</li>
+<li>当事人身份；</li>
+<li>相关条款；</li>
+<li>证据。</li>
+</ul>
+<p>LLM 也一样。</p>
+<hr />
+<h1
+id="三十二所以一个好样本最好保留层级关系">三十二、所以一个好样本最好保留“层级关系”</h1>
+<p>例如：</p>
+<pre class="text"><code>项目
+ └── 招标文件
+      └── 第三章 采购需求
+           └── 3.2 售后服务
+                └── 条款17</code></pre>
+<p>我们不要只留下：</p>
+<pre class="text"><code>条款17</code></pre>
+<p>而把它来自哪里全部扔掉。</p>
+<hr />
+<h1 id="三十三这叫-document-hierarchy">三十三、这叫 Document
+Hierarchy</h1>
+<p>也就是：</p>
+<blockquote>
+<p>文档层级。</p>
+</blockquote>
+<p>以后解析 PDF 时，这个东西非常重要。</p>
+<hr />
+<h1
+id="三十四一个-procurementai-样本可以拥有这样的来源信息">三十四、一个
+ProcurementAI 样本可以拥有这样的来源信息</h1>
+<pre class="text"><code>project_id
+document_id
+section_path
+clause_id</code></pre>
+<p>例如：</p>
+<pre class="text"><code>project_id:
+P2026_00152
+
+document_id:
+P2026_00152_BID_01
+
+section_path:
+第三章/采购需求/售后服务
+
+clause_id:
+CLAUSE_00317</code></pre>
+<hr />
+<h1 id="三十五为什么-project_id-特别重要">三十五、为什么
+<code>project_id</code> 特别重要？</h1>
+<p>因为以后：</p>
+<h1 id="train-test-split">Train / Test Split</h1>
+<p>不能简单按行随机切。</p>
+<hr />
+<h1 id="三十六假设一个项目有-300-条样本">三十六、假设一个项目有 300
+条样本</h1>
+<p>你随机切：</p>
+<pre class="text"><code>240条 → Train
+30条 → Validation
+30条 → Test</code></pre>
+<p>看起来很标准。</p>
+<p>实际上可能：</p>
+<blockquote>
+<p>数据严重泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="三十七为什么">三十七、为什么？</h1>
+<p>因为同一个项目里的条款：</p>
+<blockquote>
+<p>大量模板、语言、背景、公司名称都一样。</p>
+</blockquote>
+<p>模型训练时已经看过：</p>
+<blockquote>
+<p>项目的大部分信息。</p>
+</blockquote>
+<p>考试时只是在看：</p>
+<blockquote>
+<p>同项目另外几条。</p>
+</blockquote>
+<p>分数会虚高。</p>
+<hr />
+<h1 id="三十八所以我们从-schema-第一阶段就必须保留">三十八、所以我们从
+Schema 第一阶段就必须保留</h1>
+<pre class="text"><code>project_id</code></pre>
+<p>否则第 6、第 7 阶段要防泄漏时：</p>
+<blockquote>
+<p>已经来不及。</p>
+</blockquote>
+<hr />
+<h1 id="三十九这就是-schema-的一个深层价值">三十九、这就是 Schema
+的一个深层价值</h1>
+<p>Schema 不只是：</p>
+<blockquote>
+<p>“方便存 JSON。”</p>
+</blockquote>
+<p>它会决定你未来：</p>
+<ul>
+<li>能不能正确切数据；</li>
+<li>能不能追溯来源；</li>
+<li>能不能去重；</li>
+<li>能不能复现；</li>
+<li>能不能审计。</li>
+</ul>
+<hr />
+<h1 id="四十现在把一个样本分成-5-个区域">四十、现在把一个样本分成 5
+个区域</h1>
+<p>这是今天最重要的一张图之一：</p>
+<pre class="text"><code>┌───────────────────────────────┐
+│ ① Identity / Source           │
+│    它是谁、来自哪里            │
+├───────────────────────────────┤
+│ ② Input                       │
+│    模型真正看到什么            │
+├───────────────────────────────┤
+│ ③ Target / Label              │
+│    我们希望模型学什么          │
+├───────────────────────────────┤
+│ ④ Evidence / Rationale        │
+│    为什么这样判断              │
+├───────────────────────────────┤
+│ ⑤ Quality / Governance        │
+│    谁标的、版本、是否复核等     │
+└───────────────────────────────┘</code></pre>
+<p>我们一个个拆。</p>
+<hr />
+<h1 id="四十一第一层identity-source">四十一、第一层：Identity /
+Source</h1>
+<p>核心字段可以有：</p>
+<pre class="text"><code>sample_id
+project_id
+document_id
+clause_id
+source_type
+section_path</code></pre>
+<hr />
+<h1 id="四十二sample_id">四十二、<code>sample_id</code></h1>
+<p>这是一条样本：</p>
+<blockquote>
+<p>永久的身份证。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>PROC-RISK-000001</code></pre>
+<hr />
+<h1 id="四十三为什么不能只用行号">四十三、为什么不能只用行号？</h1>
+<p>因为今天：</p>
+<pre class="text"><code>第328行</code></pre>
+<p>明天数据重新排序：</p>
+<blockquote>
+<p>就不是第328行了。</p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p>样本需要稳定 ID。</p>
+</blockquote>
+<hr />
+<h1 id="四十四project_id">四十四、<code>project_id</code></h1>
+<p>告诉我们：</p>
+<blockquote>
+<p>属于哪个采购项目。</p>
+</blockquote>
+<p>这对：</p>
+<ul>
+<li>去重；</li>
+<li>Split；</li>
+<li>追踪；</li>
+</ul>
+<p>都特别重要。</p>
+<hr />
+<h1 id="四十五document_id">四十五、<code>document_id</code></h1>
+<p>一个项目可能有很多文档：</p>
+<pre class="text"><code>采购公告
+招标文件
+更正公告
+采购结果
+合同</code></pre>
+<p>不能全部混成：</p>
+<blockquote>
+<p>“项目文件”。</p>
+</blockquote>
+<hr />
+<h1 id="四十六source_type">四十六、<code>source_type</code></h1>
+<p>可以明确：</p>
+<pre class="text"><code>tender_document
+procurement_notice
+requirement_document
+scoring_rules
+contract
+regulation
+case</code></pre>
+<p>不同数据源：</p>
+<blockquote>
+<p>可靠性和用途可能不同。</p>
+</blockquote>
+<hr />
+<h1 id="四十七第二层input">四十七、第二层：Input</h1>
+<p>这是模型训练时：</p>
+<blockquote>
+<p>真正看到的东西。</p>
+</blockquote>
+<p>第一版可能包括：</p>
+<pre class="text"><code>clause_text
+context_before
+context_after
+project_context
+section_path</code></pre>
+<hr />
+<h1 id="四十八最重要的字段当然是">四十八、最重要的字段当然是</h1>
+<h1 id="clause_text"><code>clause_text</code></h1>
+<p>也就是：</p>
+<blockquote>
+<p>我们当前审查的目标条款。</p>
+</blockquote>
+<hr />
+<h1
+id="四十九为什么还要有-context_before-和-context_after">四十九、为什么还要有
+<code>context_before</code> 和 <code>context_after</code>？</h1>
+<p>因为很多采购条件：</p>
+<blockquote>
+<p>单句无法正确解释。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>不得低于500万元。</code></pre>
+<p>单独看：</p>
+<blockquote>
+<p>完全不知道什么不得低于。</p>
+</blockquote>
+<hr />
+<h1 id="五十完整一点可能是">五十、完整一点可能是</h1>
+<pre class="text"><code>项目预算：
+3000万元
+
+前文：
+本项目需要持续提供核心系统运维服务。
+
+目标条款：
+供应商注册资本不得低于500万元。</code></pre>
+<p>判断能力：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="五十一但是-context-是不是越多越好">五十一、但是 Context
+是不是越多越好？</h1>
+<p>不是。</p>
+<p>如果每条样本都塞：</p>
+<blockquote>
+<p>200 页全文，</p>
+</blockquote>
+<p>你又回到了：</p>
+<blockquote>
+<p>“整本文件当数据”。</p>
+</blockquote>
+<hr />
+<h1 id="五十二所以-context-设计本质上是在做">五十二、所以 Context
+设计本质上是在做</h1>
+<h1 id="information-boundary">Information Boundary</h1>
+<p>我们要问：</p>
+<blockquote>
+<p><strong>专家判断这一条，最低需要看到什么信息？</strong></p>
+</blockquote>
+<p>这句话特别重要。</p>
+<hr />
+<h1 id="五十三第三层target-label">五十三、第三层：Target / Label</h1>
+<p>这是：</p>
+<blockquote>
+<p>模型应该学习什么。</p>
+</blockquote>
+<p>对风险识别 Baseline，</p>
+<p>可能包括：</p>
+<pre class="text"><code>risk_present
+risk_type
+risk_level
+needs_review</code></pre>
+<hr />
+<h1 id="五十四risk_present">五十四、<code>risk_present</code></h1>
+<p>最简单：</p>
+<pre class="text"><code>true
+false</code></pre>
+<p>但是马上就遇到一个问题。</p>
+<hr />
+<h1
+id="五十五有些情况根本不能简单-true-false">五十五、有些情况根本不能简单
+true / false</h1>
+<p>例如：</p>
+<blockquote>
+<p>“供应商须保证 2 小时内现场响应。”</p>
+</blockquote>
+<p>到底有没有风险？</p>
+<p>必须看：</p>
+<ul>
+<li>项目性质；</li>
+<li>是否确需现场服务；</li>
+<li>是否变相要求本地机构；</li>
+<li>是否允许其它履约方式。</li>
+</ul>
+<hr />
+<h1
+id="五十六所以如果强迫专家只能标">五十六、所以如果强迫专家只能标</h1>
+<pre class="text"><code>true
+false</code></pre>
+<p>专家可能：</p>
+<blockquote>
+<p>被迫瞎猜。</p>
+</blockquote>
+<p>这会制造：</p>
+<h1 id="label-noise">Label Noise</h1>
+<hr />
+<h1
+id="五十七因此我们很可能需要第三种状态">五十七、因此我们很可能需要第三种状态</h1>
+<pre class="text"><code>needs_review</code></pre>
+<p>或者更直接：</p>
+<pre class="text"><code>uncertain</code></pre>
+<hr />
+<h1
+id="五十八这是一个非常重要的数据原则">五十八、这是一个非常重要的数据原则</h1>
+<blockquote>
+<p><strong>现实世界有不确定性，Schema 不要逼专家假装确定。</strong></p>
+</blockquote>
+<p>否则模型以后会学会：</p>
+<blockquote>
+<p>任何问题都强行给肯定答案。</p>
+</blockquote>
+<p>这正是我们不希望 ProcurementAI 产生的行为。</p>
+<hr />
+<h1
+id="五十九比如第一版可以把判断结果设计成">五十九、比如第一版可以把判断结果设计成</h1>
+<pre class="text"><code>no_risk
+potential_risk
+needs_review</code></pre>
+<p>而不是粗暴：</p>
+<pre class="text"><code>0 / 1</code></pre>
+<p>具体最终枚举：</p>
+<blockquote>
+<p>后面标注阶段再正式定。</p>
+</blockquote>
+<hr />
+<h1 id="六十risk_type">六十、<code>risk_type</code></h1>
+<p>风险类型不能随意写中文。</p>
+<p>否则有人写：</p>
+<pre class="text"><code>地域限制</code></pre>
+<p>有人写：</p>
+<pre class="text"><code>本地化要求</code></pre>
+<p>有人写：</p>
+<pre class="text"><code>供应商资格歧视</code></pre>
+<p>机器会认为：</p>
+<blockquote>
+<p>三种标签。</p>
+</blockquote>
+<hr />
+<h1
+id="六十一所以我们要建立-controlled-vocabulary">六十一、所以我们要建立
+Controlled Vocabulary</h1>
+<p>也就是：</p>
+<blockquote>
+<p>受控标签集合。</p>
+</blockquote>
+<p>例如第一层：</p>
+<pre class="text"><code>supplier_qualification
+technical_specification
+commercial_requirement
+scoring_rule
+procurement_requirement</code></pre>
+<hr />
+<h1 id="六十二未来还可以有第二层">六十二、未来还可以有第二层</h1>
+<p>例如：</p>
+<pre class="text"><code>supplier_qualification
+    ├── geographic_restriction
+    ├── unreasonable_scale_requirement
+    ├── unnecessary_license
+    └── performance_requirement</code></pre>
+<p>形成：</p>
+<h1 id="label-taxonomy">Label Taxonomy</h1>
+<hr />
+<h1 id="六十三先不要把-taxonomy-做成-300-类">六十三、先不要把 Taxonomy
+做成 300 类</h1>
+<p>这是很常见的坑。</p>
+<p>第一版如果标签太细：</p>
+<blockquote>
+<p>专家自己都标不一致。</p>
+</blockquote>
+<p>机器更学不好。</p>
+<hr />
+<h1
+id="六十四好的第一版标签体系应该">六十四、好的第一版标签体系应该</h1>
+<pre class="text"><code>数量适中
+定义清楚
+边界明确
+专家能一致使用</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>再逐步细化。</p>
+</blockquote>
+<hr />
+<h1 id="六十五risk_level">六十五、<code>risk_level</code></h1>
+<p>例如：</p>
+<pre class="text"><code>low
+medium
+high</code></pre>
+<p>看起来简单。</p>
+<p>但如果没有定义：</p>
+<blockquote>
+<p>完全没有意义。</p>
+</blockquote>
+<hr />
+<h1 id="六十六什么叫-high">六十六、什么叫 High？</h1>
+<p>必须有规则。</p>
+<p>例如可能考虑：</p>
+<pre class="text"><code>法律明确禁止程度
+竞争影响程度
+投诉风险
+对供应商参与影响
+是否直接构成资格门槛</code></pre>
+<p>这些以后：</p>
+<blockquote>
+<p>必须写进标注指南。</p>
+</blockquote>
+<hr />
+<h1 id="六十七否则专家-a-的-medium">六十七、否则专家 A 的 Medium</h1>
+<p>可能就是：</p>
+<blockquote>
+<p>专家 B 的 High。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="annotation-inconsistency">Annotation Inconsistency</h1>
+<p>后面第 9 阶段会专门处理。</p>
+<hr />
+<h1 id="六十八第四层evidence-rationale">六十八、第四层：Evidence /
+Rationale</h1>
+<p>这是 ProcurementAI 特别重要的一层。</p>
+<p>不仅要知道：</p>
+<blockquote>
+<p>结论是什么。</p>
+</blockquote>
+<p>还要知道：</p>
+<blockquote>
+<p>为什么。</p>
+</blockquote>
+<hr />
+<h1 id="六十九第一种字段">六十九、第一种字段</h1>
+<h1 id="rationale"><code>rationale</code></h1>
+<p>专家理由。</p>
+<p>比如：</p>
+<blockquote>
+<p>该条件将企业注册地直接作为参与资格要求，而履约能力未必与注册地存在必然关系，因此需要审查其必要性和合理性。</p>
+</blockquote>
+<hr />
+<h1 id="七十第二种字段">七十、第二种字段</h1>
+<h1 id="evidence"><code>evidence</code></h1>
+<p>支持结论的：</p>
+<ul>
+<li>法律；</li>
+<li>行政法规；</li>
+<li>部门规章；</li>
+<li>规范性文件；</li>
+<li>官方案例；</li>
+<li>项目事实。</li>
+</ul>
+<hr />
+<h1 id="七十一注意-reason-和-evidence-不是一个东西">七十一、注意 Reason
+和 Evidence 不是一个东西</h1>
+<p>Reason：</p>
+<blockquote>
+<p>专家怎么推理。</p>
+</blockquote>
+<p>Evidence：</p>
+<blockquote>
+<p>推理依据什么事实或规范。</p>
+</blockquote>
+<p>可以记成：</p>
+<pre class="text"><code>Evidence
+=
+“根据什么”
+
+Rationale
+=
+“为什么从这些依据得到这个判断”</code></pre>
+<hr />
+<h1 id="七十二举例">七十二、举例</h1>
+<p>Evidence：</p>
+<pre class="text"><code>某相关政府采购公平竞争要求</code></pre>
+<p>Rationale：</p>
+<blockquote>
+<p>采购条件如果与合同履行没有必要联系，却限制外地供应商参与，可能产生不合理差别待遇。</p>
+</blockquote>
+<p>两个：</p>
+<blockquote>
+<p>不是同一个字段。</p>
+</blockquote>
+<hr />
+<h1 id="七十三为什么要分开">七十三、为什么要分开？</h1>
+<p>因为未来 RAG 主要负责：</p>
+<h1 id="evidence-1">Evidence</h1>
+<p>SFT 很大一部分负责：</p>
+<h1 id="rationale-working-style">Rationale / Working Style</h1>
+<p>这和我们整个系统架构直接对应。</p>
+<hr />
+<h1 id="七十四这就是数据-schema-和模型架构开始连接">七十四、这就是数据
+Schema 和模型架构开始连接</h1>
+<pre class="text"><code>evidence
+        ↓
+未来RAG
+
+rationale
+        ↓
+未来SFT
+
+risk_type
+        ↓
+分类评测
+
+suggestion
+        ↓
+生成任务</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>Schema 设计会影响未来所有技术路线。</p>
+</blockquote>
+<hr />
+<h1 id="七十五第五层quality-governance">七十五、第五层：Quality /
+Governance</h1>
+<p>很多数据集会忽略这一层。</p>
+<p>其实对我们的项目：</p>
+<blockquote>
+<p>特别重要。</p>
+</blockquote>
+<p>可能包括：</p>
+<pre class="text"><code>label_status
+annotator_id
+reviewer_id
+adjudication_status
+quality_flag
+schema_version
+created_at</code></pre>
+<hr />
+<h1 id="七十六为什么记录-label_status">七十六、为什么记录
+<code>label_status</code>？</h1>
+<p>因为一条样本可能处于：</p>
+<pre class="text"><code>machine_generated
+human_labeled
+expert_reviewed
+adjudicated
+gold</code></pre>
+<p>这些：</p>
+<blockquote>
+<p>质量完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="七十七千万不能把它们都叫">七十七、千万不能把它们都叫</h1>
+<pre class="text"><code>training_data</code></pre>
+<p>否则以后根本不知道：</p>
+<blockquote>
+<p>哪些是真的专家 Gold，哪些只是模型自己生成的。</p>
+</blockquote>
+<hr />
+<h1
+id="七十八我们可以建立一个数据质量阶梯">七十八、我们可以建立一个数据质量阶梯</h1>
+<pre class="text"><code>L0
+Raw
+
+↓
+
+L1
+Parsed
+
+↓
+
+L2
+Machine Labeled
+
+↓
+
+L3
+Human Labeled
+
+↓
+
+L4
+Expert Reviewed
+
+↓
+
+L5
+Adjudicated Gold</code></pre>
+<p>这只是一个初版心智模型。</p>
+<p>非常有用。</p>
+<hr />
+<h1 id="七十九为什么-annotator_id-不应该随便写人名">七十九、为什么
+<code>annotator_id</code> 不应该随便写人名？</h1>
+<p>因为数据工程通常只需要：</p>
+<blockquote>
+<p>可追踪标注来源。</p>
+</blockquote>
+<p>可以使用：</p>
+<pre class="text"><code>annotator_017</code></pre>
+<p>而不是把：</p>
+<blockquote>
+<p>不必要的个人信息</p>
+</blockquote>
+<p>塞进训练数据。</p>
+<p>这是一个基本的数据治理习惯。</p>
+<hr />
+<h1 id="八十schema_version">八十、<code>schema_version</code></h1>
+<p>非常重要。</p>
+<p>今天我们设计：</p>
+<pre class="text"><code>Schema V0.1</code></pre>
+<p>半年后可能：</p>
+<pre class="text"><code>V0.3</code></pre>
+<p>字段变了。</p>
+<hr />
+<h1 id="八十一如果没有-schema-version">八十一、如果没有 Schema
+Version</h1>
+<p>你最后可能出现：</p>
+<pre class="text"><code>10000条
+用旧标签
+
+20000条
+用新标签
+
+5000条
+不知道是什么版本</code></pre>
+<p>这会非常痛苦。</p>
+<hr />
+<h1
+id="八十二所以每一条数据最好都知道">八十二、所以每一条数据最好都知道</h1>
+<pre class="text"><code>它遵循哪一版Schema</code></pre>
+<p>例如：</p>
+<pre class="text"><code>schema_version:
+procurement_risk_v0.1</code></pre>
+<hr />
+<h1 id="八十三现在看第一版完整样本">八十三、现在看第一版完整样本</h1>
+<p>先不考虑最终数据库格式。</p>
+<p>只看思想：</p>
+<div class="sourceCode" id="cb85"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROC-RISK-000001&quot;</span><span class="fu">,</span></span>
+<span id="cb85-3"><a href="#cb85-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROJECT-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb85-4"><a href="#cb85-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC-00152-01&quot;</span><span class="fu">,</span></span>
+<span id="cb85-5"><a href="#cb85-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_type&quot;</span><span class="fu">:</span> <span class="st">&quot;tender_document&quot;</span><span class="fu">,</span></span>
+<span id="cb85-6"><a href="#cb85-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-7"><a href="#cb85-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_path&quot;</span><span class="fu">:</span> <span class="st">&quot;第一章/供应商资格条件&quot;</span><span class="fu">,</span></span>
+<span id="cb85-8"><a href="#cb85-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-9"><a href="#cb85-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商须在本市注册成立5年以上。&quot;</span><span class="fu">,</span></span>
+<span id="cb85-10"><a href="#cb85-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;context_before&quot;</span><span class="fu">:</span> <span class="st">&quot;&quot;</span><span class="fu">,</span></span>
+<span id="cb85-11"><a href="#cb85-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;context_after&quot;</span><span class="fu">:</span> <span class="st">&quot;&quot;</span><span class="fu">,</span></span>
+<span id="cb85-12"><a href="#cb85-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-13"><a href="#cb85-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb85-14"><a href="#cb85-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;supplier_qualification&quot;</span><span class="fu">,</span></span>
+<span id="cb85-15"><a href="#cb85-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_subtype&quot;</span><span class="fu">:</span> <span class="st">&quot;geographic_restriction&quot;</span><span class="fu">,</span></span>
+<span id="cb85-16"><a href="#cb85-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_level&quot;</span><span class="fu">:</span> <span class="st">&quot;high&quot;</span><span class="fu">,</span></span>
+<span id="cb85-17"><a href="#cb85-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb85-18"><a href="#cb85-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-19"><a href="#cb85-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;rationale&quot;</span><span class="fu">:</span> <span class="st">&quot;将供应商注册地直接作为参与条件，需要审查其与履约需求的必要关联。&quot;</span><span class="fu">,</span></span>
+<span id="cb85-20"><a href="#cb85-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;REG-XXXX&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb85-21"><a href="#cb85-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-22"><a href="#cb85-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;suggestion&quot;</span><span class="fu">:</span> <span class="st">&quot;优先改为与实际履约能力直接相关的要求。&quot;</span><span class="fu">,</span></span>
+<span id="cb85-23"><a href="#cb85-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-24"><a href="#cb85-24" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;label_status&quot;</span><span class="fu">:</span> <span class="st">&quot;expert_reviewed&quot;</span><span class="fu">,</span></span>
+<span id="cb85-25"><a href="#cb85-25" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_risk_v0.1&quot;</span></span>
+<span id="cb85-26"><a href="#cb85-26" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>注意：</p>
+<blockquote>
+<p>这是教学用 Schema 雏形，不是今天就永久冻结。</p>
+</blockquote>
+<hr />
+<h1 id="八十四但这已经比一份-pdf-前进了巨大一步">八十四、但这已经比一份
+PDF 前进了巨大一步</h1>
+<p>PDF 只能告诉你：</p>
+<blockquote>
+<p>有这些文字。</p>
+</blockquote>
+<p>Schema Sample 告诉你：</p>
+<pre class="text"><code>这是什么项目
+它来自哪里
+我们判断哪句话
+上下文是什么
+结论是什么
+风险类型是什么
+专家为什么这么判断
+依据是什么
+数据质量是什么</code></pre>
+<p>这才是真正的数据资产雏形。</p>
+<hr />
+<h1
+id="八十五第四个核心心智模型一个-raw-document-可以产生-n-个-sample">八十五、第四个核心心智模型：一个
+Raw Document 可以产生 N 个 Sample</h1>
+<p>假设：</p>
+<blockquote>
+<p>一份招标文件。</p>
+</blockquote>
+<p>我们切出：</p>
+<pre class="text"><code>63条资格条件
+148条技术要求
+27条商务要求
+42条评分项
+85条采购需求</code></pre>
+<p>可能产生：</p>
+<blockquote>
+<p>数百条任务样本。</p>
+</blockquote>
+<hr />
+<h1 id="八十六但是不能简单说">八十六、但是不能简单说</h1>
+<pre class="text"><code>365条
+=
+365个完全独立样本</code></pre>
+<p>因为它们来自：</p>
+<blockquote>
+<p>同一个项目。</p>
+</blockquote>
+<hr />
+<h1 id="八十七所以必须保留-group-信息">八十七、所以必须保留 Group
+信息</h1>
+<p>以后：</p>
+<pre class="text"><code>Split by Project</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>Split by Row</code></pre>
+<p>这件事我们已经提前埋好了。</p>
+<hr />
+<h1
+id="八十八现在进入一个最危险的问题input-和-label-泄漏">八十八、现在进入一个最危险的问题：Input
+和 Label 泄漏</h1>
+<p>假设我们的输入是：</p>
+<pre class="text"><code>专家审查意见：
+该条款属于明显地域限制。
+
+原条款：
+供应商须在本市注册。</code></pre>
+<p>目标：</p>
+<pre class="text"><code>地域限制</code></pre>
+<hr />
+<h1 id="八十九模型考试时会怎样">八十九、模型考试时会怎样？</h1>
+<p>几乎直接：</p>
+<blockquote>
+<p>抄答案。</p>
+</blockquote>
+<p>因为 Input 里面已经有：</p>
+<pre class="text"><code>属于明显地域限制</code></pre>
+<hr />
+<h1 id="九十最终得到非常高的-accuracy">九十、最终得到非常高的
+Accuracy</h1>
+<p>团队很开心：</p>
+<pre class="text"><code>98.9%</code></pre>
+<p>但模型其实：</p>
+<blockquote>
+<p>根本没学会判断。</p>
+</blockquote>
+<p>它只学会：</p>
+<blockquote>
+<p>找答案词。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="label-leakage">Label Leakage</h1>
+<hr />
+<h1 id="九十一所以-schema-设计阶段必须问">九十一、所以 Schema
+设计阶段必须问</h1>
+<blockquote>
+<p><strong>哪些字段训练时允许给模型看到？</strong></p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p><strong>哪些字段只能用于监督答案，不能出现在 Input？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="九十二我们可以把字段明确分成">九十二、我们可以把字段明确分成</h1>
+<pre class="text"><code>INPUT_FIELDS</code></pre>
+<p>与：</p>
+<pre class="text"><code>TARGET_FIELDS</code></pre>
+<hr />
+<h1 id="九十三例如">九十三、例如</h1>
+<p>Input：</p>
+<pre class="text"><code>clause_text
+project_context
+section_path</code></pre>
+<p>Target：</p>
+<pre class="text"><code>risk_present
+risk_type
+rationale</code></pre>
+<p>Evaluation Metadata：</p>
+<pre class="text"><code>project_id
+document_id
+annotator_id
+schema_version</code></pre>
+<p>这三类：</p>
+<blockquote>
+<p>不要混。</p>
+</blockquote>
+<hr />
+<h1 id="九十四尤其-project_id">九十四、尤其 <code>project_id</code></h1>
+<p>模型通常：</p>
+<blockquote>
+<p>没必要把内部 project_id 当语言输入。</p>
+</blockquote>
+<p>但 Dataset Pipeline：</p>
+<blockquote>
+<p>必须保留。</p>
+</blockquote>
+<hr />
+<h1
+id="九十五这叫模型需要什么和数据系统需要什么分开">九十五、这叫“模型需要什么”和“数据系统需要什么”分开</h1>
+<p>数据集字段可以很多。</p>
+<p>但真正喂给模型的：</p>
+<blockquote>
+<p>只是其中一部分。</p>
+</blockquote>
+<hr />
+<h1 id="九十六举个很实用的图">九十六、举个很实用的图</h1>
+<pre class="text"><code>Dataset Row
+│
+├── Model Input
+│   ├── clause_text
+│   └── context
+│
+├── Training Target
+│   ├── risk_type
+│   ├── risk_level
+│   └── rationale
+│
+└── Pipeline Metadata
+    ├── project_id
+    ├── source
+    ├── split_group
+    └── version</code></pre>
+<p>这张图特别值得记。</p>
+<hr />
+<h1
+id="九十七第五个核心心智模型一份数据集不应该服务所有任务">九十七、第五个核心心智模型：一份数据集不应该服务所有任务</h1>
+<p>一个常见思路：</p>
+<blockquote>
+<p>“做一个超级 JSON，把所有东西全部塞进去，所有模型都用它。”</p>
+</blockquote>
+<p>可以有：</p>
+<blockquote>
+<p>统一底层 Master Dataset。</p>
+</blockquote>
+<p>但不同任务最终应该：</p>
+<blockquote>
+<p>生成不同 Dataset View。</p>
+</blockquote>
+<hr />
+<h1 id="九十八例如-master-record">九十八、例如 Master Record</h1>
+<p>可能拥有：</p>
+<pre class="text"><code>clause
+risk
+evidence
+reason
+suggestion
+metadata</code></pre>
+<hr />
+<h1 id="九十九任务-t1risk-classification">九十九、任务 T1：Risk
+Classification</h1>
+<p>最终训练 View：</p>
+<pre class="text"><code>Input:
+clause + context
+
+Target:
+risk_present + risk_type</code></pre>
+<hr />
+<h1 id="一百任务-t2rationale-sft">一百、任务 T2：Rationale SFT</h1>
+<pre class="text"><code>Input:
+clause + context + evidence
+
+Target:
+expert rationale</code></pre>
+<hr />
+<h1 id="一百零一任务-t3modification-suggestion">一百零一、任务
+T3：Modification Suggestion</h1>
+<pre class="text"><code>Input:
+clause + confirmed risk
+
+Target:
+suggestion</code></pre>
+<hr />
+<h1 id="一百零二任务-t4evidence-retrieval">一百零二、任务 T4：Evidence
+Retrieval</h1>
+<pre class="text"><code>Query:
+clause + risk question
+
+Positive:
+relevant regulation chunk</code></pre>
+<p>再加：</p>
+<blockquote>
+<p>Hard Negative Evidence。</p>
+</blockquote>
+<hr />
+<h1 id="一百零三所以推荐架构是">一百零三、所以推荐架构是</h1>
+<pre class="text"><code>               Master Dataset
+                     │
+       ┌─────────────┼─────────────┐
+       ▼             ▼             ▼
+ Classification    SFT View      RAG View
+       │             │             │
+       ▼             ▼             ▼
+  分类训练        行为训练        检索训练</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>三套完全不相关的数据体系。</p>
+</blockquote>
+<hr />
+<h1 id="一百零四这叫-single-source-of-truth">一百零四、这叫 Single
+Source of Truth</h1>
+<p>我们希望底层真实事实：</p>
+<blockquote>
+<p>只有一个权威源。</p>
+</blockquote>
+<p>不同训练任务：</p>
+<blockquote>
+<p>从它派生。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零五否则会发生非常讨厌的问题">一百零五、否则会发生非常讨厌的问题</h1>
+<p>分类数据说：</p>
+<pre class="text"><code>Sample 17 = 高风险</code></pre>
+<p>SFT 数据说：</p>
+<pre class="text"><code>Sample 17 = 无风险</code></pre>
+<p>RAG 数据又说：</p>
+<blockquote>
+<p>另一个结论。</p>
+</blockquote>
+<p>最后：</p>
+<blockquote>
+<p>自己的数据互相打架。</p>
+</blockquote>
+<hr />
+<h1 id="一百零六所以-data-lineage-从第一天就重要">一百零六、所以 Data
+Lineage 从第一天就重要</h1>
+<p>Lineage：</p>
+<blockquote>
+<p>血缘。</p>
+</blockquote>
+<p>就是：</p>
+<blockquote>
+<p>这条训练数据究竟从哪里来的？</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Raw PDF
+ ↓
+Page 37
+ ↓
+Clause 12
+ ↓
+Parsed Record
+ ↓
+Expert Annotation
+ ↓
+SFT Example 00318</code></pre>
+<hr />
+<h1
+id="一百零七未来如果发现原始-pdf-解析错了">一百零七、未来如果发现原始
+PDF 解析错了</h1>
+<p>我们可以沿血缘找到：</p>
+<pre class="text"><code>哪些样本受影响？</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>全库猜。</p>
+</blockquote>
+<hr />
+<h1 id="一百零八现在再看样本粒度">一百零八、现在再看“样本粒度”</h1>
+<p>政府采购项目很适合：</p>
+<h1 id="hierarchical-samples">Hierarchical Samples</h1>
+<p>层级数据。</p>
+<hr />
+<h1 id="一百零九可能至少有四层">一百零九、可能至少有四层</h1>
+<pre class="text"><code>Project Level
+
+Document Level
+
+Section Level
+
+Clause Level</code></pre>
+<hr />
+<h1 id="一百一十为什么要保留-project-level">一百一十、为什么要保留
+Project Level？</h1>
+<p>例如：</p>
+<pre class="text"><code>项目类型
+预算
+采购方式
+所属地区
+发布时间</code></pre>
+<p>这些背景：</p>
+<blockquote>
+<p>有时会影响判断。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十一为什么-document-level-重要">一百一十一、为什么
+Document Level 重要？</h1>
+<p>同一个项目：</p>
+<blockquote>
+<p>招标文件</p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p>结果公告</p>
+</blockquote>
+<p>完全不是一种语境。</p>
+<hr />
+<h1 id="一百一十二为什么-section-level-重要">一百一十二、为什么 Section
+Level 重要？</h1>
+<p>一句：</p>
+<pre class="text"><code>不得低于500万元</code></pre>
+<p>在：</p>
+<blockquote>
+<p>供应商资格</p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p>项目预算</p>
+</blockquote>
+<p>语义完全不同。</p>
+<p>所以：</p>
+<pre class="text"><code>section_path</code></pre>
+<p>本身就是很有价值的上下文。</p>
+<hr />
+<h1 id="一百一十三为什么-clause-level-是核心">一百一十三、为什么 Clause
+Level 是核心？</h1>
+<p>因为风险最终往往需要定位到：</p>
+<blockquote>
+<p>具体条款。</p>
+</blockquote>
+<p>这对：</p>
+<ul>
+<li>标注；</li>
+<li>模型训练；</li>
+<li>用户展示；</li>
+<li>风险报告；</li>
+</ul>
+<p>都非常方便。</p>
+<hr />
+<h1
+id="一百一十四所以我们未来的数据不是扁平文本库">一百一十四、所以我们未来的数据不是“扁平文本库”</h1>
+<p>而更像：</p>
+<pre class="text"><code>Project
+  │
+  └── Document
+        │
+        └── Section
+              │
+              └── Clause
+                    │
+                    └── Annotation</code></pre>
+<p>这张结构图特别重要。</p>
+<hr />
+<h1
+id="一百一十五现在讨论-positive-和-negative-sample">一百一十五、现在讨论
+Positive 和 Negative Sample</h1>
+<p>如果只收：</p>
+<blockquote>
+<p>有风险的条款，</p>
+</blockquote>
+<p>模型会发生什么？</p>
+<hr />
+<h1 id="一百一十六它可能学会">一百一十六、它可能学会</h1>
+<blockquote>
+<p>“看到采购条款就报风险。”</p>
+</blockquote>
+<p>Recall：</p>
+<blockquote>
+<p>非常漂亮。</p>
+</blockquote>
+<p>Precision：</p>
+<blockquote>
+<p>惨不忍睹。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十七所以必须同时有">一百一十七、所以必须同时有</h1>
+<pre class="text"><code>Positive
+有风险
+
+Negative
+没有风险</code></pre>
+<p>而且后面还要专门做：</p>
+<h1 id="hard-negative">Hard Negative</h1>
+<hr />
+<h1 id="一百一十八普通-negative">一百一十八、普通 Negative</h1>
+<p>例如：</p>
+<blockquote>
+<p>“供应商应具有独立承担民事责任的能力。”</p>
+</blockquote>
+<p>可能比较容易。</p>
+<hr />
+<h1 id="一百一十九hard-negative">一百一十九、Hard Negative</h1>
+<p>例如：</p>
+<blockquote>
+<p>“项目所在地为本市，供应商应保证 2
+小时内现场响应，但不限制服务机构设立方式。”</p>
+</blockquote>
+<p>它包含：</p>
+<pre class="text"><code>本市
+2小时
+现场</code></pre>
+<p>看起来：</p>
+<blockquote>
+<p>很像地域限制。</p>
+</blockquote>
+<p>但实际上：</p>
+<blockquote>
+<p>需要结合履约必要性判断，不能机械地因为出现“本市”就判违规。</p>
+</blockquote>
+<p>这种样本：</p>
+<blockquote>
+<p>特别值钱。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十为什么-hard-negative-极其重要">一百二十、为什么 Hard
+Negative 极其重要？</h1>
+<p>它防止模型学习：</p>
+<h1 id="shortcut">Shortcut</h1>
+<p>例如：</p>
+<pre class="text"><code>出现“本市”
+→ 风险</code></pre>
+<p>这是假的规律。</p>
+<hr />
+<h1
+id="一百二十一我们真正希望模型学习">一百二十一、我们真正希望模型学习</h1>
+<pre class="text"><code>是否限制供应商身份/资格？
+
+是否与履约必要性相关？
+
+有没有合理替代实现？
+
+是否产生不合理差别待遇？</code></pre>
+<p>这才是：</p>
+<blockquote>
+<p>深层规则。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十二所以-schema-要为-hard-case-留空间">一百二十二、所以
+Schema 要为 Hard Case 留空间</h1>
+<p>例如：</p>
+<pre class="text"><code>difficulty:
+easy / medium / hard</code></pre>
+<p>或者：</p>
+<pre class="text"><code>case_type:
+standard / boundary / hard_negative</code></pre>
+<p>这样以后：</p>
+<blockquote>
+<p>可以单独做 Slice Evaluation。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十三什么叫-slice">一百二十三、什么叫 Slice？</h1>
+<p>Slice：</p>
+<blockquote>
+<p>数据切片。</p>
+</blockquote>
+<p>例如单独看：</p>
+<pre class="text"><code>地域限制类
+技术参数类
+Hard Negative
+长文本
+评分标准</code></pre>
+<p>模型总体 90 分，</p>
+<p>可能在：</p>
+<pre class="text"><code>Hard Negative</code></pre>
+<p>只有：</p>
+<blockquote>
+<p>52 分。</p>
+</blockquote>
+<p>如果只看平均分：</p>
+<blockquote>
+<p>完全看不到。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十四所以-metadata-不是废字段">一百二十四、所以 Metadata
+不是废字段</h1>
+<p>好的 Metadata：</p>
+<blockquote>
+<p>是以后诊断模型的手术刀。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十五但-metadata-也不能无限堆">一百二十五、但 Metadata
+也不能无限堆</h1>
+<p>第一版不要出现：</p>
+<pre class="text"><code>200个字段</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>80% 永远没人用。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十六设计字段时问三个问题">一百二十六、设计字段时问三个问题</h1>
+<pre class="text"><code>这个字段未来会用于：
+
+训练？
+评测？
+治理？</code></pre>
+<p>三者都不是：</p>
+<blockquote>
+<p>暂时不要加。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十七schema-设计的原则之一">一百二十七、Schema
+设计的原则之一</h1>
+<h1 id="minimal-but-sufficient">Minimal but Sufficient</h1>
+<p>中文：</p>
+<blockquote>
+<p><strong>尽量简单，但足够支撑任务。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百二十八现在建立第一版字段地图">一百二十八、现在建立第一版字段地图</h1>
+<p>可以先分成：</p>
+<table>
+<thead>
+<tr class="header">
+<th>区域</th>
+<th>典型字段</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Identity</td>
+<td>sample_id, project_id, document_id</td>
+</tr>
+<tr class="even">
+<td>Structure</td>
+<td>section_path, clause_id</td>
+</tr>
+<tr class="odd">
+<td>Input</td>
+<td>clause_text, context</td>
+</tr>
+<tr class="even">
+<td>Label</td>
+<td>risk_present, risk_type, risk_level</td>
+</tr>
+<tr class="odd">
+<td>Reasoning</td>
+<td>rationale</td>
+</tr>
+<tr class="even">
+<td>Evidence</td>
+<td>evidence_ids</td>
+</tr>
+<tr class="odd">
+<td>Action</td>
+<td>suggestion</td>
+</tr>
+<tr class="even">
+<td>Quality</td>
+<td>label_status, needs_review</td>
+</tr>
+<tr class="odd">
+<td>Governance</td>
+<td>schema_version, source_type</td>
+</tr>
+<tr class="even">
+<td>Analysis</td>
+<td>difficulty, case_type</td>
+</tr>
+</tbody>
+</table>
+<p>这已经足够支撑：</p>
+<blockquote>
+<p>第一版系统设计。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十九现在看一个不好的-schema">一百二十九、现在看一个“不好的
+Schema”</h1>
+<div class="sourceCode" id="cb126"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb126-1"><a href="#cb126-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb126-2"><a href="#cb126-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商须在本市注册。&quot;</span><span class="fu">,</span></span>
+<span id="cb126-3"><a href="#cb126-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;answer&quot;</span><span class="fu">:</span> <span class="st">&quot;不合理。&quot;</span></span>
+<span id="cb126-4"><a href="#cb126-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>看起来很简单。</p>
+<p>问题在哪里？</p>
+<hr />
+<h1 id="一百三十问题一">一百三十、问题一</h1>
+<p>不知道：</p>
+<blockquote>
+<p>来自哪个项目。</p>
+</blockquote>
+<p>无法：</p>
+<blockquote>
+<p>防泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十一问题二">一百三十一、问题二</h1>
+<p>不知道：</p>
+<blockquote>
+<p>属于哪个章节。</p>
+</blockquote>
+<p>上下文丢失。</p>
+<hr />
+<h1 id="一百三十二问题三">一百三十二、问题三</h1>
+<p>“不合理”到底是什么类型？</p>
+<p>无法做：</p>
+<blockquote>
+<p>Category Evaluation。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十三问题四">一百三十三、问题四</h1>
+<p>没有：</p>
+<blockquote>
+<p>Evidence。</p>
+</blockquote>
+<p>以后无法检验：</p>
+<blockquote>
+<p>法律依据。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十四问题五">一百三十四、问题五</h1>
+<p>不知道：</p>
+<blockquote>
+<p>谁标的。</p>
+</blockquote>
+<p>也不知道：</p>
+<blockquote>
+<p>有没有专家复核。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十五问题六">一百三十五、问题六</h1>
+<p>无法区分：</p>
+<pre class="text"><code>确定风险</code></pre>
+<p>和：</p>
+<pre class="text"><code>需要进一步核验</code></pre>
+<hr />
+<h1
+id="一百三十六所以两字段数据集虽然简单">一百三十六、所以“两字段数据集”虽然简单</h1>
+<p>但可能把以后大量能力：</p>
+<blockquote>
+<p>永久切掉。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十七反过来也不能过度设计">一百三十七、反过来也不能过度设计</h1>
+<p>例如第一天就要求专家填写：</p>
+<pre class="text"><code>46个标签
+17种置信度
+13层法规关系
+8个推理阶段</code></pre>
+<p>专家会：</p>
+<blockquote>
+<p>标到怀疑人生。</p>
+</blockquote>
+<p>标注一致性：</p>
+<blockquote>
+<p>反而下降。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十八所以-schema-不是一次设计完美">一百三十八、所以 Schema
+不是一次设计完美</h1>
+<p>正确方式是：</p>
+<pre class="text"><code>V0.1
+↓
+小规模试标
+↓
+发现问题
+↓
+V0.2
+↓
+再试
+↓
+稳定
+↓
+V1.0</code></pre>
+<p>这叫：</p>
+<h1 id="schema-iteration">Schema Iteration</h1>
+<hr />
+<h1 id="一百三十九为什么先做-pilot-annotation">一百三十九、为什么先做
+Pilot Annotation？</h1>
+<p>Pilot：</p>
+<blockquote>
+<p>小规模试标。</p>
+</blockquote>
+<p>例如先找：</p>
+<pre class="text"><code>50～200条</code></pre>
+<p>真实条款。</p>
+<p>让 2～3 位专家：</p>
+<blockquote>
+<p>按 V0.1 Schema 标。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十然后看什么">一百四十、然后看什么？</h1>
+<p>看：</p>
+<pre class="text"><code>哪些字段大家总理解不一样？
+
+哪些字段几乎没用？
+
+哪些业务状态Schema根本表达不了？
+
+哪些标签总冲突？
+
+哪些上下文不够？</code></pre>
+<p>这比坐办公室：</p>
+<blockquote>
+<p>凭想象设计三个月 Schema</p>
+</blockquote>
+<p>靠谱得多。</p>
+<hr />
+<h1 id="一百四十一schema-是通过真实数据撞出来的">一百四十一、Schema
+是通过真实数据“撞”出来的</h1>
+<p>这句话非常值得记。</p>
+<p>你真正拿 100 条采购条款去标，</p>
+<p>很快就会发现：</p>
+<blockquote>
+<p>现实永远比设计表复杂。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十二一个很典型的现实问题">一百四十二、一个很典型的现实问题</h1>
+<p>你可能设计：</p>
+<pre class="text"><code>risk_level:
+low
+medium
+high</code></pre>
+<p>然后专家问：</p>
+<blockquote>
+<p>“这个条款本身看不出，需要结合项目性质怎么办？”</p>
+</blockquote>
+<p>这时你才发现：</p>
+<blockquote>
+<p>缺少 <code>needs_review</code>。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十三另一个现实问题">一百四十三、另一个现实问题</h1>
+<p>你设计：</p>
+<pre class="text"><code>risk_type:
+qualification
+technical
+commercial</code></pre>
+<p>专家说：</p>
+<blockquote>
+<p>“这个评分条件同时涉及技术参数倾向性和评分标准。”</p>
+</blockquote>
+<p>于是你要决定：</p>
+<pre class="text"><code>单标签？</code></pre>
+<p>还是：</p>
+<pre class="text"><code>多标签？</code></pre>
+<hr />
+<h1
+id="一百四十四这就是-schema-design-真正困难的地方">一百四十四、这就是
+Schema Design 真正困难的地方</h1>
+<p>不是：</p>
+<blockquote>
+<p>JSON 会不会写。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>真实业务世界到底应该怎么被离散化。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百四十五单标签还是多标签">一百四十五、单标签还是多标签？</h1>
+<p>例如一条：</p>
+<blockquote>
+<p>“特定品牌产品得 10 分，其它品牌得 0 分。”</p>
+</blockquote>
+<p>它可能同时涉及：</p>
+<pre class="text"><code>技术参数倾向性
++
+评分标准不合理</code></pre>
+<hr />
+<h1 id="一百四十六如果-schema-强迫只能选一个">一百四十六、如果 Schema
+强迫只能选一个</h1>
+<p>会丢失信息。</p>
+<p>但如果允许：</p>
+<pre class="text"><code>无限多标签</code></pre>
+<p>标注和评测又变复杂。</p>
+<hr />
+<h1 id="一百四十七第一版可以考虑">一百四十七、第一版可以考虑</h1>
+<pre class="text"><code>primary_risk_type</code></pre>
+<p>加：</p>
+<pre class="text"><code>secondary_risk_types</code></pre>
+<p>例如：</p>
+<pre class="text"><code>primary:
+scoring_rule
+
+secondary:
+technical_specification</code></pre>
+<p>这是一个不错的折中思路。</p>
+<hr />
+<h1
+id="一百四十八但今天不把字段最终冻结">一百四十八、但今天不把字段最终冻结</h1>
+<p>第四课第 8、9 阶段：</p>
+<blockquote>
+<p>会结合标注体系进一步定型。</p>
+</blockquote>
+<p>今天的目标是：</p>
+<blockquote>
+<p>建立设计框架。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十九什么字段绝对不要让模型偷看">一百四十九、什么字段绝对不要让模型偷看？</h1>
+<p>比如：</p>
+<pre class="text"><code>expert_final_decision</code></pre>
+<p>如果它在 Input：</p>
+<blockquote>
+<p>泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十什么字段应该留在-metadata">一百五十、什么字段应该留在
+Metadata？</h1>
+<p>例如：</p>
+<pre class="text"><code>project_id
+document_id
+split_group
+annotation_status</code></pre>
+<p>模型不必看。</p>
+<p>Pipeline：</p>
+<blockquote>
+<p>必须看。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十一什么字段可以同时用于-input-和展示">一百五十一、什么字段可以同时用于
+Input 和展示？</h1>
+<p>例如：</p>
+<pre class="text"><code>section_path</code></pre>
+<p>有时模型看到章节名称：</p>
+<blockquote>
+<p>有助于判断。</p>
+</blockquote>
+<p>产品展示也：</p>
+<blockquote>
+<p>可以告诉用户风险在哪里。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十二所以字段还可以进一步标记用途">一百五十二、所以字段还可以进一步标记用途</h1>
+<p>例如：</p>
+<pre class="text"><code>use_for_training_input: true
+use_for_training_target: false
+use_for_evaluation: true
+use_for_traceability: true</code></pre>
+<p>实际实现不一定这样写。</p>
+<p>但设计思想很重要。</p>
+<hr />
+<h1
+id="一百五十三现在第一次定义数据单元">一百五十三、现在第一次定义“数据单元”</h1>
+<p>我们的第一版可以这样想：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mo>=</mo><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>M</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DataUnit
+=
+TargetClause
++
+MinimalNecessaryContext
++
+SourceIdentity
++
+ExpertAnnotation
+}
+</annotation></semantics></math></p>
+<p>这几乎是本阶段唯一值得保留的“公式”。</p>
+<hr />
+<h1 id="一百五十四翻译成人话">一百五十四、翻译成人话</h1>
+<p>一条好数据需要：</p>
+<blockquote>
+<p><strong>我要判断的那句话</strong></p>
+</blockquote>
+<p>加：</p>
+<blockquote>
+<p><strong>为了判断它必须知道的上下文</strong></p>
+</blockquote>
+<p>加：</p>
+<blockquote>
+<p><strong>它究竟来自哪里</strong></p>
+</blockquote>
+<p>加：</p>
+<blockquote>
+<p><strong>专家到底怎么判断</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百五十五这个结构以后会贯穿整个-procurementai">一百五十五、这个结构以后会贯穿整个
+ProcurementAI</h1>
+<p>因为：</p>
+<pre class="text"><code>Clause</code></pre>
+<p>支撑：</p>
+<blockquote>
+<p>风险定位。</p>
+</blockquote>
+<pre class="text"><code>Context</code></pre>
+<p>支撑：</p>
+<blockquote>
+<p>合理判断。</p>
+</blockquote>
+<pre class="text"><code>Source</code></pre>
+<p>支撑：</p>
+<blockquote>
+<p>追溯与数据隔离。</p>
+</blockquote>
+<pre class="text"><code>Annotation</code></pre>
+<p>支撑：</p>
+<blockquote>
+<p>训练与评测。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十六现在看三个案例">一百五十六、现在看三个案例</h1>
+<h3 id="case-a明显风险">Case A：明显风险</h3>
+<pre class="text"><code>供应商必须是在本市依法注册的企业。</code></pre>
+<p>可能：</p>
+<pre class="text"><code>risk_present:
+true
+
+risk_type:
+supplier_qualification
+
+subtype:
+geographic_restriction</code></pre>
+<hr />
+<h1 id="一百五十七case-b明显普通条件">一百五十七、Case
+B：明显普通条件</h1>
+<pre class="text"><code>供应商应具有履行合同所必需的设备和专业技术能力。</code></pre>
+<p>可能：</p>
+<pre class="text"><code>risk_present:
+false</code></pre>
+<hr />
+<h1 id="一百五十八case-c边界案例">一百五十八、Case C：边界案例</h1>
+<pre class="text"><code>供应商应确保故障发生后2小时内到达项目现场。</code></pre>
+<p>单独：</p>
+<blockquote>
+<p>不应该机械判断。</p>
+</blockquote>
+<p>可能：</p>
+<pre class="text"><code>needs_review:
+true</code></pre>
+<p>并要求 Context：</p>
+<pre class="text"><code>项目性质
+服务场景
+履约方式</code></pre>
+<hr />
+<h1
+id="一百五十九这三个案例一起放进数据集才有价值">一百五十九、这三个案例一起放进数据集才有价值</h1>
+<p>模型需要同时学习：</p>
+<pre class="text"><code>明显有风险
+
+明显没风险
+
+不能武断判断</code></pre>
+<p>这就是专业模型与关键词分类器之间的区别。</p>
+<hr />
+<h1
+id="一百六十一个非常危险的数据集是什么样">一百六十、一个非常危险的数据集是什么样？</h1>
+<p>全是：</p>
+<pre class="text"><code>“必须本地注册”
+→ 风险
+
+“必须本地公司”
+→ 风险
+
+“必须本市分支”
+→ 风险</code></pre>
+<p>模型很快就学会：</p>
+<pre class="text"><code>本地 / 本市
+=
+风险</code></pre>
+<hr />
+<h1 id="一百六十一然后遇到">一百六十一、然后遇到</h1>
+<blockquote>
+<p>“项目所在地为本市，供应商应保证2小时现场响应，但不限制服务机构设立方式。”</p>
+</blockquote>
+<p>它也判：</p>
+<blockquote>
+<p>地域歧视。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="shortcut-learning">Shortcut Learning</h1>
+<hr />
+<h1 id="一百六十二所以从-schema-阶段就要给未来留出">一百六十二、所以从
+Schema 阶段就要给未来留出</h1>
+<pre class="text"><code>case_type
+difficulty
+context_required</code></pre>
+<p>等诊断字段的可能性。</p>
+<hr />
+<h1 id="一百六十三以后-hard-negative-可以专门筛出来">一百六十三、以后
+Hard Negative 可以专门筛出来</h1>
+<p>例如：</p>
+<pre class="text"><code>case_type = hard_negative</code></pre>
+<p>然后单独计算：</p>
+<pre class="text"><code>Hard Negative Accuracy</code></pre>
+<p>这才是真正专业的 Benchmark。</p>
+<hr />
+<h1
+id="一百六十四现在谈法规数据和采购文件数据要不要放一张表">一百六十四、现在谈“法规数据”和“采购文件数据”要不要放一张表</h1>
+<p>可以统一管理。</p>
+<p>但不要假设：</p>
+<blockquote>
+<p>它们是同一种 Sample。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十五法规文本更像-knowledge-corpus">一百六十五、法规文本更像
+Knowledge Corpus</h1>
+<p>例如：</p>
+<pre class="text"><code>法律
+行政法规
+部门规章
+规范性文件</code></pre>
+<p>主要服务：</p>
+<blockquote>
+<p>RAG / CPT / Evidence。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十六采购文件-专家判断">一百六十六、采购文件 +
+专家判断</h1>
+<p>更像：</p>
+<h1 id="task-data">Task Data</h1>
+<p>服务：</p>
+<blockquote>
+<p>SFT / Classification / Evaluation。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十七监管案例">一百六十七、监管案例</h1>
+<p>介于两者之间。</p>
+<p>既包含：</p>
+<blockquote>
+<p>知识。</p>
+</blockquote>
+<p>又包含：</p>
+<blockquote>
+<p>专家判断模式。</p>
+</blockquote>
+<p>非常有价值。</p>
+<hr />
+<h1
+id="一百六十八所以长期-master-data-可以有不同-entity">一百六十八、所以长期
+Master Data 可以有不同 Entity</h1>
+<pre class="text"><code>Regulation
+Project
+Document
+Clause
+Case
+Annotation
+EvidenceLink</code></pre>
+<p>以后可以形成：</p>
+<blockquote>
+<p>关系化的数据资产。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十九但是第一版不要先建宇宙数据库">一百六十九、但是第一版不要先建“宇宙数据库”</h1>
+<p>我们现在先把：</p>
+<h1 id="clause-annotation">Clause + Annotation</h1>
+<p>做好。</p>
+<p>这是最重要的基础。</p>
+<hr />
+<h1
+id="一百七十这一阶段真正的工程产物是什么">一百七十、这一阶段真正的工程产物是什么？</h1>
+<p>不是一段代码。</p>
+<p>而是三样东西：</p>
+<pre class="text"><code>1. Task Definition
+
+2. Sample Schema
+
+3. Label Dictionary Draft</code></pre>
+<hr />
+<h1 id="一百七十一task-definition-可以写成">一百七十一、Task Definition
+可以写成</h1>
+<pre class="text"><code>Task Name:
+Procurement Clause Risk Review
+
+Input:
+目标采购条款 + 必要上下文
+
+Output:
+风险存在性
+风险类型
+风险等级/需核验状态
+理由
+
+Primary Use:
+Baseline Evaluation / SFT Dataset</code></pre>
+<hr />
+<h1 id="一百七十二sample-schema-draft">一百七十二、Sample Schema
+Draft</h1>
+<p>第一版可以是：</p>
+<pre class="text"><code>sample_id
+
+project_id
+document_id
+source_type
+
+section_path
+clause_id
+
+clause_text
+context_before
+context_after
+project_context
+
+risk_present
+risk_type
+risk_subtype
+risk_level
+needs_review
+
+rationale
+evidence_ids
+suggestion
+
+difficulty
+case_type
+
+label_status
+schema_version</code></pre>
+<hr />
+<h1
+id="一百七十三其中有些字段第一版可以为空">一百七十三、其中有些字段第一版可以为空</h1>
+<p>重要的是：</p>
+<blockquote>
+<p>Schema 知道它们是什么。</p>
+</blockquote>
+<p>不是每条：</p>
+<blockquote>
+<p>所有字段必须填满。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十四字段应该区分">一百七十四、字段应该区分</h1>
+<pre class="text"><code>Required</code></pre>
+<p>和：</p>
+<pre class="text"><code>Optional</code></pre>
+<hr />
+<h1 id="一百七十五例如第一版-mandatory">一百七十五、例如第一版
+Mandatory</h1>
+<p>可能是：</p>
+<pre class="text"><code>sample_id
+project_id
+document_id
+clause_text
+risk_present
+label_status
+schema_version</code></pre>
+<hr />
+<h1 id="一百七十六optional">一百七十六、Optional</h1>
+<p>可能：</p>
+<pre class="text"><code>risk_subtype
+evidence_ids
+suggestion
+difficulty</code></pre>
+<p>具体后面：</p>
+<blockquote>
+<p>再随 Pilot 调整。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十七为什么-mandatory-不能太多">一百七十七、为什么
+Mandatory 不能太多？</h1>
+<p>因为标注成本会爆炸。</p>
+<p>每多一个必填字段：</p>
+<blockquote>
+<p>都是在向专家收时间。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十八专家时间是整个项目最贵的资源之一">一百七十八、专家时间是整个项目最贵的资源之一</h1>
+<p>所以 Schema 设计还要问：</p>
+<blockquote>
+<p><strong>这个字段值不值得专家花 30 秒？</strong></p>
+</blockquote>
+<p>这非常现实。</p>
+<hr />
+<h1
+id="一百七十九如果一个字段每条多花-30-秒">一百七十九、如果一个字段每条多花
+30 秒</h1>
+<p>10 万条数据：</p>
+<pre class="text"><code>100000 × 30秒</code></pre>
+<p>就是：</p>
+<blockquote>
+<p>833 小时以上。</p>
+</blockquote>
+<p>一个看似不起眼的字段：</p>
+<blockquote>
+<p>可能增加几个月标注成本。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十所以-schema-设计本身也是成本设计">一百八十、所以 Schema
+设计本身也是成本设计</h1>
+<p>这点很多算法工程师容易忽略。</p>
+<hr />
+<h1
+id="一百八十一能机器自动产生的字段">一百八十一、能机器自动产生的字段</h1>
+<p>尽量不要让专家手填。</p>
+<p>例如：</p>
+<pre class="text"><code>sample_id
+document_id
+section_path
+source_url
+created_at</code></pre>
+<p>应该：</p>
+<blockquote>
+<p>Pipeline 自动生成。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十二专家真正应该花时间的地方">一百八十二、专家真正应该花时间的地方</h1>
+<p>是：</p>
+<pre class="text"><code>风险判断
+风险类型
+推理理由
+边界判断
+证据确认</code></pre>
+<p>这才值得专业人的时间。</p>
+<hr />
+<h1 id="一百八十三这叫-human-in-the-loop-optimization">一百八十三、这叫
+Human-in-the-Loop Optimization</h1>
+<p>人：</p>
+<blockquote>
+<p>做人最擅长的判断。</p>
+</blockquote>
+<p>机器：</p>
+<blockquote>
+<p>做机器擅长的机械工作。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十四所以好的数据系统不是让专家多填表">一百八十四、所以好的数据系统不是“让专家多填表”</h1>
+<p>而是：</p>
+<blockquote>
+<p><strong>让专家只处理真正需要专业判断的字段。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百八十五再回到我们整个项目">一百八十五、再回到我们整个项目</h1>
+<p>第三课最后问的是：</p>
+<blockquote>
+<p>哪个模型适合我们？</p>
+</blockquote>
+<p>第四课第一阶段现在问的是：</p>
+<blockquote>
+<p><strong>我们到底准备拿什么东西公平地训练和测试这些模型？</strong></p>
+</blockquote>
+<p>两课之间已经接起来了。</p>
+<hr />
+<h1 id="一百八十六没有-schema-会发生什么">一百八十六、没有 Schema
+会发生什么？</h1>
+<p>你会有：</p>
+<pre class="text"><code>很多PDF
+很多Excel
+很多人工笔记
+很多Word审查意见
+很多模型生成文本</code></pre>
+<p>但它们：</p>
+<blockquote>
+<p>互相不能稳定连接。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十七有-schema-以后">一百八十七、有 Schema 以后</h1>
+<p>它们可以开始进入：</p>
+<pre class="text"><code>统一的数据流水线</code></pre>
+<hr />
+<h1 id="一百八十八最终我们希望得到">一百八十八、最终我们希望得到</h1>
+<pre class="text"><code>Raw Documents
+      ↓
+Parser
+      ↓
+Structured Documents
+      ↓
+Clause Units
+      ↓
+Task Schema
+      ↓
+Expert Annotation
+      ↓
+Master Dataset
+      ↓
+Train / Val / Gold
+      ↓
+SFT / RAG / Evaluation</code></pre>
+<p>这就是第四课后面所有阶段的总骨架。</p>
+<hr />
+<h1
+id="一百八十九本阶段最容易犯的-10-个错误">一百八十九、本阶段最容易犯的
+10 个错误</h1>
+<h3 id="错误-1">错误 1</h3>
+<blockquote>
+<p>下载了 PDF 就等于有训练数据。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-2">错误 2</h3>
+<blockquote>
+<p>一份文件就是一条 Sample。</p>
+</blockquote>
+<p>通常错。</p>
+<h3 id="错误-3">错误 3</h3>
+<blockquote>
+<p>条款切得越短越好。</p>
+</blockquote>
+<p>错。</p>
+<p>需要保留必要 Context。</p>
+<h3 id="错误-4">错误 4</h3>
+<blockquote>
+<p>Schema 只是数据库工程师的事情。</p>
+</blockquote>
+<p>错。</p>
+<p>它定义的是模型到底学习什么。</p>
+<h3 id="错误-5">错误 5</h3>
+<blockquote>
+<p>所有情况强制二分类。</p>
+</blockquote>
+<p>危险。</p>
+<p>现实存在 <code>needs_review</code>。</p>
+<h3 id="错误-6">错误 6</h3>
+<blockquote>
+<p>Label 想怎么写就怎么写。</p>
+</blockquote>
+<p>错。</p>
+<p>需要 Controlled Vocabulary。</p>
+<h3 id="错误-7">错误 7</h3>
+<blockquote>
+<p>专家理由和法规证据是一回事。</p>
+</blockquote>
+<p>不是。</p>
+<h3 id="错误-8">错误 8</h3>
+<blockquote>
+<p>Metadata 模型不用看，所以可以不要。</p>
+</blockquote>
+<p>错。</p>
+<p>它对数据治理和评测极其重要。</p>
+<h3 id="错误-9">错误 9</h3>
+<blockquote>
+<p>Schema 字段越多越专业。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-10">错误 10</h3>
+<blockquote>
+<p>Schema 一次设计完以后永远不改。</p>
+</blockquote>
+<p>错。</p>
+<p>真实 Schema 应该通过 Pilot 迭代。</p>
+<hr />
+<h1 id="一百九十本阶段最重要的三个">一百九十、本阶段最重要的三个“≠”</h1>
+<pre class="text"><code>Raw Document
+≠
+Training Sample</code></pre>
+<pre class="text"><code>Target Clause
+≠
+Complete Context</code></pre>
+<pre class="text"><code>More Fields
+≠
+Better Schema</code></pre>
+<hr />
+<h1
+id="一百九十一再加一个非常重要的">一百九十一、再加一个非常重要的“=”</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mo>=</mo><mi>C</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodSchema
+=
+ClearMeaning
++
+Traceability
++
+Trainability
++
+Evaluability
+}
+</annotation></semantics></math></p>
+<p>翻译成中文：</p>
+<blockquote>
+<p>一份好的
+Schema，要让数据<strong>含义清楚、来源可追、能用于训练、也能公平评测</strong>。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十二本阶段掌握测试">一百九十二、本阶段掌握测试</h1>
+<p>如果现在不看前文，你能自己回答下面这些问题，这一阶段就真正掌握了：</p>
+<blockquote>
+<p>为什么一份 PDF 不等于一条训练样本？</p>
+</blockquote>
+<blockquote>
+<p>Raw Document、Data Unit、Training Sample 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>为什么必须先定义任务，再开始大量收数据？</p>
+</blockquote>
+<blockquote>
+<p>Schema 到底是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Clause-level 很适合采购风险审查？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Clause 很重要，但单独 Clause 又可能不够？</p>
+</blockquote>
+<blockquote>
+<p>Target Clause 和 Context 为什么必须分开？</p>
+</blockquote>
+<blockquote>
+<p>为什么要保留 project_id？</p>
+</blockquote>
+<blockquote>
+<p>project_id 和模型 Input 为什么又不是一回事？</p>
+</blockquote>
+<blockquote>
+<p>为什么随机按行切 Train/Test 会产生风险？</p>
+</blockquote>
+<blockquote>
+<p>Input Field、Target Field、Metadata Field 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Label Leakage？</p>
+</blockquote>
+<blockquote>
+<p>risk_present 为什么未必只有 true / false？</p>
+</blockquote>
+<blockquote>
+<p><code>needs_review</code> 为什么对专业系统特别重要？</p>
+</blockquote>
+<blockquote>
+<p>risk_type 为什么必须使用受控标签体系？</p>
+</blockquote>
+<blockquote>
+<p>Reason 和 Evidence 为什么不是同一个字段？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Evidence 更接近 RAG，而 Rationale 更接近 SFT？</p>
+</blockquote>
+<blockquote>
+<p>为什么 label_status 要区分机器标注、人工标注和专家 Gold？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Schema 必须版本化？</p>
+</blockquote>
+<blockquote>
+<p>为什么一份采购文件可以派生多个训练任务？</p>
+</blockquote>
+<blockquote>
+<p>Master Dataset 和 Task-specific Dataset View 是什么关系？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Data Lineage？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Positive 和 Negative 必须同时存在？</p>
+</blockquote>
+<blockquote>
+<p>Hard Negative 为什么特别重要？</p>
+</blockquote>
+<blockquote>
+<p>为什么“本市”不能直接等价于“违法”？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Metadata 对 Slice Evaluation 很重要？</p>
+</blockquote>
+<blockquote>
+<p>为什么字段不能无限增加？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Schema 应该先经过 Pilot Annotation？</p>
+</blockquote>
+<blockquote>
+<p>专家应该把时间花在哪些字段上？</p>
+</blockquote>
+<p>如果这些都能自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>1</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第1阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百九十三本阶段最终只记一句话">一百九十三、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>政府采购数据工程的第一步不是下载更多文件，而是先明确“一条数据究竟代表什么”：用
+Schema
+把目标条款、必要上下文、来源身份、专家标签、证据理由和质量状态组织成一个可追溯、可训练、可评测的数据单元。</strong></p>
+</blockquote>
+<p>最后压成一张图：</p>
+<pre class="text"><code>                  真实采购业务
+                       │
+                       ▼
+                  Task Definition
+                       │
+                       ▼
+                     Schema
+                       │
+       ┌───────────────┼────────────────┐
+       ▼               ▼                ▼
+   Source ID          Input           Target
+ project/doc      clause/context   risk/label
+       │               │                │
+       └───────────────┼────────────────┘
+                       ▼
+               Evidence / Rationale
+                       │
+                       ▼
+                Quality Metadata
+                       │
+                       ▼
+                  Master Sample
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+      SFT View      RAG View     Eval View</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-2-阶段">下一阶段：第四课 · 第 2 阶段</h1>
+<h2
+id="pdfhtmldocx-到底怎样变成可信文本为什么-extract_text-成功并不代表文档解析成功">PDF、HTML、DOCX
+到底怎样变成“可信文本”？为什么 <code>extract_text()</code>
+成功，并不代表文档解析成功？</h2>
+<p>下一阶段我们会真正碰第一批原始采购文件。</p>
+<p>但重点不是：</p>
+<blockquote>
+<p>“调用一个 PDF 库把文字抽出来。”</p>
+</blockquote>
+<p>而是第一次建立这张脑图：</p>
+<pre class="text"><code>文件看起来正确
+        ≠
+机器解析出来正确</code></pre>
+<p>我们会拆：</p>
+<pre class="text"><code>PDF到底是不是“文字文件”？
+
+文字型PDF和扫描PDF有什么区别？
+
+为什么两栏排版会把阅读顺序抽乱？
+
+页眉页脚为什么会污染训练数据？
+
+表格为什么特别难？
+
+为什么一个金额“300万元”
+可能被解析成：
+“300”
+和
+“万元”
+跑到两个不同位置？
+
+为什么 OCR 应该是必要时使用的后备方案，
+而不是所有PDF第一步就OCR？</code></pre>
+<p>并最终把：</p>
+<pre class="text"><code>Raw Procurement Documents</code></pre>
+<p>第一次推进到：</p>
+<pre class="text"><code>ParsedDocument_V0.1</code></pre>
+<p>也就是第四课真正开始进入数据工程流水线。</p>
+<hr /><div class="nav"><a class="btn" href="../lesson03/stage10.html">← 第 3 课最后阶段</a><a class="btn" href="stage02.html">第 2 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

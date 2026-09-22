@@ -1,0 +1,1273 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第8课 · 第7阶段：Replay、Regularization 与能力保持：怎样防止 CPT 越训越窄？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第8课 · 第7阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>做 CPT、领域语料混合、能力保持、灾难性遗忘和 Synthetic Data。<ul><li>DetectForgetting ≠ PreventForgetting。发现遗忘是诊断，能力保持是训练控制。</li><li>Retention ≠ FreezeEverything。能力保持不是不让模型变化，而是让变化发生在值得变化的地方。</li><li>Replay = OldDistributionReminder。回放的本质是让旧分布在训练过程中继续获得梯度支持。</li></ul></div><h1 id="第八课-第-7-阶段">第八课 · 第 7 阶段</h1>
+<h1
+id="replayregularization-与能力保持怎样防止-cpt-越训越窄-1">Replay、Regularization
+与能力保持：怎样防止 CPT 越训越窄？</h1>
+<h2
+id="已经知道模型为什么会遗忘下一步就是把能力保持真正做成训练机制而不是只在训练后发现问题-1">已经知道模型为什么会遗忘，下一步就是把“能力保持”真正做成训练机制，而不是只在训练后发现问题。</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-6">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-6">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>DetectForgetting ≠
+PreventForgetting。发现遗忘是诊断，能力保持是训练控制。</strong></li>
+<li><strong>Retention ≠
+FreezeEverything。能力保持不是不让模型变化，而是让变化发生在值得变化的地方。</strong></li>
+<li><strong>Replay =
+OldDistributionReminder。回放的本质是让旧分布在训练过程中继续获得梯度支持。</strong></li>
+<li><strong>Retention = Data Constraint + Objective Constraint +
+Parameter
+Constraint。能力保持可以从数据、目标函数和参数更新范围三个层面同时实现。</strong></li>
+<li><strong>ReferenceModel ≠
+GroundTruth。参考模型只是行为锚点，不是永远正确的老师。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-6">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Replay</code></td>
+<td>回放：混入旧/通用数据以减少遗忘</td>
+</tr>
+<tr class="even">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="odd">
+<td><code>Retention</code></td>
+<td>能力保持：领域增强时尽量保住原有通用能力</td>
+</tr>
+<tr class="even">
+<td><code>Regression</code></td>
+<td>回归测试：更新后验证旧能力和关键切片没有退化</td>
+</tr>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>Checkpoint</code></td>
+<td>检查点：保存模型和训练状态以便恢复/发布</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-6">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 6 阶段我们解决的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DetectForgetting
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>怎样知道模型什么时候开始遗忘、遗忘了什么、哪个 Checkpoint
+已经不适合发布。</p>
+</blockquote>
+<p>但这还不够。</p>
+<p>真正成熟的 CPT 系统还必须进一步解决：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PreventForgetting
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>训练过程中怎样主动限制能力退化，而不是等训练结束以后才发现模型已经被训窄了。</strong></p>
+</blockquote>
+<p>所以本阶段正式进入：</p>
+<h1 id="capability-retention">Capability Retention</h1>
+<h2 id="能力保持">能力保持</h2>
+<p>并最终形成：</p>
+<h1
+id="procurementcptretentionpolicy_v0.1-1"><code>ProcurementCPTRetentionPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-6">一、先锁死本阶段最重要的一句话</h1>
+<p>发现遗忘和防止遗忘，是两件不同的事情。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DetectForgetting
+\neq
+PreventForgetting
+}
+</annotation></semantics></math></p>
+<p>第 6 阶段解决：</p>
+<pre class="text"><code>模型忘了什么？
+什么时候开始忘？
+忘了多少？</code></pre>
+<p>第 7 阶段解决：</p>
+<pre class="text"><code>训练时怎样降低遗忘？
+怎样让新能力和旧能力共存？
+怎样限制模型偏离原始分布？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetentionPolicy
+=
+TrainingTimeControl
+}
+</annotation></semantics></math></p>
+<p>它不是训练后的补救。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>训练过程中就要生效的约束机制。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二核心心智模型-①retention-不是别让模型变而是让模型只在值得变的地方变">二、核心心智模型
+①：Retention 不是“别让模型变”，而是“让模型只在值得变的地方变”</h1>
+<p>一个常见误区是：</p>
+<blockquote>
+<p>为了防止遗忘，就尽量少更新参数。</p>
+</blockquote>
+<p>但如果模型几乎不更新：</p>
+<blockquote>
+<p>CPT 也学不到新领域。</p>
+</blockquote>
+<p>所以真正目标不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoChange
+}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>s</mi><mi>e</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UsefulChange
++
+ControlledChange
+}
+</annotation></semantics></math></p>
+<p>这意味着：</p>
+<pre class="text"><code>需要领域能力增长
+但避免无关能力大幅漂移</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>z</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>t</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retention
+\neq
+FreezeEverything
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三最直接的方法replay">三、最直接的方法：Replay</h1>
+<h1 id="replay-1">Replay</h1>
+<h2 id="通用语料回放-1">通用语料回放</h2>
+<p>Replay 的核心思想非常简单：</p>
+<blockquote>
+<p>不要让模型在 CPT 期间只看采购领域。</p>
+</blockquote>
+<p>而是继续给它一部分：</p>
+<pre class="text"><code>高质量通用文本
+数学
+代码
+百科知识
+一般语言
+通用指令风格</code></pre>
+<p>让原有能力持续得到梯度支持。</p>
+<p>流程：</p>
+<pre class="text"><code>Domain Batch
+采购领域数据
+
++
+
+Replay Batch
+通用回放数据
+
+↓
+
+Mixed Training
+混合训练
+
+↓
+
+Domain Gain
++
+General Retention</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>y</mi><mo>=</mo><mi>O</mi><mi>l</mi><mi>d</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Replay
+=
+OldDistributionReminder
+}
+</annotation></semantics></math></p>
+<p>可以把它理解成：</p>
+<blockquote>
+<p>在模型学习新领域时，持续提醒它“旧世界仍然存在”。</p>
+</blockquote>
+<hr />
+<h1 id="四replay-ratio回放比例到底怎么定">四、Replay
+Ratio：回放比例到底怎么定？</h1>
+<p>假设训练总 Token Budget 是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">
+B
+</annotation></semantics></math></p>
+<p>我们定义领域占比：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mi>d</mi></msub><annotation encoding="application/x-tex">
+p_d
+</annotation></semantics></math></p>
+<p>回放占比：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mi>r</mi></msub><annotation encoding="application/x-tex">
+p_r
+</annotation></semantics></math></p>
+<p>满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>d</mi></msub><mo>+</mo><msub><mi>p</mi><mi>r</mi></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+p_d+p_r=1
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>Domain
+80%
+
+Replay
+20%</code></pre>
+<p>但这个比例不能机械固定。</p>
+<p>真正应该通过：</p>
+<pre class="text"><code>Domain Gain
+领域收益
+
+General Regression
+通用能力回归
+
+Training Cost
+训练成本</code></pre>
+<p>共同决定。</p>
+<p>如果 Replay 太少：</p>
+<blockquote>
+<p>遗忘可能明显。</p>
+</blockquote>
+<p>如果 Replay 太多：</p>
+<blockquote>
+<p>领域学习速度会变慢。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>y</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mo>=</mo><mi>P</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>e</mi><mi>o</mi><mi>f</mi><mi>f</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReplayRatio
+=
+PlasticityStabilityTradeoff
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五核心心智模型-②replay-不是把旧数据重新训练一遍而是维持分布覆盖">五、核心心智模型
+②：Replay 不是“把旧数据重新训练一遍”，而是维持分布覆盖</h1>
+<p>Replay 不要求：</p>
+<blockquote>
+<p>把原始预训练数据全部拿回来。</p>
+</blockquote>
+<p>现实里也不可能。</p>
+<p>更专业的目标是：</p>
+<blockquote>
+<p>建立一个足够代表原有能力分布的 Replay Corpus。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>General Language
+通用语言
+
+Reasoning
+推理
+
+Math
+数学
+
+Code
+代码
+
+Instruction-like Text
+指令风格文本</code></pre>
+<p>这些数据不需要巨大，</p>
+<p>但要覆盖：</p>
+<blockquote>
+<p>我们最不希望丢掉的能力。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>y</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mo>≠</mo><mi>O</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReplayCorpus
+\neq
+OriginalPretrainingCorpus
+}
+</annotation></semantics></math></p>
+<p>而更接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetentionRepresentativeCorpus
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>能力保持代表集。</p>
+</blockquote>
+<hr />
+<h1
+id="六interleaving领域数据和-replay-怎样混">六、Interleaving：领域数据和
+Replay 怎样混？</h1>
+<h1 id="interleaving">Interleaving</h1>
+<h2 id="交错训练">交错训练</h2>
+<p>一种常见做法：</p>
+<pre class="text"><code>Domain Batch
+↓
+Replay Batch
+↓
+Domain Batch
+↓
+Domain Batch
+↓
+Replay Batch</code></pre>
+<p>另一种：</p>
+<pre class="text"><code>同一个Batch中
+混合Domain与Replay样本</code></pre>
+<p>核心目标都是：</p>
+<blockquote>
+<p>避免长时间连续暴露在单一窄分布上。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>m</mi><mi>o</mi><mi>o</mi><mi>t</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Interleaving
+=
+DistributionSmoothingOverTime
+}
+</annotation></semantics></math></p>
+<p>中文可以理解为：</p>
+<blockquote>
+<p>把训练时间轴上的数据分布“摊平”。</p>
+</blockquote>
+<hr />
+<h1
+id="七核心心智模型-③能力保持不只靠-data也可以靠-objective-constraint">七、核心心智模型
+③：能力保持不只靠 Data，也可以靠 Objective Constraint</h1>
+<p>Replay 是：</p>
+<blockquote>
+<p>数据层面的能力保持。</p>
+</blockquote>
+<p>但还可以进一步做：</p>
+<h1 id="regularization">Regularization</h1>
+<h2 id="正则化约束">正则化约束</h2>
+<p>核心思想：</p>
+<blockquote>
+<p>在优化领域 Loss 的同时，增加一个“不要偏离太远”的约束。</p>
+</blockquote>
+<p>因此总 Loss 可以概念化为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>t</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi></mrow></msub><mo>=</mo><msub><mi>ℒ</mi><mrow><mi>d</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><mi>λ</mi><msub><mi>ℒ</mi><mrow><mi>r</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+\mathcal{L}_{total}
+=
+\mathcal{L}_{domain}
++
+\lambda
+\mathcal{L}_{retention}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">
+\lambda
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>保持约束的强度。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>可</mi><mi>以</mi><mi>来</mi><mi>自</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retention
+可以来自
+DataConstraint
++
+ObjectiveConstraint
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八weight-anchoring参数锚定">八、Weight Anchoring：参数锚定</h1>
+<p>一种直觉化方法是：</p>
+<blockquote>
+<p>不希望新模型的参数离原模型太远。</p>
+</blockquote>
+<p>设 CPT 前参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>θ</mi><mn>0</mn></msub><annotation encoding="application/x-tex">
+\theta_0
+</annotation></semantics></math></p>
+<p>训练中参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">
+\theta
+</annotation></semantics></math></p>
+<p>可以加入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>a</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>o</mi><mi>r</mi></mrow></msub><mo>=</mo><mo stretchy="false" form="postfix">∥</mo><mi>θ</mi><mo>−</mo><msub><mi>θ</mi><mn>0</mn></msub><msup><mo stretchy="false" form="postfix">∥</mo><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+\mathcal{L}_{anchor}
+=
+\|\theta-\theta_0\|^2
+</annotation></semantics></math></p>
+<p>总 Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>t</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi></mrow></msub><mo>=</mo><msub><mi>ℒ</mi><mrow><mi>d</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><mi>λ</mi><mo stretchy="false" form="postfix">∥</mo><mi>θ</mi><mo>−</mo><msub><mi>θ</mi><mn>0</mn></msub><msup><mo stretchy="false" form="postfix">∥</mo><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+\mathcal{L}_{total}
+=
+\mathcal{L}_{domain}
++
+\lambda
+\|\theta-\theta_0\|^2
+</annotation></semantics></math></p>
+<p>这叫：</p>
+<h1 id="weight-anchoring">Weight Anchoring</h1>
+<h2 id="参数锚定">参数锚定</h2>
+<p>直觉：</p>
+<blockquote>
+<p>模型可以学，但别漂得太远。</p>
+</blockquote>
+<p>但必须注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>l</mi><mi>o</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>C</mi><mi>l</mi><mi>o</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ParameterCloseness
+\neq
+CapabilityCloseness
+}
+</annotation></semantics></math></p>
+<p>所以 Weight Anchoring 只能作为：</p>
+<blockquote>
+<p>辅助约束。</p>
+</blockquote>
+<p>不能替代行为评测。</p>
+<hr />
+<h1 id="九kl-constraint约束输出分布不要偏离参考模型太远">九、KL
+Constraint：约束输出分布不要偏离参考模型太远</h1>
+<p>除了约束参数，</p>
+<p>还可以约束：</p>
+<blockquote>
+<p>模型输出分布。</p>
+</blockquote>
+<p>假设原模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p_{ref}(x)
+</annotation></semantics></math></p>
+<p>CPT 模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p_{\theta}(x)
+</annotation></semantics></math></p>
+<p>可以在 Replay / Anchor 数据上加入：</p>
+<h1 id="kl-divergence">KL Divergence</h1>
+<h2 id="kl-散度约束">KL 散度约束</h2>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>K</mi><mi>L</mi></mrow></msub><mo>=</mo><msub><mi>D</mi><mrow><mi>K</mi><mi>L</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>p</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mo stretchy="false" form="postfix">∥</mo><msub><mi>p</mi><mi>θ</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathcal{L}_{KL}
+=
+D_{KL}
+(
+p_{ref}
+\|
+p_{\theta}
+)
+</annotation></semantics></math></p>
+<p>总目标：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>t</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi></mrow></msub><mo>=</mo><msub><mi>ℒ</mi><mrow><mi>d</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><mi>β</mi><msub><mi>ℒ</mi><mrow><mi>K</mi><mi>L</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+\mathcal{L}_{total}
+=
+\mathcal{L}_{domain}
++
+\beta\mathcal{L}_{KL}
+</annotation></semantics></math></p>
+<p>直觉上：</p>
+<blockquote>
+<p>在一些我们希望保持稳定的输入上，新模型输出分布不要和旧模型差得太离谱。</p>
+</blockquote>
+<hr />
+<h1
+id="十核心心智模型-④reference-model-是行为锚点不是永远正确的老师">十、核心心智模型
+④：Reference Model 是“行为锚点”，不是永远正确的老师</h1>
+<p>使用 KL Constraint 时通常需要：</p>
+<h1 id="reference-model">Reference Model</h1>
+<h2 id="参考模型">参考模型</h2>
+<p>它可以是：</p>
+<pre class="text"><code>CPT前Base Model
+或
+CPT前Domain/SFT Model</code></pre>
+<p>但必须注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReferenceModel
+\neq
+GroundTruth
+}
+</annotation></semantics></math></p>
+<p>它不是：</p>
+<blockquote>
+<p>永远正确的 Teacher。</p>
+</blockquote>
+<p>它只是：</p>
+<blockquote>
+<p>我们希望保留某些行为的参考点。</p>
+</blockquote>
+<p>如果 Reference Model 本身有问题，</p>
+<p>过强约束反而会阻止新模型改进。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>是</mi><mi>A</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>不</mi><mi>是</mi><mi>O</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Reference
+是Anchor
+不是Oracle
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一layer-freezing能不能直接冻结一部分层">十一、Layer
+Freezing：能不能直接冻结一部分层？</h1>
+<p>可以。</p>
+<h1 id="layer-freezing">Layer Freezing</h1>
+<h2 id="层冻结">层冻结</h2>
+<p>例如：</p>
+<pre class="text"><code>冻结Embedding
+
+冻结底部若干Transformer层
+
+只训练顶部若干层</code></pre>
+<p>直觉：</p>
+<blockquote>
+<p>保护底层通用表示，减少整体参数漂移。</p>
+</blockquote>
+<p>但问题是：</p>
+<blockquote>
+<p>领域能力可能也需要修改底层表示。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>z</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>⇒</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mo>↑</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FreezeMore
+\Rightarrow
+RetentionPotential\uparrow
+}
+</annotation></semantics></math></p>
+<p>但可能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>↓</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plasticity\downarrow
+}
+</annotation></semantics></math></p>
+<p>因此 Layer Freezing 不是：</p>
+<blockquote>
+<p>“越多越安全”。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>稳定性和可塑性的再一次折中。</p>
+</blockquote>
+<hr />
+<h1 id="十二selective-training只训练部分参数">十二、Selective
+Training：只训练部分参数</h1>
+<p>除了 Layer Freezing，</p>
+<p>还可以选择：</p>
+<h1 id="selective-training">Selective Training</h1>
+<h2 id="选择性训练">选择性训练</h2>
+<p>例如：</p>
+<pre class="text"><code>只训练LoRA Adapter
+
+只训练Attention Projection
+
+只训练MLP部分
+
+只训练新增Embedding
+
+只训练特定Layer</code></pre>
+<p>这样可以降低：</p>
+<blockquote>
+<p>全模型参数漂移。</p>
+</blockquote>
+<p>但同时也会限制：</p>
+<blockquote>
+<p>CPT 的表达能力。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>e</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi><mo>≠</mo><mi>A</mi><mi>l</mi><mi>w</mi><mi>a</mi><mi>y</mi><mi>s</mi><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FewerTrainableParameters
+\neq
+AlwaysBetterRetention
+}
+</annotation></semantics></math></p>
+<p>它只是：</p>
+<blockquote>
+<p>降低干扰的一种手段。</p>
+</blockquote>
+<hr />
+<h1 id="十三lora-cpt-能不能天然避免遗忘">十三、LoRA CPT
+能不能天然避免遗忘？</h1>
+<p>不能。</p>
+<p>这是非常重要的一条。</p>
+<p>LoRA 的确只更新少量参数。</p>
+<p>但只要最终推理时：</p>
+<pre class="text"><code>Base
++
+LoRA Adapter</code></pre>
+<p>整体输出行为就可能发生明显变化。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>F</mi><mi>o</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ParameterEfficient
+\neq
+ForgettingFree
+}
+</annotation></semantics></math></p>
+<p>LoRA 只能说明：</p>
+<blockquote>
+<p>更新的参数数量更少。</p>
+</blockquote>
+<p>不能说明：</p>
+<blockquote>
+<p>原能力一定不会退化。</p>
+</blockquote>
+<p>最终仍然要跑：</p>
+<blockquote>
+<p>Regression Benchmark。</p>
+</blockquote>
+<hr />
+<h1
+id="十四核心心智模型-⑤减少参数更新范围不等于消除行为漂移">十四、核心心智模型
+⑤：减少参数更新范围，不等于消除行为漂移</h1>
+<p>这条必须锁死。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>e</mi><mi>l</mi><mi>t</mi><mi>a</mi><mo>≠</mo><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>B</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi><mi>D</mi><mi>e</mi><mi>l</mi><mi>t</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SmallParameterDelta
+\neq
+SmallBehaviorDelta
+}
+</annotation></semantics></math></p>
+<p>尤其在 Transformer 中，</p>
+<p>少量关键参数变化也可能引起：</p>
+<blockquote>
+<p>大范围输出变化。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>LoRA
+Layer Freezing
+Selective Training</code></pre>
+<p>都是：</p>
+<blockquote>
+<p>Retention Mechanism。</p>
+</blockquote>
+<p>但不是：</p>
+<blockquote>
+<p>Retention Guarantee。</p>
+</blockquote>
+<hr />
+<h1 id="十五retention-budget能力保持必须有明确预算">十五、Retention
+Budget：能力保持必须有明确“预算”</h1>
+<p>不要只写：</p>
+<blockquote>
+<p>“尽量不要退化。”</p>
+</blockquote>
+<p>而应该定义：</p>
+<h1 id="retention-budget">Retention Budget</h1>
+<h2 id="能力回归预算">能力回归预算</h2>
+<p>例如：</p>
+<pre class="text"><code>General Language
+最大允许下降 1.5%
+
+Math
+最大允许下降 2%
+
+Code
+最大允许下降 2%
+
+Instruction Following
+最大允许下降 1%
+
+Structured Output
+不得显著下降</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>这些具体阈值不是通用标准。</p>
+</blockquote>
+<p>必须由：</p>
+<pre class="text"><code>业务风险
+Benchmark稳定性
+模型用途
+人工成本
+可接受回归范围</code></pre>
+<p>决定。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>M</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetentionPolicy
+必须MachineCheckable
+}
+</annotation></semantics></math></p>
+<p>而不是一句：</p>
+<blockquote>
+<p>“保持通用能力。”</p>
+</blockquote>
+<hr />
+<h1
+id="十六核心心智模型-⑥没有-retention-budget就没有真正的能力保持">十六、核心心智模型
+⑥：没有 Retention Budget，就没有真正的“能力保持”</h1>
+<p>因为如果没有阈值，</p>
+<p>训练结束以后：</p>
+<pre class="text"><code>数学下降3%</code></pre>
+<p>团队很难回答：</p>
+<blockquote>
+<p>这是可以接受，还是必须回滚？</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>=</mo><mi>N</mi><mi>o</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoThreshold
+=
+NoDecisionRule
+}
+</annotation></semantics></math></p>
+<p>真正工程化应该写成：</p>
+<pre class="text"><code>if regression &lt;= threshold:
+    pass
+else:
+    reject_or_rebalance</code></pre>
+<p>也就是：</p>
+<blockquote>
+<p>评测结果必须能驱动决策。</p>
+</blockquote>
+<hr />
+<h1 id="十七dynamic-retentionretention-强度可以动态调整">十七、Dynamic
+Retention：Retention 强度可以动态调整</h1>
+<p>假设 CPT 初期：</p>
+<pre class="text"><code>领域能力提升慢
+通用能力稳定</code></pre>
+<p>可以：</p>
+<blockquote>
+<p>降低约束强度，提高可塑性。</p>
+</blockquote>
+<p>但如果中期出现：</p>
+<pre class="text"><code>领域继续小幅增长
+通用能力快速下降</code></pre>
+<p>可以：</p>
+<pre class="text"><code>提高Replay比例
+增加KL约束
+降低Learning Rate
+冻结更多层
+或提前停止</code></pre>
+<p>所以：</p>
+<h1 id="dynamic-retention-control">Dynamic Retention Control</h1>
+<h2 id="动态能力保持控制">动态能力保持控制</h2>
+<p>本质上是在：</p>
+<blockquote>
+<p>根据 Forgetting Curve 调训练控制参数。</p>
+</blockquote>
+<hr />
+<h1 id="十八完整能力保持流程">十八、完整能力保持流程</h1>
+<p>英文流程：</p>
+<pre class="text"><code>Freeze Baseline
+↓
+Define Retention Suite
+↓
+Set Retention Budget
+↓
+Build Replay Corpus
+↓
+Choose Retention Mechanisms
+↓
+Start CPT
+↓
+Periodic Regression Eval
+↓
+Measure Forgetting
+↓
+Adjust Replay / Regularization / LR
+↓
+Continue / Stop / Rollback
+↓
+Release Checkpoint</code></pre>
+<p>中文解释：</p>
+<pre class="text"><code>冻结CPT前基线
+↓
+定义需要保护的能力集合
+↓
+为每项能力设回归预算
+↓
+建立通用回放语料
+↓
+选择Replay / KL / Freeze等保持机制
+↓
+启动CPT
+↓
+定期跑通用能力回归
+↓
+计算遗忘程度
+↓
+必要时调整回放比例、正则强度或学习率
+↓
+决定继续、停止或回滚
+↓
+选择最终发布Checkpoint</code></pre>
+<p>这才是：</p>
+<blockquote>
+<p><strong>真正闭环的能力保持系统。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十九replay-和-regularization-应该怎么组合">十九、Replay 和
+Regularization 应该怎么组合？</h1>
+<p>可以把策略分成三类。</p>
+<h2 id="a.-data-level-retention">A. Data-level Retention</h2>
+<h3 id="数据层能力保持">数据层能力保持</h3>
+<pre class="text"><code>General Replay
+通用语料回放
+
+Balanced Mixture
+平衡数据混合
+
+Interleaving
+交错训练</code></pre>
+<hr />
+<h2 id="b.-objective-level-retention">B. Objective-level Retention</h2>
+<h3 id="目标函数层能力保持">目标函数层能力保持</h3>
+<pre class="text"><code>Weight Anchoring
+参数锚定
+
+KL Constraint
+输出分布约束</code></pre>
+<hr />
+<h2 id="c.-parameter-level-retention">C. Parameter-level Retention</h2>
+<h3 id="参数层能力保持">参数层能力保持</h3>
+<pre class="text"><code>Layer Freezing
+层冻结
+
+Selective Training
+选择性训练
+
+LoRA / Adapter
+参数高效更新</code></pre>
+<p>三者可以组合。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mo>=</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>+</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetentionSystem
+=
+Data
++
+Objective
++
+Parameter
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十核心心智模型-⑦retention-mechanism-不是越多越好">二十、核心心智模型
+⑦：Retention Mechanism 不是越多越好</h1>
+<p>如果同时：</p>
+<pre class="text"><code>Replay 40%
+
+强KL
+
+强Weight Anchor
+
+冻结一半Layer
+
+Learning Rate很低</code></pre>
+<p>结果可能是：</p>
+<blockquote>
+<p>模型几乎不再学习采购领域。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>P</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreProtection
+\neq
+BetterCPT
+}
+</annotation></semantics></math></p>
+<p>能力保持不是：</p>
+<blockquote>
+<p>把模型绑死。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>找到刚好足够的约束强度。</p>
+</blockquote>
+<p>这又回到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>↔</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plasticity
+\leftrightarrow
+Stability
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十一retention-ablation必须知道到底哪种机制在起作用">二十一、Retention
+Ablation：必须知道到底哪种机制在起作用</h1>
+<p>假设我们有四组实验：</p>
+<pre class="text"><code>Run A
+No Retention
+
+Run B
+Replay Only
+
+Run C
+Replay + KL
+
+Run D
+Replay + KL + Layer Freeze</code></pre>
+<p>其他条件保持一致：</p>
+<pre class="text"><code>Same Base
+Same Corpus
+Same Token Budget
+Same Mixture
+Same Learning Rate</code></pre>
+<p>然后比较：</p>
+<pre class="text"><code>Domain Gain
+
+General Regression
+
+Training Cost
+
+Convergence Speed</code></pre>
+<p>这样才能知道：</p>
+<blockquote>
+<p>真正有效的是哪种机制。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>可</mi><mi>A</mi><mi>b</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetentionPolicy
+必须可Ablate
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十二release-gateretention-最终必须进入发布门槛">二十二、Release
+Gate：Retention 最终必须进入发布门槛</h1>
+<p>训练结束后，</p>
+<p>不能只判断：</p>
+<pre class="text"><code>领域指标上涨
+→ 发布</code></pre>
+<p>而应该：</p>
+<pre class="text"><code>Domain Gain
+达到最低收益
+
+AND
+
+General Regression
+不超过阈值
+
+AND
+
+Instruction Regression
+不超过阈值
+
+AND
+
+No Critical Capability Failure
+没有关键能力崩溃</code></pre>
+<p>只有全部通过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseGate=True
+}
+</annotation></semantics></math></p>
+<p>才允许进入下一阶段。</p>
+<hr />
+<h1
+id="二十三核心心智模型-⑧retention-不是单独模块而是-release-policy-的一部分">二十三、核心心智模型
+⑧：Retention 不是单独模块，而是 Release Policy 的一部分</h1>
+<p>如果 Retention 只存在于：</p>
+<blockquote>
+<p>训练脚本里，</p>
+</blockquote>
+<p>而没有进入：</p>
+<blockquote>
+<p>发布决策，</p>
+</blockquote>
+<p>那它就没有真正工程化。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>必</mi><mi>须</mi><mi>进</mi><mi>入</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retention
+必须进入
+ReleaseGate
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>能力保持是发布条件，不是训练建议。</p>
+</blockquote>
+<hr />
+<h1
+id="二十四本阶段正式工程产物procurementcptretentionpolicy_v0.1">二十四、本阶段正式工程产物：<code>ProcurementCPTRetentionPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>retention_policy_version
+
+baseline_model_id
+
+retention_capability_suite
+
+retention_budget
+
+replay_enabled
+
+replay_corpus_version
+
+replay_ratio
+
+interleaving_policy
+
+weight_anchor_enabled
+
+weight_anchor_lambda
+
+kl_constraint_enabled
+
+kl_beta
+
+reference_model_id
+
+layer_freezing_policy
+
+trainable_parameter_scope
+
+lora_or_adapter_policy
+
+learning_rate_policy
+
+dynamic_retention_enabled
+
+adjustment_triggers
+
+regression_eval_interval
+
+forgetting_curve_required
+
+retention_ablation_plan
+
+release_gate
+
+rollback_policy
+
+trace_logging
+=
+enabled</code></pre>
+<p>每个训练 Run 至少记录：</p>
+<pre class="text"><code>run_id
+
+checkpoint_id
+
+replay_ratio
+
+retention_loss_weight
+
+kl_beta
+
+trainable_parameters
+
+frozen_layers
+
+learning_rate
+
+domain_metrics
+
+general_metrics
+
+regression_delta
+
+retention_budget_status
+
+adjustment_action
+
+release_decision</code></pre>
+<p>这样以后才能回答：</p>
+<blockquote>
+<p><strong>模型为什么既学会了采购，又没有明显忘掉原来的能力？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十五本阶段最重要的-8-个核心心智模型-1">二十五、本阶段最重要的
+8 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>DetectForgetting ≠ PreventForgetting</code>。发现遗忘是诊断，能力保持是训练控制。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>Retention ≠ FreezeEverything</code>。能力保持不是不让模型变化，而是让变化发生在值得变化的地方。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>Replay = OldDistributionReminder</code>。回放的本质是让旧分布在训练过程中继续获得梯度支持。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Retention = Data Constraint + Objective Constraint + Parameter Constraint</code>。能力保持可以从数据、目标函数和参数更新范围三个层面同时实现。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>ReferenceModel ≠ GroundTruth</code>。参考模型只是行为锚点，不是永远正确的老师。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>SmallParameterDelta ≠ SmallBehaviorDelta</code>。少量参数更新仍然可能带来明显行为变化。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>RetentionBudget = DecisionRule</code>。没有可量化的回归阈值，就没有真正可执行的能力保持策略。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>MoreProtection ≠ BetterCPT</code>。约束过强会让模型学不进去，Retention
+仍然必须平衡 Plasticity 与 Stability。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十六把完整-retention-流程压成一张专业工程图">二十六、把完整
+Retention 流程压成一张专业工程图</h1>
+<pre class="text"><code>                    Pre-CPT Baseline
+                       CPT前基线
+                            │
+                            ▼
+                    Retention Suite
+                  定义要保护的能力
+                            │
+                            ▼
+                    Retention Budget
+                  为每项能力设回归阈值
+                            │
+                            ▼
+                  Retention Mechanisms
+            ┌───────────────┼───────────────┐
+            ▼               ▼               ▼
+          Replay       Regularization   Parameter Scope
+         通用回放        正则化约束        参数更新范围
+            │               │               │
+            └───────────────┼───────────────┘
+                            ▼
+                          CPT
+                        继续预训练
+                            │
+                            ▼
+                 Periodic Regression Eval
+                   定期通用能力回归
+                            │
+                            ▼
+                      Forgetting Curve
+                       形成遗忘曲线
+                            │
+                            ▼
+                  Dynamic Retention Control
+             调整Replay / KL / LR / Freeze
+                            │
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+          Continue        Early Stop      Rollback
+            继续            提前停止        回滚
+             │              │              │
+             └──────────────┼──────────────┘
+                            ▼
+                      Release Gate
+                   通过能力保持发布门
+                            │
+                            ▼
+                    Release Checkpoint</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>能力保持的真正目标不是让 CPT
+模型“尽量像原模型”，而是在明确回归预算下，让模型获得足够的领域可塑性，同时通过
+Replay、正则化和参数约束把旧能力的损失控制在可接受范围内。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第八课-第-7-阶段掌握测试">第八课 · 第 7 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Detect Forgetting 和 Prevent
+Forgetting 是两件事；Replay 的本质是什么；Replay Ratio
+为什么不能固定照抄；Replay Corpus
+为什么不需要等于原始预训练语料；Interleaving
+在训练时间轴上解决什么问题；Regularization 为什么属于 Objective-level
+Retention；Weight Anchoring 如何工作；KL Constraint 为什么需要 Reference
+Model；为什么 Reference Model 不等于 Ground Truth；Layer Freezing 和
+Selective Training 分别解决什么问题；为什么 LoRA
+不能自动避免遗忘；为什么
+<code>SmallParameterDelta ≠ SmallBehaviorDelta</code>；Retention Budget
+为什么必须机器可检查；Dynamic Retention 怎样根据 Forgetting Curve
+调整；Data-level、Objective-level、Parameter-level Retention
+如何组合；为什么 More Protection 不一定更好；Retention Ablation
+为什么重要；以及为什么能力保持最终必须进入 Release Gate。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mi>第</mi><mn>7</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课第7阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第八课-第-8-阶段">下一阶段：第八课 · 第 8 阶段</h1>
+<h1
+id="synthetic-data-curriculum合成领域语料难度分层与覆盖扩展">Synthetic
+Data &amp; Curriculum：合成领域语料、难度分层与覆盖扩展</h1>
+<h2
+id="当真实政府采购语料覆盖不足时合成数据能不能补为什么让-llm-多生成一些采购文本可能反而把模型训练得更假">当真实政府采购语料覆盖不足时，合成数据能不能补？为什么“让
+LLM 多生成一些采购文本”可能反而把模型训练得更假？</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Synthetic Data
+合成数据
+
+Teacher Generation
+教师模型生成
+
+Data Augmentation
+数据增强
+
+Coverage Expansion
+覆盖扩展
+
+Hard Case Generation
+难例生成
+
+Curriculum Learning
+课程式训练
+
+Difficulty Scheduling
+难度调度
+
+Quality Filtering
+质量过滤
+
+Synthetic Contamination
+合成污染
+
+Model Collapse Risk
+模型坍缩风险
+
+Human Validation
+人工验证</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementcptsyntheticcurriculumpolicy_v0.1"><code>ProcurementCPTSyntheticCurriculumPolicy_V0.1</code></h1>
+<p>下一阶段最关键的一条边界会是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>y</mi><mi>n</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>≠</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>N</mi><mi>e</mi><mi>w</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SyntheticData
+\neq
+FreeNewKnowledge
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>合成数据可以重组、放大和补覆盖，但它不能凭空创造可靠的新事实世界。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage06.html">← 第 6 阶段</a><a class="btn" href="stage08.html">第 8 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

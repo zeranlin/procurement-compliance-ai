@@ -1,0 +1,2080 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第9阶段：专家标注、双人复核与一致性</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>“这个专家很厉害，所以他说什么就是什么。”</li><li>明确规则 + 独立标注 + 分歧检测 + 专家裁决 + 可追溯记录。</li><li>“删掉这条，太麻烦了。”</li></ul></div><h1 id="第四课-第-9-阶段">第四课 · 第 9 阶段</h1>
+<h1 id="专家标注双人复核与一致性">专家标注、双人复核与一致性</h1>
+<h2
+id="为什么两个真正懂政府采购的专家也可能给同一个-clause-完全不同的-label">为什么两个真正懂政府采购的专家，也可能给同一个
+Clause 完全不同的 Label？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>“这个专家很厉害，所以他说什么就是什么。”</strong></li>
+<li><strong>明确规则 + 独立标注 + 分歧检测 + 专家裁决 +
+可追溯记录。</strong></li>
+<li><strong>“删掉这条，太麻烦了。”</strong></li>
+<li><strong>为什么他们会不一致？</strong></li>
+<li><strong>专家分歧常常是在帮助我们找到 Dataset
+最重要的边界。</strong></li>
+<li><strong>Label定义不清 上下文不足 风险类别边界重叠
+标注指南没覆盖这种情况 案例本身就是Hard Case
+法规依据存在解释空间</strong></li>
+<li><strong>使用自己的经验规则；</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>Adjudication</code></td>
+<td>专家裁决：对分歧样本形成最终 Gold 结论</td>
+</tr>
+<tr class="odd">
+<td><code>Annotation Guideline</code></td>
+<td>标注规范：统一专家如何理解字段、边界和例外</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="odd">
+<td><code>Calibration</code></td>
+<td>校准：使模型置信度更接近实际正确率</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Observe</code></td>
+<td>Observe/观察：读取当前状态和工具结果</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 8 阶段我们已经解决：</p>
+<blockquote>
+<p><strong>专家到底应该标什么？</strong></p>
+</blockquote>
+<p>我们建立了：</p>
+<pre class="text"><code>risk_present
+primary_risk_type
+risk_subtype
+risk_level
+needs_review
+rationale
+evidence
+suggested_action</code></pre>
+<p>也就是：</p>
+<h1 id="annotationschema_v0.1-2"><code>AnnotationSchema_V0.1</code></h1>
+<p>但现在出现一个更棘手的问题。</p>
+<p>假设有这样一条采购要求：</p>
+<blockquote>
+<p>“供应商近三年应具有不少于 5 个类似项目业绩。”</p>
+</blockquote>
+<p>我们把完全相同的 Clause 分别交给三位专家。</p>
+<p>专家 A：</p>
+<pre class="text"><code>risk_present = true
+risk_type = supplier_qualification</code></pre>
+<p>专家 B：</p>
+<pre class="text"><code>risk_present = uncertain
+needs_review = true</code></pre>
+<p>专家 C：</p>
+<pre class="text"><code>risk_present = false</code></pre>
+<p>三个人都不是乱点。</p>
+<p>甚至三个人都可能有很多年采购业务经验。</p>
+<p>那到底发生了什么？</p>
+<p>问题很可能并不是：</p>
+<blockquote>
+<p>“谁不专业？”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>三个人脑子里使用的判断规则并不完全相同。</strong></p>
+</blockquote>
+<p>这就是第 9 阶段真正要解决的问题。</p>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-1">一、本阶段只解决一个核心问题</h1>
+<blockquote>
+<p><strong>怎样把多个专家个人脑子里的经验，变成一套可重复、可衡量、可复核、可持续改进的团队标注标准，并最终产出真正可以称为
+Gold 的数据？</strong></p>
+</blockquote>
+<p>今天最终要得到两个东西：</p>
+<h1
+id="annotationguideline_v0.1-1"><code>AnnotationGuideline_V0.1</code></h1>
+<p>即：</p>
+<blockquote>
+<p><strong>专家标注指南 V0.1</strong></p>
+</blockquote>
+<p>以及：</p>
+<h1
+id="adjudicatedgoldset_v0.1-1"><code>AdjudicatedGoldSet_V0.1</code></h1>
+<p>即：</p>
+<blockquote>
+<p><strong>经过分歧裁决后的 Gold 数据集 V0.1</strong></p>
+</blockquote>
+<p>先把整个阶段的路线看完。</p>
+<pre class="text"><code>Annotation Schema
+标注字段已经定义
+        │
+        ▼
+Annotation Guideline
+把每个Label写成统一判断规则
+        │
+        ▼
+Pilot Annotation
+小批量试标，先发现规则问题
+        │
+        ▼
+Blind Double Annotation
+两位专家独立、互不看答案地标
+        │
+        ▼
+Agreement Measurement
+测量两位专家到底有多一致
+        │
+        ▼
+Disagreement Analysis
+分析为什么不一致
+        │
+        ▼
+Adjudication
+第三位/高级专家进行裁决
+        │
+        ▼
+Guideline Revision
+把裁决形成的新规则写回指南
+        │
+        ▼
+Adjudicated Gold Set
+形成可用于Benchmark的高质量Gold数据</code></pre>
+<p>一句话理解：</p>
+<blockquote>
+<p><strong>不是“找专家来标”，而是建立一条专家知识生产流水线。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二今天最重要的-5-个核心心智模型">二、今天最重要的 5
+个核心心智模型</h1>
+<p>这 5 个请当成第 9 阶段的骨架。</p>
+<h2 id="心智模型-1gold-某一个专家说了算">心智模型 1：Gold ≠
+某一个专家说了算</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>≠</mo><mi>S</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>l</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>O</mi><mi>p</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gold
+\neq
+SingleExpertOpinion
+}
+</annotation></semantics></math></p>
+<p>Gold 不是：</p>
+<blockquote>
+<p>“这个专家很厉害，所以他说什么就是什么。”</p>
+</blockquote>
+<p>Gold 更接近：</p>
+<blockquote>
+<p><strong>明确规则 + 独立标注 + 分歧检测 + 专家裁决 +
+可追溯记录。</strong></p>
+</blockquote>
+<p>一个资深专家仍然可能：</p>
+<ul>
+<li>忽略上下文；</li>
+<li>使用自己的经验规则；</li>
+<li>前后尺度漂移；</li>
+<li>疲劳；</li>
+<li>对模糊边界有个人偏好。</li>
+</ul>
+<p>所以专业数据系统不能把：</p>
+<blockquote>
+<p>专家权威</p>
+</blockquote>
+<p>替代：</p>
+<blockquote>
+<p>数据质量流程。</p>
+</blockquote>
+<hr />
+<h2 id="心智模型-2专家分歧不是垃圾而是最值钱的信号之一">心智模型
+2：专家分歧不是垃圾，而是最值钱的信号之一</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>i</mi><mi>s</mi><mi>a</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Disagreement
+=
+Information
+}
+</annotation></semantics></math></p>
+<p>如果两位专家对同一条 Clause 不一致，我们第一反应不应该是：</p>
+<blockquote>
+<p>“删掉这条，太麻烦了。”</p>
+</blockquote>
+<p>而应该问：</p>
+<blockquote>
+<p><strong>为什么他们会不一致？</strong></p>
+</blockquote>
+<p>因为分歧可能在告诉我们：</p>
+<pre class="text"><code>Label定义不清
+上下文不足
+风险类别边界重叠
+标注指南没覆盖这种情况
+案例本身就是Hard Case
+法规依据存在解释空间</code></pre>
+<p>所以：</p>
+<blockquote>
+<p><strong>专家分歧常常是在帮助我们找到 Dataset
+最重要的边界。</strong></p>
+</blockquote>
+<hr />
+<h2 id="心智模型-3先独立判断再讨论">心智模型 3：先独立判断，再讨论</h2>
+<p>这个流程叫：</p>
+<h1 id="blind-annotation">Blind Annotation</h1>
+<h2 id="盲标-独立标注">盲标 / 独立标注</h2>
+<p>意思是：</p>
+<blockquote>
+<p>专家 A 在提交答案之前，看不到专家 B 的答案。</p>
+</blockquote>
+<p>为什么？</p>
+<p>因为如果专家 A 先看到：</p>
+<pre class="text"><code>专家B：High Risk</code></pre>
+<p>A 很容易受到影响。</p>
+<p>这叫：</p>
+<h1 id="anchoring">Anchoring</h1>
+<h2 id="锚定效应">锚定效应</h2>
+<p>尤其是高级专家意见，会让其他标注员下意识靠拢。</p>
+<p>所以真正测专家是否一致：</p>
+<blockquote>
+<p>必须先让他们独立回答。</p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-4一致率不是为了给专家打分而是为了给-schema-体检">心智模型
+4：一致率不是为了给专家打分，而是为了给 Schema 体检</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mo>→</mo><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>D</mi><mi>i</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgreementMetric
+\rightarrow
+SchemaDiagnostic
+}
+</annotation></semantics></math></p>
+<p>如果两位专家一致率只有 55%，不要立刻说：</p>
+<blockquote>
+<p>“专家水平不行。”</p>
+</blockquote>
+<p>可能真正的问题是：</p>
+<blockquote>
+<p><strong>这个 Label 根本没有定义清楚。</strong></p>
+</blockquote>
+<p>比如 <code>high risk</code> 如果指南只写：</p>
+<blockquote>
+<p>“风险较大的情况标 High。”</p>
+</blockquote>
+<p>那 55% 一致率一点都不奇怪。</p>
+<p>因此一致性指标首先是在问：</p>
+<blockquote>
+<p><strong>我们的标注规则是否足够清楚，能让专业人员重复得到相似结果？</strong></p>
+</blockquote>
+<hr />
+<h2 id="心智模型-5裁决的真正产物不只是最终-label">心智模型
+5：裁决的真正产物，不只是最终 Label</h2>
+<h1 id="adjudication">Adjudication</h1>
+<h2 id="分歧裁决">分歧裁决</h2>
+<p>很多团队把裁决理解成：</p>
+<pre class="text"><code>A说Risk
+B说No Risk
+高级专家选Risk
+结束</code></pre>
+<p>这是浪费。</p>
+<p>真正高价值的是：</p>
+<pre class="text"><code>为什么A这么判断？
+为什么B这么判断？
+最终为什么选这个？
+以后遇到同类案例怎么统一？</code></pre>
+<p>然后把最后一条写回：</p>
+<h1 id="annotation-guideline-1">Annotation Guideline</h1>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>d</mi><mi>j</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>G</mi><mi>u</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>→</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>F</mi><mi>u</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Adjudication
+\rightarrow
+BetterGuideline
+\rightarrow
+BetterFutureLabels
+}
+</annotation></semantics></math></p>
+<p>这才是闭环。</p>
+<hr />
+<h1 id="三annotation-guideline-到底是什么">三、Annotation Guideline
+到底是什么？</h1>
+<p>我们上一阶段已经有：</p>
+<h1 id="annotation-schema">Annotation Schema</h1>
+<h2 id="标注结构">标注结构</h2>
+<p>例如：</p>
+<pre class="text"><code>risk_present
+risk_type
+needs_review
+risk_level</code></pre>
+<p>但 Schema 只告诉专家：</p>
+<blockquote>
+<p>“要填哪些格子。”</p>
+</blockquote>
+<p>它没有完整告诉专家：</p>
+<blockquote>
+<p>“什么情况下应该填哪个值。”</p>
+</blockquote>
+<p>这就需要：</p>
+<h1 id="annotation-guideline-2">Annotation Guideline</h1>
+<h2 id="标注指南">标注指南</h2>
+<p>可以把两者想成：</p>
+<pre class="text"><code>Schema
+=
+考试答题卡
+
+Guideline
+=
+考试评分标准</code></pre>
+<p>只有答题卡，没有评分标准：</p>
+<blockquote>
+<p>大家当然各填各的。</p>
+</blockquote>
+<hr />
+<h1 id="四一个专业-label-guide-至少要回答-5-类问题">四、一个专业 Label
+Guide 至少要回答 5 类问题</h1>
+<p>我们拿：</p>
+<pre class="text"><code>risk_present</code></pre>
+<p>举例。</p>
+<p>如果指南只写：</p>
+<pre class="text"><code>true = 有风险
+false = 无风险
+uncertain = 不确定</code></pre>
+<p>几乎等于没写。</p>
+<p>专业指南应该告诉专家：</p>
+<table>
+<thead>
+<tr class="header">
+<th>项目</th>
+<th>要回答的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>定义</td>
+<td>这个 Label 到底代表什么？</td>
+</tr>
+<tr class="even">
+<td>纳入条件</td>
+<td>什么情况应该选它？</td>
+</tr>
+<tr class="odd">
+<td>排除条件</td>
+<td>什么情况看起来像，但不要选？</td>
+</tr>
+<tr class="even">
+<td>边界案例</td>
+<td>最容易混淆的情况是什么？</td>
+</tr>
+<tr class="odd">
+<td>所需上下文</td>
+<td>判断之前必须看到什么信息？</td>
+</tr>
+</tbody>
+</table>
+<p>这五项非常重要。</p>
+<hr />
+<h1 id="五例如-risk_present-true">五、例如
+<code>risk_present = true</code></h1>
+<p>教学版定义可以写成：</p>
+<blockquote>
+<p>根据当前可获得的采购条款、必要上下文和适用依据，存在较明确的风险信号，足以进入风险处理流程；但该
+Label 本身不代表最终法律裁决。</p>
+</blockquote>
+<p>注意：</p>
+<blockquote>
+<p><code>Potential Risk</code></p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p><code>Final Illegal</code></p>
+</blockquote>
+<p>不是一回事。</p>
+<hr />
+<h1 id="六那-false-呢">六、那 <code>false</code> 呢？</h1>
+<p>不是：</p>
+<blockquote>
+<p>“我暂时没看出来，所以 False。”</p>
+</blockquote>
+<p>而更应该是：</p>
+<blockquote>
+<p><strong>在必要上下文相对充分的情况下，按照当前标注规则，没有发现达到风险标记阈值的明显风险信号。</strong></p>
+</blockquote>
+<p>关键词是：</p>
+<h1 id="上下文相对充分">上下文相对充分</h1>
+<hr />
+<h1 id="七那-uncertain-呢">七、那 <code>uncertain</code> 呢？</h1>
+<p>可以定义：</p>
+<blockquote>
+<p><strong>当前信息不足、规则适用存在明显不确定性，或者不同合理解释可能产生不同结论，不适合强制归入
+true / false。</strong></p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>uncertain</code></pre>
+<p>不是失败。</p>
+<p>它是在表达：</p>
+<blockquote>
+<p><strong>专业不确定性。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="八一个非常典型的政府采购边界案例">八、一个非常典型的政府采购边界案例</h1>
+<p>条款：</p>
+<blockquote>
+<p>“供应商应保证故障发生后 2 小时内到达项目现场。”</p>
+</blockquote>
+<p>专家 A：</p>
+<blockquote>
+<p>“2 小时现场响应，对外地供应商不利，Risk。”</p>
+</blockquote>
+<p>专家 B：</p>
+<blockquote>
+<p>“这里只要求服务能力，并没有要求投标前就在本地设机构，No Risk。”</p>
+</blockquote>
+<p>两个答案为什么不同？</p>
+<p>因为 A 实际判断的是：</p>
+<pre class="text"><code>响应时间是否形成事实性地域限制</code></pre>
+<p>B 判断的是：</p>
+<pre class="text"><code>是否存在显性的本地机构准入条件</code></pre>
+<p>他们回答的：</p>
+<blockquote>
+<p>其实不是完全同一个问题。</p>
+</blockquote>
+<p>这时候真正需要修的，可能不是专家。</p>
+<p>而是：</p>
+<h1 id="guideline">Guideline</h1>
+<p>应该明确：</p>
+<blockquote>
+<p>“现场响应要求”和“预先设立本地机构”必须分别判断。</p>
+</blockquote>
+<p>这就是专家分歧的价值。</p>
+<hr />
+<h1
+id="九正式标数据以前千万不要一上来就标-10-万条">九、正式标数据以前，千万不要一上来就标
+10 万条</h1>
+<p>应该先做：</p>
+<h1 id="pilot-annotation">Pilot Annotation</h1>
+<h2 id="小规模试标">小规模试标</h2>
+<p>例如先抽：</p>
+<pre class="text"><code>100～300条</code></pre>
+<p>教学示例。</p>
+<p>重点不是数量。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>让标注系统先撞墙。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十试标阶段专门找什么">十、试标阶段专门找什么？</h1>
+<p>重点找：</p>
+<pre class="text"><code>专家最容易争论的Label
+Other特别多的地方
+Unknown特别多的地方
+同一句指南被不同人理解成不同意思的地方
+上下文不足的地方
+Subtype互相重叠的地方</code></pre>
+<p>如果发现 200 条里：</p>
+<pre class="text"><code>60条都有严重争议</code></pre>
+<p>不要赶紧开 50 人标注大军。</p>
+<p>应该先停下来：</p>
+<blockquote>
+<p>修 Schema 和 Guideline。</p>
+</blockquote>
+<hr />
+<h1 id="十一推荐的专业标注流程">十一、推荐的专业标注流程</h1>
+<p>从现在开始，你可以把政府采购专家标注流程记成：</p>
+<pre class="text"><code>第一步
+规则校准
+Calibration
+
+第二步
+盲式双人独立标注
+Blind Double Annotation
+
+第三步
+一致性测量
+Agreement Measurement
+
+第四步
+分歧归因
+Disagreement Analysis
+
+第五步
+专家裁决
+Adjudication
+
+第六步
+规则回写
+Guideline Revision
+
+第七步
+形成Gold
+Gold Finalization</code></pre>
+<p>以后看到英文的时候，直接记中文：</p>
+<blockquote>
+<p><strong>校准 → 双盲标 → 测一致 → 找分歧 → 裁决 → 改规则 → 出
+Gold</strong></p>
+</blockquote>
+<p>这条链比英文名字重要得多。</p>
+<hr />
+<h1 id="十二什么叫-double-annotation">十二、什么叫 Double
+Annotation？</h1>
+<h1 id="double-annotation">Double Annotation</h1>
+<h2 id="双人标注">双人标注</h2>
+<p>意思是：</p>
+<blockquote>
+<p>同一条样本由两位专家分别独立标一次。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Sample 001
+
+专家 A：
+risk_present = true
+risk_type = A
+needs_review = true
+
+专家 B：
+risk_present = uncertain
+risk_type = A
+needs_review = true</code></pre>
+<p>这里可以立刻看到：</p>
+<pre class="text"><code>risk_type
+一致
+
+needs_review
+一致
+
+risk_present
+不一致</code></pre>
+<p>这比只看：</p>
+<blockquote>
+<p>“整条一样/不一样”</p>
+</blockquote>
+<p>专业很多。</p>
+<hr />
+<h1 id="十三所以一致性必须按字段测">十三、所以一致性必须“按字段测”</h1>
+<p>不要只算一个：</p>
+<pre class="text"><code>Overall Agreement = 80%</code></pre>
+<p>应该分别看：</p>
+<table>
+<thead>
+<tr class="header">
+<th>字段</th>
+<th>一致性重点</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>risk_present</code></td>
+<td>最核心</td>
+</tr>
+<tr class="even">
+<td><code>primary_risk_type</code></td>
+<td>风险分类</td>
+</tr>
+<tr class="odd">
+<td><code>risk_subtype</code></td>
+<td>细粒度边界</td>
+</tr>
+<tr class="even">
+<td><code>risk_level</code></td>
+<td>优先级标准是否稳定</td>
+</tr>
+<tr class="odd">
+<td><code>needs_review</code></td>
+<td>不确定性判断</td>
+</tr>
+<tr class="even">
+<td><code>evidence</code></td>
+<td>证据选择是否稳定</td>
+</tr>
+</tbody>
+</table>
+<p>这样你可能发现：</p>
+<pre class="text"><code>risk_present       92%
+risk_type          88%
+needs_review       90%
+risk_level         61%
+risk_subtype       58%</code></pre>
+<p>这说明什么？</p>
+<p>不是整个 Schema 都坏了。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>Risk Level 和 Subtype 的定义明显还不够稳定。</strong></p>
+</blockquote>
+<p>这才是可操作的信息。</p>
+<hr />
+<h1
+id="十四最简单的一致性指标percent-agreement">十四、最简单的一致性指标：Percent
+Agreement</h1>
+<h1 id="percent-agreement">Percent Agreement</h1>
+<h2 id="直接一致率">直接一致率</h2>
+<p>公式很简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mfrac><mrow><mi>两</mi><mi>人</mi><mi>相</mi><mi>同</mi><mi>的</mi><mi>样</mi><mi>本</mi><mi>数</mi></mrow><mrow><mi>总</mi><mi>双</mi><mi>标</mi><mi>样</mi><mi>本</mi><mi>数</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Agreement
+=
+\frac{两人相同的样本数}
+{总双标样本数}
+</annotation></semantics></math></p>
+<p>假设两位专家共同标了：</p>
+<pre class="text"><code>100条</code></pre>
+<p>其中：</p>
+<pre class="text"><code>86条risk_present一致</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mn>86</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+Agreement=86\%
+</annotation></semantics></math></p>
+<p>非常直观。</p>
+<hr />
+<h1 id="十五但-86-一定很高吗">十五、但 86% 一定很高吗？</h1>
+<p>不一定。</p>
+<p>假设数据里：</p>
+<pre class="text"><code>95%
+都是No Risk</code></pre>
+<p>两位专家都懒得判断，全部点：</p>
+<pre class="text"><code>No Risk</code></pre>
+<p>就能得到：</p>
+<blockquote>
+<p>95% 一致。</p>
+</blockquote>
+<p>但这并不说明他们真的很专业。</p>
+<p>所以我们需要一个稍微聪明一点的指标。</p>
+<hr />
+<h1 id="十六cohens-kappa-是什么">十六、Cohen’s Kappa 是什么？</h1>
+<h1 id="cohens-kappa">Cohen’s Kappa</h1>
+<h2 id="cohen-κ-系数-扣除随机一致后的专家一致性">Cohen κ 系数 /
+扣除随机一致后的专家一致性</h2>
+<p>不用背数学推导。</p>
+<p>只理解一个问题：</p>
+<blockquote>
+<p><strong>两个人的一致，有多少不是“碰巧选到同一个答案”？</strong></p>
+</blockquote>
+<p>公式是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>κ</mi><mo>=</mo><mfrac><mrow><msub><mi>p</mi><mi>o</mi></msub><mo>−</mo><msub><mi>p</mi><mi>e</mi></msub></mrow><mrow><mn>1</mn><mo>−</mo><msub><mi>p</mi><mi>e</mi></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\kappa
+=
+\frac{p_o-p_e}
+{1-p_e}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mi>o</mi></msub><annotation encoding="application/x-tex">
+p_o
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>实际观察到的一致率。</p>
+</blockquote>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mi>e</mi></msub><annotation encoding="application/x-tex">
+p_e
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>如果按两个人自己的 Label 分布随机选择，理论上能碰巧一致多少。</p>
+</blockquote>
+<hr />
+<h1 id="十七生活类比">十七、生活类比</h1>
+<p>假设考试只有：</p>
+<pre class="text"><code>A
+B</code></pre>
+<p>但所有人 95% 时间都选 A。</p>
+<p>那么两个人随便乱答：</p>
+<blockquote>
+<p>也很容易一样。</p>
+</blockquote>
+<p>Kappa 做的事情，就是：</p>
+<blockquote>
+<p>把这种“因为类别极度不平衡造成的幸运一致”扣掉一些。</p>
+</blockquote>
+<hr />
+<h1 id="十八一个直觉例子">十八、一个直觉例子</h1>
+<p>假设：</p>
+<pre class="text"><code>Observed Agreement
+实际一致率
+= 0.90</code></pre>
+<p>而由于 Label 分布，随机也可能得到：</p>
+<pre class="text"><code>Expected Agreement
+随机期望一致率
+= 0.70</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>κ</mi><mo>=</mo><mfrac><mrow><mn>0.90</mn><mo>−</mo><mn>0.70</mn></mrow><mrow><mn>1</mn><mo>−</mo><mn>0.70</mn></mrow></mfrac><mo>=</mo><mn>0.67</mn></mrow><annotation encoding="application/x-tex">
+\kappa
+=
+\frac{0.90-0.70}
+{1-0.70}
+=
+0.67
+</annotation></semantics></math></p>
+<p>所以看起来：</p>
+<blockquote>
+<p>90% 一致。</p>
+</blockquote>
+<p>扣掉随机因素以后：</p>
+<blockquote>
+<p>Kappa 只有约 0.67。</p>
+</blockquote>
+<hr />
+<h1 id="十九kappa-到底多少才算合格">十九、Kappa 到底多少才算合格？</h1>
+<p>这里特别容易陷入“背阈值”。</p>
+<p>不要这样。</p>
+<p>没有一个数字能脱离：</p>
+<pre class="text"><code>任务难度
+Label数量
+类别不平衡
+业务风险
+专家数量</code></pre>
+<p>直接宣布：</p>
+<blockquote>
+<p>“0.8 就好，0.6 就垃圾。”</p>
+</blockquote>
+<p>我们更应该看：</p>
+<blockquote>
+<p><strong>它是否足以支撑这个 Label 的用途？</strong></p>
+</blockquote>
+<p>比如：</p>
+<p>Gold Benchmark 的核心 <code>risk_present</code>：</p>
+<blockquote>
+<p>要求应该比普通训练语料更高。</p>
+</blockquote>
+<p>细粒度 Subtype：</p>
+<blockquote>
+<p>可以允许低一些，然后继续迭代定义。</p>
+</blockquote>
+<p>所以：</p>
+<h1 id="agreement-是诊断指标不是宗教数字">Agreement
+是诊断指标，不是宗教数字。</h1>
+<hr />
+<h1 id="二十自由文本-rationale-怎么算一致">二十、自由文本 Rationale
+怎么算一致？</h1>
+<p>这是个很现实的问题。</p>
+<p>专家 A：</p>
+<blockquote>
+<p>“该条件可能限制外地供应商参与。”</p>
+</blockquote>
+<p>专家 B：</p>
+<blockquote>
+<p>“该条款将供应商注册地作为准入条件，需要审查其必要性。”</p>
+</blockquote>
+<p>文字完全不同。</p>
+<p>但意思：</p>
+<blockquote>
+<p>基本一致。</p>
+</blockquote>
+<p>显然不能用：</p>
+<pre class="text"><code>string equality</code></pre>
+<hr />
+<h1 id="二十一rationale-更适合按信息要素评">二十一、Rationale
+更适合按“信息要素”评</h1>
+<p>例如拆成：</p>
+<pre class="text"><code>Observed Fact
+Risk Concern
+Context Needed
+Conclusion Scope</code></pre>
+<p>然后问：</p>
+<blockquote>
+<p>两个专家是否抓住相同核心事实？</p>
+</blockquote>
+<p>是否识别同一风险机制？</p>
+<p>是否认为需要相似的上下文？</p>
+<hr />
+<h1 id="二十二所以结构化-rationale-再次发挥价值">二十二、所以结构化
+Rationale 再次发挥价值</h1>
+<p>如果自由文本只有一个大段：</p>
+<blockquote>
+<p>很难比较专家是否一致。</p>
+</blockquote>
+<p>如果拆成：</p>
+<pre class="text"><code>observed_fact
+risk_concern
+context_needed</code></pre>
+<p>就可以分别判断。</p>
+<p>这也再次说明：</p>
+<blockquote>
+<p>第 8 阶段设计 Schema，不是多此一举。</p>
+</blockquote>
+<hr />
+<h1
+id="二十三专家出现分歧以后不能只记录不同">二十三、专家出现分歧以后，不能只记录“不同”</h1>
+<p>应该做：</p>
+<h1 id="disagreement-taxonomy">Disagreement Taxonomy</h1>
+<h2 id="分歧类型分类">分歧类型分类</h2>
+<p>这是非常专业的一步。</p>
+<p>我们至少应该区分几种分歧。</p>
+<hr />
+<h1 id="二十四第一种label-definition-disagreement">二十四、第一种：Label
+Definition Disagreement</h1>
+<h2 id="标签定义分歧">标签定义分歧</h2>
+<p>例如：</p>
+<p>专家 A 认为：</p>
+<blockquote>
+<p>本地响应要求属于资格风险。</p>
+</blockquote>
+<p>专家 B 认为：</p>
+<blockquote>
+<p>属于商务履约风险。</p>
+</blockquote>
+<p>说明：</p>
+<blockquote>
+<p>Risk Type 边界定义不清。</p>
+</blockquote>
+<hr />
+<h1 id="二十五第二种context-disagreement">二十五、第二种：Context
+Disagreement</h1>
+<h2 id="上下文不足导致的分歧">上下文不足导致的分歧</h2>
+<p>A 看 Clause：</p>
+<blockquote>
+<p>认为有风险。</p>
+</blockquote>
+<p>B 认为：</p>
+<blockquote>
+<p>必须先知道项目是否真的需要现场服务。</p>
+</blockquote>
+<p>这说明：</p>
+<blockquote>
+<p>输入给专家的 Context 不够。</p>
+</blockquote>
+<hr />
+<h1 id="二十六第三种evidence-disagreement">二十六、第三种：Evidence
+Disagreement</h1>
+<h2 id="证据解释分歧">证据解释分歧</h2>
+<p>两位专家：</p>
+<blockquote>
+<p>对 Clause 本身理解差不多。</p>
+</blockquote>
+<p>但是：</p>
+<blockquote>
+<p>对适用依据或证据权重理解不同。</p>
+</blockquote>
+<hr />
+<h1 id="二十七第四种severity-disagreement">二十七、第四种：Severity
+Disagreement</h1>
+<h2 id="风险等级分歧">风险等级分歧</h2>
+<p>两个人都认为：</p>
+<blockquote>
+<p>有潜在风险。</p>
+</blockquote>
+<p>但一个标：</p>
+<pre class="text"><code>High</code></pre>
+<p>另一个：</p>
+<pre class="text"><code>Medium</code></pre>
+<p>说明：</p>
+<blockquote>
+<p><code>risk_level</code> 的工作定义需要加强。</p>
+</blockquote>
+<hr />
+<h1 id="二十八第五种annotation-error">二十八、第五种：Annotation
+Error</h1>
+<h2 id="单纯标注错误">单纯标注错误</h2>
+<p>例如：</p>
+<p>专家自己复核以后说：</p>
+<blockquote>
+<p>“这个我点错了。”</p>
+</blockquote>
+<p>这当然存在。</p>
+<p>但不能把所有分歧：</p>
+<blockquote>
+<p>都归因于专家手滑。</p>
+</blockquote>
+<hr />
+<h1 id="二十九第六种true-boundary-case">二十九、第六种：True Boundary
+Case</h1>
+<h2 id="真正边界案例">真正边界案例</h2>
+<p>即使：</p>
+<pre class="text"><code>指南清楚
+上下文完整
+专家都认真</code></pre>
+<p>合理专业人员：</p>
+<blockquote>
+<p>仍然可能存在不同判断。</p>
+</blockquote>
+<p>这种案例非常重要。</p>
+<p>因为它告诉我们：</p>
+<blockquote>
+<p><strong>这个任务本来就不是完全确定性的。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十这六种分歧的处理方法完全不同">三十、这六种分歧的处理方法完全不同</h1>
+<p>比如：</p>
+<pre class="text"><code>定义分歧
+→ 改Guideline
+
+上下文分歧
+→ 补Context
+
+证据分歧
+→ 明确Evidence规则
+
+等级分歧
+→ 重写Severity标准
+
+标注错误
+→ 修正Label
+
+真实边界案例
+→ 保留uncertain / needs_review</code></pre>
+<p>所以：</p>
+<blockquote>
+<p><strong>分歧分析比“统计一致率”更重要。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三十一什么叫-adjudication">三十一、什么叫 Adjudication？</h1>
+<h1 id="adjudication-1">Adjudication</h1>
+<h2 id="专家裁决">专家裁决</h2>
+<p>当 A、B 不一致时，</p>
+<p>由：</p>
+<pre class="text"><code>高级专家
+专家小组
+领域负责人</code></pre>
+<p>根据统一规则：</p>
+<blockquote>
+<p>做最终裁决。</p>
+</blockquote>
+<p>但是正确的裁决过程不是：</p>
+<blockquote>
+<p>“老板说 A 对。”</p>
+</blockquote>
+<p>应该记录：</p>
+<pre class="text"><code>A为什么这么标
+B为什么这么标
+最终选什么
+为什么
+需要新增哪条指南</code></pre>
+<hr />
+<h1
+id="三十二一个裁决记录可以长这样">三十二、一个裁决记录可以长这样</h1>
+<div class="sourceCode" id="cb1851"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1851-1"><a href="#cb1851-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1851-2"><a href="#cb1851-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SAMPLE-00217&quot;</span><span class="fu">,</span></span>
+<span id="cb1851-3"><a href="#cb1851-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1851-4"><a href="#cb1851-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotator_a&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1851-5"><a href="#cb1851-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="kw">true</span></span>
+<span id="cb1851-6"><a href="#cb1851-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1851-7"><a href="#cb1851-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1851-8"><a href="#cb1851-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotator_b&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1851-9"><a href="#cb1851-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span></span>
+<span id="cb1851-10"><a href="#cb1851-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1851-11"><a href="#cb1851-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1851-12"><a href="#cb1851-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;disagreement_type&quot;</span><span class="fu">:</span> <span class="st">&quot;context_disagreement&quot;</span><span class="fu">,</span></span>
+<span id="cb1851-13"><a href="#cb1851-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1851-14"><a href="#cb1851-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;adjudicated_label&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1851-15"><a href="#cb1851-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span><span class="fu">,</span></span>
+<span id="cb1851-16"><a href="#cb1851-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">true</span></span>
+<span id="cb1851-17"><a href="#cb1851-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1851-18"><a href="#cb1851-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1851-19"><a href="#cb1851-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;adjudication_reason&quot;</span><span class="fu">:</span> <span class="st">&quot;现有上下文不足以判断该服务时限是否具有充分业务必要性。&quot;</span><span class="fu">,</span></span>
+<span id="cb1851-20"><a href="#cb1851-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1851-21"><a href="#cb1851-21" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;guideline_update&quot;</span><span class="fu">:</span> <span class="st">&quot;遇到现场响应时间要求时，应区分履约能力要求与投标前本地机构要求。&quot;</span></span>
+<span id="cb1851-22"><a href="#cb1851-22" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这才是一条真正有价值的裁决记录。</p>
+<hr />
+<h1
+id="三十三你会发现最后那一行最值钱">三十三、你会发现：最后那一行最值钱</h1>
+<pre class="text"><code>guideline_update</code></pre>
+<p>因为它让：</p>
+<blockquote>
+<p>以后 1000 条同类数据不再重复争论。</p>
+</blockquote>
+<p>所以高质量标注系统应该形成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>a</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>n</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneDisagreement
+\rightarrow
+OneReusableRule
+}
+</annotation></semantics></math></p>
+<p>理想情况下如此。</p>
+<hr />
+<h1 id="三十四annotation-guideline-应该越标越厚吗">三十四、Annotation
+Guideline 应该越标越厚吗？</h1>
+<p>不一定越厚越好。</p>
+<p>我们要的是：</p>
+<blockquote>
+<p><strong>越来越准确。</strong></p>
+</blockquote>
+<p>如果一份 Guideline 最后有：</p>
+<pre class="text"><code>900页</code></pre>
+<p>专家根本不会看。</p>
+<p>真正有用的方式是：</p>
+<h1 id="decision-tree">Decision Tree</h1>
+<h2 id="决策树">决策树</h2>
+<hr />
+<h1
+id="三十五比如地域条件可以做成一张判断树">三十五、比如地域条件可以做成一张判断树</h1>
+<pre class="text"><code>看到“本地 / 项目所在地 / 本市”
+                │
+                ▼
+是否把所在地作为投标前准入条件？
+        │
+    ┌───┴───┐
+    │       │
+   是       否
+    │       │
+    ▼       ▼
+进入资格   是否只是履约能力要求？
+风险审查        │
+           ┌────┴────┐
+           │         │
+          是         否
+           │         │
+           ▼         ▼
+检查必要性      进入其他规则
+和比例性</code></pre>
+<p>这种比十页散文：</p>
+<blockquote>
+<p>好用得多。</p>
+</blockquote>
+<hr />
+<h1
+id="三十六所以从第-9-阶段开始annotation-guide-最好包含三种东西">三十六、所以从第
+9 阶段开始，Annotation Guide 最好包含三种东西</h1>
+<p>这里是本回答唯一集中列出的结构清单：</p>
+<ol type="1">
+<li><strong>Definition（定义）</strong>：这个 Label
+到底是什么意思；</li>
+<li><strong>Decision
+Rule（判断规则）</strong>：遇到什么条件选什么；</li>
+<li><strong>Positive Example（正例）</strong>：典型应该标什么；</li>
+<li><strong>Negative Example（反例）</strong>：长得像但不要这么标；</li>
+<li><strong>Boundary Example（边界例）</strong>：什么情况下应
+<code>uncertain / needs_review</code>；</li>
+<li><strong>Evidence
+Requirement（证据要求）</strong>：做判断前至少需要什么；</li>
+<li><strong>Escalation
+Rule（升级规则）</strong>：什么时候必须交给高级专家裁决。</li>
+</ol>
+<p>这比“写一份长说明书”更专业。</p>
+<hr />
+<h1
+id="三十七为什么-blind-double-annotation-特别适合-gold-set">三十七、为什么
+Blind Double Annotation 特别适合 Gold Set？</h1>
+<p>因为 Gold Set 最终要拿来：</p>
+<blockquote>
+<p>给模型考试。</p>
+</blockquote>
+<p>如果 Gold 本身只是：</p>
+<blockquote>
+<p>一个专家快速点出来的，</p>
+</blockquote>
+<p>那 Test Score 再精确也没意义。</p>
+<p>例如模型与某专家的一致率：</p>
+<pre class="text"><code>92%</code></pre>
+<p>听起来很高。</p>
+<p>但如果另一个专家和这个专家本身：</p>
+<pre class="text"><code>只有65%</code></pre>
+<p>那我们应该先问：</p>
+<blockquote>
+<p>Gold 到底稳不稳？</p>
+</blockquote>
+<hr />
+<h1
+id="三十八这出现一个非常重要的关系">三十八、这出现一个非常重要的关系</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>不</mi><mi>能</mi><mi>脱</mi><mi>离</mi><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>解</mi><mi>释</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelPerformance
+不能脱离
+HumanAgreement
+解释
+}
+</annotation></semantics></math></p>
+<p>如果人类专家自己都难以稳定判断，</p>
+<p>模型达到一个上限以后：</p>
+<blockquote>
+<p>继续追求 100% Accuracy 可能没有意义。</p>
+</blockquote>
+<hr />
+<h1
+id="三十九这不是说人不一致模型就不用做好">三十九、这不是说“人不一致，模型就不用做好”</h1>
+<p>而是说：</p>
+<blockquote>
+<p><strong>Benchmark 必须告诉我们哪些 Case
+是高共识，哪些是低共识。</strong></p>
+</blockquote>
+<p>于是以后可以有：</p>
+<pre class="text"><code>consensus_level</code></pre>
+<p>例如：</p>
+<pre class="text"><code>high_consensus
+adjudicated
+boundary_case</code></pre>
+<hr />
+<h1
+id="四十这样评测模型时可以分别看">四十、这样评测模型时可以分别看</h1>
+<pre class="text"><code>High-consensus Accuracy</code></pre>
+<p>和：</p>
+<pre class="text"><code>Boundary-case Accuracy</code></pre>
+<p>这两个数字：</p>
+<blockquote>
+<p>含义完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="四十一举个简单例子">四十一、举个简单例子</h1>
+<p>假设 Test 里 1000 条。</p>
+<p>其中：</p>
+<pre class="text"><code>800条
+专家双标直接一致
+
+200条
+经过裁决</code></pre>
+<p>模型：</p>
+<pre class="text"><code>高共识样本 94%
+
+裁决样本 68%</code></pre>
+<p>这比只报：</p>
+<pre class="text"><code>总准确率 88.8%</code></pre>
+<p>有用太多。</p>
+<hr />
+<h1 id="四十二为什么">四十二、为什么？</h1>
+<p>因为你马上知道：</p>
+<blockquote>
+<p>模型真正困难的是专家自己也容易争议的边界区。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>基础判断能力全面失效。</p>
+</blockquote>
+<hr />
+<h1 id="四十三这会直接指导训练">四十三、这会直接指导训练</h1>
+<p>以后可以专门增加：</p>
+<h1 id="hard-cases">Hard Cases</h1>
+<p>也就是：</p>
+<blockquote>
+<p>专家分歧高、模型也容易错的案例。</p>
+</blockquote>
+<p>这正好会进入：</p>
+<blockquote>
+<p>第 10 阶段 Hard Negative。</p>
+</blockquote>
+<p>所以第四课的阶段不是孤立的。</p>
+<hr />
+<h1 id="四十四专家一致率越高越好吗">四十四、专家一致率越高越好吗？</h1>
+<p>一般来说当然希望：</p>
+<blockquote>
+<p>稳定。</p>
+</blockquote>
+<p>但这里有一个坑。</p>
+<p>假设为了提高一致率，我们规定：</p>
+<blockquote>
+<p>“所有不确定的都标 No Risk。”</p>
+</blockquote>
+<p>专家一致率可能立刻：</p>
+<blockquote>
+<p>变高。</p>
+</blockquote>
+<hr />
+<h1 id="四十五但-dataset-变好了吗">四十五、但 Dataset 变好了吗？</h1>
+<p>没有。</p>
+<p>我们只是：</p>
+<blockquote>
+<p>把真实不确定性藏掉了。</p>
+</blockquote>
+<p>所以真正目标不是：</p>
+<h1 id="maximum-agreement">Maximum Agreement</h1>
+<p>而是：</p>
+<h1 id="valid-agreement">Valid Agreement</h1>
+<p>有效一致。</p>
+<hr />
+<h1 id="四十六可以理解成">四十六、可以理解成</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodAgreement
+=
+Consistency
++
+CorrectMeaning
+}
+</annotation></semantics></math></p>
+<p>如果大家一致地错：</p>
+<blockquote>
+<p>没价值。</p>
+</blockquote>
+<hr />
+<h1 id="四十七因此-gold-数据必须同时关心">四十七、因此 Gold
+数据必须同时关心</h1>
+<pre class="text"><code>Reliability
+可靠性：不同人能不能稳定复现
+
+Validity
+有效性：这个Label到底是不是在表达我们真正想测的东西</code></pre>
+<p>这两个词以后会经常遇到。</p>
+<p>简单记：</p>
+<blockquote>
+<p><strong>Reliable = 稳不稳。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>Valid = 对不对题。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十八一个极端例子">四十八、一个极端例子</h1>
+<p>让所有专家按规则：</p>
+<blockquote>
+<p>“出现‘本市’就标 Risk。”</p>
+</blockquote>
+<p>他们一致率可能：</p>
+<pre class="text"><code>99%</code></pre>
+<p>Reliability：</p>
+<blockquote>
+<p>极高。</p>
+</blockquote>
+<p>但这显然不能代表真正的专业风险判断。</p>
+<p>Validity：</p>
+<blockquote>
+<p>很差。</p>
+</blockquote>
+<hr />
+<h1 id="四十九所以-annotation-quality-不能只看-agreement">四十九、所以
+Annotation Quality 不能只看 Agreement</h1>
+<p>还要：</p>
+<blockquote>
+<p>抽样专家审查、案例复盘、依据核验。</p>
+</blockquote>
+<hr />
+<h1
+id="五十正式大规模标注以前还有一步很重要">五十、正式大规模标注以前，还有一步很重要</h1>
+<h1 id="calibration-session">Calibration Session</h1>
+<h2 id="专家校准会">专家校准会</h2>
+<p>什么意思？</p>
+<p>先抽：</p>
+<pre class="text"><code>20～50条代表性案例</code></pre>
+<p>大家分别判断。</p>
+<p>然后集中讨论：</p>
+<blockquote>
+<p>为什么不同？</p>
+</blockquote>
+<hr />
+<h1 id="五十一calibration-的目标不是">五十一、Calibration
+的目标不是</h1>
+<blockquote>
+<p>让所有人服从某一个人。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>把隐含规则说出来。</p>
+</blockquote>
+<p>例如专家 A 可能说：</p>
+<blockquote>
+<p>“我默认资格条件应该考虑项目规模。”</p>
+</blockquote>
+<p>专家 B：</p>
+<blockquote>
+<p>“我只有看到明显限制时才标 Risk。”</p>
+</blockquote>
+<hr />
+<h1
+id="五十二原来两个人心里使用的是">五十二、原来两个人心里使用的是：</h1>
+<blockquote>
+<p>两个不同阈值。</p>
+</blockquote>
+<p>这时候 Guideline 就应该明确：</p>
+<blockquote>
+<p>我们的数据任务究竟采用哪个判断阈值。</p>
+</blockquote>
+<hr />
+<h1 id="五十三所以-calibration-做的是">五十三、所以 Calibration
+做的是</h1>
+<h1 id="mental-model-alignment">Mental Model Alignment</h1>
+<h2 id="专家心智模型对齐">专家心智模型对齐</h2>
+<p>这几个字特别重要。</p>
+<p>最终我们不只是：</p>
+<blockquote>
+<p>对齐按钮。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>对齐判断方式。</p>
+</blockquote>
+<hr />
+<h1 id="五十四推荐的-gold-标注组织结构">五十四、推荐的 Gold
+标注组织结构</h1>
+<p>可以分成三层角色。</p>
+<pre class="text"><code>Annotator
+标注专家
+
+Reviewer
+复核专家
+
+Adjudicator
+裁决专家</code></pre>
+<hr />
+<h1 id="五十五annotator-的职责">五十五、Annotator 的职责</h1>
+<p>根据 Guide：</p>
+<blockquote>
+<p>独立判断。</p>
+</blockquote>
+<p>不要猜：</p>
+<blockquote>
+<p>“裁决专家喜欢什么答案。”</p>
+</blockquote>
+<hr />
+<h1 id="五十六reviewer-的职责">五十六、Reviewer 的职责</h1>
+<p>检查：</p>
+<pre class="text"><code>Label
+Rationale
+Evidence
+Schema逻辑</code></pre>
+<p>是否符合标准。</p>
+<hr />
+<h1 id="五十七adjudicator-的职责">五十七、Adjudicator 的职责</h1>
+<p>处理：</p>
+<blockquote>
+<p>真正分歧和规则边界。</p>
+</blockquote>
+<p>同时负责：</p>
+<blockquote>
+<p>更新 Guideline。</p>
+</blockquote>
+<hr />
+<h1
+id="五十八注意一个很重要的治理原则">五十八、注意一个很重要的治理原则</h1>
+<p>最好不要：</p>
+<blockquote>
+<p>每一条数据都让最贵的高级专家从头标。</p>
+</blockquote>
+<p>这非常浪费。</p>
+<p>合理的方式是：</p>
+<pre class="text"><code>普通明确案例
+→ 双人标准标注
+
+存在分歧
+→ 高级专家裁决
+
+复杂高价值Gold
+→ 加强审核</code></pre>
+<p>这叫：</p>
+<h1 id="escalation">Escalation</h1>
+<h2 id="分级升级处理">分级升级处理</h2>
+<hr />
+<h1 id="五十九这样成本才能控制">五十九、这样成本才能控制</h1>
+<p>假设：</p>
+<p>100,000 条数据。</p>
+<p>如果每条都需要：</p>
+<blockquote>
+<p>首席采购专家 10 分钟，</p>
+</blockquote>
+<p>项目基本不可持续。</p>
+<hr />
+<h1 id="六十而如果">六十、而如果：</h1>
+<pre class="text"><code>80%
+双标直接一致
+
+15%
+需要普通复核
+
+5%
+进入高级专家裁决</code></pre>
+<p>整体成本：</p>
+<blockquote>
+<p>就现实得多。</p>
+</blockquote>
+<p>这些比例只是教学示例，不是固定标准。</p>
+<hr />
+<h1
+id="六十一现在谈一个很重要的数据字段">六十一、现在谈一个很重要的数据字段</h1>
+<h1 id="disagreement_type">disagreement_type</h1>
+<p>为什么值得保存？</p>
+<p>因为半年以后可以统计：</p>
+<pre class="text"><code>40%的分歧来自risk_level
+30%的分歧来自context不足
+20%的分歧来自Subtype边界
+10%的分歧来自操作错误</code></pre>
+<p>那下一版数据工程优先级就非常清楚。</p>
+<hr />
+<h1 id="六十二如果没有保存分歧原因">六十二、如果没有保存分歧原因</h1>
+<p>你只知道：</p>
+<blockquote>
+<p>“专家有 18% 不一致。”</p>
+</blockquote>
+<p>然后：</p>
+<blockquote>
+<p>不知道该修哪里。</p>
+</blockquote>
+<hr />
+<h1
+id="六十三所以专家分歧本身也应该成为-dataset-metadata">六十三、所以专家分歧本身也应该成为
+Dataset Metadata</h1>
+<p>例如：</p>
+<div class="sourceCode" id="cb1872"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1872-1"><a href="#cb1872-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1872-2"><a href="#cb1872-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;double_annotated&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb1872-3"><a href="#cb1872-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;initial_agreement&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb1872-4"><a href="#cb1872-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;disagreement_type&quot;</span><span class="fu">:</span> <span class="st">&quot;context_insufficient&quot;</span><span class="fu">,</span></span>
+<span id="cb1872-5"><a href="#cb1872-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;adjudication_required&quot;</span><span class="fu">:</span> <span class="kw">true</span></span>
+<span id="cb1872-6"><a href="#cb1872-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="六十四现在设计-gold-状态">六十四、现在设计 Gold 状态</h1>
+<p>我们上一阶段有：</p>
+<pre class="text"><code>draft
+reviewed
+adjudicated
+gold</code></pre>
+<p>现在可以真正理解它们。</p>
+<pre class="text"><code>draft
+=
+单人初标
+
+reviewed
+=
+经过第二人检查
+
+adjudicated
+=
+曾有分歧，已经裁决
+
+gold
+=
+达到当前Gold发布标准</code></pre>
+<hr />
+<h1 id="六十五注意">六十五、注意</h1>
+<pre class="text"><code>adjudicated</code></pre>
+<p>和：</p>
+<pre class="text"><code>gold</code></pre>
+<p>仍然不完全一样。</p>
+<p>一条样本可能经过裁决，</p>
+<p>但发现：</p>
+<blockquote>
+<p>原始 PDF OCR 不可靠。</p>
+</blockquote>
+<p>那么：</p>
+<blockquote>
+<p>仍然不应该进 Gold Benchmark。</p>
+</blockquote>
+<p>因为 Gold 需要：</p>
+<pre class="text"><code>Parse可信
+Structure可信
+Normalization可信
+Split可信
+Leakage可信
+Annotation可信</code></pre>
+<hr />
+<h1
+id="六十六到这里第四课前面的东西终于全部合流">六十六、到这里，第四课前面的东西终于全部合流</h1>
+<p>真正的 Gold Sample 可能要求：</p>
+<pre class="text"><code>parse_status = verified
+structure_status = verified
+normalization_status = verified
+dedup_status = verified
+split_status = valid
+leakage_status = passed
+annotation_status = gold</code></pre>
+<p>这才叫：</p>
+<h1 id="end-to-end-gold">End-to-End Gold</h1>
+<p>不是：</p>
+<blockquote>
+<p>“Label 看过了就叫 Gold。”</p>
+</blockquote>
+<hr />
+<h1
+id="六十七这是这一课非常重要的专业化升级">六十七、这是这一课非常重要的专业化升级</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>W</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldQuality
+=
+WholePipelineQuality
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六十八现在设计-annotationguideline_v0.1">六十八、现在设计
+<code>AnnotationGuideline_V0.1</code></h1>
+<p>它不是一篇长文章。</p>
+<p>可以组织成：</p>
+<pre class="text"><code>Task Definition
+任务到底在判断什么
+
+Label Definitions
+每个标签正式定义
+
+Decision Trees
+常见场景判断流程
+
+Positive Examples
+正例
+
+Negative Examples
+反例
+
+Boundary Cases
+边界例
+
+Required Context
+需要查看的上下文
+
+Evidence Rules
+证据规则
+
+Escalation Rules
+什么时候升级裁决
+
+Version History
+规则怎么变化</code></pre>
+<p>每个英文后面都应该像这样直接给中文含义。</p>
+<p>以后课程我都会保持这个规则。</p>
+<hr />
+<h1 id="六十九再设计-adjudicatedgoldset_v0.1">六十九、再设计
+<code>AdjudicatedGoldSet_V0.1</code></h1>
+<p>一条 Gold Record 概念可以是：</p>
+<div class="sourceCode" id="cb1880"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1880-1"><a href="#cb1880-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1880-2"><a href="#cb1880-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;GOLD-000217&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-3"><a href="#cb1880-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-4"><a href="#cb1880-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;final_label&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1880-5"><a href="#cb1880-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-6"><a href="#cb1880-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;primary_risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;A&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-7"><a href="#cb1880-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">true</span></span>
+<span id="cb1880-8"><a href="#cb1880-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1880-9"><a href="#cb1880-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-10"><a href="#cb1880-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_a&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1880-11"><a href="#cb1880-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="kw">true</span></span>
+<span id="cb1880-12"><a href="#cb1880-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1880-13"><a href="#cb1880-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-14"><a href="#cb1880-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_b&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1880-15"><a href="#cb1880-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span></span>
+<span id="cb1880-16"><a href="#cb1880-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1880-17"><a href="#cb1880-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-18"><a href="#cb1880-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;initial_agreement&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb1880-19"><a href="#cb1880-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-20"><a href="#cb1880-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;disagreement_type&quot;</span><span class="fu">:</span> <span class="st">&quot;context_insufficient&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-21"><a href="#cb1880-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-22"><a href="#cb1880-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;adjudication&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1880-23"><a href="#cb1880-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;final_decision&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-24"><a href="#cb1880-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;现有材料不足以确认该条件的客观必要性。&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-25"><a href="#cb1880-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;adjudicator_id&quot;</span><span class="fu">:</span> <span class="st">&quot;EXP-SENIOR-003&quot;</span></span>
+<span id="cb1880-26"><a href="#cb1880-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1880-27"><a href="#cb1880-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-28"><a href="#cb1880-28" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;consensus_status&quot;</span><span class="fu">:</span> <span class="st">&quot;adjudicated&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-29"><a href="#cb1880-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-30"><a href="#cb1880-30" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;guideline_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_guideline_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-31"><a href="#cb1880-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-32"><a href="#cb1880-32" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_schema_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_schema_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb1880-33"><a href="#cb1880-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1880-34"><a href="#cb1880-34" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;gold_status&quot;</span><span class="fu">:</span> <span class="st">&quot;gold&quot;</span></span>
+<span id="cb1880-35"><a href="#cb1880-35" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="七十这里有一个很关键的设计">七十、这里有一个很关键的设计</h1>
+<p>不要只保存：</p>
+<pre class="text"><code>final_label</code></pre>
+<p>最好保留：</p>
+<pre class="text"><code>A原始判断
+B原始判断
+最终裁决</code></pre>
+<p>为什么？</p>
+<p>因为以后 Schema 更新以后：</p>
+<blockquote>
+<p>我们可以重新分析专家分歧。</p>
+</blockquote>
+<p>否则历史信息：</p>
+<blockquote>
+<p>永远丢了。</p>
+</blockquote>
+<hr />
+<h1 id="七十一这也是-non-destructive-data-engineering">七十一、这也是
+Non-destructive Data Engineering</h1>
+<p>我们前面反复讲：</p>
+<blockquote>
+<p>Raw Text 不覆盖。</p>
+</blockquote>
+<p>今天同样：</p>
+<blockquote>
+<p>Initial Annotation 也不要被 Final Gold 覆盖。</p>
+</blockquote>
+<hr />
+<h1 id="七十二关系变成">七十二、关系变成：</h1>
+<pre class="text"><code>Annotation A ─┐
+              ├→ Adjudication → Final Gold
+Annotation B ─┘</code></pre>
+<p>原始意见：</p>
+<blockquote>
+<p>都保留。</p>
+</blockquote>
+<hr />
+<h1
+id="七十三现在做一个完整政府采购案例">七十三、现在做一个完整政府采购案例</h1>
+<p>Clause：</p>
+<blockquote>
+<p>“投标人须在本市设立固定办公场所，并提供房屋产权证明或租赁合同。”</p>
+</blockquote>
+<p>专家 A：</p>
+<pre class="text"><code>Risk = true
+Type = Supplier Qualification
+Level = high</code></pre>
+<p>专家 B：</p>
+<pre class="text"><code>Risk = uncertain
+Type = Supplier Qualification
+Needs Review = true</code></pre>
+<hr />
+<h1 id="七十四分歧不是">七十四、分歧不是：</h1>
+<blockquote>
+<p>Risk Type。</p>
+</blockquote>
+<p>两个人都认为：</p>
+<blockquote>
+<p>属于供应商资格维度。</p>
+</blockquote>
+<p>真正分歧是：</p>
+<blockquote>
+<p><strong>是否已有足够信息把它从“需复核”提升为明确 Potential
+Risk。</strong></p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>disagreement_type
+=
+decision_threshold</code></pre>
+<p>即：</p>
+<blockquote>
+<p>判断阈值分歧。</p>
+</blockquote>
+<hr />
+<h1 id="七十五裁决专家可能认为">七十五、裁决专家可能认为</h1>
+<p>按照当前项目 Dataset 的任务定义：</p>
+<blockquote>
+<p>“只要条款将投标前固定本地办公场所作为准入条件，即进入 Potential Risk
+筛查；最终合理性仍需结合完整事实复核。”</p>
+</blockquote>
+<p>于是 Final：</p>
+<pre class="text"><code>risk_present = true
+needs_review = true</code></pre>
+<hr />
+<h1 id="七十六注意这个结果很有意思">七十六、注意这个结果很有意思</h1>
+<pre class="text"><code>true
++
+needs_review</code></pre>
+<p>并不矛盾。</p>
+<p>它表示：</p>
+<blockquote>
+<p><strong>已经达到风险筛查阈值，但还没有达到最终裁决阈值。</strong></p>
+</blockquote>
+<p>这就是第 8 阶段多维 Schema 的价值。</p>
+<hr />
+<h1 id="七十七然后-guideline-增加一句">七十七、然后 Guideline
+增加一句</h1>
+<blockquote>
+<p>“<code>risk_present=true</code>
+表示达到风险筛查标准，不等同于最终法律结论；仍可同时设置
+<code>needs_review=true</code>。”</p>
+</blockquote>
+<p>以后专家再遇到这种问题：</p>
+<blockquote>
+<p>一致性就会提高。</p>
+</blockquote>
+<hr />
+<h1
+id="七十八这就是一次漂亮的-guideline-learning-loop">七十八、这就是一次漂亮的
+Guideline Learning Loop</h1>
+<pre class="text"><code>Case
+ ↓
+Disagreement
+ ↓
+Adjudication
+ ↓
+New Rule
+ ↓
+Future Agreement Improves</code></pre>
+<hr />
+<h1
+id="七十九如果一致率一直上不去怎么办">七十九、如果一致率一直上不去怎么办？</h1>
+<p>不要马上：</p>
+<blockquote>
+<p>“换专家。”</p>
+</blockquote>
+<p>先检查三个层次。</p>
+<p>第一层：</p>
+<h1 id="schema-problem">Schema Problem</h1>
+<p>是不是 Label 本身重叠？</p>
+<hr />
+<h1 id="八十第二层">八十、第二层：</h1>
+<h1 id="guideline-problem">Guideline Problem</h1>
+<p>定义是不是太模糊？</p>
+<hr />
+<h1 id="八十一第三层">八十一、第三层：</h1>
+<h1 id="task-problem">Task Problem</h1>
+<p>这个任务是不是天然无法仅靠现有输入判断？</p>
+<p>例如：</p>
+<blockquote>
+<p>Clause 本身根本没有足够上下文。</p>
+</blockquote>
+<hr />
+<h1 id="八十二如果第三种成立">八十二、如果第三种成立</h1>
+<p>那正确修复不是：</p>
+<blockquote>
+<p>逼专家猜。</p>
+</blockquote>
+<p>而是：</p>
+<pre class="text"><code>增加Context</code></pre>
+<p>或者：</p>
+<pre class="text"><code>允许uncertain</code></pre>
+<hr />
+<h1
+id="八十三这也是专业数据项目一个重要能力">八十三、这也是专业数据项目一个重要能力</h1>
+<h1 id="不强行制造确定性">不强行制造确定性</h1>
+<hr />
+<h1 id="八十四现在看一个反例">八十四、现在看一个反例</h1>
+<p>团队规定：</p>
+<blockquote>
+<p>两个专家不一致时，一律以高级专家意见覆盖。</p>
+</blockquote>
+<p>最终数据库只留下：</p>
+<pre class="text"><code>final_label</code></pre>
+<p>看起来很干净。</p>
+<hr />
+<h1 id="八十五但几年以后">八十五、但几年以后：</h1>
+<p>发现模型在某一类数据表现很差。</p>
+<p>想分析：</p>
+<blockquote>
+<p>这些 Case 当初是不是专家也很争议？</p>
+</blockquote>
+<p>已经无法知道。</p>
+<p>因为：</p>
+<blockquote>
+<p>初始分歧被覆盖了。</p>
+</blockquote>
+<hr />
+<h1 id="八十六所以应该保留">八十六、所以应该保留：</h1>
+<pre class="text"><code>annotation_a
+annotation_b
+adjudication</code></pre>
+<p>这叫：</p>
+<h1 id="annotation-lineage">Annotation Lineage</h1>
+<h2 id="标注血缘">标注血缘</h2>
+<hr />
+<h1 id="八十七我们以前有">八十七、我们以前有：</h1>
+<pre class="text"><code>Document Lineage
+Data Lineage
+Normalization Lineage</code></pre>
+<p>现在又加：</p>
+<h1 id="label-lineage">Label Lineage</h1>
+<hr />
+<h1 id="八十八于是一个-gold-label-可以一路追">八十八、于是一个 Gold
+Label 可以一路追：</h1>
+<pre class="text"><code>Gold Label
+   ↓
+Adjudication Decision
+   ↓
+Expert A / Expert B
+   ↓
+Annotation Guideline Version
+   ↓
+Clause
+   ↓
+Source Block
+   ↓
+Original PDF</code></pre>
+<p>这已经非常接近真正专业的数据资产。</p>
+<hr />
+<h1
+id="八十九现在回到专家一致性指标">八十九、现在回到“专家一致性指标”</h1>
+<p>我们目前记两个就够：</p>
+<pre class="text"><code>Percent Agreement
+直接一致率</code></pre>
+<p>以及：</p>
+<pre class="text"><code>Cohen&#39;s Kappa
+扣除随机一致后的Kappa</code></pre>
+<p>现在先不用学更多统计指标。</p>
+<p>后面真正遇到多标签、多专家、序数等级时，再扩展。</p>
+<hr />
+<h1 id="九十关键不是收集指标名称">九十、关键不是收集指标名称</h1>
+<p>而是能回答：</p>
+<blockquote>
+<p><strong>哪一个字段不稳定？为什么不稳定？怎么修？</strong></p>
+</blockquote>
+<p>这比背 10 个一致性公式：</p>
+<blockquote>
+<p>有价值得多。</p>
+</blockquote>
+<hr />
+<h1
+id="九十一什么时候可以开始大规模标注">九十一、什么时候可以开始大规模标注？</h1>
+<p>不是：</p>
+<blockquote>
+<p>“Guideline 写完了。”</p>
+</blockquote>
+<p>而是 Pilot 后至少确认：</p>
+<pre class="text"><code>核心Label基本稳定
+主要分歧类型已经知道
+专家知道什么时候选uncertain
+上下文基本足够
+裁决流程可以运转
+Guideline可以版本化</code></pre>
+<p>然后再扩大。</p>
+<hr />
+<h1 id="九十二否则会发生什么">九十二、否则会发生什么？</h1>
+<p>假设先标：</p>
+<pre class="text"><code>100,000条</code></pre>
+<p>后来发现：</p>
+<blockquote>
+<p><code>High Risk</code> 定义从一开始就不统一。</p>
+</blockquote>
+<p>那 10 万条：</p>
+<blockquote>
+<p>可能全部要重新审。</p>
+</blockquote>
+<p>这种成本非常可怕。</p>
+<hr />
+<h1
+id="九十三所以小规模试标本质上是">九十三、所以小规模试标本质上是：</h1>
+<h1 id="schema-unit-test">Schema Unit Test</h1>
+<h2 id="给标注体系做单元测试">给标注体系做单元测试</h2>
+<p>程序上线前要 Test。</p>
+<p>Annotation System：</p>
+<blockquote>
+<p>也要 Test。</p>
+</blockquote>
+<hr />
+<h1 id="九十四现在把整个第-9-阶段压缩成专业版流程">九十四、现在把整个第
+9 阶段压缩成专业版流程</h1>
+<pre class="text"><code>1. Schema已经定义
+       ↓
+2. 写Annotation Guideline
+   把Label变成可执行规则
+       ↓
+3. Calibration
+   专家先做小批量心智对齐
+       ↓
+4. Pilot
+   小批量试标
+       ↓
+5. Blind Double Annotation
+   两位专家独立双标
+       ↓
+6. Agreement Measurement
+   按字段测一致性
+       ↓
+7. Disagreement Analysis
+   分析分歧类型
+       ↓
+8. Adjudication
+   高级专家裁决
+       ↓
+9. Guideline Revision
+   把新规则写回指南
+       ↓
+10. Gold Finalization
+    形成可发布Gold</code></pre>
+<p>如果以后忘掉所有英文：</p>
+<blockquote>
+<p><strong>写规则 → 校准 → 试标 → 双标 → 测一致 → 找分歧 → 裁决 → 改规则
+→ 出 Gold。</strong></p>
+</blockquote>
+<p>就记这条。</p>
+<hr />
+<h1
+id="九十五本阶段最值得警惕的几个反例">九十五、本阶段最值得警惕的几个反例</h1>
+<p>第一种：</p>
+<blockquote>
+<p>“找一个最资深专家，把 10 万条全部标完。”</p>
+</blockquote>
+<p>问题是：</p>
+<blockquote>
+<p>没有独立复核，也无法估计标签可靠性。</p>
+</blockquote>
+<p>第二种：</p>
+<blockquote>
+<p>“两个人一起讨论着标。”</p>
+</blockquote>
+<p>这不是 Independent Annotation。</p>
+<p>你根本测不出：</p>
+<blockquote>
+<p>两人是否真正独立一致。</p>
+</blockquote>
+<p>第三种：</p>
+<blockquote>
+<p>“不一致的全部删掉。”</p>
+</blockquote>
+<p>这会专门删掉：</p>
+<blockquote>
+<p>最有价值的 Hard Case。</p>
+</blockquote>
+<p>第四种：</p>
+<blockquote>
+<p>“为了提高一致率，把所有 Unknown 都改成 No Risk。”</p>
+</blockquote>
+<p>指标更漂亮，</p>
+<p>数据反而更假。</p>
+<p>第五种：</p>
+<blockquote>
+<p>“只保存最终裁决，不保存初始分歧。”</p>
+</blockquote>
+<p>以后完全无法研究：</p>
+<blockquote>
+<p>标注不确定性。</p>
+</blockquote>
+<p>第六种：</p>
+<blockquote>
+<p>“Kappa 到 0.8 就万事大吉。”</p>
+</blockquote>
+<p>错误。</p>
+<p>指标只是开始，</p>
+<p>还要问：</p>
+<blockquote>
+<p>具体哪里分歧、Gold 是否有效。</p>
+</blockquote>
+<hr />
+<h1
+id="九十六这次我们把核心模型再集中一次">九十六、这次我们把核心模型再集中一次</h1>
+<p>如果第 9 阶段只记五句话：</p>
+<blockquote>
+<p><strong>Gold 不是某一个专家的意见，而是一套质量流程。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>专家分歧不是垃圾，而是发现边界和修正规则的高价值信号。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>必须先盲式独立标注，再讨论，否则测不到真实一致性。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>一致性指标首先是在给 Schema 和 Guideline
+做体检，不是在给专家排名。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>裁决最有价值的产物不是那个最终
+Label，而是可以复用到未来案例的新规则。</strong></p>
+</blockquote>
+<p>这五句话，就是本阶段真正的核心。</p>
+<hr />
+<h1 id="九十七本阶段最终工程产物">九十七、本阶段最终工程产物</h1>
+<p>第一个：</p>
+<h1
+id="annotationguideline_v0.1-2"><code>AnnotationGuideline_V0.1</code></h1>
+<p>它规定：</p>
+<pre class="text"><code>Label定义
+判断规则
+正例
+反例
+边界案例
+必需上下文
+证据要求
+升级裁决条件
+版本记录</code></pre>
+<p>第二个：</p>
+<h1
+id="adjudicatedgoldset_v0.1-2"><code>AdjudicatedGoldSet_V0.1</code></h1>
+<p>每条 Gold 不只有：</p>
+<pre class="text"><code>final_label</code></pre>
+<p>还保留：</p>
+<pre class="text"><code>双标结果
+一致状态
+分歧类型
+裁决过程
+指南版本
+Gold质量状态</code></pre>
+<hr />
+<h1 id="九十八本阶段掌握测试">九十八、本阶段掌握测试</h1>
+<p>现在不看正文，你应该能回答：为什么一个资深专家单独标出来的数据不能天然叫
+Gold？为什么专家分歧本身是有价值的信息？Blind Annotation
+为什么必须在专家讨论之前进行？Double Annotation 和 Review
+有什么区别？为什么一致性要按
+<code>risk_present</code>、<code>risk_type</code>、<code>risk_level</code>
+等字段分别测？Percent Agreement 在测什么？Cohen’s Kappa
+为什么要扣除“随机碰巧一致”？为什么不应该迷信某一个 Kappa 阈值？Rationale
+为什么不能简单用字符串相等来算一致性？专家分歧至少可能来自哪些不同原因？为什么
+Context 不足应该补 Context，而不是逼专家二选一？Adjudication
+的真正作用是什么？为什么裁决结果必须写回 Annotation Guideline？为什么
+Gold 数据应该保留 Expert A、Expert B 和 Final Decision 三层信息？什么叫
+Annotation Lineage？为什么高一致率不一定代表高质量数据？Reliability 和
+Validity 有什么区别？为什么 Gold Quality 必须是整条数据 Pipeline
+的质量，而不仅仅是 Label 被专家看过？</p>
+<p>如果这些能讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>9</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第9阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九十九本阶段最终只记一句话">九十九、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>高质量专家标注不是“请专家给答案”，而是先用统一 Guideline
+对齐判断标准，再让专家独立双标，用一致性指标发现规则问题，对真正分歧进行裁决，并把裁决经验不断写回指南；Gold
+的本质不是专家权威，而是一个可复现、可审计、可持续改进的专家知识生产流程。</strong></p>
+</blockquote>
+<p>最后只留这一张图：</p>
+<pre class="text"><code>                  AnnotationSchema
+                  专家要标什么
+                        │
+                        ▼
+                AnnotationGuideline
+                  怎么统一判断
+                        │
+                        ▼
+                   Calibration
+                   专家先校准
+                        │
+                        ▼
+              Blind Double Annotation
+                 两位专家独立双标
+                        │
+                        ▼
+               Agreement Measurement
+                 测到底有多一致
+                        │
+                        ▼
+                Disagreement Analysis
+                 为什么会不一致
+                        │
+                        ▼
+                    Adjudication
+                    专家裁决
+                        │
+                        ▼
+                 Guideline Revision
+                   新规则写回
+                        │
+                        ▼
+               AdjudicatedGoldSet_V0.1
+                   真正Gold数据</code></pre>
+<p>下一阶段会接着这条线进入：</p><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

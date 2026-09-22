@@ -1,0 +1,3138 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第2课 · 第5阶段：Backpropagation——最终 Loss 到底怎样穿过计算图，把“错误责任”一层层分配给每一个 Weight？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第2课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>解释 Transformer/LLM 内部机制，定位 Attention、Token、KV Cache 等架构问题。<ul><li>Backpropagation = Loss 通过 Chain Rule 沿计算图反向传播，把错误信号分配给可训练参数。</li><li>Gradient ≠ Parameter Update。backward() 计算梯度，optimizer.step() 才真正改变参数。</li><li>Credit Assignment 的核心是回答“最终错误应该由前面哪些参数承担多少责任”。</li></ul></div><h1
+id="第二课-第-5-阶段backpropagation最终-loss-到底怎样穿过计算图把错误责任一层层分配给每一个-weight-1">第二课
+· 第 5 阶段：Backpropagation——最终 Loss
+到底怎样穿过计算图，把“错误责任”一层层分配给每一个 Weight？</h1>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Backpropagation = Loss 通过 Chain Rule
+沿计算图反向传播，把错误信号分配给可训练参数。</strong></li>
+<li><strong>Gradient ≠ Parameter Update。backward()
+计算梯度，optimizer.step() 才真正改变参数。</strong></li>
+<li><strong>Credit Assignment
+的核心是回答“最终错误应该由前面哪些参数承担多少责任”。</strong></li>
+<li><strong>深层网络中的梯度是局部导数连续相乘的结果，因此会遇到梯度过小、过大和数值不稳定问题。</strong></li>
+<li><strong>只有 requires_grad / 可训练参数会被优化；被冻结参数即使参与
+Forward，也不应该被更新。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="even">
+<td><code>Backpropagation</code></td>
+<td>反向传播：把最终损失沿计算图反向分配到参数</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="even">
+<td><code>Optimizer</code></td>
+<td>优化器：依据梯度规则更新参数</td>
+</tr>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="odd">
+<td><code>Step</code></td>
+<td>训练步：通常指一次优化器更新</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Learning Rate</code></td>
+<td>学习率：控制每次参数更新步幅</td>
+</tr>
+<tr class="even">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="odd">
+<td><code>PyTorch</code></td>
+<td>PyTorch：张量计算、自动求导和训练/推理框架</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前四阶段，我们已经把 Forward 完整走通：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>X</mi><mo>→</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>t</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+X
+\rightarrow
+Linear
+\rightarrow
+Activation
+\rightarrow
+HiddenState
+\rightarrow
+Logit
+\rightarrow
+Prediction
+\rightarrow
+Loss
+}
+</annotation></semantics></math></p>
+<p>现在模型知道：</p>
+<blockquote>
+<p>“我错了多少。”</p>
+</blockquote>
+<p>但还不知道：</p>
+<blockquote>
+<p><strong>到底是谁导致了这个错误？</strong></p>
+</blockquote>
+<p>这就是 Backpropagation 要解决的问题。</p>
+<p>它的核心不是一句：</p>
+<blockquote>
+<p>“把梯度传回去。”</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>找</mi><mi>到</mi><mi>每</mi><mi>一</mi><mi>个</mi><mi>中</mi><mi>间</mi><mi>变</mi><mi>量</mi><mi>的</mi><mi>责</mi><mi>任</mi><mo>→</mo><mi>找</mi><mi>到</mi><mi>每</mi><mi>一</mi><mi>个</mi><mi>参</mi><mi>数</mi><mi>的</mi><mi>责</mi><mi>任</mi><mo>→</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>更</mi><mi>新</mi><mi>参</mi><mi>数</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Loss
+\rightarrow
+找到每一个中间变量的责任
+\rightarrow
+找到每一个参数的责任
+\rightarrow
+Optimizer更新参数
+}
+</annotation></semantics></math></p>
+<p>这就是：</p>
+<h1 id="credit-assignment-1">Credit Assignment</h1>
+<p>责任分配。</p>
+<hr />
+<h2 id="先把-backprop-放回整个训练闭环">1. 先把 Backprop
+放回整个训练闭环</h2>
+<p>完整训练过程：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>→</mo><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>e</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Batch
+\rightarrow
+Forward
+\rightarrow
+Loss
+\rightarrow
+Backward
+\rightarrow
+OptimizerStep
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p>Forward：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><mover><mi>Y</mi><mo accent="true">̂</mo></mover></mrow><annotation encoding="application/x-tex">
+X\rightarrow \hat Y
+</annotation></semantics></math></p>
+<p>Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>Y</mi><mo accent="true">̂</mo></mover><mo>,</mo><mi>Y</mi><mo>→</mo><mi>L</mi></mrow><annotation encoding="application/x-tex">
+\hat Y,Y\rightarrow L
+</annotation></semantics></math></p>
+<p>Backward：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>→</mo><msub><mi>∇</mi><mi>θ</mi></msub><mi>L</mi></mrow><annotation encoding="application/x-tex">
+L\rightarrow \nabla_\theta L
+</annotation></semantics></math></p>
+<p>Optimizer：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>→</mo><mi>θ</mi><mi>′</mi></mrow><annotation encoding="application/x-tex">
+\theta\rightarrow\theta&#39;
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>本</mi><mi>身</mi><mi>不</mi><mi>修</mi><mi>改</mi><mi>参</mi><mi>数</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backward
+本身不修改参数
+}
+</annotation></semantics></math></p>
+<p>它只计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Gradient
+</annotation></semantics></math></p>
+<p>真正修改参数的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Optimizer
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这是一个特别容易混淆的地方">2. 这是一个特别容易混淆的地方</h2>
+<p>很多初学者会说：</p>
+<blockquote>
+<p>“Backprop 更新模型。”</p>
+</blockquote>
+<p>严格来说不够准确。</p>
+<p>更准确是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>a</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>计</mi><mi>算</mi><mi>梯</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backpropagation
+=
+计算梯度
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>=</mo><mi>利</mi><mi>用</mi><mi>梯</mi><mi>度</mi><mi>更</mi><mi>新</mi><mi>参</mi><mi>数</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Optimizer
+=
+利用梯度更新参数
+}
+</annotation></semantics></math></p>
+<p>以后看到：</p>
+<div class="sourceCode" id="cb99"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb99-1"><a href="#cb99-1" aria-hidden="true" tabindex="-1"></a>loss.backward()</span>
+<span id="cb99-2"><a href="#cb99-2" aria-hidden="true" tabindex="-1"></a>optimizer.step()</span></code></pre></div>
+<p>就应该知道：</p>
+<blockquote>
+<p>这是两个不同动作。</p>
+</blockquote>
+<hr />
+<h2 id="为什么模型需要梯度">3. 为什么模型需要梯度？</h2>
+<p>假设只有一个参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>w</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+L(w)
+</annotation></semantics></math></p>
+<p>现在模型在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+w=2
+</annotation></semantics></math></p>
+<p>我们想知道：</p>
+<blockquote>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+应该增加还是减少？</p>
+</blockquote>
+<p>需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>d</mi><mi>L</mi></mrow><mrow><mi>d</mi><mi>w</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{dL}{dw}
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>d</mi><mi>L</mi></mrow><mrow><mi>d</mi><mi>w</mi></mrow></mfrac><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\frac{dL}{dw}&gt;0
+</annotation></semantics></math></p>
+<p>说明：</p>
+<blockquote>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+增大时 Loss 倾向增加。</p>
+</blockquote>
+<p>所以为了降低 Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>应该减小。</p>
+<hr />
+<h2 id="如果梯度是负数呢">4. 如果梯度是负数呢？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>d</mi><mi>L</mi></mrow><mrow><mi>d</mi><mi>w</mi></mrow></mfrac><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\frac{dL}{dw}&lt;0
+</annotation></semantics></math></p>
+<p>说明：</p>
+<blockquote>
+<p>增大
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+会降低 Loss。</p>
+</blockquote>
+<p>所以参数应该：</p>
+<blockquote>
+<p>增加。</p>
+</blockquote>
+<p>这就是 Gradient Descent：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>w</mi><mrow><mi>n</mi><mi>e</mi><mi>w</mi></mrow></msub><mo>=</mo><msub><mi>w</mi><mrow><mi>o</mi><mi>l</mi><mi>d</mi></mrow></msub><mo>−</mo><mi>η</mi><mfrac><mrow><mi>d</mi><mi>L</mi></mrow><mrow><mi>d</mi><mi>w</mi></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+w_{new}
+=
+w_{old}
+-
+\eta
+\frac{dL}{dw}
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第一个核心心智模型-4">5. 第一个核心心智模型</h2>
+<h3
+id="心智模型-①gradient-是如果轻微改变这个参数loss-会怎样变化">心智模型
+①：Gradient 是“如果轻微改变这个参数，Loss 会怎样变化？”</h3>
+<p>不是：</p>
+<blockquote>
+<p>“这个参数好不好。”</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Sensitivity
+}
+</annotation></semantics></math></p>
+<p>敏感度。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+</annotation></semantics></math></p>
+<p>回答：</p>
+<blockquote>
+<p>当
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+轻微增加一点，最终 Loss 大约会怎样变化？</p>
+</blockquote>
+<hr />
+<h2 id="从最小模型开始">6. 从最小模型开始</h2>
+<p>我们先不要碰矩阵。</p>
+<p>只看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>w</mi><mi>x</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=wx+b
+</annotation></semantics></math></p>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+x=2
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">
+w=3
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+b=1
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mn>3</mn><mo>×</mo><mn>2</mn><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+z=3\times2+1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>z</mi><mo>=</mo><mn>7</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+z=7
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果目标就是让-z-接近-5">7. 如果目标就是让
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">z</annotation></semantics></math>
+接近 5</h2>
+<p>为了方便手算，先用平方误差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+L=\frac12(z-y)^2
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">
+y=5
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo stretchy="true" form="prefix">(</mo><mn>7</mn><mo>−</mo><mn>5</mn><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+L
+=
+\frac12(7-5)^2
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><mo>×</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">
+=
+\frac12\times4
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mo>=</mo><mn>2</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+L=2
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="现在问题来了">8. 现在问题来了</h2>
+<p>Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>2</mn><annotation encoding="application/x-tex">
+2
+</annotation></semantics></math></p>
+<p>我们知道模型错了。</p>
+<p>但要训练：</p>
+<blockquote>
+<p>必须知道
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+应该怎么变。</p>
+</blockquote>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="不要直接跳公式先拆计算图">9. 不要直接跳公式，先拆计算图</h2>
+<p>模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>w</mi><mi>x</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=wx+b
+</annotation></semantics></math></p>
+<p>Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+L=\frac12(z-y)^2
+</annotation></semantics></math></p>
+<p>计算链：</p>
+<pre class="text"><code>w
+ \
+  × x
+   ↓
+   + b
+   ↓
+   z
+   ↓
+  z-y
+   ↓
+ square
+   ↓
+   × 1/2
+   ↓
+   L</code></pre>
+<hr />
+<h2 id="backprop-的核心策略">10. Backprop 的核心策略</h2>
+<p>我们不一次性问：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>→</mo><mi>L</mi></mrow><annotation encoding="application/x-tex">
+w
+\rightarrow L
+</annotation></semantics></math></p>
+<p>而是拆成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>→</mo><mi>z</mi><mo>→</mo><mi>L</mi></mrow><annotation encoding="application/x-tex">
+w
+\rightarrow z
+\rightarrow L
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial w}
+=
+\frac{\partial L}{\partial z}
+\frac{\partial z}{\partial w}
+}
+</annotation></semantics></math></p>
+<p>这就是：</p>
+<h1 id="chain-rule">Chain Rule</h1>
+<p>链式法则。</p>
+<hr />
+<h2 id="chain-rule-是-backprop-的数学核心">11. Chain Rule 是 Backprop
+的数学核心</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>g</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=f(g(x))
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>d</mi><mi>y</mi></mrow><mrow><mi>d</mi><mi>x</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>d</mi><mi>y</mi></mrow><mrow><mi>d</mi><mi>g</mi></mrow></mfrac><mfrac><mrow><mi>d</mi><mi>g</mi></mrow><mrow><mi>d</mi><mi>x</mi></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{dy}{dx}
+=
+\frac{dy}{dg}
+\frac{dg}{dx}
+}
+</annotation></semantics></math></p>
+<p>一句人话：</p>
+<blockquote>
+<p>x 先影响 g，g 再影响 y。</p>
+</blockquote>
+<p>那么：</p>
+<blockquote>
+<p>x 对 y 的影响 = 每一段影响乘起来。</p>
+</blockquote>
+<hr />
+<h2 id="用责任传递理解-chain-rule">12. 用“责任传递”理解 Chain Rule</h2>
+<p>比如：</p>
+<pre class="text"><code>参数 w
+↓
+影响 z
+↓
+影响 Loss</code></pre>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>对：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">
+z
+</annotation></semantics></math></p>
+<p>影响很大，</p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">
+z
+</annotation></semantics></math></p>
+<p>对 Loss 几乎没有影响，</p>
+<p>那么最终：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>责任仍然很小。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>总</mi><mi>责</mi><mi>任</mi><mo>=</mo><mi>上</mi><mi>游</mi><mi>责</mi><mi>任</mi><mo>×</mo><mi>本</mi><mi>地</mi><mi>影</mi><mi>响</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+总责任
+=
+上游责任
+\times
+本地影响
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="什么叫-local-gradient">13. 什么叫 Local Gradient？</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>w</mi><mi>x</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=wx+b
+</annotation></semantics></math></p>
+<p>对于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>本地导数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mi>x</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial z}{\partial w}=x
+}
+</annotation></semantics></math></p>
+<p>这只描述：</p>
+<blockquote>
+<p>这个局部运算里，w 对 z 的影响。</p>
+</blockquote>
+<hr />
+<h2 id="loss-对-z-的导数呢">14. Loss 对 z 的导数呢？</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+L=\frac12(z-y)^2
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mi>z</mi><mo>−</mo><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial z}
+=
+z-y
+}
+</annotation></semantics></math></p>
+<p>现在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mn>7</mn></mrow><annotation encoding="application/x-tex">
+z=7
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">
+y=5
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial z}=2
+</annotation></semantics></math></p>
+<hr />
+<h2 id="于是-w-的梯度">15. 于是 w 的梯度</h2>
+<p>Chain Rule：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+=
+\frac{\partial L}{\partial z}
+\frac{\partial z}{\partial w}
+</annotation></semantics></math></p>
+<p>已知：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial z}=2
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mi>x</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial w}=x=2
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mn>2</mn><mo>×</mo><mn>2</mn><mo>=</mo><mn>4</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial w}
+=
+2\times2
+=
+4
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这个-4-怎么解释">16. 这个 4 怎么解释？</h2>
+<p>意思不是：</p>
+<blockquote>
+<p>w 错了 4。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>在当前点附近，w 每增加约 1 个单位，Loss 的变化趋势约为 +4。</p>
+</blockquote>
+<p>因此为了降低 Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>应该：</p>
+<blockquote>
+<p>向小的方向走。</p>
+</blockquote>
+<hr />
+<h2 id="假设-learning-rate-是-0.1">17. 假设 Learning Rate 是 0.1</h2>
+<p>更新：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>n</mi><mi>e</mi><mi>w</mi></mrow></msub><mo>=</mo><mn>3</mn><mo>−</mo><mn>0.1</mn><mo>×</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">
+w_{new}
+=
+3
+-
+0.1\times4
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>w</mi><mrow><mi>n</mi><mi>e</mi><mi>w</mi></mrow></msub><mo>=</mo><mn>2.6</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+w_{new}=2.6
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="再-forward-一次看看">18. 再 Forward 一次看看</h2>
+<p>新：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>2.6</mn></mrow><annotation encoding="application/x-tex">
+w=2.6
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mn>2.6</mn><mo>×</mo><mn>2</mn><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+z=2.6\times2+1
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>6.2</mn></mrow><annotation encoding="application/x-tex">
+=6.2
+</annotation></semantics></math></p>
+<p>新 Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo stretchy="true" form="prefix">(</mo><mn>6.2</mn><mo>−</mo><mn>5</mn><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+L
+=
+\frac12(6.2-5)^2
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>0.72</mn></mrow><annotation encoding="application/x-tex">
+=
+0.72
+</annotation></semantics></math></p>
+<p>原来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>2</mn><annotation encoding="application/x-tex">
+2
+</annotation></semantics></math></p>
+<p>现在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.72</mn><annotation encoding="application/x-tex">
+0.72
+</annotation></semantics></math></p>
+<p>真的下降了。</p>
+<hr />
+<h2 id="这就是学习最小闭环">19. 这就是学习最小闭环</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward
+\rightarrow
+Loss
+\rightarrow
+Gradient
+\rightarrow
+Update
+\rightarrow
+LowerLoss
+}
+</annotation></semantics></math></p>
+<p>这套逻辑：</p>
+<blockquote>
+<p>从一个参数，</p>
+</blockquote>
+<p>一直扩展到几十亿参数。</p>
+<hr />
+<h2 id="第二个核心心智模型-4">20. 第二个核心心智模型</h2>
+<h3 id="心智模型-②backprop-不是智能算法而是高效执行-chain-rule">心智模型
+②：Backprop 不是“智能算法”，而是高效执行 Chain Rule</h3>
+<p>Backpropagation 真正厉害的地方不是：</p>
+<blockquote>
+<p>发明了一个神秘学习规则。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>高</mi><mi>效</mi><mi>复</mi><mi>用</mi><mi>计</mi><mi>算</mi><mi>图</mi><mi>里</mi><mi>的</mi><mi>中</mi><mi>间</mi><mi>结</mi><mi>果</mi><mi>，</mi><mi>把</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>应</mi><mi>用</mi><mi>到</mi><mi>大</mi><mi>量</mi><mi>参</mi><mi>数</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+高效复用计算图里的中间结果，
+把ChainRule应用到大量参数
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="bias-怎么算梯度">21. Bias 怎么算梯度？</h2>
+<p>还是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>w</mi><mi>x</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=wx+b
+</annotation></semantics></math></p>
+<p>显然：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial b}=1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>×</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial b}
+=
+\frac{\partial L}{\partial z}
+\times1
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><mo>=</mo><mi>z</mi><mo>−</mo><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial b}=z-y
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="在刚才例子里">22. 在刚才例子里</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>−</mo><mi>y</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+z-y=2
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><mo>=</mo><mn>2</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial b}=2
+}
+</annotation></semantics></math></p>
+<p>如果 LR：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.1</mn><annotation encoding="application/x-tex">
+0.1
+</annotation></semantics></math></p>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mrow><mi>n</mi><mi>e</mi><mi>w</mi></mrow></msub><mo>=</mo><mn>1</mn><mo>−</mo><mn>0.1</mn><mrow><mo stretchy="true" form="prefix">(</mo><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+b_{new}
+=
+1-0.1(2)
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.8</mn><annotation encoding="application/x-tex">
+0.8
+</annotation></semantics></math></p>
+<hr />
+<h2 id="输入-x-有没有梯度">23. 输入 x 有没有梯度？</h2>
+<p>当然可以有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac><mo>=</mo><mi>w</mi></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial x}=w
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial x}
+=
+\frac{\partial L}{\partial z}w
+}
+</annotation></semantics></math></p>
+<p>这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mo>×</mo><mn>3</mn><mo>=</mo><mn>6</mn></mrow><annotation encoding="application/x-tex">
+2\times3=6
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但我们通常会更新-x-吗">24. 但我们通常会更新 x 吗？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<p>只是训练数据：</p>
+<blockquote>
+<p>不会。</p>
+</blockquote>
+<p>我们只关心：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>,</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+W,b
+</annotation></semantics></math></p>
+<p>这些：</p>
+<h1 id="trainable-parameters">Trainable Parameters</h1>
+<p>可训练参数。</p>
+<hr />
+<h2 id="但有时输入本身也是可训练的">25. 但有时输入本身也是可训练的</h2>
+<p>例如：</p>
+<h1 id="embedding">Embedding</h1>
+<p>Token 对应的 Embedding Vector：</p>
+<blockquote>
+<p>本质也是参数。</p>
+</blockquote>
+<p>因此梯度会传到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>M</mi><mi>a</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+EmbeddingMatrix
+</annotation></semantics></math></p>
+<p>并更新它。</p>
+<p>所以以后不要把：</p>
+<blockquote>
+<p>“输入向量”</p>
+</blockquote>
+<p>永远理解成不可训练。</p>
+<hr />
+<h2 id="现在进入-sigmoid">26. 现在进入 Sigmoid</h2>
+<p>政府采购风险二分类：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>w</mi><mi>x</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=wx+b
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(z)
+</annotation></semantics></math></p>
+<p>Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">
+L
+</annotation></semantics></math></p>
+<p>计算图：</p>
+<pre class="text"><code>w,x,b
+↓
+z
+↓
+Sigmoid
+↓
+p
+↓
+Loss</code></pre>
+<hr />
+<h2 id="backward-就多了一段">27. Backward 就多了一段</h2>
+<p>现在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>p</mi></mrow></mfrac><mfrac><mrow><mi>∂</mi><mi>p</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+=
+\frac{\partial L}{\partial p}
+\frac{\partial p}{\partial z}
+\frac{\partial z}{\partial w}
+</annotation></semantics></math></p>
+<p>这就是多个 Local Gradient 连乘。</p>
+<hr />
+<h2 id="sigmoid-的局部梯度">28. Sigmoid 的局部梯度</h2>
+<p>我们第 2 阶段学过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>d</mi><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><mi>d</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{d\sigma(z)}{dz}
+=
+\sigma(z)(1-\sigma(z))
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>p</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>p</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\frac{\partial p}{\partial z}
+=
+p(1-p)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么-forward-的中间值很有用">29. 为什么 Forward
+的中间值很有用？</h2>
+<p>因为 Forward 已经算出了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">
+p
+</annotation></semantics></math></p>
+<p>所以 Backward 时不必重新从头算指数函数。</p>
+<p>可以直接：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>p</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p(1-p)
+</annotation></semantics></math></p>
+<p>这就是 Backprop 高效的一个原因：</p>
+<blockquote>
+<p><strong>复用 Forward 的中间结果。</strong></p>
+</blockquote>
+<hr />
+<h2 id="现在重新看-cross-entropy">30. 现在重新看 Cross Entropy</h2>
+<p>二分类：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mi>−</mi><mrow><mo stretchy="true" form="prefix">[</mo><mi>y</mi><mo>log</mo><mi>p</mi><mo>+</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>log</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>p</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+L
+=
+-[y\log p+(1-y)\log(1-p)]
+</annotation></semantics></math></p>
+<p>你可能觉得：</p>
+<blockquote>
+<p>导数一定会很复杂。</p>
+</blockquote>
+<p>但 Sigmoid + BCE 会出现一个极其漂亮的结果。</p>
+<hr />
+<h2 id="最终结果">31. 最终结果</h2>
+<p>对于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(z)
+</annotation></semantics></math></p>
+<p>加 BCE：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mi>p</mi><mo>−</mo><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial z}
+=
+p-y
+}
+</annotation></semantics></math></p>
+<p>第一课已经见过这个结果。</p>
+<p>现在我们终于知道：</p>
+<blockquote>
+<p>它其实是 Chain Rule 一层层推出来的。</p>
+</blockquote>
+<hr />
+<h2 id="为什么这个公式这么重要">32. 为什么这个公式这么重要？</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>−</mo><mi>y</mi></mrow><annotation encoding="application/x-tex">
+p-y
+</annotation></semantics></math></p>
+<p>可以直接理解成：</p>
+<h1 id="prediction-error-signal">Prediction Error Signal</h1>
+<p>预测误差信号。</p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+y=1
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.2</mn></mrow><annotation encoding="application/x-tex">
+p=0.2
+</annotation></semantics></math></p>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>−</mo><mi>y</mi><mo>=</mo><mi>−</mi><mn>0.8</mn></mrow><annotation encoding="application/x-tex">
+p-y=-0.8
+</annotation></semantics></math></p>
+<p>是一个很强的负梯度信号。</p>
+<hr />
+<h2 id="如果-y1p0.95-呢">33. 如果 y=1，p=0.95 呢？</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>−</mo><mi>y</mi><mo>=</mo><mi>−</mi><mn>0.05</mn></mrow><annotation encoding="application/x-tex">
+p-y=-0.05
+</annotation></semantics></math></p>
+<p>梯度：</p>
+<blockquote>
+<p>很小。</p>
+</blockquote>
+<p>说明：</p>
+<blockquote>
+<p>已经预测得不错，不需要大改。</p>
+</blockquote>
+<p>这非常符合直觉。</p>
+<hr />
+<h2 id="如果-y0p0.9-呢">34. 如果 y=0，p=0.9 呢？</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>−</mo><mi>y</mi><mo>=</mo><mn>0.9</mn></mrow><annotation encoding="application/x-tex">
+p-y=0.9
+</annotation></semantics></math></p>
+<p>梯度很大而且为正。</p>
+<p>意味着：</p>
+<blockquote>
+<p>Logit 应该往下压。</p>
+</blockquote>
+<p>因为模型把无风险样本：</p>
+<blockquote>
+<p>高置信度判成风险。</p>
+</blockquote>
+<hr />
+<h2 id="这就是错误如何变成训练信号">35. 这就是错误如何变成训练信号</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>标</mi><mi>签</mi><mo>+</mo><mi>预</mi><mi>测</mi><mo>→</mo><mi>误</mi><mi>差</mi><mi>信</mi><mi>号</mi><mo>→</mo><mi>梯</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+标签
++
+预测
+\rightarrow
+误差信号
+\rightarrow
+梯度
+}
+</annotation></semantics></math></p>
+<p>模型并不会听懂：</p>
+<blockquote>
+<p>“你这里错了。”</p>
+</blockquote>
+<p>它收到的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>数</mi><mi>值</mi><mi>梯</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+数值梯度
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个政府采购二分类例子">36. 一个政府采购二分类例子</h2>
+<p>真实：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+y=1
+</annotation></semantics></math></p>
+<p>表示：</p>
+<blockquote>
+<p>专家标记为风险。</p>
+</blockquote>
+<p>模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.30</mn></mrow><annotation encoding="application/x-tex">
+p=0.30
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mn>0.30</mn><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial z}
+=
+0.30-1
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>−</mi><mn>0.70</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+-0.70
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="再传播到-weight">37. 再传播到 Weight</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><msub><mi>w</mi><mn>1</mn></msub><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><msub><mi>w</mi><mn>2</mn></msub><msub><mi>x</mi><mn>2</mn></msub><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=w_1x_1+w_2x_2+b
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><msub><mi>w</mi><mn>1</mn></msub></mrow></mfrac><mo>=</mo><msub><mi>x</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial w_1}
+=
+x_1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>w</mi><mn>1</mn></msub></mrow></mfrac><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><msub><mi>x</mi><mn>1</mn></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial w_1}
+=
+(p-y)x_1
+}
+</annotation></semantics></math></p>
+<p>这正是第一课第四阶段学过的公式。</p>
+<hr />
+<h2 id="如果-x10.8">38. 如果 x1=0.8</h2>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>w</mi><mn>1</mn></msub></mrow></mfrac><mo>=</mo><mi>−</mi><mn>0.7</mn><mo>×</mo><mn>0.8</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w_1}
+=
+-0.7\times0.8
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>−</mi><mn>0.56</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+-0.56
+}
+</annotation></semantics></math></p>
+<p>Gradient Descent：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mn>1</mn></msub><mo>←</mo><msub><mi>w</mi><mn>1</mn></msub><mo>−</mo><mi>η</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>0.56</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+w_1
+\leftarrow
+w_1-\eta(-0.56)
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>w</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+w_1
+</annotation></semantics></math></p>
+<p>会上升。</p>
+<hr />
+<h2 id="为什么会上升">39. 为什么会上升？</h2>
+<p>因为当前样本真实是：</p>
+<blockquote>
+<p>风险。</p>
+</blockquote>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+x_1
+</annotation></semantics></math></p>
+<p>当前是比较强的输入信号。</p>
+<p>模型却预测偏低。</p>
+<p>于是训练推动：</p>
+<blockquote>
+<p>与这个输入相关的风险方向权重变强。</p>
+</blockquote>
+<hr />
+<h2 id="第三个核心心智模型-4">40. 第三个核心心智模型</h2>
+<h3 id="心智模型-③backprop-是误差信号-本地敏感度的连续传播">心智模型
+③：Backprop 是“误差信号 × 本地敏感度”的连续传播</h3>
+<p>每一个节点都做：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>p</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>m</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>×</mo><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UpstreamGradient
+\times
+LocalGradient
+}
+</annotation></semantics></math></p>
+<p>然后得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>o</mi><mi>w</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>m</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+DownstreamGradient
+</annotation></semantics></math></p>
+<p>这就是理解 Backprop 最稳定的方法。</p>
+<hr />
+<h2 id="什么叫-upstream-gradient">41. 什么叫 Upstream Gradient？</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>a</mi><mo>→</mo><mi>b</mi><mo>→</mo><mi>L</mi></mrow><annotation encoding="application/x-tex">
+a\rightarrow b\rightarrow L
+</annotation></semantics></math></p>
+<p>当我们已经知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial b}
+</annotation></semantics></math></p>
+<p>这个就是：</p>
+<blockquote>
+<p>从 Loss 方向传过来的梯度。</p>
+</blockquote>
+<p>可以叫：</p>
+<h1 id="upstream-gradient">Upstream Gradient</h1>
+<hr />
+<h2 id="local-gradient-呢">42. Local Gradient 呢？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>a</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+b=f(a)
+</annotation></semantics></math></p>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>b</mi></mrow><mrow><mi>∂</mi><mi>a</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial b}{\partial a}
+</annotation></semantics></math></p>
+<p>就是：</p>
+<blockquote>
+<p>当前这个小运算自己的导数。</p>
+</blockquote>
+<hr />
+<h2 id="然后乘起来">43. 然后乘起来</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>a</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><mfrac><mrow><mi>∂</mi><mi>b</mi></mrow><mrow><mi>∂</mi><mi>a</mi></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial a}
+=
+\frac{\partial L}{\partial b}
+\frac{\partial b}{\partial a}
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<pre class="text"><code>上游梯度
+×
+本地梯度
+=
+继续向前传播的梯度</code></pre>
+<hr />
+<h2 id="这其实就是反向传递消息">44. 这其实就是“反向传递消息”</h2>
+<p>Forward：</p>
+<pre class="text"><code>Value →</code></pre>
+<p>Backward：</p>
+<pre class="text"><code>← Gradient</code></pre>
+<p>所以同一张计算图上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>f</mi><mi>l</mi><mi>o</mi><mi>w</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward\ flows\ values
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>f</mi><mi>l</mi><mi>o</mi><mi>w</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>s</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backward\ flows\ sensitivities
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="加法节点的-backward-很简单">45. 加法节点的 Backward 很简单</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>a</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=a+b
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>a</mi></mrow></mfrac><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial a}=1
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial b}=1
+</annotation></semantics></math></p>
+<p>所以 Backward：</p>
+<blockquote>
+<p>上游梯度原样分别传给 a 和 b。</p>
+</blockquote>
+<hr />
+<h2 id="乘法节点呢">46. 乘法节点呢？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>a</mi><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=ab
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>a</mi></mrow></mfrac><mo>=</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial a}=b
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>b</mi></mrow></mfrac><mo>=</mo><mi>a</mi></mrow><annotation encoding="application/x-tex">
+\frac{\partial z}{\partial b}=a
+</annotation></semantics></math></p>
+<p>所以：</p>
+<blockquote>
+<p>对 a 的梯度要乘 b，对 b 的梯度要乘 a。</p>
+</blockquote>
+<hr />
+<h2 id="relu-节点呢">47. ReLU 节点呢？</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h=ReLU(z)
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+z&gt;0
+</annotation></semantics></math></p>
+<p>局部梯度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+z&lt;0
+</annotation></semantics></math></p>
+<p>局部梯度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>h</mi></mrow></mfrac><mo>⋅</mo><mn>𝟏</mn><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo>&gt;</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial z}
+=
+\frac{\partial L}{\partial h}
+\cdot
+\mathbf 1(z&gt;0)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这就是-relu-mask">48. 这就是 ReLU Mask</h2>
+<p>Forward：</p>
+<pre class="text"><code>[-2, 0.4, 1.8, -0.3]</code></pre>
+<p>经过 ReLU：</p>
+<pre class="text"><code>[0, 0.4, 1.8, 0]</code></pre>
+<p>Backward：</p>
+<blockquote>
+<p>负值位置的梯度被截断成 0。</p>
+</blockquote>
+<hr />
+<h2 id="政府采购表示的直觉">49. 政府采购表示的直觉</h2>
+<p>假设一个 Hidden Unit 当前输入下：</p>
+<blockquote>
+<p>完全没有“地域限制”相关激活。</p>
+</blockquote>
+<p>ReLU 关闭：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>那么这条路径在当前样本：</p>
+<blockquote>
+<p>对前面的参数可能没有梯度贡献。</p>
+</blockquote>
+<p>注意：</p>
+<blockquote>
+<p>这是帮助理解的简化类比，不代表真实神经元一定对应某个人类概念。</p>
+</blockquote>
+<hr />
+<h2 id="进入真正的-hidden-layer-backprop">50. 进入真正的 Hidden Layer
+Backprop</h2>
+<p>两层网络：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>=</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+z_1=W_1X+b_1
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=ReLU(z_1)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>h</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+z_2=W_2h_1+b_2
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mi>L</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>2</mn></msub><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+L=L(z_2,y)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="backward-顺序必须反过来">51. Backward 顺序必须反过来</h2>
+<p>Forward：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><msub><mi>z</mi><mn>1</mn></msub><mo>→</mo><msub><mi>h</mi><mn>1</mn></msub><mo>→</mo><msub><mi>z</mi><mn>2</mn></msub><mo>→</mo><mi>L</mi></mrow><annotation encoding="application/x-tex">
+X
+\rightarrow z_1
+\rightarrow h_1
+\rightarrow z_2
+\rightarrow L
+</annotation></semantics></math></p>
+<p>Backward：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mo>→</mo><msub><mi>z</mi><mn>2</mn></msub><mo>→</mo><msub><mi>h</mi><mn>1</mn></msub><mo>→</mo><msub><mi>z</mi><mn>1</mn></msub><mo>→</mo><msub><mi>W</mi><mn>1</mn></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+L
+\rightarrow z_2
+\rightarrow h_1
+\rightarrow z_1
+\rightarrow W_1
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么必须从后往前">52. 为什么必须从后往前？</h2>
+<p>因为要算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>W</mi><mn>1</mn></msub></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial W_1}
+</annotation></semantics></math></p>
+<p>必须先知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>z</mi><mn>1</mn></msub></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial z_1}
+</annotation></semantics></math></p>
+<p>而它又依赖：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>h</mi><mn>1</mn></msub></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial h_1}
+</annotation></semantics></math></p>
+<p>而这个又来自：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mn>2</mn></msub><annotation encoding="application/x-tex">
+z_2
+</annotation></semantics></math></p>
+<p>所以自然只能：</p>
+<blockquote>
+<p>从 Loss 往回走。</p>
+</blockquote>
+<hr />
+<h2 id="这不是时间倒流">53. 这不是“时间倒流”</h2>
+<p>Backward 不会：</p>
+<blockquote>
+<p>把 Forward 撤销。</p>
+</blockquote>
+<p>它只是沿同样依赖关系：</p>
+<blockquote>
+<p>反方向计算导数。</p>
+</blockquote>
+<hr />
+<h2 id="先算输出层">54. 先算输出层</h2>
+<p>二分类情况下：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>δ</mi><mn>2</mn></msub><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>z</mi><mn>2</mn></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\delta_2
+=
+\frac{\partial L}{\partial z_2}
+</annotation></semantics></math></p>
+<p>如果使用 Sigmoid+BCE：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>δ</mi><mn>2</mn></msub><mo>=</mo><mi>p</mi><mo>−</mo><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\delta_2=p-y
+}
+</annotation></semantics></math></p>
+<p>这里常用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>δ</mi><annotation encoding="application/x-tex">
+\delta
+</annotation></semantics></math></p>
+<p>表示某层误差信号。</p>
+<hr />
+<h2 id="输出层-weight-梯度">55. 输出层 Weight 梯度</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>h</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+z_2=W_2h_1+b_2
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>W</mi><mn>2</mn></msub></mrow></mfrac><mo>=</mo><msub><mi>δ</mi><mn>2</mn></msub><msubsup><mi>h</mi><mn>1</mn><mi>T</mi></msubsup></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial W_2}
+=
+\delta_2h_1^T
+}
+</annotation></semantics></math></p>
+<p>如果暂时不熟悉矩阵：</p>
+<blockquote>
+<p>可以把它理解成每个 Hidden Activation 与输出误差信号相乘。</p>
+</blockquote>
+<hr />
+<h2 id="输出层-bias-梯度">56. 输出层 Bias 梯度</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><msub><mi>z</mi><mn>2</mn></msub></mrow><mrow><mi>∂</mi><msub><mi>b</mi><mn>2</mn></msub></mrow></mfrac><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial z_2}{\partial b_2}=1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>b</mi><mn>2</mn></msub></mrow></mfrac><mo>=</mo><msub><mi>δ</mi><mn>2</mn></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial b_2}
+=
+\delta_2
+}
+</annotation></semantics></math></p>
+<p>Batch 情况下：</p>
+<blockquote>
+<p>通常还会对多个样本求和或平均。</p>
+</blockquote>
+<hr />
+<h2 id="怎么把梯度继续传给-hidden-layer">57. 怎么把梯度继续传给 Hidden
+Layer？</h2>
+<p>输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>h</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+z_2=W_2h_1+b_2
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>h</mi><mn>1</mn></msub></mrow></mfrac><mo>=</mo><msubsup><mi>W</mi><mn>2</mn><mi>T</mi></msubsup><msub><mi>δ</mi><mn>2</mn></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial h_1}
+=
+W_2^T\delta_2
+}
+</annotation></semantics></math></p>
+<p>这一步非常关键。</p>
+<hr />
+<h2 id="为什么会乘-w_2t">58. 为什么会乘
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msubsup><mi>W</mi><mn>2</mn><mi>T</mi></msubsup><annotation encoding="application/x-tex">W_2^T</annotation></semantics></math>？</h2>
+<p>因为：</p>
+<blockquote>
+<p>Hidden Unit 对输出影响有多大，由
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mn>2</mn></msub><annotation encoding="application/x-tex">W_2</annotation></semantics></math>
+决定。</p>
+</blockquote>
+<p>如果某个 Hidden Dimension 到输出的权重：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\approx0
+</annotation></semantics></math></p>
+<p>那它对最终 Loss 的责任：</p>
+<blockquote>
+<p>也会很小。</p>
+</blockquote>
+<hr />
+<h2 id="这就是-credit-assignment">59. 这就是 Credit Assignment</h2>
+<p>最终 Loss：</p>
+<blockquote>
+<p>不平均怪罪所有神经元。</p>
+</blockquote>
+<p>它会根据：</p>
+<ul>
+<li>谁真正影响了输出；</li>
+<li>影响方向；</li>
+<li>当前激活；</li>
+<li>后续权重；</li>
+</ul>
+<p>逐层计算责任。</p>
+<hr />
+<h2 id="再穿过-relu">60. 再穿过 ReLU</h2>
+<p>有了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>h</mi><mn>1</mn></msub></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial h_1}
+</annotation></semantics></math></p>
+<p>还不能直接得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>z</mi><mn>1</mn></msub></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial z_1}
+</annotation></semantics></math></p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=ReLU(z_1)
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>δ</mi><mn>1</mn></msub><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>z</mi><mn>1</mn></msub></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>h</mi><mn>1</mn></msub></mrow></mfrac><mo>⊙</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mi>′</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\delta_1
+=
+\frac{\partial L}{\partial z_1}
+=
+\frac{\partial L}{\partial h_1}
+\odot
+ReLU&#39;(z_1)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这里的-odot-是什么">61. 这里的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>⊙</mi><annotation encoding="application/x-tex">\odot</annotation></semantics></math>
+是什么？</h2>
+<p>表示：</p>
+<h1 id="element-wise-multiplication">Element-wise Multiplication</h1>
+<p>逐元素相乘。</p>
+<p>也就是说：</p>
+<blockquote>
+<p>每一个 Hidden Dimension 都乘自己的 ReLU Mask。</p>
+</blockquote>
+<hr />
+<h2 id="最后第一层-weight-梯度">62. 最后第一层 Weight 梯度</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>=</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+z_1=W_1X+b_1
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>W</mi><mn>1</mn></msub></mrow></mfrac><mo>=</mo><msub><mi>δ</mi><mn>1</mn></msub><msup><mi>X</mi><mi>T</mi></msup></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial W_1}
+=
+\delta_1X^T
+}
+</annotation></semantics></math></p>
+<p>Bias：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>b</mi><mn>1</mn></msub></mrow></mfrac><mo>=</mo><msub><mi>δ</mi><mn>1</mn></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial b_1}
+=
+\delta_1
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="到这里整个-backprop-已经闭环">63. 到这里整个 Backprop
+已经闭环</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>δ</mi><mn>2</mn></msub><mo>→</mo><mi>∇</mi><msub><mi>W</mi><mn>2</mn></msub><mo>→</mo><mi>∇</mi><msub><mi>h</mi><mn>1</mn></msub><mo>→</mo><msub><mi>δ</mi><mn>1</mn></msub><mo>→</mo><mi>∇</mi><msub><mi>W</mi><mn>1</mn></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\delta_2
+\rightarrow
+\nabla W_2
+\rightarrow
+\nabla h_1
+\rightarrow
+\delta_1
+\rightarrow
+\nabla W_1
+}
+</annotation></semantics></math></p>
+<p>这就是一个最基础 MLP 的 Backprop。</p>
+<hr />
+<h2 id="第四个核心心智模型-4">64. 第四个核心心智模型</h2>
+<h3 id="心智模型-④每一层都同时承担两个-backward-任务">心智模型
+④：每一层都同时承担两个 Backward 任务</h3>
+<p>对于一个 Linear Layer：</p>
+<p>它要计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ParameterGradient
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>自己的参数责任。</p>
+</blockquote>
+<p>同时还要计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InputGradient
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>应该继续向前一层传多少责任。</p>
+</blockquote>
+<hr />
+<h2 id="这句话很重要">65. 这句话很重要</h2>
+<p>每层 Backward 不只是：</p>
+<blockquote>
+<p>“算自己的 Weight 梯度。”</p>
+</blockquote>
+<p>还必须：</p>
+<blockquote>
+<p>把梯度传给前面。</p>
+</blockquote>
+<p>否则：</p>
+<blockquote>
+<p>网络早期层永远学不到。</p>
+</blockquote>
+<hr />
+<h2 id="用一个小数值例子">66. 用一个小数值例子</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0.8</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.2</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=
+\begin{bmatrix}
+0.8\\
+0.2
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>输出 Weight：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mn>2</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1.5</mn></mtd><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>1</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+W_2=
+\begin{bmatrix}
+1.5&amp;-1
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>预测：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.3</mn></mrow><annotation encoding="application/x-tex">
+p=0.3
+</annotation></semantics></math></p>
+<p>真实：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+y=1
+</annotation></semantics></math></p>
+<hr />
+<h2 id="输出误差信号">67. 输出误差信号</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>δ</mi><mn>2</mn></msub><mo>=</mo><mi>p</mi><mo>−</mo><mi>y</mi></mrow><annotation encoding="application/x-tex">
+\delta_2=p-y
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>δ</mi><mn>2</mn></msub><mo>=</mo><mi>−</mi><mn>0.7</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\delta_2=-0.7
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="w_2-梯度">68.
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mn>2</mn></msub><annotation encoding="application/x-tex">W_2</annotation></semantics></math>
+梯度</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><msub><mi>W</mi><mn>2</mn></msub><mo>=</mo><msub><mi>δ</mi><mn>2</mn></msub><msubsup><mi>h</mi><mn>1</mn><mi>T</mi></msubsup></mrow><annotation encoding="application/x-tex">
+\nabla W_2
+=
+\delta_2h_1^T
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mi>−</mi><mn>0.7</mn><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>0.8</mn></mtd><mtd columnalign="center" style="text-align: center"><mn>0.2</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+=
+-0.7
+\begin{bmatrix}
+0.8&amp;0.2
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="true" form="prefix">[</mo><mi>−</mi><mn>0.56</mn><mo>,</mo><mi>−</mi><mn>0.14</mn><mo stretchy="true" form="postfix">]</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+[-0.56,-0.14]
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="传播给-hidden-state">69. 传播给 Hidden State</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><msubsup><mi>W</mi><mn>2</mn><mi>T</mi></msubsup><msub><mi>δ</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+\nabla h_1
+=
+W_2^T\delta_2
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1.5</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>1</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>0.7</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+=
+\begin{bmatrix}
+1.5\\
+-1
+\end{bmatrix}
+(-0.7)
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>1.05</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.7</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\begin{bmatrix}
+-1.05\\
+0.7
+\end{bmatrix}
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这个结果什么意思">70. 这个结果什么意思？</h2>
+<p>第一个 Hidden Dimension：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1.05</mn></mrow><annotation encoding="application/x-tex">
+-1.05
+</annotation></semantics></math></p>
+<p>第二个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.7</mn><annotation encoding="application/x-tex">
+0.7
+</annotation></semantics></math></p>
+<p>说明：</p>
+<blockquote>
+<p>对当前样本来说，它们对最终 Loss 的影响方向完全不同。</p>
+</blockquote>
+<p>这就是：</p>
+<blockquote>
+<p>责任并不是平均分配。</p>
+</blockquote>
+<hr />
+<h2 id="如果第一层-relu-前值是">71. 如果第一层 ReLU 前值是</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1.2</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>0.5</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+z_1=
+\begin{bmatrix}
+1.2\\
+-0.5
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>ReLU Mask：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+\begin{bmatrix}
+1\\
+0
+\end{bmatrix}
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>δ</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>1.05</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0.7</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow><mo>⊙</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mn>1</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+\delta_1
+=
+\begin{bmatrix}
+-1.05\\
+0.7
+\end{bmatrix}
+\odot
+\begin{bmatrix}
+1\\
+0
+\end{bmatrix}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="得到">72. 得到</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>δ</mi><mn>1</mn></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><mi>−</mi><mn>1.05</mn></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mn>0</mn></mtd></mtr></mtable><mo stretchy="true" form="postfix">]</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\delta_1=
+\begin{bmatrix}
+-1.05\\
+0
+\end{bmatrix}
+}
+</annotation></semantics></math></p>
+<p>第二条路径：</p>
+<blockquote>
+<p>当前样本下被 ReLU 截断了。</p>
+</blockquote>
+<hr />
+<h2 id="这就是-gradient-flow">73. 这就是 Gradient Flow</h2>
+<h1 id="梯度流">梯度流</h1>
+<p>梯度沿网络：</p>
+<blockquote>
+<p>从 Loss 向输入方向流动。</p>
+</blockquote>
+<p>每经过一个运算：</p>
+<blockquote>
+<p>会被变换一次。</p>
+</blockquote>
+<p>最终网络是否好训练，</p>
+<p>很大程度取决于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gradient\ Flow
+}
+</annotation></semantics></math></p>
+<p>是否健康。</p>
+<hr />
+<h2 id="梯度为什么会消失">74. 梯度为什么会消失？</h2>
+<p>Chain Rule：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>W</mi><mn>1</mn></msub></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial W_1}
+</annotation></semantics></math></p>
+<p>中间可能乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.1</mn><mo>×</mo><mn>0.1</mn><mo>×</mo><mn>0.1</mn><mo>×</mo><mi>⋯</mi></mrow><annotation encoding="application/x-tex">
+0.1\times0.1\times0.1\times\cdots
+</annotation></semantics></math></p>
+<p>网络很深时：</p>
+<blockquote>
+<p>越乘越小。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="vanishing-gradient-1">Vanishing Gradient</h1>
+<hr />
+<h2 id="sigmoid-是典型例子">75. Sigmoid 是典型例子</h2>
+<p>Sigmoid 导数最大：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.25</mn><annotation encoding="application/x-tex">
+0.25
+</annotation></semantics></math></p>
+<p>如果很多层都处于：</p>
+<blockquote>
+<p>小导数区域，</p>
+</blockquote>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Gradient
+</annotation></semantics></math></p>
+<p>快速衰减。</p>
+<p>前面层几乎学不到。</p>
+<hr />
+<h2 id="梯度也可能爆炸">76. 梯度也可能爆炸</h2>
+<p>如果每一层局部放大：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mo>×</mo><mn>2</mn><mo>×</mo><mn>2</mn><mo>×</mo><mi>⋯</mi></mrow><annotation encoding="application/x-tex">
+2\times2\times2\times\cdots
+</annotation></semantics></math></p>
+<p>深度一大：</p>
+<blockquote>
+<p>梯度会非常巨大。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="exploding-gradient">Exploding Gradient</h1>
+<hr />
+<h2 id="梯度爆炸会怎样">77. 梯度爆炸会怎样？</h2>
+<p>可能看到：</p>
+<ul>
+<li>Loss 突然爆炸；</li>
+<li>Gradient Norm 极大；</li>
+<li>参数出现 Inf；</li>
+<li>参数出现 NaN；</li>
+<li>训练崩溃。</li>
+</ul>
+<p>第一课第 5 阶段提到的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+GradientNorm
+</annotation></semantics></math></p>
+<p>现在终于有了内部解释。</p>
+<hr />
+<h2 id="为什么要监控-gradient-norm">78. 为什么要监控 Gradient
+Norm？</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="postfix">∥</mo><msub><mi>∇</mi><mi>θ</mi></msub><mi>L</mi><mo stretchy="false" form="postfix">∥</mo></mrow><annotation encoding="application/x-tex">
+\|\nabla_\theta L\|
+</annotation></semantics></math></p>
+<p>如果长期：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\approx0
+</annotation></semantics></math></p>
+<p>可能：</p>
+<blockquote>
+<p>梯度消失。</p>
+</blockquote>
+<p>如果突然：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mn>5</mn></msup><annotation encoding="application/x-tex">
+10^5
+</annotation></semantics></math></p>
+<p>甚至更大：</p>
+<blockquote>
+<p>可能出现梯度爆炸。</p>
+</blockquote>
+<hr />
+<h2 id="什么是-gradient-clipping">79. 什么是 Gradient Clipping？</h2>
+<p>一种常见保护：</p>
+<blockquote>
+<p>当梯度太大时，把它限制到某个范围。</p>
+</blockquote>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="postfix">∥</mo><mi>∇</mi><mo stretchy="false" form="postfix">∥</mo><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\|\nabla\|&gt;1
+</annotation></semantics></math></p>
+<p>就把整体缩放到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>附近。</p>
+<hr />
+<h2 id="这不是修好模型">80. 这不是“修好模型”</h2>
+<p>Gradient Clipping：</p>
+<blockquote>
+<p>更多像安全护栏。</p>
+</blockquote>
+<p>它可以防止：</p>
+<blockquote>
+<p>一次异常大梯度毁掉训练。</p>
+</blockquote>
+<p>但如果根本原因是：</p>
+<ul>
+<li>LR 太大；</li>
+<li>初始化差；</li>
+<li>数值不稳定；</li>
+</ul>
+<p>还是要真正诊断。</p>
+<hr />
+<h2 id="初始化为什么影响-backprop">81. 初始化为什么影响 Backprop？</h2>
+<p>假设权重一开始：</p>
+<blockquote>
+<p>全部非常大。</p>
+</blockquote>
+<p>Forward：</p>
+<blockquote>
+<p>Activation 可能爆炸。</p>
+</blockquote>
+<p>Backward：</p>
+<blockquote>
+<p>梯度也可能爆炸。</p>
+</blockquote>
+<p>如果权重：</p>
+<blockquote>
+<p>全部太小，</p>
+</blockquote>
+<p>信号和梯度可能逐层衰减。</p>
+<hr />
+<h2 id="xavier-he-初始化的深层意义">82. Xavier / He
+初始化的深层意义</h2>
+<p>它们不是为了：</p>
+<blockquote>
+<p>“随机得更漂亮”。</p>
+</blockquote>
+<p>目标之一是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>让</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>信</mi><mi>号</mi><mi>和</mi><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>梯</mi><mi>度</mi><mi>在</mi><mi>网</mi><mi>络</mi><mi>深</mi><mi>处</mi><mi>保</mi><mi>持</mi><mi>合</mi><mi>理</mi><mi>尺</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+让Forward信号和Backward梯度
+在网络深处保持合理尺度
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="residual-connection-为什么重要">83. Residual Connection
+为什么重要？</h2>
+<p>以后 Transformer 会大量看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y=x+F(x)
+}
+</annotation></semantics></math></p>
+<p>这种：</p>
+<h1 id="residual-connection">Residual Connection</h1>
+<p>残差连接。</p>
+<hr />
+<h2 id="从-backprop-看-residual">84. 从 Backprop 看 Residual</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi><mo>+</mo><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=x+F(x)
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>y</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac><mo>=</mo><mn>1</mn><mo>+</mo><mfrac><mrow><mi>∂</mi><mi>F</mi></mrow><mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\frac{\partial y}{\partial x}
+=
+1+
+\frac{\partial F}{\partial x}
+</annotation></semantics></math></p>
+<p>里面天然有一条：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>的梯度通道。</p>
+<p>这让深层网络：</p>
+<blockquote>
+<p>更容易传播梯度。</p>
+</blockquote>
+<hr />
+<h2 id="所以-resnet-transformer-的残差不是装饰">85. 所以 ResNet /
+Transformer 的残差不是装饰</h2>
+<p>它对：</p>
+<ul>
+<li>信息流；</li>
+<li>梯度流；</li>
+<li>深层训练稳定性；</li>
+</ul>
+<p>都非常关键。</p>
+<p>以后学 Transformer Block 时会重新深入。</p>
+<hr />
+<h2 id="normalization-也和梯度稳定有关">86. Normalization
+也和梯度稳定有关</h2>
+<p>LayerNorm / RMSNorm：</p>
+<blockquote>
+<p>不只是控制 Forward 数值范围。</p>
+</blockquote>
+<p>它们也会改变：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow><annotation encoding="application/x-tex">
+GradientFlow
+</annotation></semantics></math></p>
+<p>所以现代深网络中的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>u</mi><mi>a</mi><mi>l</mi></mrow><annotation encoding="application/x-tex">
+Activation
++
+Initialization
++
+Normalization
++
+Residual
+</annotation></semantics></math></p>
+<p>是一个整体。</p>
+<hr />
+<h2 id="第五个核心心智模型-4">87. 第五个核心心智模型</h2>
+<h3
+id="心智模型-⑤深度网络能不能学不只取决于有没有梯度还取决于梯度能不能健康地走完整个网络">心智模型
+⑤：深度网络能不能学，不只取决于“有没有梯度”，还取决于梯度能不能健康地走完整个网络</h3>
+<p>所以专业训练会关注：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gradient\ Flow
+}
+</annotation></semantics></math></p>
+<p>而不是只看：</p>
+<blockquote>
+<p>Train Loss 有没有下降。</p>
+</blockquote>
+<hr />
+<h2 id="现在进入-batch-gradient">88. 现在进入 Batch Gradient</h2>
+<p>前面都是单样本：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>L</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+L_i
+</annotation></semantics></math></p>
+<p>真实训练：</p>
+<blockquote>
+<p>一个 Batch 有很多样本。</p>
+</blockquote>
+<p>通常定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>L</mi><mrow><mi>b</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi></mrow></msub><mo>=</mo><mfrac><mn>1</mn><mi>B</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>B</mi></munderover><msub><mi>L</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">
+L_{batch}
+=
+\frac1B
+\sum_{i=1}^{B}L_i
+</annotation></semantics></math></p>
+<hr />
+<h2 id="梯度也会平均">89. 梯度也会平均</h2>
+<p>因为求导是线性的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>∇</mi><msub><mi>L</mi><mrow><mi>b</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi></mrow></msub><mo>=</mo><mfrac><mn>1</mn><mi>B</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><mi>∇</mi><msub><mi>L</mi><mi>i</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\nabla L_{batch}
+=
+\frac1B
+\sum_i\nabla L_i
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>Batch Gradient 是多个样本训练意见的综合。</p>
+</blockquote>
+<hr />
+<h2 id="这和第一课-mini-batch-连接起来了">90. 这和第一课 Mini-batch
+连接起来了</h2>
+<p>当时说：</p>
+<blockquote>
+<p>Batch 是全数据梯度的一个 noisy estimate。</p>
+</blockquote>
+<p>现在能看到数学原因：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>样</mi><mi>本</mi><mi>梯</mi><mi>度</mi><mi>的</mi><mi>平</mi><mi>均</mi><mi>/</mi><mi>聚</mi><mi>合</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BatchGradient
+=
+样本梯度的平均/聚合
+}
+</annotation></semantics></math></p>
+<p>不同 Batch：</p>
+<blockquote>
+<p>样本不同，</p>
+</blockquote>
+<p>所以 Gradient：</p>
+<blockquote>
+<p>会有噪声。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-batch-太小梯度更抖">91. 为什么 Batch 太小梯度更抖？</h2>
+<p>因为样本少：</p>
+<blockquote>
+<p>单个特殊样本影响更大。</p>
+</blockquote>
+<p>例如一个 Batch：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">
+B=2
+</annotation></semantics></math></p>
+<p>恰好两个都是 Hard Example，</p>
+<p>梯度方向可能很极端。</p>
+<hr />
+<h2 id="大-batch-呢">92. 大 Batch 呢？</h2>
+<p>样本更多：</p>
+<blockquote>
+<p>平均以后梯度更稳定。</p>
+</blockquote>
+<p>但：</p>
+<ul>
+<li>显存更大；</li>
+<li>更新频率相对下降；</li>
+<li>优化行为也会变化。</li>
+</ul>
+<p>所以仍然不存在：</p>
+<blockquote>
+<p>越大越好。</p>
+</blockquote>
+<hr />
+<h2 id="gradient-accumulation-到底累积什么">93. Gradient Accumulation
+到底累积什么？</h2>
+<p>现在可以真正理解了。</p>
+<p>Micro-batch 1：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><msub><mi>L</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+\nabla L_1
+</annotation></semantics></math></p>
+<p>Micro-batch 2：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><msub><mi>L</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+\nabla L_2
+</annotation></semantics></math></p>
+<p>……</p>
+<p>先不：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>o</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>.</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+optimizer.step()
+</annotation></semantics></math></p>
+<p>而是把 <code>.grad</code> 累积。</p>
+<p>然后统一更新。</p>
+<hr />
+<h2 id="pytorch-为什么要-zero_grad">94. PyTorch 为什么要
+<code>zero_grad()</code>？</h2>
+<p>因为 PyTorch 默认：</p>
+<blockquote>
+<p>Gradient 会累加。</p>
+</blockquote>
+<p>例如第一次：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mi>.</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mo>=</mo><mn>0.4</mn></mrow><annotation encoding="application/x-tex">
+w.grad=0.4
+</annotation></semantics></math></p>
+<p>第二次 Backward 又：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.3</mn><annotation encoding="application/x-tex">
+0.3
+</annotation></semantics></math></p>
+<p>结果可能变：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.7</mn><annotation encoding="application/x-tex">
+0.7
+</annotation></semantics></math></p>
+<p>而不是自动覆盖。</p>
+<hr />
+<h2 id="标准训练循环于是变得很清楚">95. 标准训练循环于是变得很清楚</h2>
+<div class="sourceCode" id="cb108"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb108-1"><a href="#cb108-1" aria-hidden="true" tabindex="-1"></a>optimizer.zero_grad()</span>
+<span id="cb108-2"><a href="#cb108-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb108-3"><a href="#cb108-3" aria-hidden="true" tabindex="-1"></a>logits <span class="op">=</span> model(x)</span>
+<span id="cb108-4"><a href="#cb108-4" aria-hidden="true" tabindex="-1"></a>loss <span class="op">=</span> criterion(logits, y)</span>
+<span id="cb108-5"><a href="#cb108-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb108-6"><a href="#cb108-6" aria-hidden="true" tabindex="-1"></a>loss.backward()</span>
+<span id="cb108-7"><a href="#cb108-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb108-8"><a href="#cb108-8" aria-hidden="true" tabindex="-1"></a>optimizer.step()</span></code></pre></div>
+<p>四个关键动作：</p>
+<pre class="text"><code>清旧梯度
+→ Forward
+→ Backward算新梯度
+→ 更新参数</code></pre>
+<hr />
+<h2 id="如果忘了-zero_grad-会怎样">96. 如果忘了 zero_grad 会怎样？</h2>
+<p>梯度会：</p>
+<blockquote>
+<p>一直累积。</p>
+</blockquote>
+<p>除非你就是故意做：</p>
+<h1 id="gradient-accumulation">Gradient Accumulation</h1>
+<p>否则训练会完全偏离预期。</p>
+<p>这是非常经典的初学者 Bug。</p>
+<hr />
+<h2 id="loss.backward-到底做了什么">97. <code>loss.backward()</code>
+到底做了什么？</h2>
+<p>概念上：</p>
+<ol type="1">
+<li>从 Loss 开始；</li>
+<li>找到 Loss 的计算图；</li>
+<li>反向遍历；</li>
+<li>应用各节点 Local Gradient；</li>
+<li>把最终参数梯度写进 <code>.grad</code>。</li>
+</ol>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mrow><mo stretchy="true" form="prefix">(</mo><mo stretchy="true" form="postfix">)</mo></mrow><mo>≠</mo><mi>o</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>.</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+backward()
+\neq
+optimizer.step()
+}
+</annotation></semantics></math></p>
+<p>再强调一次。</p>
+<hr />
+<h2 id="参数本身存在哪里">98. 参数本身存在哪里？</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb110"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb110-1"><a href="#cb110-1" aria-hidden="true" tabindex="-1"></a>linear.weight</span></code></pre></div>
+<p>保存：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>而：</p>
+<div class="sourceCode" id="cb111"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a>linear.weight.grad</span></code></pre></div>
+<p>保存：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>W</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial W}
+</annotation></semantics></math></p>
+<p>这是两个完全不同的 Tensor。</p>
+<hr />
+<h2 id="这就是-weight-和-gradient-的关系">99. 这就是 Weight 和 Gradient
+的关系</h2>
+<p>训练中一个参数有两套重要数字：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Value
+}
+</annotation></semantics></math></p>
+<p>当前参数值。</p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gradient
+}
+</annotation></semantics></math></p>
+<p>当前 Batch 告诉它：</p>
+<blockquote>
+<p>应该往什么方向调整。</p>
+</blockquote>
+<hr />
+<h2 id="optimizer-还可能保存第三套状态">100. Optimizer
+还可能保存第三套状态</h2>
+<p>比如 Adam：</p>
+<blockquote>
+<p>不只看当前 Gradient。</p>
+</blockquote>
+<p>还会维护：</p>
+<ul>
+<li>一阶动量；</li>
+<li>二阶动量。</li>
+</ul>
+<p>所以训练状态可能包含：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Parameter
++
+Gradient
++
+OptimizerState
+</annotation></semantics></math></p>
+<p>这就是为什么训练 Checkpoint 比纯推理 Weight 大很多。</p>
+<hr />
+<h2 id="requires_grad-是什么">101. <code>requires_grad</code>
+是什么？</h2>
+<p>PyTorch 中 Tensor 可以指定：</p>
+<div class="sourceCode" id="cb112"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb112-1"><a href="#cb112-1" aria-hidden="true" tabindex="-1"></a>requires_grad<span class="op">=</span><span class="va">True</span></span></code></pre></div>
+<p>意思是：</p>
+<blockquote>
+<p>希望 Autograd 跟踪与它有关的梯度。</p>
+</blockquote>
+<p>模型 Parameter：</p>
+<blockquote>
+<p>通常默认如此。</p>
+</blockquote>
+<hr />
+<h2 id="数据-tensor-一般不需要参数梯度">102. 数据 Tensor
+一般不需要参数梯度</h2>
+<p>输入：</p>
+<div class="sourceCode" id="cb113"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a>x</span></code></pre></div>
+<p>通常：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>_</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mo>=</mo><mi>F</mi><mi>a</mi><mi>l</mi><mi>s</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+requires\_grad=False
+</annotation></semantics></math></p>
+<p>因为我们不准备：</p>
+<blockquote>
+<p>优化训练数据本身。</p>
+</blockquote>
+<p>但模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>_</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+requires\_grad=True
+</annotation></semantics></math></p>
+<hr />
+<h2 id="什么叫-detach">103. 什么叫 Detach？</h2>
+<p>假设你有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>h</mi><annotation encoding="application/x-tex">
+h
+</annotation></semantics></math></p>
+<p>但不希望后续操作的梯度：</p>
+<blockquote>
+<p>再传回 h 之前的网络。</p>
+</blockquote>
+<p>可以：</p>
+<h1 id="detach">Detach</h1>
+<p>概念上相当于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+StopGradient
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="stop-gradient-有什么意义">104. Stop Gradient 有什么意义？</h2>
+<p>有些模型结构需要：</p>
+<blockquote>
+<p>使用一个值，</p>
+</blockquote>
+<p>但不希望：</p>
+<blockquote>
+<p>通过这条路径训练前面的参数。</p>
+</blockquote>
+<p>这时可以人为切断计算图。</p>
+<p>以后强化学习、对比学习、教师模型等会经常看到。</p>
+<hr />
+<h2 id="no_grad-和-detach-不一样">105. <code>no_grad()</code> 和 detach
+不一样</h2>
+<p><code>no_grad()</code>：</p>
+<blockquote>
+<p>在一个代码区域内关闭梯度记录。</p>
+</blockquote>
+<p>Detach：</p>
+<blockquote>
+<p>针对某个 Tensor 切断历史计算图。</p>
+</blockquote>
+<p>两者目的相关：</p>
+<blockquote>
+<p>但不是同一个概念。</p>
+</blockquote>
+<hr />
+<h2 id="为什么同一计算图通常不能无限-backward">106.
+为什么同一计算图通常不能无限 backward？</h2>
+<p>框架为了节省内存：</p>
+<blockquote>
+<p>第一次 Backward 后，很多计算图中间缓存会释放。</p>
+</blockquote>
+<p>如果想再次 Backward：</p>
+<blockquote>
+<p>有时需要保留图。</p>
+</blockquote>
+<p>PyTorch 可见：</p>
+<div class="sourceCode" id="cb114"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb114-1"><a href="#cb114-1" aria-hidden="true" tabindex="-1"></a>retain_graph<span class="op">=</span><span class="va">True</span></span></code></pre></div>
+<p>但普通训练：</p>
+<blockquote>
+<p>通常不需要。</p>
+</blockquote>
+<hr />
+<h2 id="为什么要释放图">107. 为什么要释放图？</h2>
+<p>因为深网络计算图：</p>
+<blockquote>
+<p>很占显存。</p>
+</blockquote>
+<p>如果每个 Step 的图都一直保存：</p>
+<blockquote>
+<p>很快 OOM。</p>
+</blockquote>
+<p>所以典型训练：</p>
+<pre class="text"><code>Forward
+↓
+Backward
+↓
+释放当前图
+↓
+Next Batch</code></pre>
+<hr />
+<h2 id="现在看计算图动态构建">108. 现在看“计算图动态构建”</h2>
+<p>PyTorch 常被称为：</p>
+<h1 id="dynamic-computation-graph">Dynamic Computation Graph</h1>
+<p>不同 Forward：</p>
+<blockquote>
+<p>可以根据 Python 控制流构造不同图。</p>
+</blockquote>
+<p>这对调试和研究：</p>
+<blockquote>
+<p>很方便。</p>
+</blockquote>
+<hr />
+<h2 id="autograd-为什么不是数值差分">109. Autograd
+为什么不是数值差分？</h2>
+<p>一种最笨求梯度方法：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>L</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>w</mi><mo>+</mo><mi>ϵ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>L</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>w</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mi>ϵ</mi></mfrac><annotation encoding="application/x-tex">
+\frac{L(w+\epsilon)-L(w)}{\epsilon}
+</annotation></semantics></math></p>
+<p>叫：</p>
+<blockquote>
+<p>数值差分近似。</p>
+</blockquote>
+<p>但几十亿参数：</p>
+<blockquote>
+<p>根本不可行。</p>
+</blockquote>
+<hr />
+<h2 id="backprop-automatic-differentiation-更高效">110. Backprop /
+Automatic Differentiation 更高效</h2>
+<p>它利用：</p>
+<blockquote>
+<p>运算规则 + Chain Rule + 计算图复用。</p>
+</blockquote>
+<p>通常一次 Forward + Backward：</p>
+<blockquote>
+<p>就能计算所有参数梯度。</p>
+</blockquote>
+<p>这就是神经网络训练能够成立的工程基础。</p>
+<hr />
+<h2 id="gradient-checking-是什么">111. Gradient Checking 是什么？</h2>
+<p>虽然实际训练用 Autograd，</p>
+<p>但开发一个自定义算子时：</p>
+<blockquote>
+<p>可以用数值差分检查梯度是否正确。</p>
+</blockquote>
+<p>即比较：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><msub><mi>t</mi><mrow><mi>a</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>y</mi><mi>t</mi><mi>i</mi><mi>c</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+Gradient_{analytic}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><msub><mi>t</mi><mrow><mi>n</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+Gradient_{numeric}
+</annotation></semantics></math></p>
+<p>是否接近。</p>
+<hr />
+<h2 id="为什么这是好办法">112. 为什么这是好办法？</h2>
+<p>因为：</p>
+<blockquote>
+<p>Forward 看起来正常，</p>
+</blockquote>
+<p>不代表：</p>
+<blockquote>
+<p>Backward 写对了。</p>
+</blockquote>
+<p>一个自定义算子的梯度错：</p>
+<blockquote>
+<p>模型可能还能跑，</p>
+</blockquote>
+<p>但永远学不好。</p>
+<hr />
+<h2 id="backprop-能告诉模型法律逻辑吗">113. Backprop
+能告诉模型“法律逻辑”吗？</h2>
+<p>不能。</p>
+<p>它只告诉：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>怎</mi><mi>样</mi><mi>改</mi><mi>变</mi><mi>参</mi><mi>数</mi><mi>才</mi><mi>能</mi><mi>降</mi><mi>低</mi><mi>当</mi><mi>前</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+怎样改变参数才能降低当前Loss
+}
+</annotation></semantics></math></p>
+<p>如果标签设计错误：</p>
+<blockquote>
+<p>Backprop 仍会非常勤奋地学习错误目标。</p>
+</blockquote>
+<p>这重新连接第一课最核心的一句话：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mi>不</mi><mi>知</mi><mi>道</mi><mi>我</mi><mi>们</mi><mi>的</mi><mi>真</mi><mi>实</mi><mi>业</mi><mi>务</mi><mi>目</mi><mi>标</mi><mi>，</mi><mi>它</mi><mi>只</mi><mi>会</mi><mi>降</mi><mi>低</mi><mi>我</mi><mi>们</mi><mi>定</mi><mi>义</mi><mi>的</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+模型不知道我们的真实业务目标，
+它只会降低我们定义的Loss。
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个政府采购错误标签例子">114. 一个政府采购错误标签例子</h2>
+<p>条款实际上：</p>
+<blockquote>
+<p>不应直接判高风险。</p>
+</blockquote>
+<p>但标注：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+y=1
+</annotation></semantics></math></p>
+<p>模型预测：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.2</mn></mrow><annotation encoding="application/x-tex">
+p=0.2
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>−</mo><mi>y</mi><mo>=</mo><mi>−</mi><mn>0.8</mn></mrow><annotation encoding="application/x-tex">
+p-y=-0.8
+</annotation></semantics></math></p>
+<p>Backprop 会告诉模型：</p>
+<blockquote>
+<p>你应该更倾向于把这种样本判风险。</p>
+</blockquote>
+<hr />
+<h2 id="也就是说-backprop-不会纠正老师">115. 也就是说 Backprop
+不会纠正老师</h2>
+<p>它假设：</p>
+<blockquote>
+<p>Loss 是对的。</p>
+</blockquote>
+<blockquote>
+<p>Label 是训练目标。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>d</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mo>→</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>W</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BadLabel
+\rightarrow
+ValidGradient
+\rightarrow
+WrongLearning
+}
+</annotation></semantics></math></p>
+<p>这也是为什么专家标注质量如此重要。</p>
+<hr />
+<h2 id="hard-example-为什么会产生有价值梯度">116. Hard Example
+为什么会产生有价值梯度？</h2>
+<p>如果模型已经预测：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.999</mn></mrow><annotation encoding="application/x-tex">
+p=0.999
+</annotation></semantics></math></p>
+<p>真实：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+y=1
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>−</mo><mi>y</mi><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+p-y\approx0
+</annotation></semantics></math></p>
+<p>梯度非常小。</p>
+<p>说明：</p>
+<blockquote>
+<p>这个样本已经没什么可教的。</p>
+</blockquote>
+<hr />
+<h2 id="高置信度错误则完全相反">117. 高置信度错误则完全相反</h2>
+<p>模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.99</mn></mrow><annotation encoding="application/x-tex">
+p=0.99
+</annotation></semantics></math></p>
+<p>真实：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+y=0
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>−</mo><mi>y</mi><mo>=</mo><mn>0.99</mn></mrow><annotation encoding="application/x-tex">
+p-y=0.99
+</annotation></semantics></math></p>
+<p>训练信号：</p>
+<blockquote>
+<p>非常强。</p>
+</blockquote>
+<p>这就是第一课为什么说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>W</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>高</mi><mi>价</mi><mi>值</mi><mi>训</mi><mi>练</mi><mi>数</mi><mi>据</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighConfidenceWrong
+=
+高价值训练数据
+}
+</annotation></semantics></math></p>
+<p>现在你看到数学原因了。</p>
+<hr />
+<h2 id="但大梯度-好样本也不能机械理解">118. 但“大梯度 =
+好样本”也不能机械理解</h2>
+<p>一个大梯度也可能来自：</p>
+<ul>
+<li>错标；</li>
+<li>OOD；</li>
+<li>异常数据；</li>
+<li>数值问题。</li>
+</ul>
+<p>所以依然需要：</p>
+<blockquote>
+<p>Error Analysis。</p>
+</blockquote>
+<hr />
+<h2 id="gradient-是局部信息">119. Gradient 是局部信息</h2>
+<p>非常重要。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><mi>L</mi></mrow><annotation encoding="application/x-tex">
+\nabla L
+</annotation></semantics></math></p>
+<p>只告诉：</p>
+<blockquote>
+<p>当前参数点附近的下降方向。</p>
+</blockquote>
+<p>它并不知道：</p>
+<blockquote>
+<p>整个 Loss Landscape 的全局最佳点在哪。</p>
+</blockquote>
+<p>所以训练是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>n</mi><mi>y</mi><mspace width="0.222em"></mspace><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Many\ Small\ Local\ Decisions
+}
+</annotation></semantics></math></p>
+<p>很多次局部小决策。</p>
+<hr />
+<h2 id="这就是为什么-learning-rate-很重要">120. 这就是为什么 Learning
+Rate 很重要</h2>
+<p>Gradient：</p>
+<blockquote>
+<p>告诉方向和局部斜率。</p>
+</blockquote>
+<p>LR：</p>
+<blockquote>
+<p>决定走多远。</p>
+</blockquote>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>θ</mi><mo>=</mo><mi>−</mi><mi>η</mi><mi>∇</mi><mi>L</mi></mrow><annotation encoding="application/x-tex">
+\Delta\theta=-\eta\nabla L
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>η</mi><annotation encoding="application/x-tex">
+\eta
+</annotation></semantics></math></p>
+<p>太大：</p>
+<blockquote>
+<p>可能一步跨过好区域。</p>
+</blockquote>
+<hr />
+<h2 id="如果-lr-太小">121. 如果 LR 太小</h2>
+<p>方向正确，</p>
+<p>但：</p>
+<blockquote>
+<p>每一步像蜗牛。</p>
+</blockquote>
+<p>训练：</p>
+<blockquote>
+<p>非常慢。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>决</mi><mi>定</mi><mi>方</mi><mi>向</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gradient
+决定方向
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>决</mi><mi>定</mi><mi>步</mi><mi>长</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LearningRate
+决定步长
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="optimizer-为什么还需要比-sgd-更复杂">122. Optimizer
+为什么还需要比 SGD 更复杂？</h2>
+<p>因为真实 Loss Landscape：</p>
+<blockquote>
+<p>非常高维、弯曲、噪声大。</p>
+</blockquote>
+<p>单纯：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mi>η</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+-\eta g
+</annotation></semantics></math></p>
+<p>不一定高效。</p>
+<p>于是：</p>
+<ul>
+<li>Momentum；</li>
+<li>Adam；</li>
+<li>AdamW；</li>
+</ul>
+<p>会利用更多历史信息。</p>
+<p>下一阶段可以专门讲。</p>
+<hr />
+<h2 id="backprop-和-optimizer-必须分离理解">123. Backprop 和 Optimizer
+必须分离理解</h2>
+<p>Backprop：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>a</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>i</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>h</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>?</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+What\ is\ the\ gradient?
+}
+</annotation></semantics></math></p>
+<p>Optimizer：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>h</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>,</mo><mspace width="0.222em"></mspace><mi>h</mi><mi>o</mi><mi>w</mi><mspace width="0.222em"></mspace><mi>s</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>l</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>p</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>m</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>?</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Given\ the\ gradient,\ how\ should\ parameters\ move?
+}
+</annotation></semantics></math></p>
+<p>这是两个不同层次的问题。</p>
+<hr />
+<h2 id="现在把矩阵-backprop-的-shape-串起来">124. 现在把矩阵 Backprop 的
+Shape 串起来</h2>
+<p>Forward：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>:</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+X:(B,d_{in})
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>:</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>,</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+W:(d_{out},d_{in})
+</annotation></semantics></math></p>
+<p>输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi><mo>:</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Z:(B,d_{out})
+</annotation></semantics></math></p>
+<hr />
+<h2 id="假设上游梯度">125. 假设上游梯度</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>G</mi><mi>Z</mi></msub><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>Z</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+G_Z=
+\frac{\partial L}{\partial Z}
+</annotation></semantics></math></p>
+<p>Shape：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(B,d_{out})
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\nabla W
+</annotation></semantics></math></p>
+<p>Shape 必须和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>一样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>,</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+(d_{out},d_{in})
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="输入梯度-shape-呢">126. 输入梯度 Shape 呢？</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><mi>X</mi></mrow><annotation encoding="application/x-tex">
+\nabla X
+</annotation></semantics></math></p>
+<p>必须和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">
+X
+</annotation></semantics></math></p>
+<p>一样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+(B,d_{in})
+}
+</annotation></semantics></math></p>
+<p>这是一个非常实用的调试规律：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi><mo>=</mo><mi>V</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GradientShape
+=
+VariableShape
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="bias-gradient-呢">127. Bias Gradient 呢？</h2>
+<p>Bias：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>,</mo><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(d_{out},)
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>∇</mi><mi>b</mi></mrow><annotation encoding="application/x-tex">
+\nabla b
+</annotation></semantics></math></p>
+<p>也必须：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>,</mo><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(d_{out},)
+</annotation></semantics></math></p>
+<p>Batch 维度：</p>
+<blockquote>
+<p>被求和或平均掉。</p>
+</blockquote>
+<hr />
+<h2 id="这就是-shape-对-backward-也重要">128. 这就是 Shape 对 Backward
+也重要</h2>
+<p>不是只有 Forward 才追 Shape。</p>
+<p>Backward 也要问：</p>
+<blockquote>
+<p>这个梯度属于哪个 Tensor？</p>
+</blockquote>
+<p>它的 Shape：</p>
+<blockquote>
+<p>必须匹配原变量。</p>
+</blockquote>
+<hr />
+<h2 id="transformer-backprop-本质有没有变">129. Transformer Backprop
+本质有没有变？</h2>
+<p>没有。</p>
+<p>虽然 Attention 看起来复杂：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+QK^T
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>o</mi><mi>f</mi><mi>t</mi><mi>m</mi><mi>a</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Softmax
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>V</mi></mrow><annotation encoding="application/x-tex">
+AV
+</annotation></semantics></math></p>
+<p>但每一个运算：</p>
+<blockquote>
+<p>都有自己的 Local Gradient。</p>
+</blockquote>
+<p>Autograd：</p>
+<blockquote>
+<p>沿巨大计算图执行 Chain Rule。</p>
+</blockquote>
+<hr />
+<h2 id="llm-的-70b-参数怎么一起获得梯度">130. LLM 的 70B
+参数怎么一起获得梯度？</h2>
+<p>不是：</p>
+<blockquote>
+<p>人工为 700 亿参数分别写规则。</p>
+</blockquote>
+<p>而是：</p>
+<ol type="1">
+<li>Forward 构建计算；</li>
+<li>最终得到 Loss；</li>
+<li>Autograd 从 Loss 反向遍历图；</li>
+<li>每个 Parameter 自动得到自己的 Gradient。</li>
+</ol>
+<p>本质没有离开今天的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ChainRule
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="lora-又怎么理解">131. LoRA 又怎么理解？</h2>
+<p>未来你微调 ProcurementLM 时：</p>
+<blockquote>
+<p>可能冻结原始大部分 Weight。</p>
+</blockquote>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>_</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mo>=</mo><mi>F</mi><mi>a</mi><mi>l</mi><mi>s</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+requires\_grad=False
+</annotation></semantics></math></p>
+<p>只让：</p>
+<blockquote>
+<p>LoRA 参数参与梯度计算和更新。</p>
+</blockquote>
+<hr />
+<h2 id="所以-lora-的内部本质之一">132. 所以 LoRA 的内部本质之一</h2>
+<p>不是：</p>
+<blockquote>
+<p>不需要 Backprop。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>仍</mi><mi>然</mi><mi>存</mi><mi>在</mi><mi>，</mi><mi>只</mi><mi>是</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>少</mi><mi>了</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backprop仍然存在，
+只是TrainableParameters少了
+}
+</annotation></semantics></math></p>
+<p>这会减少：</p>
+<ul>
+<li>Gradient Memory；</li>
+<li>Optimizer State；</li>
+<li>更新成本。</li>
+</ul>
+<hr />
+<h2 id="qlora-呢">133. QLoRA 呢？</h2>
+<p>基础模型可以：</p>
+<blockquote>
+<p>以低比特量化形式存储。</p>
+</blockquote>
+<p>同时训练：</p>
+<blockquote>
+<p>LoRA Adapter。</p>
+</blockquote>
+<p>Backward：</p>
+<blockquote>
+<p>主要为 Adapter 参数产生需要更新的梯度。</p>
+</blockquote>
+<p>这也是为什么显存需求大幅下降。</p>
+<hr />
+<h2 id="冻结参数意味着什么">134. 冻结参数意味着什么？</h2>
+<p>参数仍可能参加：</p>
+<h1 id="forward">Forward</h1>
+<p>但：</p>
+<blockquote>
+<p>不需要为它保存可更新 Gradient / Optimizer State。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>I</mi><mi>n</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UsedInForward
+\neq
+Trainable
+}
+</annotation></semantics></math></p>
+<p>这个区别以后非常重要。</p>
+<hr />
+<h2 id="一个模型输出错了backprop-能知道为什么错吗">135.
+一个模型输出错了，Backprop 能知道“为什么错”吗？</h2>
+<p>数学上的“为什么”：</p>
+<blockquote>
+<p>能追踪哪些参数影响了 Loss。</p>
+</blockquote>
+<p>业务上的“为什么”：</p>
+<blockquote>
+<p>不一定。</p>
+</blockquote>
+<p>这两个“解释”不同。</p>
+<p>Backprop 是：</p>
+<h1 id="mathematical-credit-assignment">Mathematical Credit
+Assignment</h1>
+<p>不是：</p>
+<h1 id="legal-reasoning-explanation">Legal Reasoning Explanation</h1>
+<hr />
+<h2 id="所以不要把-gradient-当成业务因果解释">136. 所以不要把 Gradient
+当成业务因果解释</h2>
+<p>某个参数 Gradient 很大：</p>
+<blockquote>
+<p>只意味着当前 Loss 对它敏感。</p>
+</blockquote>
+<p>不能直接推出：</p>
+<blockquote>
+<p>这个现实因素就是合规风险的因果原因。</p>
+</blockquote>
+<p>这又和第一课第 12 阶段连接起来。</p>
+<hr />
+<h2 id="backprop-的真正奇妙之处">137. Backprop 的真正奇妙之处</h2>
+<p>网络可能有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>100</mn><annotation encoding="application/x-tex">
+100
+</annotation></semantics></math></p>
+<p>层。</p>
+<p>参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo></mrow><annotation encoding="application/x-tex">
+Billion+
+</annotation></semantics></math></p>
+<p>最终只有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>一</mi><mi>个</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+一个Loss
+</annotation></semantics></math></p>
+<p>却能够把这个单一误差信号：</p>
+<blockquote>
+<p>分解成每一个参数自己的梯度。</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>A</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CreditAssignment
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但-loss-可以有多个组成部分">138. 但 Loss 可以有多个组成部分</h2>
+<p>例如政府采购模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><msub><mi>L</mi><mrow><mi>r</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></msub><mo>+</mo><msub><mi>λ</mi><mn>1</mn></msub><msub><mi>L</mi><mrow><mi>t</mi><mi>y</mi><mi>p</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>λ</mi><mn>2</mn></msub><msub><mi>L</mi><mrow><mi>c</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+L
+=
+L_{risk}
++
+\lambda_1L_{type}
++
+\lambda_2L_{citation}
+</annotation></semantics></math></p>
+<p>那么最终 Gradient：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>∇</mi><mi>L</mi><mo>=</mo><mi>∇</mi><msub><mi>L</mi><mrow><mi>r</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></msub><mo>+</mo><msub><mi>λ</mi><mn>1</mn></msub><mi>∇</mi><msub><mi>L</mi><mrow><mi>t</mi><mi>y</mi><mi>p</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>λ</mi><mn>2</mn></msub><mi>∇</mi><msub><mi>L</mi><mrow><mi>c</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\nabla L
+=
+\nabla L_{risk}
++
+\lambda_1\nabla L_{type}
++
+\lambda_2\nabla L_{citation}
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这就是-multi-task-training-的内部机制">139. 这就是 Multi-task
+Training 的内部机制</h2>
+<p>不同任务：</p>
+<blockquote>
+<p>都在对同一批参数施加梯度。</p>
+</blockquote>
+<p>有时方向一致：</p>
+<blockquote>
+<p>相互帮助。</p>
+</blockquote>
+<p>有时方向冲突：</p>
+<blockquote>
+<p>Gradient Conflict。</p>
+</blockquote>
+<hr />
+<h2 id="政府采购例子">140. 政府采购例子</h2>
+<p>风险判断任务希望：</p>
+<blockquote>
+<p>强调竞争限制。</p>
+</blockquote>
+<p>法规引用任务希望：</p>
+<blockquote>
+<p>强调条文匹配。</p>
+</blockquote>
+<p>文书生成任务希望：</p>
+<blockquote>
+<p>强调语言表达。</p>
+</blockquote>
+<p>这些 Loss：</p>
+<blockquote>
+<p>会共同塑造 Hidden Representation。</p>
+</blockquote>
+<hr />
+<h2 id="gradient-conflict-为什么值得关注">141. Gradient Conflict
+为什么值得关注？</h2>
+<p>如果一个参数：</p>
+<p>任务 A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>g</mi><mi>A</mi></msub><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+g_A&gt;0
+</annotation></semantics></math></p>
+<p>任务 B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>g</mi><mi>B</mi></msub><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+g_B&lt;0
+</annotation></semantics></math></p>
+<p>它们会：</p>
+<blockquote>
+<p>互相抵消。</p>
+</blockquote>
+<p>所以 Multi-task 并不是：</p>
+<blockquote>
+<p>任务越多越好。</p>
+</blockquote>
+<hr />
+<h2 id="loss-weight-就变得很重要">142. Loss Weight 就变得很重要</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><msub><mi>L</mi><mn>1</mn></msub><mo>+</mo><mn>10</mn><msub><mi>L</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+L
+=
+L_1
++
+10L_2
+</annotation></semantics></math></p>
+<p>意味着：</p>
+<blockquote>
+<p>第二个任务对 Gradient 的影响可能大很多。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LossWeight
+=
+TrainingPriority
+}
+</annotation></semantics></math></p>
+<p>这是很重要的心智模型。</p>
+<hr />
+<h2 id="backprop-和模型在思考不是一回事">143. Backprop
+和“模型在思考”不是一回事</h2>
+<p>Forward：</p>
+<blockquote>
+<p>产生当前预测。</p>
+</blockquote>
+<p>Backward：</p>
+<blockquote>
+<p>是训练阶段的参数学习机制。</p>
+</blockquote>
+<p>模型实际回答用户时：</p>
+<blockquote>
+<p>一般只有 Forward，不会现场 Backprop。</p>
+</blockquote>
+<hr />
+<h2 id="所以模型不会每聊一句都自动学习">144.
+所以模型不会每聊一句都自动学习</h2>
+<p>普通推理：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+ForwardOnly
+</annotation></semantics></math></p>
+<p>不会自动：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+UpdateWeights
+</annotation></semantics></math></p>
+<p>这也是为什么：</p>
+<blockquote>
+<p>对话上下文和长期模型参数要分开理解。</p>
+</blockquote>
+<hr />
+<h2 id="in-context-learning-又是什么">145. In-context Learning
+又是什么？</h2>
+<p>Prompt 给示例：</p>
+<blockquote>
+<p>会改变当前输入 Context。</p>
+</blockquote>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+HiddenActivation
+</annotation></semantics></math></p>
+<p>发生变化。</p>
+<p>但模型 Weight：</p>
+<blockquote>
+<p>不需要更新。</p>
+</blockquote>
+<p>所以这更接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>−</mo><mi>l</mi><mi>i</mi><mi>k</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>b</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi><mspace width="0.222em"></mspace><mi>w</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>w</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>u</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Learning-like\ behavior\ without\ weight\ update
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="fine-tuning-才真正修改-weight">146. Fine-tuning 才真正修改
+Weight</h2>
+<p>Fine-tuning：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Forward
+\rightarrow
+Loss
+\rightarrow
+Backward
+\rightarrow
+Optimizer
+</annotation></semantics></math></p>
+<p>重复很多次。</p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>真正发生改变。</p>
+<hr />
+<h2 id="第六个核心心智模型-1">147. 第六个核心心智模型</h2>
+<h3
+id="心智模型-⑥推理改变-activation训练通过-backprop-改变-weight">心智模型
+⑥：推理改变 Activation，训练通过 Backprop 改变 Weight</h3>
+<p>这是理解 LLM 很关键的一条线：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>D</mi><mi>y</mi><mi>n</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Inference
+\rightarrow
+DynamicState
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Training
+\rightarrow
+ParameterState
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="本阶段最应该会手算什么">148. 本阶段最应该会手算什么？</h2>
+<p>至少要能手算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>w</mi><mi>x</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=wx+b
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">
+L=\frac12(z-y)^2
+</annotation></semantics></math></p>
+<p>然后得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>x</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial w}
+=
+(z-y)x
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="还应该理解二分类核心结果">149. 还应该理解二分类核心结果</h2>
+<p>Sigmoid + BCE：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>=</mo><mi>p</mi><mo>−</mo><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial z}
+=
+p-y
+}
+</annotation></semantics></math></p>
+<p>再：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><msub><mi>w</mi><mi>i</mi></msub></mrow></mfrac><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>p</mi><mo>−</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><msub><mi>x</mi><mi>i</mi></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\frac{\partial L}{\partial w_i}
+=
+(p-y)x_i
+}
+</annotation></semantics></math></p>
+<p>这两个公式以后会成为非常稳定的直觉锚点。</p>
+<hr />
+<h2 id="第二课-第-5-阶段核心总结">150. 第二课 · 第 5 阶段核心总结</h2>
+<p>把整个 Backprop 压缩成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>U</mi><mi>p</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>m</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Loss
+\rightarrow
+UpstreamGradient
+\rightarrow
+LocalGradient
+\rightarrow
+ParameterGradient
+}
+</annotation></semantics></math></p>
+<p>再进入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Optimizer
+\rightarrow
+ParameterUpdate
+}
+</annotation></semantics></math></p>
+<p>如果只保留 5 个核心专家心智模型：</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>心智模型</th>
+<th>核心认知</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① Gradient 是 Loss 对参数的局部敏感度</strong></td>
+<td>它告诉方向和局部变化率，不是业务“好坏分”</td>
+</tr>
+<tr class="even">
+<td><strong>② Backprop 本质是高效执行 Chain Rule</strong></td>
+<td>复杂网络只是计算图更大，数学原则没变</td>
+</tr>
+<tr class="odd">
+<td><strong>③ 每个节点都在做“上游梯度 × 本地梯度”</strong></td>
+<td>这是理解所有反向传播的统一语言</td>
+</tr>
+<tr class="even">
+<td><strong>④
+每一层既算自己的参数梯度，也负责把梯度继续传给前层</strong></td>
+<td>这就是真正的 Credit Assignment</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ 可训练性取决于 Gradient Flow 是否健康</strong></td>
+<td>Vanishing、Exploding、Residual、Initialization、Normalization
+都围绕它展开</td>
+</tr>
+</tbody>
+</table>
+<p>如果只记一句：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>回</mi><mi>答</mi><mo>“</mo><mi>模</mi><mi>型</mi><mi>现</mi><mi>在</mi><mi>算</mi><mi>出</mi><mi>了</mi><mi>什</mi><mi>么</mi><mo>”</mo><mi>，</mi><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>回</mi><mi>答</mi><mo>“</mo><mi>为</mi><mi>了</mi><mi>让</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>下</mi><mi>降</mi><mi>，</mi><mi>每</mi><mi>个</mi><mi>参</mi><mi>数</mi><mi>分</mi><mi>别</mi><mi>应</mi><mi>该</mi><mi>承</mi><mi>担</mi><mi>多</mi><mi>少</mi><mi>责</mi><mi>任</mi><mo>”</mo><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward回答“模型现在算出了什么”，
+Backward回答“为了让Loss下降，每个参数分别应该承担多少责任”。
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第二课前五阶段现在真正闭环">151. 第二课前五阶段现在真正闭环</h2>
+<p>第 1 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=WX+b
+</annotation></semantics></math></p>
+<blockquote>
+<p>参数如何组合信息。</p>
+</blockquote>
+<p>第 2 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h=f(z)
+</annotation></semantics></math></p>
+<blockquote>
+<p>非线性如何产生复杂能力。</p>
+</blockquote>
+<p>第 3 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><msub><mi>H</mi><mn>1</mn></msub><mo>→</mo><msub><mi>H</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+X\rightarrow H_1\rightarrow H_2
+</annotation></semantics></math></p>
+<blockquote>
+<p>模型如何逐层学习 Representation。</p>
+</blockquote>
+<p>第 4 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Forward
+</annotation></semantics></math></p>
+<blockquote>
+<p>当前参数如何处理一个具体输入。</p>
+</blockquote>
+<p>第 5 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Backward
+</annotation></semantics></math></p>
+<blockquote>
+<p>最终错误如何反向分配到所有参数。</p>
+</blockquote>
+<p>现在已经形成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward
+\rightarrow
+Loss
+\rightarrow
+Backward
+}
+</annotation></semantics></math></p>
+<p>下一块自然就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Optimizer
+}
+</annotation></semantics></math></p>
+<p>因为我们已经知道：</p>
+<blockquote>
+<p>梯度是什么。</p>
+</blockquote>
+<p>下一阶段就该回答：</p>
+<blockquote>
+<p><strong>拿到 Gradient
+以后，为什么不是简单减一下就结束？SGD、Momentum、Adam、AdamW
+到底分别在解决什么问题？</strong></p>
+</blockquote>
+<p>也就是 <strong>第二课 · 第 6 阶段：Optimizer 与 Learning
+Rate——参数究竟怎样真正迈出每一步。</strong></p>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

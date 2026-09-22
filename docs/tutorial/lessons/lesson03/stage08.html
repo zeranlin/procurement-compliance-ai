@@ -1,0 +1,2332 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第8阶段：Greedy、Temperature、Top-k、Top-p 与 Sampling</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第8阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>Greedy = 每一步选择最高概率 Token；Sampling = 按概率分布随机选择，两者只是解码策略不同。</li><li>Temperature / Top-k / Top-p 改变候选分布和随机性，不会给模型增加新知识。</li><li>More Random ≠ More Creative Truth。采样提高多样性，也可能增加不稳定和错误表达。</li></ul></div><h1 id="第三课-第-8-阶段greedytemperaturetop-ktop-p-与-sampling">第三课
+· 第 8 阶段：Greedy、Temperature、Top-k、Top-p 与 Sampling</h1>
+<h2
+id="同一个模型明明没有重新训练为什么同一个问题两次却可能回答不一样">同一个模型明明没有重新训练，为什么同一个问题两次却可能回答不一样？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-7">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-7">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Greedy = 每一步选择最高概率 Token；Sampling =
+按概率分布随机选择，两者只是解码策略不同。</strong></li>
+<li><strong>Temperature / Top-k / Top-p
+改变候选分布和随机性，不会给模型增加新知识。</strong></li>
+<li><strong>More Random ≠ More Creative
+Truth。采样提高多样性，也可能增加不稳定和错误表达。</strong></li>
+<li><strong>固定 Seed 可以改善实验复现，但不同
+Kernel、并发和硬件下不一定保证逐 Token 完全一致。</strong></li>
+<li><strong>Low Temperature ≠ High
+Truthfulness。确定性更高不代表事实、法规和业务判断一定正确。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-7">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Temperature</code></td>
+<td>温度：控制采样分布平滑程度和随机性</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="odd">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>top_p</code></td>
+<td>Top-p：在累计概率达到 p 的候选 Token 中采样</td>
+</tr>
+<tr class="odd">
+<td><code>top_k</code></td>
+<td>Top-k：只在概率最高的 k 个 Token 中采样</td>
+</tr>
+<tr class="even">
+<td><code>Softmax</code></td>
+<td>Softmax：把一组分数转换成归一化权重</td>
+</tr>
+<tr class="odd">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-7">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>这一阶段，我们专门补上第 5 阶段留下的那个“黑箱”。</p>
+<p>当时完整链路是：</p>
+<pre class="text"><code>Prompt
+  ↓
+Transformer
+  ↓
+Logits
+  ↓
+？？？
+  ↓
+Next Token</code></pre>
+<p>今天只研究：</p>
+<pre class="text"><code>？？？</code></pre>
+<p>也就是：</p>
+<blockquote>
+<p><strong>模型已经把所有候选 Token 打完分以后，我们究竟怎样决定下一
+Token 选谁？</strong></p>
+</blockquote>
+<p>这阶段我会刻意少用公式。</p>
+<p>因为这里真正重要的不是背 Softmax，而是形成几个非常清楚的直觉。</p>
+<hr />
+<h1
+id="一这一阶段真正需要带走的-5-个核心心智模型">一、这一阶段真正需要带走的
+5 个核心心智模型</h1>
+<pre class="text"><code>① Model负责“打分”
+   Decoding负责“选人”
+
+② Greedy = 永远选当前第一名
+
+③ Temperature = 改变候选之间的“悬殊程度”
+   不是给模型增加知识
+
+④ Top-k / Top-p = 先缩小候选池
+   再从留下的人里选
+
+⑤ 对政府采购高可靠任务：
+   稳定性、证据和可复现性
+   往往比“回答有创意”更重要</code></pre>
+<p>如果这五句话真正吃透，</p>
+<p>以后看到：</p>
+<div class="sourceCode" id="cb882"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb882-1"><a href="#cb882-1" aria-hidden="true" tabindex="-1"></a>temperature<span class="op">=</span><span class="fl">0.7</span></span>
+<span id="cb882-2"><a href="#cb882-2" aria-hidden="true" tabindex="-1"></a>top_p<span class="op">=</span><span class="fl">0.9</span></span>
+<span id="cb882-3"><a href="#cb882-3" aria-hidden="true" tabindex="-1"></a>do_sample<span class="op">=</span><span class="va">True</span></span></code></pre></div>
+<p>就不会再变成：</p>
+<blockquote>
+<p>“网上这样写，我也这样写。”</p>
+</blockquote>
+<hr />
+<h1 id="二先不讲-temperature先看一个候选人排行榜">二、先不讲
+Temperature，先看一个“候选人排行榜”</h1>
+<p>假设我们让模型回答：</p>
+<blockquote>
+<p>“该资格条件可能存在______。”</p>
+</blockquote>
+<p>模型现在准备生成下一个 Token。</p>
+<p>经过 Transformer 和 LM Head 后，它对很多候选 Token 打了分。</p>
+<p>为了教学，我们只看 5 个：</p>
+<pre class="text"><code>候选 Token        模型倾向
+
+“限制”             很高
+“风险”             较高
+“问题”             中等
+“合理”             较低
+“香蕉”             极低</code></pre>
+<p>注意。</p>
+<p>现在模型：</p>
+<blockquote>
+<p><strong>还没有真正说出任何一个。</strong></p>
+</blockquote>
+<p>它只是完成了：</p>
+<blockquote>
+<p>评分。</p>
+</blockquote>
+<hr />
+<h1
+id="三第一个核心心智模型模型打分-最终选择">三、第一个核心心智模型：模型打分
+≠ 最终选择</h1>
+<p>可以把模型想成：</p>
+<blockquote>
+<p>一个专家评审委员会。</p>
+</blockquote>
+<p>它把候选人全部排完：</p>
+<pre class="text"><code>第1名：限制
+第2名：风险
+第3名：问题
+第4名：合理
+……</code></pre>
+<p>接下来还需要：</p>
+<blockquote>
+<p><strong>录取规则。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四模型和-decoding-strategy-是两个不同角色">四、模型和 Decoding
+Strategy 是两个不同角色</h1>
+<pre class="text"><code>LLM Weight
+   ↓
+根据上下文打分
+   ↓
+Logits / Probability Distribution
+   ↓
+Decoding Strategy
+   ↓
+真正选出的Next Token</code></pre>
+<p>所以一定记住：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>≠</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Model \neq DecodingPolicy
+}
+</annotation></semantics></math></p>
+<p>模型决定：</p>
+<blockquote>
+<p>“哪些 Token 看起来更合适。”</p>
+</blockquote>
+<p>Decoding 决定：</p>
+<blockquote>
+<p>“这一次最终选谁。”</p>
+</blockquote>
+<hr />
+<h1
+id="五这和政府采购专家评审特别像">五、这和政府采购专家评审特别像</h1>
+<p>假设一个项目来了 5 个方案。</p>
+<p>专家评分：</p>
+<pre class="text"><code>方案A：95
+方案B：91
+方案C：86
+方案D：72
+方案E：35</code></pre>
+<p>评分系统：</p>
+<blockquote>
+<p>已经完成。</p>
+</blockquote>
+<p>但最终规则可能不同。</p>
+<hr />
+<h2 id="规则一">1. 规则一</h2>
+<blockquote>
+<p>永远选择最高分。</p>
+</blockquote>
+<p>那么一定：</p>
+<pre class="text"><code>A</code></pre>
+<hr />
+<h2 id="规则二">2. 规则二</h2>
+<blockquote>
+<p>在高分方案里按照一定概率抽一个。</p>
+</blockquote>
+<p>可能：</p>
+<pre class="text"><code>A</code></pre>
+<p>也可能：</p>
+<pre class="text"><code>B</code></pre>
+<p>甚至偶尔：</p>
+<pre class="text"><code>C</code></pre>
+<p>模型的评分没有改变。</p>
+<p>改变的是：</p>
+<blockquote>
+<p><strong>最后的选择方法。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六先认识-greedy-decoding">六、先认识 Greedy Decoding</h1>
+<p>Greedy：</p>
+<blockquote>
+<p>贪心选择。</p>
+</blockquote>
+<p>名字听起来很学术。</p>
+<p>实际超级简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>每</mi><mi>一</mi><mi>步</mi><mi>永</mi><mi>远</mi><mi>选</mi><mi>当</mi><mi>前</mi><mi>分</mi><mi>数</mi><mi>最</mi><mi>高</mi><mi>的</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+每一步永远选当前分数最高的Token
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七假设下一-token-概率是">七、假设下一 Token 概率是</h1>
+<pre class="text"><code>限制       45%
+风险       30%
+问题       15%
+合理        7%
+其它        3%</code></pre>
+<p>Greedy 怎么选？</p>
+<p>答案永远是：</p>
+<pre class="text"><code>限制</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>45% 最大。</p>
+</blockquote>
+<hr />
+<h1 id="八下一步又重新排名">八、下一步又重新排名</h1>
+<p>模型生成：</p>
+<pre class="text"><code>该资格条件可能存在限制</code></pre>
+<p>现在重新计算下一 Token。</p>
+<p>候选可能变成：</p>
+<pre class="text"><code>性         55%
+供应商     20%
+竞争       15%
+要求        5%
+……</code></pre>
+<p>Greedy：</p>
+<blockquote>
+<p>又选第一名。</p>
+</blockquote>
+<hr />
+<h1 id="九所以-greedy-不是一次挑完整句子">九、所以 Greedy
+不是“一次挑完整句子”</h1>
+<p>它仍然是：</p>
+<pre class="text"><code>第1步
+选当前第一名
+
+↓
+
+第2步
+根据新的Context
+再选当前第一名
+
+↓
+
+第3步
+再选第一名</code></pre>
+<p>依然是：</p>
+<h1 id="autoregressive">Autoregressive</h1>
+<hr />
+<h1 id="十greedy-最大的优点稳定">十、Greedy 最大的优点：稳定</h1>
+<p>如果：</p>
+<ul>
+<li>Model Weight 相同；</li>
+<li>Prompt 相同；</li>
+<li>推理实现没有引入其它随机性；</li>
+</ul>
+<p>那么 Greedy 往往会得到：</p>
+<blockquote>
+<p>高度稳定甚至相同的输出。</p>
+</blockquote>
+<hr />
+<h1
+id="十一这对政府采购任务为什么重要">十一、这对政府采购任务为什么重要？</h1>
+<p>假设今天审查：</p>
+<blockquote>
+<p>“供应商必须在本市设立分公司。”</p>
+</blockquote>
+<p>上午运行一次：</p>
+<blockquote>
+<p>高风险。</p>
+</blockquote>
+<p>下午同样条件重新运行：</p>
+<blockquote>
+<p>完全没风险。</p>
+</blockquote>
+<p>用户会非常困惑。</p>
+<hr />
+<h2 id="专业系统更希望">3. 专业系统更希望</h2>
+<p>同样：</p>
+<pre class="text"><code>模型
++
+Prompt
++
+证据
++
+配置</code></pre>
+<p>得到：</p>
+<blockquote>
+<p>比较稳定的判断。</p>
+</blockquote>
+<p>所以对于：</p>
+<ul>
+<li>风险分类；</li>
+<li>法规依据引用；</li>
+<li>结构化字段抽取；</li>
+</ul>
+<p>Greedy 或低随机性的策略：</p>
+<blockquote>
+<p>往往更值得优先测试。</p>
+</blockquote>
+<hr />
+<h1 id="十二但是-greedy-也有缺点">十二、但是 Greedy 也有缺点</h1>
+<p>永远选择：</p>
+<blockquote>
+<p>当前第一名。</p>
+</blockquote>
+<p>不一定等于：</p>
+<blockquote>
+<p>最终整段文字一定最好。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-6">4. 为什么？</h2>
+<p>因为语言是一个连续决策过程。</p>
+<p>有时候：</p>
+<pre class="text"><code>第1步的第二名</code></pre>
+<p>虽然稍微低一点，</p>
+<p>但走下去以后：</p>
+<blockquote>
+<p>后面整段句子可能更自然。</p>
+</blockquote>
+<hr />
+<h1 id="十三一个路线类比">十三、一个路线类比</h1>
+<p>你从东京去某个目的地。</p>
+<p>每一个路口：</p>
+<blockquote>
+<p>永远选择“当前看起来最快的道路”。</p>
+</blockquote>
+<p>不代表：</p>
+<blockquote>
+<p>最终整体路线一定最好。</p>
+</blockquote>
+<hr />
+<h1 id="十四不过今天先不深入-beam-search">十四、不过今天先不深入 Beam
+Search</h1>
+<p>对于现代 Chat LLM，</p>
+<p>我们先把重点放在：</p>
+<pre class="text"><code>Greedy
+vs
+Sampling</code></pre>
+<hr />
+<h1 id="十五sampling-是什么">十五、Sampling 是什么？</h1>
+<p>Sampling：</p>
+<blockquote>
+<p><strong>按照模型给出的概率分布抽取下一个 Token。</strong></p>
+</blockquote>
+<p>还是：</p>
+<pre class="text"><code>限制       45%
+风险       30%
+问题       15%
+合理        7%
+其它        3%</code></pre>
+<hr />
+<h2 id="如果-sampling">5. 如果 Sampling</h2>
+<p>不再保证：</p>
+<blockquote>
+<p>每次都选 45% 的“限制”。</p>
+</blockquote>
+<p>可能这次：</p>
+<pre class="text"><code>限制</code></pre>
+<p>下一次：</p>
+<pre class="text"><code>风险</code></pre>
+<p>偶尔：</p>
+<pre class="text"><code>问题</code></pre>
+<hr />
+<h1 id="十六注意sampling-并不是完全乱选">十六、注意：Sampling
+并不是完全乱选</h1>
+<p>不是：</p>
+<pre class="text"><code>词表10万个Token
+↓
+随便闭眼抽一个</code></pre>
+<p>而是：</p>
+<blockquote>
+<p><strong>尊重模型原来的概率。</strong></p>
+</blockquote>
+<p>高概率 Token：</p>
+<blockquote>
+<p>更容易被抽中。</p>
+</blockquote>
+<p>低概率 Token：</p>
+<blockquote>
+<p>更难被抽中。</p>
+</blockquote>
+<hr />
+<h1 id="十七用抽奖箱理解-sampling">十七、用抽奖箱理解 Sampling</h1>
+<p>假设盒子里放 100 张票：</p>
+<pre class="text"><code>45张写“限制”
+30张写“风险”
+15张写“问题”
+7张写“合理”
+3张写其它</code></pre>
+<p>随机抽一张。</p>
+<p>这就很接近 Sampling 的第一层直觉。</p>
+<hr />
+<h1
+id="十八这就解释了为什么同一个问题可以回答不同">十八、这就解释了为什么同一个问题可以回答不同</h1>
+<p>模型：</p>
+<blockquote>
+<p>没有重新训练。</p>
+</blockquote>
+<p>Weights：</p>
+<blockquote>
+<p>没有改变。</p>
+</blockquote>
+<p>Prompt：</p>
+<blockquote>
+<p>可能也完全相同。</p>
+</blockquote>
+<p>但只要：</p>
+<pre class="text"><code>do_sample=True</code></pre>
+<p>每一步都有随机抽样，</p>
+<p>整段回答就可能：</p>
+<blockquote>
+<p>逐渐走向不同路径。</p>
+</blockquote>
+<hr />
+<h1 id="十九而自回归会放大这种差异">十九、而自回归会放大这种差异</h1>
+<p>假设第一个 Token：</p>
+<h3 id="第一次运行">第一次运行</h3>
+<p>选了：</p>
+<pre class="text"><code>“该”</code></pre>
+<h3 id="第二次运行">第二次运行</h3>
+<p>选了：</p>
+<pre class="text"><code>“此”</code></pre>
+<p>只差一个 Token。</p>
+<hr />
+<h2 id="但下一步的-context-已经不同">6. 但下一步的 Context 已经不同</h2>
+<p>第一次：</p>
+<pre class="text"><code>…… + 该</code></pre>
+<p>第二次：</p>
+<pre class="text"><code>…… + 此</code></pre>
+<p>于是：</p>
+<blockquote>
+<p>下一轮概率分布也可能发生一点变化。</p>
+</blockquote>
+<hr />
+<h2 id="再下一步">7. 再下一步</h2>
+<p>差异又继续积累。</p>
+<p>最终两篇回答：</p>
+<blockquote>
+<p>可能明显不同。</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>的</mi><mi>微</mi><mi>小</mi><mi>随</mi><mi>机</mi><mi>差</mi><mi>异</mi><mi>可</mi><mi>以</mi><mi>通</mi><mi>过</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>过</mi><mi>程</mi><mi>逐</mi><mi>步</mi><mi>放</mi><mi>大</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Sampling的微小随机差异
+可以通过Autoregressive过程逐步放大
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十现在进入-temperature">二十、现在进入 Temperature</h1>
+<p>Temperature 是最容易被误解的一个参数。</p>
+<p>很多教程只告诉你：</p>
+<pre class="text"><code>Temperature低
+=
+保守
+
+Temperature高
+=
+有创造力</code></pre>
+<p>这句话没有错。</p>
+<p>但太模糊。</p>
+<p>我们换一种图形化理解。</p>
+<hr />
+<h1
+id="二十一假设模型原来的候选排名">二十一、假设模型原来的候选排名</h1>
+<pre class="text"><code>限制   ████████████████████
+风险   ██████████████
+问题   ███████
+合理   ███
+其它   █</code></pre>
+<p>可以看到：</p>
+<blockquote>
+<p>第一名明显领先。</p>
+</blockquote>
+<hr />
+<h1 id="二十二低-temperature-做什么">二十二、低 Temperature
+做什么？</h1>
+<p>它会让这种差距：</p>
+<blockquote>
+<p><strong>更悬殊。</strong></p>
+</blockquote>
+<p>概念上变成：</p>
+<pre class="text"><code>限制   ██████████████████████████████
+风险   ███████
+问题   ██
+合理   █
+其它</code></pre>
+<p>于是：</p>
+<blockquote>
+<p>第一名更容易被选中。</p>
+</blockquote>
+<hr />
+<h1 id="二十三高-temperature-呢">二十三、高 Temperature 呢？</h1>
+<p>它会让差距：</p>
+<blockquote>
+<p><strong>变平。</strong></p>
+</blockquote>
+<p>概念上：</p>
+<pre class="text"><code>限制   ███████████
+风险   █████████
+问题   ███████
+合理   █████
+其它   ███</code></pre>
+<p>于是原来第二、第三、第四名：</p>
+<blockquote>
+<p>获得更多机会。</p>
+</blockquote>
+<hr />
+<h1
+id="二十四第二个超级重要的心智模型">二十四、第二个超级重要的心智模型</h1>
+<p>Temperature 不是：</p>
+<blockquote>
+<p>给模型安装更多知识。</p>
+</blockquote>
+<p>它是在：</p>
+<blockquote>
+<p><strong>改变当前候选分布的尖锐程度。</strong></p>
+</blockquote>
+<p>可以想成：</p>
+<pre class="text"><code>低 Temperature
+=
+第一名优势被放大
+
+
+高 Temperature
+=
+候选之间差距被压平</code></pre>
+<hr />
+<h1 id="二十五如果-temperature-很低">二十五、如果 Temperature 很低</h1>
+<p>模型更像：</p>
+<blockquote>
+<p>一个极度保守的秘书。</p>
+</blockquote>
+<p>看到几个候选：</p>
+<blockquote>
+<p>几乎永远采用最稳妥、最高分那个。</p>
+</blockquote>
+<p>结果通常：</p>
+<ul>
+<li>稳定；</li>
+<li>可复现性更好；</li>
+<li>表达变化较少。</li>
+</ul>
+<hr />
+<h1 id="二十六如果-temperature-较高">二十六、如果 Temperature 较高</h1>
+<p>模型更像：</p>
+<blockquote>
+<p>一个愿意尝试其它措辞的作者。</p>
+</blockquote>
+<p>结果可能：</p>
+<ul>
+<li>更多样；</li>
+<li>更有变化；</li>
+<li>有时更有创意；</li>
+<li>但也更容易选到原本概率较低的 Token。</li>
+</ul>
+<hr />
+<h1 id="二十七temperature-高-模型更聪明">二十七、Temperature 高 ≠
+模型更聪明</h1>
+<p>这句话一定要单独钉住。</p>
+<p>假设模型根本不知道：</p>
+<blockquote>
+<p>某条政府采购法规的真实内容。</p>
+</blockquote>
+<p>你把：</p>
+<pre class="text"><code>temperature
+0.1 → 1.2</code></pre>
+<p>不会让模型：</p>
+<blockquote>
+<p>突然知道正确法条。</p>
+</blockquote>
+<hr />
+<h1 id="二十八反而可能发生什么">二十八、反而可能发生什么？</h1>
+<p>本来错误候选有：</p>
+<pre class="text"><code>5%</code></pre>
+<p>高 Temperature 后：</p>
+<blockquote>
+<p>它相对更有机会被采样。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>o</mi><mi>m</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Randomness
+\neq
+Knowledge
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十九那-temperature-0-是什么">二十九、那 Temperature = 0
+是什么？</h1>
+<p>不同框架具体实现可能略有差别。</p>
+<p>但在很多常见使用方式中，</p>
+<p>当我们追求：</p>
+<blockquote>
+<p>极低随机性，</p>
+</blockquote>
+<p>通常会采用：</p>
+<ul>
+<li>Greedy；</li>
+<li><code>do_sample=False</code>；</li>
+</ul>
+<p>而不是把所有概念简单压成：</p>
+<blockquote>
+<p>“Temperature=0”。</p>
+</blockquote>
+<p>所以工程时：</p>
+<blockquote>
+<p>要看具体 API 行为。</p>
+</blockquote>
+<hr />
+<h1 id="三十现在进入-top-k">三十、现在进入 Top-k</h1>
+<p>Top-k 的思想更容易。</p>
+<p>假设模型词表：</p>
+<pre class="text"><code>100,000 Token</code></pre>
+<p>它给所有 Token 排名。</p>
+<hr />
+<h2 id="top_k-5">8. <code>top_k = 5</code></h2>
+<p>意思可以先理解成：</p>
+<blockquote>
+<p><strong>只保留当前排名最高的 5 个候选。</strong></p>
+</blockquote>
+<p>其余：</p>
+<blockquote>
+<p>全部淘汰。</p>
+</blockquote>
+<hr />
+<h1 id="三十一例如原来的候选">三十一、例如原来的候选</h1>
+<pre class="text"><code>1 限制      35%
+2 风险      25%
+3 问题      15%
+4 要求      10%
+5 条件       6%
+6 香蕉       1%
+7 飞机       0.5%
+...</code></pre>
+<p>如果：</p>
+<pre class="text"><code>top_k = 5</code></pre>
+<p>候选池只剩：</p>
+<pre class="text"><code>限制
+风险
+问题
+要求
+条件</code></pre>
+<p>“香蕉”：</p>
+<blockquote>
+<p>连抽奖资格都没有。</p>
+</blockquote>
+<hr />
+<h1 id="三十二top-k-像初选名单">三十二、Top-k 像初选名单</h1>
+<p>1000 人报名。</p>
+<p>先按照成绩：</p>
+<blockquote>
+<p>只留下前 20 名。</p>
+</blockquote>
+<p>然后：</p>
+<blockquote>
+<p>再从前 20 名里做后续选择。</p>
+</blockquote>
+<hr />
+<h1 id="三十三所以-top-k-在控制什么">三十三、所以 Top-k
+在控制什么？</h1>
+<p>不是直接说：</p>
+<blockquote>
+<p>“选第 k 名。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>限制抽样候选池大小。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三十四如果-top_k-1-呢">三十四、如果 <code>top_k = 1</code>
+呢？</h1>
+<p>只剩：</p>
+<blockquote>
+<p>当前第一名。</p>
+</blockquote>
+<p>在概念上就非常接近：</p>
+<blockquote>
+<p>Greedy。</p>
+</blockquote>
+<hr />
+<h1 id="三十五top-k-有一个缺点">三十五、Top-k 有一个缺点</h1>
+<p>固定：</p>
+<pre class="text"><code>k = 10</code></pre>
+<p>不管当前分布是什么：</p>
+<blockquote>
+<p>永远留 10 个。</p>
+</blockquote>
+<p>但实际有时：</p>
+<blockquote>
+<p>前两个已经占了 99% 概率。</p>
+</blockquote>
+<hr />
+<h2 id="有时又可能">9. 有时又可能</h2>
+<p>前 10 个加起来：</p>
+<blockquote>
+<p>只有 40%。</p>
+</blockquote>
+<p>这时固定 10：</p>
+<blockquote>
+<p>并不总合理。</p>
+</blockquote>
+<p>这就引出：</p>
+<h1 id="top-p">Top-p</h1>
+<hr />
+<h1 id="三十六top-p-的核心不是固定人数">三十六、Top-p
+的核心不是“固定人数”</h1>
+<p>而是：</p>
+<blockquote>
+<p><strong>先从最高概率开始往下累加，直到累计概率达到某个阈值。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十七先用采购专家候选池理解">三十七、先用采购专家候选池理解</h1>
+<p>模型现在给：</p>
+<pre class="text"><code>A   50%
+B   25%
+C   12%
+D    7%
+E    3%
+其它  3%</code></pre>
+<p>假设：</p>
+<pre class="text"><code>top_p = 0.8</code></pre>
+<hr />
+<h2 id="从第一名开始累计">10. 从第一名开始累计</h2>
+<pre class="text"><code>A
+50%</code></pre>
+<p>还不到 80%。</p>
+<hr />
+<h2 id="加上-b">11. 加上 B</h2>
+<pre class="text"><code>A + B
+=
+75%</code></pre>
+<p>还不到 80%。</p>
+<hr />
+<h2 id="再加-c">12. 再加 C</h2>
+<pre class="text"><code>A + B + C
+=
+87%</code></pre>
+<p>超过：</p>
+<pre class="text"><code>80%</code></pre>
+<p>于是候选池大致是：</p>
+<pre class="text"><code>A
+B
+C</code></pre>
+<p>后面的：</p>
+<blockquote>
+<p>被排除。</p>
+</blockquote>
+<hr />
+<h1 id="三十八所以-top-p-像一个动态候选池">三十八、所以 Top-p
+像一个“动态候选池”</h1>
+<p>如果模型很确定：</p>
+<pre class="text"><code>A = 95%</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>可能只需要极少几个候选。</p>
+</blockquote>
+<hr />
+<h2 id="如果模型很犹豫">13. 如果模型很犹豫</h2>
+<pre class="text"><code>A 20%
+B 18%
+C 15%
+D 12%
+E 10%
+……</code></pre>
+<p>为了达到：</p>
+<pre class="text"><code>top_p = 0.9</code></pre>
+<p>就可能需要：</p>
+<blockquote>
+<p>保留更多 Token。</p>
+</blockquote>
+<hr />
+<h1 id="三十九这就是-top-p-很漂亮的地方">三十九、这就是 Top-p
+很漂亮的地方</h1>
+<p>它会根据：</p>
+<blockquote>
+<p>当前模型到底有多确定</p>
+</blockquote>
+<p>动态调整：</p>
+<blockquote>
+<p>候选池大小。</p>
+</blockquote>
+<hr />
+<h1 id="四十top-k-与-top-p-对比">四十、Top-k 与 Top-p 对比</h1>
+<p>可以这样记：</p>
+<pre class="text"><code>Top-k
+=
+我要前k名
+
+
+Top-p
+=
+我要累计概率达到p的那群人</code></pre>
+<p>一个固定：</p>
+<blockquote>
+<p>人数。</p>
+</blockquote>
+<p>一个固定：</p>
+<blockquote>
+<p>概率质量。</p>
+</blockquote>
+<hr />
+<h1 id="四十一一个班级录取类比">四十一、一个班级录取类比</h1>
+<h3 id="top-k">Top-k</h3>
+<p>不管这一届学生水平如何：</p>
+<blockquote>
+<p>永远录取前 10 名。</p>
+</blockquote>
+<hr />
+<h3 id="top-p-1">Top-p</h3>
+<p>不是固定 10 人。</p>
+<p>而是：</p>
+<blockquote>
+<p>按成绩权重从高到低选，直到覆盖大部分可靠候选。</p>
+</blockquote>
+<p>虽然不是现实招生规则，</p>
+<p>但很适合建立直觉。</p>
+<hr />
+<h1 id="四十二为什么-top-k-top-p-可以减少奇怪词">四十二、为什么 Top-k /
+Top-p 可以减少“奇怪词”？</h1>
+<p>因为 Vocabulary 非常大。</p>
+<p>即使很多非常荒谬的 Token：</p>
+<blockquote>
+<p>概率不是绝对 0。</p>
+</blockquote>
+<p>如果允许：</p>
+<blockquote>
+<p>整个 Vocabulary 都参加抽样，</p>
+</blockquote>
+<p>极低概率候选理论上仍可能被抽到。</p>
+<hr />
+<h2 id="top-k-top-p">14. Top-k / Top-p</h2>
+<p>相当于先说：</p>
+<blockquote>
+<p>“太离谱的候选先别参加。”</p>
+</blockquote>
+<p>于是生成通常：</p>
+<blockquote>
+<p>更可控。</p>
+</blockquote>
+<hr />
+<h1
+id="四十三temperaturetop-ktop-p-是怎么配合的">四十三、Temperature、Top-k、Top-p
+是怎么配合的？</h1>
+<p>可以把整个流程想成：</p>
+<pre class="text"><code>模型原始Logits
+      │
+      ▼
+Temperature
+调整候选差距
+      │
+      ▼
+Top-k / Top-p
+缩小候选池
+      │
+      ▼
+Sampling
+从剩余候选中抽一个</code></pre>
+<p>这是非常好用的一张脑图。</p>
+<hr />
+<h1
+id="四十四真实实现顺序可能还有其它处理">四十四、真实实现顺序可能还有其它处理</h1>
+<p>例如：</p>
+<ul>
+<li>repetition penalty；</li>
+<li>min length；</li>
+<li>bad words；</li>
+<li>stopping criteria；</li>
+</ul>
+<p>等等。</p>
+<p>我们现在不用全部学。</p>
+<p>核心仍然是：</p>
+<blockquote>
+<p><strong>先形成概率，再按照生成规则挑 Token。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四十五现在做一个非常直观的实验">四十五、现在做一个非常直观的实验</h1>
+<p>模型原始倾向：</p>
+<pre class="text"><code>A   60%
+B   25%
+C   10%
+D    4%
+E    1%</code></pre>
+<hr />
+<h2 id="greedy">15. Greedy</h2>
+<p>永远：</p>
+<pre class="text"><code>A</code></pre>
+<hr />
+<h2 id="sampling">16. Sampling</h2>
+<p>大致：</p>
+<pre class="text"><code>A经常出现
+B偶尔出现
+C少量出现
+D很少
+E极少</code></pre>
+<hr />
+<h2 id="低-temperature-sampling">17. 低 Temperature + Sampling</h2>
+<p>变成更像：</p>
+<pre class="text"><code>A   85%
+B   10%
+C    4%
+其它  1%</code></pre>
+<p>更加保守。</p>
+<hr />
+<h2 id="高-temperature-sampling">18. 高 Temperature + Sampling</h2>
+<p>可能变成：</p>
+<pre class="text"><code>A   35%
+B   25%
+C   18%
+D   13%
+E    9%</code></pre>
+<p>变化明显增加。</p>
+<p>数字只是：</p>
+<blockquote>
+<p>帮助理解的示意。</p>
+</blockquote>
+<hr />
+<h1
+id="四十六现在把它放进采购审查场景">四十六、现在把它放进采购审查场景</h1>
+<p>Prompt：</p>
+<blockquote>
+<p>“请判断该资格条件的风险等级，并给出理由。”</p>
+</blockquote>
+<p>模型内部可能对下一个词判断：</p>
+<pre class="text"><code>高风险      50%
+存在风险    30%
+需核验      15%
+无风险       4%
+其它         1%</code></pre>
+<hr />
+<h1 id="四十七如果使用-greedy">四十七、如果使用 Greedy</h1>
+<p>第一步：</p>
+<blockquote>
+<p>大概率固定选择“高风险”。</p>
+</blockquote>
+<hr />
+<h1 id="四十八如果高-temperature-sampling">四十八、如果高 Temperature
+Sampling</h1>
+<p>“需核验”：</p>
+<blockquote>
+<p>获得更多机会。</p>
+</blockquote>
+<p>甚至原本只有 4% 的：</p>
+<blockquote>
+<p>“无风险”</p>
+</blockquote>
+<p>被选中的机会：</p>
+<blockquote>
+<p>也可能上升。</p>
+</blockquote>
+<hr />
+<h1
+id="四十九这就是为什么高风险专业任务不能机械照搬创作参数">四十九、这就是为什么高风险专业任务不能机械照搬创作参数</h1>
+<p>创意文案任务：</p>
+<blockquote>
+<p>多样性本身可能有价值。</p>
+</blockquote>
+<hr />
+<h2 id="法规判断任务">19. 法规判断任务</h2>
+<p>我们更关心：</p>
+<ul>
+<li>同一事实是否稳定；</li>
+<li>是否引用同一有效依据；</li>
+<li>分类是否可复核；</li>
+<li>结果是否一致。</li>
+</ul>
+<p>所以目标函数：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h1
+id="五十第五个核心心智模型正式出现">五十、第五个核心心智模型正式出现</h1>
+<p>对于 ProcurementAI：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>创</mi><mi>造</mi><mi>性</mi><mi>不</mi><mi>是</mi><mi>默</mi><mi>认</mi><mi>目</mi><mi>标</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+创造性不是默认目标
+}
+</annotation></semantics></math></p>
+<p>很多核心任务更需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Consistency
++
+Evidence
++
+Reproducibility
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十一但低-temperature也不会自动变成法律专家">五十一、但“低
+Temperature”也不会自动变成法律专家</h1>
+<p>这句话也非常关键。</p>
+<p>假设模型真正的最高概率答案：</p>
+<blockquote>
+<p>本身就是错的。</p>
+</blockquote>
+<p>Greedy：</p>
+<blockquote>
+<p>只会稳定地重复这个错误。</p>
+</blockquote>
+<hr />
+<h1
+id="五十二所以稳定错误仍然是错误">五十二、所以稳定错误仍然是错误</h1>
+<p>这特别重要。</p>
+<pre class="text"><code>Temperature降低
+↓
+随机性降低</code></pre>
+<p>并不等于：</p>
+<pre class="text"><code>事实错误降低到0</code></pre>
+<hr />
+<h1
+id="五十三一个荒谬但很有用的例子">五十三、一个荒谬但很有用的例子</h1>
+<p>模型错误认为：</p>
+<blockquote>
+<p>“某不存在的《采购条例》第88条”是正确依据。</p>
+</blockquote>
+<p>它给这个候选：</p>
+<pre class="text"><code>90%</code></pre>
+<p>其它正确候选：</p>
+<blockquote>
+<p>反而较低。</p>
+</blockquote>
+<p>Greedy 会怎样？</p>
+<blockquote>
+<p>每次都稳定地输出错误第 88 条。</p>
+</blockquote>
+<hr />
+<h1
+id="五十四所以可靠性不能靠-sampling-参数解决">五十四、所以可靠性不能靠
+Sampling 参数解决</h1>
+<p>真正需要：</p>
+<pre class="text"><code>RAG
++
+Citation Validation
++
+Gold Set
++
+Rules
++
+Human Review</code></pre>
+<p>Decoding：</p>
+<blockquote>
+<p>只是最后一公里。</p>
+</blockquote>
+<hr />
+<h1 id="五十五把模型能力和-decoding-彻底分开">五十五、把模型能力和
+Decoding 彻底分开</h1>
+<pre class="text"><code>模型能力
+│
+├─ Weight里学到了什么
+├─ Prompt里看到了什么
+└─ RAG给了什么证据
+        │
+        ▼
+形成Logits
+        │
+        ▼
+Decoding
+决定本次如何从候选中选择</code></pre>
+<hr />
+<h1 id="五十六所以改-temperature-不会发生什么">五十六、所以改
+Temperature 不会发生什么？</h1>
+<p>不会：</p>
+<blockquote>
+<p>修改 Weight。</p>
+</blockquote>
+<p>不会：</p>
+<blockquote>
+<p>给模型加入法规库。</p>
+</blockquote>
+<p>不会：</p>
+<blockquote>
+<p>更新知识截止日期。</p>
+</blockquote>
+<p>不会：</p>
+<blockquote>
+<p>自动修正幻觉。</p>
+</blockquote>
+<hr />
+<h1 id="五十七它真正改变的是">五十七、它真正改变的是</h1>
+<pre class="text"><code>这一次生成路径</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>模型长期知识</code></pre>
+<p>可以记成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>s</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>P</mi><mi>a</mi><mi>t</mi><mi>h</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SamplingChangesOutputPath
+\neq
+ModelWeights
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十八seed-是什么">五十八、Seed 是什么？</h1>
+<p>既然 Sampling 有随机性，</p>
+<p>实验就出现一个问题：</p>
+<blockquote>
+<p>“我怎么复现实验？”</p>
+</blockquote>
+<hr />
+<h2 id="随机数程序通常从某个起点开始">20.
+随机数程序通常从某个起点开始</h2>
+<p>这个起点：</p>
+<h1 id="random-seed">Random Seed</h1>
+<hr />
+<h2 id="可以把-seed-想成洗牌编号">21. 可以把 Seed 想成洗牌编号</h2>
+<p>你告诉机器：</p>
+<pre class="text"><code>使用第42号洗牌方法</code></pre>
+<p>在足够相同的环境下，</p>
+<p>它可能：</p>
+<blockquote>
+<p>按相同随机序列抽样。</p>
+</blockquote>
+<hr />
+<h1 id="五十九为什么做-benchmark-时-seed-很重要">五十九、为什么做
+Benchmark 时 Seed 很重要？</h1>
+<p>假设模型 A 和模型 B：</p>
+<blockquote>
+<p>都启用 Sampling。</p>
+</blockquote>
+<p>但 A 恰好抽到：</p>
+<blockquote>
+<p>很好的路径。</p>
+</blockquote>
+<p>B 恰好抽到：</p>
+<blockquote>
+<p>较差路径。</p>
+</blockquote>
+<p>只测一次：</p>
+<blockquote>
+<p>比较不公平。</p>
+</blockquote>
+<hr />
+<h1 id="六十专业评测怎么办">六十、专业评测怎么办？</h1>
+<p>可以：</p>
+<blockquote>
+<p>优先使用确定性或低随机性的生成方案。</p>
+</blockquote>
+<p>或者：</p>
+<blockquote>
+<p>固定 Seed。</p>
+</blockquote>
+<p>或者：</p>
+<blockquote>
+<p>同一题重复多次，统计均值和方差。</p>
+</blockquote>
+<hr />
+<h1 id="六十一这连接第一课的-reproducibility">六十一、这连接第一课的
+Reproducibility</h1>
+<p>一个实验应该记录：</p>
+<pre class="text"><code>Model Revision
+Prompt Version
+Tokenizer
+Generation Config
+Temperature
+Top-k
+Top-p
+Seed</code></pre>
+<p>否则半年以后：</p>
+<blockquote>
+<p>很难复现为什么当时得到那个结果。</p>
+</blockquote>
+<hr />
+<h1 id="六十二generation-config-本身就是实验变量">六十二、Generation
+Config 本身就是实验变量</h1>
+<p>第三阶段我们见过：</p>
+<pre class="text"><code>generation_config.json</code></pre>
+<p>现在终于知道它为什么不能随便忽略。</p>
+<p>因为模型完全相同，</p>
+<p>只改变：</p>
+<pre class="text"><code>temperature
+top_p
+do_sample</code></pre>
+<p>就可能：</p>
+<blockquote>
+<p>改变最终输出。</p>
+</blockquote>
+<hr />
+<h1 id="六十三所以-benchmark-不能让各模型自由发挥">六十三、所以
+Benchmark 不能让各模型“自由发挥”</h1>
+<p>比如：</p>
+<p>模型 A：</p>
+<pre class="text"><code>temperature=0.1</code></pre>
+<p>模型 B：</p>
+<pre class="text"><code>temperature=1.0</code></pre>
+<p>然后直接比较：</p>
+<blockquote>
+<p>谁更稳定。</p>
+</blockquote>
+<p>这显然不公平。</p>
+<hr />
+<h1 id="六十四模型评测要统一-decoding-policy">六十四、模型评测要统一
+Decoding Policy</h1>
+<p>至少同一实验组应该尽量：</p>
+<blockquote>
+<p>使用一致、明确记录的 Generation Setting。</p>
+</blockquote>
+<p>不然你测到的可能是：</p>
+<pre class="text"><code>Model Difference
++
+Decoding Difference</code></pre>
+<p>混在一起。</p>
+<hr />
+<h1 id="六十五什么叫-deterministic">六十五、什么叫 Deterministic？</h1>
+<p>最简单理解：</p>
+<blockquote>
+<p>相同输入、相同设置，尽量获得相同输出。</p>
+</blockquote>
+<hr />
+<h1 id="六十六但-gpu-推理能不能保证逐-bit-完全一致">六十六、但 GPU
+推理能不能保证“逐 bit 完全一致”？</h1>
+<p>现实比概念复杂。</p>
+<p>某些底层：</p>
+<ul>
+<li>Kernel；</li>
+<li>并行计算；</li>
+<li>数值精度；</li>
+</ul>
+<p>可能带来细微非确定性。</p>
+<p>所以工程中：</p>
+<blockquote>
+<p>“确定性”也分程度。</p>
+</blockquote>
+<hr />
+<h1
+id="六十七对我们现在最重要的层次">六十七、对我们现在最重要的层次</h1>
+<p>先区分：</p>
+<pre class="text"><code>明显启用随机Sampling</code></pre>
+<p>和：</p>
+<pre class="text"><code>不启用Sampling</code></pre>
+<p>就已经很有价值。</p>
+<hr />
+<h1 id="六十八do_samplefalse">六十八、<code>do_sample=False</code></h1>
+<p>可以先理解：</p>
+<blockquote>
+<p>不做概率随机抽样。</p>
+</blockquote>
+<p>常见地会走：</p>
+<blockquote>
+<p>更确定性的 Token 选择路线。</p>
+</blockquote>
+<hr />
+<h1 id="六十九do_sampletrue">六十九、<code>do_sample=True</code></h1>
+<p>表示：</p>
+<blockquote>
+<p>允许按照概率分布进行 Sampling。</p>
+</blockquote>
+<p>这时候：</p>
+<ul>
+<li>Temperature；</li>
+<li>Top-k；</li>
+<li>Top-p；</li>
+</ul>
+<p>这些参数的作用：</p>
+<blockquote>
+<p>才真正显著。</p>
+</blockquote>
+<hr />
+<h1 id="七十一个很常见的配置错误">七十、一个很常见的配置错误</h1>
+<p>有人写：</p>
+<div class="sourceCode" id="cb956"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb956-1"><a href="#cb956-1" aria-hidden="true" tabindex="-1"></a>do_sample<span class="op">=</span><span class="va">False</span></span>
+<span id="cb956-2"><a href="#cb956-2" aria-hidden="true" tabindex="-1"></a>temperature<span class="op">=</span><span class="fl">0.8</span></span>
+<span id="cb956-3"><a href="#cb956-3" aria-hidden="true" tabindex="-1"></a>top_p<span class="op">=</span><span class="fl">0.9</span></span></code></pre></div>
+<p>然后以为：</p>
+<blockquote>
+<p>Temperature 一定在控制随机性。</p>
+</blockquote>
+<p>实际是否生效：</p>
+<blockquote>
+<p>要看具体框架的生成逻辑。</p>
+</blockquote>
+<p>所以永远不要：</p>
+<blockquote>
+<p>只看参数名字。</p>
+</blockquote>
+<p>还要理解：</p>
+<blockquote>
+<p><strong>生成模式到底是什么。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七十一我们用三个人格理解-decoding">七十一、我们用三个“人格”理解
+Decoding</h1>
+<h3 id="模式-a审计员">模式 A：审计员</h3>
+<pre class="text"><code>Greedy / 极低随机性</code></pre>
+<p>特点：</p>
+<blockquote>
+<p>稳定、保守、变化少。</p>
+</blockquote>
+<hr />
+<h3 id="模式-b专业顾问">模式 B：专业顾问</h3>
+<pre class="text"><code>低到中等随机性</code></pre>
+<p>特点：</p>
+<blockquote>
+<p>主结论较稳定，但措辞有一定变化。</p>
+</blockquote>
+<hr />
+<h3 id="模式-c创意策划师">模式 C：创意策划师</h3>
+<pre class="text"><code>更高随机性</code></pre>
+<p>特点：</p>
+<blockquote>
+<p>尝试更多低排名候选，表达更多样。</p>
+</blockquote>
+<p>这不是固定数值标准。</p>
+<p>只是帮助建立感觉。</p>
+<hr />
+<h1 id="七十二procurementai-哪些任务更像审计员">七十二、ProcurementAI
+哪些任务更像“审计员”？</h1>
+<p>例如：</p>
+<pre class="text"><code>字段抽取
+风险分类
+法规引用
+JSON结构输出
+资格条件识别</code></pre>
+<p>我们通常希望：</p>
+<blockquote>
+<p>少随机。</p>
+</blockquote>
+<hr />
+<h1
+id="七十三哪些任务可以稍微允许变化">七十三、哪些任务可以稍微允许变化？</h1>
+<p>例如：</p>
+<blockquote>
+<p>根据已经确定的风险结论，生成三种不同措辞的修改建议。</p>
+</blockquote>
+<p>这里：</p>
+<blockquote>
+<p>表达多样性</p>
+</blockquote>
+<p>可能有一些价值。</p>
+<hr />
+<h1
+id="七十四所以同一个-procurementai-系统可以有不同-decoding-profile">七十四、所以同一个
+ProcurementAI 系统可以有不同 Decoding Profile</h1>
+<p>而不是全系统一个：</p>
+<pre class="text"><code>temperature=0.7</code></pre>
+<p>用到死。</p>
+<hr />
+<h1 id="七十五例如可以概念上划分">七十五、例如可以概念上划分</h1>
+<pre class="text"><code>法规依据检索解释
+→ 稳定模式
+
+风险分类
+→ 稳定模式
+
+结构化抽取
+→ 稳定模式
+
+修改建议
+→ 低到中等变化
+
+用户友好解释
+→ 可允许适度变化</code></pre>
+<p>真正参数：</p>
+<blockquote>
+<p>要通过评测确定。</p>
+</blockquote>
+<hr />
+<h1 id="七十六不要用-temperature-替代不确定性系统">七十六、不要用
+Temperature 替代“不确定性系统”</h1>
+<p>假设模型面对一个模糊条款。</p>
+<p>我们不应该：</p>
+<blockquote>
+<p>把 Temperature 调高，</p>
+</blockquote>
+<p>让它“多想几个答案”。</p>
+<hr />
+<h1 id="七十七更专业的方法是">七十七、更专业的方法是</h1>
+<p>系统明确输出：</p>
+<pre class="text"><code>判断：
+需要核验
+
+缺失信息：
+项目具体履约要求
+
+证据状态：
+尚未检索到足够依据
+
+下一步：
+转人工专家</code></pre>
+<p>也就是：</p>
+<blockquote>
+<p><strong>把不确定性显式建模。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="七十八sampling-randomness-和-epistemic-uncertainty-不是一回事">七十八、Sampling
+Randomness 和 Epistemic Uncertainty 不是一回事</h1>
+<p>这个词有点学术，但意思特别重要。</p>
+<p>模型每次回答不同：</p>
+<blockquote>
+<p>可能只是 Sampling 随机。</p>
+</blockquote>
+<p>不一定代表：</p>
+<blockquote>
+<p>模型真的“知道自己不知道”。</p>
+</blockquote>
+<hr />
+<h1 id="七十九所以不能这样设计">七十九、所以不能这样设计</h1>
+<pre class="text"><code>运行5次
+如果答案不同
+=
+模型不确定</code></pre>
+<p>它有时可以作为信号之一，</p>
+<p>但不能简单等价。</p>
+<hr />
+<h1 id="八十因为高-temperature-会人为制造分歧">八十、因为高 Temperature
+会人为制造分歧</h1>
+<p>一个模型本来：</p>
+<blockquote>
+<p>对答案非常确定。</p>
+</blockquote>
+<p>你把 Temperature 拉很高：</p>
+<blockquote>
+<p>也可以人为制造很多不同回答。</p>
+</blockquote>
+<hr />
+<h1 id="八十一反过来也成立">八十一、反过来也成立</h1>
+<p>一个模型其实：</p>
+<blockquote>
+<p>很没把握。</p>
+</blockquote>
+<p>但你用 Greedy：</p>
+<blockquote>
+<p>每次都稳定输出同一个答案。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Output Stability
+≠
+True Confidence</code></pre>
+<p>这和第一课第 11 阶段：</p>
+<blockquote>
+<p>Uncertainty / Calibration</p>
+</blockquote>
+<p>重新接上了。</p>
+<hr />
+<h1 id="八十二一个很重要的采购案例">八十二、一个很重要的采购案例</h1>
+<p>条款：</p>
+<blockquote>
+<p>“供应商须具有与本项目相适应的履约能力。”</p>
+</blockquote>
+<p>单独看这句话：</p>
+<blockquote>
+<p>信息非常不足。</p>
+</blockquote>
+<hr />
+<h2 id="模型-a-1">22. 模型 A</h2>
+<p>Greedy 每次都回答：</p>
+<blockquote>
+<p>合规。</p>
+</blockquote>
+<hr />
+<h2 id="是否说明模型有-100-信心">23. 是否说明模型有 100% 信心？</h2>
+<p>当然不是。</p>
+<p>真正合理的专业输出可能是：</p>
+<blockquote>
+<p>需要结合具体能力要求、项目性质以及后续约束进一步判断。</p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p>稳定性不是专业置信度。</p>
+</blockquote>
+<hr />
+<h1 id="八十三再认识-repetition-penalty">八十三、再认识 Repetition
+Penalty</h1>
+<p>有时候模型会生成：</p>
+<pre class="text"><code>该条件存在风险。
+该条件存在风险。
+该条件存在风险。</code></pre>
+<p>生成过程中可以引入：</p>
+<h1 id="repetition-penalty">Repetition Penalty</h1>
+<hr />
+<h1 id="八十四它的直觉">八十四、它的直觉</h1>
+<p>已经出现过很多次的 Token / Pattern：</p>
+<blockquote>
+<p>后续选择时降低一些吸引力。</p>
+</blockquote>
+<p>目标：</p>
+<blockquote>
+<p>减少机械重复。</p>
+</blockquote>
+<hr />
+<h1 id="八十五但不要把它调得过头">八十五、但不要把它调得过头</h1>
+<p>因为政府采购文本本身经常必须反复出现：</p>
+<ul>
+<li>采购人；</li>
+<li>供应商；</li>
+<li>资格条件；</li>
+<li>法规名称。</li>
+</ul>
+<p>如果处罚过强：</p>
+<blockquote>
+<p>正常专业术语也可能被压制。</p>
+</blockquote>
+<hr />
+<h1
+id="八十六所以所有-decoding-parameter-都是-trade-off">八十六、所以所有
+Decoding Parameter 都是 Trade-off</h1>
+<p>没有：</p>
+<blockquote>
+<p>“越大越好。”</p>
+</blockquote>
+<p>也没有：</p>
+<blockquote>
+<p>“越小越专业。”</p>
+</blockquote>
+<p>真正需要：</p>
+<blockquote>
+<p>根据任务评测。</p>
+</blockquote>
+<hr />
+<h1 id="八十七structured-output-又是什么关系">八十七、Structured Output
+又是什么关系？</h1>
+<p>假设我们要求模型输出：</p>
+<div class="sourceCode" id="cb967"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb967-1"><a href="#cb967-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb967-2"><a href="#cb967-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_level&quot;</span><span class="fu">:</span> <span class="st">&quot;high&quot;</span><span class="fu">,</span></span>
+<span id="cb967-3"><a href="#cb967-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;资格条件&quot;</span><span class="fu">,</span></span>
+<span id="cb967-4"><a href="#cb967-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb967-5"><a href="#cb967-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb967-6"><a href="#cb967-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这只是：</p>
+<blockquote>
+<p><strong>规定输出格式。</strong></p>
+</blockquote>
+<hr />
+<h1 id="八十八结构正确-内容正确">八十八、结构正确 ≠ 内容正确</h1>
+<p>模型可以非常稳定地输出：</p>
+<div class="sourceCode" id="cb968"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb968-1"><a href="#cb968-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb968-2"><a href="#cb968-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_level&quot;</span><span class="fu">:</span> <span class="st">&quot;high&quot;</span><span class="fu">,</span></span>
+<span id="cb968-3"><a href="#cb968-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence&quot;</span><span class="fu">:</span> <span class="st">&quot;不存在的法规第88条&quot;</span></span>
+<span id="cb968-4"><a href="#cb968-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>JSON：</p>
+<blockquote>
+<p>完美。</p>
+</blockquote>
+<p>事实：</p>
+<blockquote>
+<p>错了。</p>
+</blockquote>
+<hr />
+<h1 id="八十九所以-procurementai-需要两层校验">八十九、所以
+ProcurementAI 需要两层校验</h1>
+<pre class="text"><code>第一层
+Format Validation
+
+第二层
+Semantic / Evidence Validation</code></pre>
+<p>前者：</p>
+<blockquote>
+<p>能不能解析。</p>
+</blockquote>
+<p>后者：</p>
+<blockquote>
+<p>内容是不是真的。</p>
+</blockquote>
+<hr />
+<h1 id="九十decoding-可以帮助第一层">九十、Decoding 可以帮助第一层</h1>
+<p>例如：</p>
+<blockquote>
+<p>降低随机性、使用结构约束。</p>
+</blockquote>
+<p>能够提高：</p>
+<blockquote>
+<p>输出格式稳定度。</p>
+</blockquote>
+<hr />
+<h1 id="九十一但第二层必须靠">九十一、但第二层必须靠</h1>
+<ul>
+<li>RAG Evidence；</li>
+<li>Rule Validation；</li>
+<li>Citation Validation；</li>
+<li>Gold Set；</li>
+<li>Human Review。</li>
+</ul>
+<p>这再次说明：</p>
+<blockquote>
+<p>Sampling 只是系统中的一小块。</p>
+</blockquote>
+<hr />
+<h1
+id="九十二现在看一个完整采购例子">九十二、现在看一个完整采购例子</h1>
+<p>Prompt：</p>
+<pre class="text"><code>请审查以下资格条件：
+
+“供应商须在采购人所在地设有固定服务机构。”
+
+输出：
+1. 风险等级
+2. 风险理由
+3. 需要核验的法规依据
+4. 修改建议</code></pre>
+<hr />
+<h1 id="九十三模式-agreedy">九十三、模式 A：Greedy</h1>
+<p>可能每次都生成类似：</p>
+<pre class="text"><code>风险等级：中高风险
+理由：可能涉及地域性条件……
+需要核验：相关政府采购公平竞争要求……
+修改建议：改为与履约服务响应能力相关……</code></pre>
+<p>优点：</p>
+<blockquote>
+<p>稳定。</p>
+</blockquote>
+<hr />
+<h1 id="九十四模式-bsampling">九十四、模式 B：Sampling</h1>
+<p>第一次可能：</p>
+<blockquote>
+<p>强调地域限制。</p>
+</blockquote>
+<p>第二次：</p>
+<blockquote>
+<p>强调潜在排斥外地供应商。</p>
+</blockquote>
+<p>第三次：</p>
+<blockquote>
+<p>强调服务能力与注册地址之间没有必然联系。</p>
+</blockquote>
+<p>可能都合理。</p>
+<hr />
+<h1
+id="九十五哪一种更适合最终审查结论">九十五、哪一种更适合最终审查结论？</h1>
+<p>通常我们会希望：</p>
+<blockquote>
+<p><strong>结论层稳定。</strong></p>
+</blockquote>
+<p>而说明文字：</p>
+<blockquote>
+<p>可以有有限变化。</p>
+</blockquote>
+<p>所以成熟系统甚至可以：</p>
+<blockquote>
+<p>将“分类”和“说明生成”拆成两个步骤。</p>
+</blockquote>
+<hr />
+<h1
+id="九十六这是非常重要的系统设计思想">九十六、这是非常重要的系统设计思想</h1>
+<p>不要把一个巨大 Prompt：</p>
+<blockquote>
+<p>同时承担所有职责。</p>
+</blockquote>
+<p>可以拆成：</p>
+<pre class="text"><code>Stage A
+风险分类
+低随机性
+
+↓
+
+Stage B
+证据检索
+确定性检索
+
+↓
+
+Stage C
+形成理由
+低随机性
+
+↓
+
+Stage D
+润色成用户友好语言
+可以稍多一点表达变化</code></pre>
+<hr />
+<h1 id="九十七这样比一个-temperature-管天下专业得多">九十七、这样比“一个
+Temperature 管天下”专业得多</h1>
+<p>因为：</p>
+<blockquote>
+<p>不同子任务具有不同错误成本。</p>
+</blockquote>
+<hr />
+<h1
+id="九十八什么任务的错误成本最高">九十八、什么任务的错误成本最高？</h1>
+<p>对我们项目而言，例如：</p>
+<pre class="text"><code>法规引用错误
+高风险漏报
+无风险误报
+资格判断错误</code></pre>
+<p>这些：</p>
+<blockquote>
+<p>应该采用严格评测和较强约束。</p>
+</blockquote>
+<hr />
+<h1 id="九十九什么地方可以更自由">九十九、什么地方可以更自由？</h1>
+<p>例如：</p>
+<blockquote>
+<p>“把这段专业意见改写成普通采购人员更容易理解的话。”</p>
+</blockquote>
+<p>只要事实和结论：</p>
+<blockquote>
+<p>已经锁定。</p>
+</blockquote>
+<p>文字表达：</p>
+<blockquote>
+<p>可以有适度变化。</p>
+</blockquote>
+<hr />
+<h1
+id="一百所以创造性应该放在正确的层">一百、所以“创造性”应该放在正确的层</h1>
+<pre class="text"><code>事实层
+→ 少自由
+
+法律依据层
+→ 少自由
+
+风险分类层
+→ 少自由
+
+措辞层
+→ 可以有一些自由
+
+解释风格层
+→ 可以更灵活</code></pre>
+<p>这个心智模型对 ProcurementAI 很重要。</p>
+<hr />
+<h1
+id="一百零一现在把-greedytemperaturetop-ktop-p-放一张图">一百零一、现在把
+Greedy、Temperature、Top-k、Top-p 放一张图</h1>
+<pre class="text"><code>                 Model
+                   │
+                   ▼
+                 Logits
+                   │
+                   ▼
+             Temperature
+          调整概率分布形状
+                   │
+                   ▼
+          Top-k / Top-p Filter
+             缩小候选范围
+                   │
+                   ▼
+          ┌────────┴────────┐
+          │                 │
+   do_sample=False      do_sample=True
+          │                 │
+          ▼                 ▼
+    更确定性选择          随机抽样
+          │                 │
+          └────────┬────────┘
+                   ▼
+               Next Token</code></pre>
+<p>这张图就是本阶段的主地图。</p>
+<hr />
+<h1
+id="一百零二五个核心心智模型再总结">一百零二、五个核心心智模型再总结</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>核心心智模型</th>
+<th>真正要理解什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① 模型打分，Decoding 选人</strong></td>
+<td>Weight 决定概率倾向；生成策略决定本次走哪条路径</td>
+</tr>
+<tr class="even">
+<td><strong>② Greedy = 当前第一名</strong></td>
+<td>稳定、简单，但不是“整段答案全局最优”的保证</td>
+</tr>
+<tr class="odd">
+<td><strong>③ Temperature = 改分布尖锐度</strong></td>
+<td>低温更集中，高温更平，不增加知识</td>
+</tr>
+<tr class="even">
+<td><strong>④ Top-k / Top-p = 候选池过滤</strong></td>
+<td>Top-k 固定人数；Top-p 按累计概率动态决定人数</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ 高可靠任务优先可复现与证据</strong></td>
+<td>法规审查不能把“更随机”误认为“更聪明”</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="一百零三三个特别重要的">一百零三、三个特别重要的“≠”</h1>
+<pre class="text"><code>低Temperature
+≠
+事实一定正确</code></pre>
+<pre class="text"><code>高Temperature
+≠
+模型更聪明</code></pre>
+<pre class="text"><code>回答每次一样
+≠
+模型真的很有把握</code></pre>
+<p>这三条非常值得记。</p>
+<hr />
+<h1 id="一百零四思维实验-a">一百零四、思维实验 A</h1>
+<p>模型认为：</p>
+<pre class="text"><code>A：90%
+B：5%
+C：3%
+D：2%</code></pre>
+<p>Greedy 会选谁？</p>
+<blockquote>
+<p>A。</p>
+</blockquote>
+<hr />
+<h1 id="一百零五思维实验-b">一百零五、思维实验 B</h1>
+<p>同样的分布，用 Sampling。</p>
+<p>是不是永远 A？</p>
+<blockquote>
+<p>不是。</p>
+</blockquote>
+<p>A 只是：</p>
+<blockquote>
+<p>概率最大。</p>
+</blockquote>
+<hr />
+<h1 id="一百零六思维实验-c">一百零六、思维实验 C</h1>
+<p>Temperature 降低。</p>
+<p>模型 Weight 有没有变化？</p>
+<blockquote>
+<p>没有。</p>
+</blockquote>
+<hr />
+<h1 id="一百零七思维实验-d">一百零七、思维实验 D</h1>
+<p>Top-k 从：</p>
+<pre class="text"><code>50</code></pre>
+<p>改成：</p>
+<pre class="text"><code>5</code></pre>
+<p>核心变化是什么？</p>
+<blockquote>
+<p>可参加 Sampling 的候选 Token 少了。</p>
+</blockquote>
+<hr />
+<h1 id="一百零八思维实验-e">一百零八、思维实验 E</h1>
+<p>Top-p = 0.9。</p>
+<p>是不是固定留下：</p>
+<blockquote>
+<p>90% 的 Token 数量？</p>
+</blockquote>
+<p>不是。</p>
+<p>它留下的是：</p>
+<blockquote>
+<p>从高到低累计概率达到约 90% 的候选集合。</p>
+</blockquote>
+<p>人数：</p>
+<blockquote>
+<p>每一步都可能不同。</p>
+</blockquote>
+<hr />
+<h1 id="一百零九思维实验-f">一百零九、思维实验 F</h1>
+<p>使用 Greedy 后同一个错误法条每次都输出。</p>
+<p>能不能说明：</p>
+<blockquote>
+<p>系统可靠了？</p>
+</blockquote>
+<p>不能。</p>
+<p>只是：</p>
+<blockquote>
+<p>错得很稳定。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十思维实验-g">一百一十、思维实验 G</h1>
+<p>一个创意广告文案模型每次输出都一模一样。</p>
+<p>可能是什么问题？</p>
+<p>有可能：</p>
+<blockquote>
+<p>Decoding 太保守。</p>
+</blockquote>
+<p>但也要看 Prompt 和模型。</p>
+<hr />
+<h1 id="一百一十一思维实验-h">一百一十一、思维实验 H</h1>
+<p>一个政府采购风险分类器：</p>
+<blockquote>
+<p>同一条款运行 10 次出现 6 种风险等级。</p>
+</blockquote>
+<p>这是好事吗？</p>
+<p>对于正式工作流：</p>
+<blockquote>
+<p>通常是危险信号。</p>
+</blockquote>
+<p>至少说明：</p>
+<blockquote>
+<p>输出决策对 Sampling 过度敏感，或者模型本身边界不稳。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十二本阶段最容易犯的八个错误">一百一十二、本阶段最容易犯的八个错误</h1>
+<h3 id="错误-1-3">错误 1</h3>
+<blockquote>
+<p>Temperature 越高，模型越聪明。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-2-3">错误 2</h3>
+<blockquote>
+<p>Temperature 越低，模型越正确。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-3-3">错误 3</h3>
+<blockquote>
+<p>Greedy 不属于自回归生成。</p>
+</blockquote>
+<p>错。</p>
+<p>它仍然逐 Token 生成。</p>
+<h3 id="错误-4-3">错误 4</h3>
+<blockquote>
+<p>Top-k=10 就是选择第 10 名。</p>
+</blockquote>
+<p>错。</p>
+<p>是：</p>
+<blockquote>
+<p>留前 10 名进入候选池。</p>
+</blockquote>
+<h3 id="错误-5-3">错误 5</h3>
+<blockquote>
+<p>Top-p=0.9 就留下 90% 的 Token。</p>
+</blockquote>
+<p>错。</p>
+<p>是：</p>
+<blockquote>
+<p>留到累计概率达到阈值。</p>
+</blockquote>
+<h3 id="错误-6-3">错误 6</h3>
+<blockquote>
+<p>Sampling 只是随机乱说。</p>
+</blockquote>
+<p>错。</p>
+<p>它仍受模型概率分布约束。</p>
+<h3 id="错误-7-2">错误 7</h3>
+<blockquote>
+<p>输出稳定 = 模型置信度高。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-8-1">错误 8</h3>
+<blockquote>
+<p>调生成参数可以解决幻觉和法规错误。</p>
+</blockquote>
+<p>解决不了根本问题。</p>
+<hr />
+<h1 id="一百一十三把第-5-阶段和第-8-阶段真正接起来">一百一十三、把第 5
+阶段和第 8 阶段真正接起来</h1>
+<p>第 5 阶段：</p>
+<pre class="text"><code>Prompt
+↓
+Transformer
+↓
+Logits</code></pre>
+<p>当时我们停住了。</p>
+<p>现在补上：</p>
+<pre class="text"><code>Prompt
+↓
+Transformer
+↓
+Logits
+↓
+Temperature
+↓
+Top-k / Top-p
+↓
+Sampling / Greedy
+↓
+Next Token
+↓
+加入Context
+↓
+重复</code></pre>
+<p>自回归生成链：</p>
+<blockquote>
+<p>到这里真正完整了。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十四procurementai-推荐的第一条生成原则">一百一十四、ProcurementAI
+推荐的第一条生成原则</h1>
+<p>对于：</p>
+<ul>
+<li>法规问答；</li>
+<li>风险分类；</li>
+<li>合规审查；</li>
+<li>结构化抽取；</li>
+</ul>
+<p>第一版 Baseline 不要追求：</p>
+<blockquote>
+<p>“回答每次都很有惊喜。”</p>
+</blockquote>
+<p>而应该优先追求：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>稳</mi><mi>定</mi><mo>+</mo><mi>可</mi><mi>复</mi><mi>现</mi><mo>+</mo><mi>有</mi><mi>依</mi><mi>据</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+稳定
++
+可复现
++
+有依据
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百一十五第二条原则">一百一十五、第二条原则</h1>
+<p>不要凭经验说：</p>
+<blockquote>
+<p>“Temperature 0.2 肯定最好。”</p>
+</blockquote>
+<p>应该拿真实 Gold Set 测。</p>
+<p>例如比较：</p>
+<pre class="text"><code>配置A：确定性生成
+
+配置B：低随机性
+
+配置C：中等随机性</code></pre>
+<p>然后看：</p>
+<ul>
+<li>分类一致率；</li>
+<li>引用准确率；</li>
+<li>JSON 成功率；</li>
+<li>专家评分；</li>
+<li>重复运行方差。</li>
+</ul>
+<hr />
+<h1
+id="一百一十六我们未来甚至可以做一个-generation-benchmark">一百一十六、我们未来甚至可以做一个
+Generation Benchmark</h1>
+<p>每道采购题：</p>
+<blockquote>
+<p>重复跑 5 次。</p>
+</blockquote>
+<p>然后观察：</p>
+<pre class="text"><code>风险等级是否变化？
+
+法规引用是否变化？
+
+证据是否变化？
+
+核心事实是否变化？
+
+只有措辞变化，
+还是结论也变化？</code></pre>
+<hr />
+<h1
+id="一百一十七这会暴露一个非常重要的问题">一百一十七、这会暴露一个非常重要的问题</h1>
+<p>如果只是：</p>
+<pre class="text"><code>“存在风险”</code></pre>
+<p>变成：</p>
+<pre class="text"><code>“该条款可能存在一定风险”</code></pre>
+<p>这只是：</p>
+<blockquote>
+<p>Surface Variation。</p>
+</blockquote>
+<hr />
+<h2 id="但如果一次说">24. 但如果一次说</h2>
+<pre class="text"><code>高风险</code></pre>
+<p>另一次说：</p>
+<pre class="text"><code>无风险</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>Decision Instability。</p>
+</blockquote>
+<p>两者严重程度：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十八所以未来评测不要只比较字符串是否相同">一百一十八、所以未来评测不要只比较字符串是否相同</h1>
+<p>更应该比较：</p>
+<pre class="text"><code>核心结论
+风险类型
+引用依据
+修改建议方向</code></pre>
+<p>是否稳定。</p>
+<hr />
+<h1
+id="一百一十九这又连接结构化输出">一百一十九、这又连接结构化输出</h1>
+<p>如果模型先输出：</p>
+<div class="sourceCode" id="cb991"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb991-1"><a href="#cb991-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb991-2"><a href="#cb991-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_level&quot;</span><span class="fu">:</span> <span class="st">&quot;high&quot;</span><span class="fu">,</span></span>
+<span id="cb991-3"><a href="#cb991-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;geographic_restriction&quot;</span></span>
+<span id="cb991-4"><a href="#cb991-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>再根据这个结构：</p>
+<blockquote>
+<p>生成自然语言解释。</p>
+</blockquote>
+<p>系统会比：</p>
+<blockquote>
+<p>从头到尾自由作文</p>
+</blockquote>
+<p>更容易控制。</p>
+<hr />
+<h1
+id="一百二十这是一条很重要的系统工程路线">一百二十、这是一条很重要的系统工程路线</h1>
+<pre class="text"><code>先决定
+↓
+再解释</code></pre>
+<p>往往比：</p>
+<pre class="text"><code>一边自由写
+一边临时决定</code></pre>
+<p>更容易评测和治理。</p>
+<hr />
+<h1 id="一百二十一第-8-阶段掌握标准">一百二十一、第 8 阶段掌握标准</h1>
+<p>如果现在不看前文，你能够自己解释下面这些问题，这一阶段就算真正掌握：</p>
+<blockquote>
+<p>Transformer 输出 Logits 后为什么还不能说已经生成了文字？</p>
+</blockquote>
+<blockquote>
+<p>模型和 Decoding Policy 到底是什么关系？</p>
+</blockquote>
+<blockquote>
+<p>Greedy 为什么通常更稳定？</p>
+</blockquote>
+<blockquote>
+<p>Greedy 是否仍然是一 Token 一 Token 生成？</p>
+</blockquote>
+<blockquote>
+<p>Sampling 为什么同一个 Prompt 可能产生不同答案？</p>
+</blockquote>
+<blockquote>
+<p>自回归为什么会放大最开始很小的 Sampling 差异？</p>
+</blockquote>
+<blockquote>
+<p>Temperature 真正改变的是知识还是概率分布？</p>
+</blockquote>
+<blockquote>
+<p>低 Temperature 为什么通常更保守？</p>
+</blockquote>
+<blockquote>
+<p>高 Temperature 为什么会让低概率 Token 更有机会？</p>
+</blockquote>
+<blockquote>
+<p>为什么高 Temperature 不等于模型更聪明？</p>
+</blockquote>
+<blockquote>
+<p>Top-k 到底在限制什么？</p>
+</blockquote>
+<blockquote>
+<p>Top-p 为什么是动态候选池？</p>
+</blockquote>
+<blockquote>
+<p>Top-k 和 Top-p 最核心的区别是什么？</p>
+</blockquote>
+<blockquote>
+<p><code>do_sample=True/False</code> 从心智模型上分别意味着什么？</p>
+</blockquote>
+<blockquote>
+<p>Random Seed 为什么对实验复现有意义？</p>
+</blockquote>
+<blockquote>
+<p>为什么不同模型 Benchmark 应统一 Generation Config？</p>
+</blockquote>
+<blockquote>
+<p>为什么“回答每次一样”不能证明模型真的有信心？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Sampling Randomness 和模型不确定性不是同一回事？</p>
+</blockquote>
+<blockquote>
+<p>为什么法规审查任务通常不应该把创造性当成第一目标？</p>
+</blockquote>
+<blockquote>
+<p>为什么降低 Temperature 无法根治幻觉？</p>
+</blockquote>
+<blockquote>
+<p>为什么结构正确的 JSON 仍然可能包含错误法规？</p>
+</blockquote>
+<blockquote>
+<p>为什么 ProcurementAI 应该把“分类、证据、解释、润色”尽可能分层？</p>
+</blockquote>
+<p>如果这些都能用自己的话说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>三</mi><mi>课</mi><mi>第</mi><mn>8</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第三课第8阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百二十二本阶段最终只记一句话">一百二十二、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>LLM 的 Weight 决定“下一步哪些 Token 看起来更合适”，而
+Greedy、Temperature、Top-k、Top-p 和 Sampling
+决定“这一次究竟从这些候选中选择哪一个”；生成策略可以改变输出的稳定性和多样性，却不会给模型增加知识，也不能替代证据、评测和事实校验。</strong></p>
+</blockquote>
+<p>最后压成一张图：</p>
+<pre class="text"><code>                 LLM
+                  │
+                  ▼
+               Logits
+        “所有候选的原始评分”
+                  │
+                  ▼
+             Temperature
+        “差距拉大还是拉平？”
+                  │
+                  ▼
+           Top-k / Top-p
+        “谁有资格进入候选池？”
+                  │
+                  ▼
+      ┌───────────┴───────────┐
+      │                       │
+    Greedy                  Sampling
+  选第一名                按概率抽取
+      │                       │
+      └───────────┬───────────┘
+                  ▼
+              Next Token
+                  │
+                  ▼
+             加回Context
+                  │
+                  ▼
+                 重复</code></pre>
+<h2 id="下一阶段第三课-第-9-阶段">下一阶段：第三课 · 第 9 阶段</h2>
+<h3
+id="为什么模型能跑还远远不等于模型服务能用ttfttpsthroughputlatencybatchingvllm-与-pagedattention-到底在解决什么">为什么“模型能跑”还远远不等于“模型服务能用”？TTFT、TPS、Throughput、Latency、Batching、vLLM
+与 PagedAttention 到底在解决什么？</h3>
+<p>第 9 阶段会把目前学到的：</p>
+<pre class="text"><code>Model
++
+GPU
++
+VRAM
++
+KV Cache
++
+Generation</code></pre>
+<p>真正带到<strong>生产推理</strong>。</p>
+<p>重点不是继续堆术语，而是解决一个非常现实的问题：</p>
+<blockquote>
+<p>两台服务器都说“可以跑 14B
+模型”，为什么一台只能一个人慢慢问，另一台却可以同时服务很多用户？</p>
+</blockquote>
+<p>我们会第一次真正区分：</p>
+<pre class="text"><code>TTFT
+=
+多久看到第一个Token
+
+TPS
+=
+后续Token生成多快
+
+Latency
+=
+一个请求整体等多久
+
+Throughput
+=
+整个系统单位时间能服务多少工作</code></pre>
+<p>然后再解释为什么：</p>
+<blockquote>
+<p><strong>Continuous
+Batching、PagedAttention、vLLM，本质上是在解决“怎样把 GPU 和 KV Cache
+用得更像一个高效率公共服务系统”，而不是让模型本身突然变聪明。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage07.html">← 第 7 阶段</a><a class="btn" href="stage09.html">第 9 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

@@ -1,0 +1,1096 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第3阶段：Evaluation Schema：到底评什么，不只是 Correct / Wrong</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第3阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>CorrectAnswer ≠ CompleteEvaluation。最终答案正确，不代表过程、证据和系统行为都可靠。</li><li>WhatYouMeasure → WhatYouCanImprove。评测维度决定你能诊断和优化到什么粒度。</li><li>TaskType → EvaluationLogic。分类、检索、生成、Agent 不应该被同一套指标粗暴衡量。</li></ul></div><h1 id="第九课-第-3-阶段">第九课 · 第 3 阶段</h1>
+<h1 id="evaluation-schema到底评什么不只是-correct-wrong-1">Evaluation
+Schema：到底评什么，不只是 Correct / Wrong</h1>
+<h2
+id="一个政府采购-ai-到底应该被拆成哪些能力维度评测为什么只给最终答案打一个对-错无法定位模型rag-和-agent-真正的问题-1">一个政府采购
+AI 到底应该被拆成哪些能力维度评测？为什么只给最终答案打一个“对 /
+错”，无法定位模型、RAG 和 Agent 真正的问题？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-2">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-2">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>CorrectAnswer ≠
+CompleteEvaluation。最终答案正确，不代表过程、证据和系统行为都可靠。</strong></li>
+<li><strong>WhatYouMeasure →
+WhatYouCanImprove。评测维度决定你能诊断和优化到什么粒度。</strong></li>
+<li><strong>TaskType → EvaluationLogic。分类、检索、生成、Agent
+不应该被同一套指标粗暴衡量。</strong></li>
+<li><strong>Outcome ≠
+Process。结果对不代表过程可靠，尤其在需要审计的系统里。</strong></li>
+<li><strong>SameErrorRate ≠
+SameRiskProfile。错误数量相同，错误结构和严重度可能完全不同。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-2">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>Citation</code></td>
+<td>引用：把生成结论和具体来源建立可追踪链接</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-2">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前两阶段，我们已经解决了两个最底层的问题：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mo>≠</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Benchmark
+\neq
+DatasetOnly
+}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>O</mi><mi>p</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExpertOpinion
+\neq
+GroundTruth
+}
+</annotation></semantics></math></p>
+<p>现在 Gold Set 已经有了相对可信的“标准答案”。</p>
+<p>但马上会出现第三个问题：</p>
+<blockquote>
+<p><strong>到底拿这些 Gold 样本评什么？</strong></p>
+</blockquote>
+<p>假设系统最终给出一个结论：</p>
+<pre class="text"><code>风险类型：地域限制
+结论：存在风险
+理由：要求供应商在本地设立服务机构</code></pre>
+<p>如果最终标签和 Gold 一样，我们能不能直接说：</p>
+<blockquote>
+<p>“这个样本评测通过”？</p>
+</blockquote>
+<p>不一定。</p>
+<p>因为系统可能：</p>
+<pre class="text"><code>结论碰巧对了
+但证据引用错了
+
+结论对了
+但理由是编的
+
+结论对了
+但RAG检索到了错误政策
+
+结论对了
+但Agent调用了错误工具
+
+结论对了
+但遇到信息不足时本应该拒答</code></pre>
+<p>所以本阶段最重要的边界是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorrectAnswer
+\neq
+CompleteEvaluation
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementevaluationschema_v0.1-1"><code>ProcurementEvaluationSchema_V0.1</code></h1>
+<hr />
+<h1 id="一evaluation-schema-到底是什么">一、Evaluation Schema
+到底是什么？</h1>
+<h1 id="evaluation-schema">Evaluation Schema</h1>
+<h2 id="评测结构">评测结构</h2>
+<p>它回答的不是：</p>
+<blockquote>
+<p>“用什么 Metric？”</p>
+</blockquote>
+<p>而是更前一层：</p>
+<blockquote>
+<p><strong>一个样本到底要从哪些维度被判定。</strong></p>
+</blockquote>
+<p>可以把它表示成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mo>=</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mo>+</mo><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>D</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mo>+</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>T</mi><mi>a</mi><mi>x</mi><mi>o</mi><mi>n</mi><mi>o</mi><mi>m</mi><mi>y</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EvaluationSchema
+=
+EvaluationUnit
++
+CapabilityDimensions
++
+Outcome
++
+Process
++
+Evidence
++
+ErrorTaxonomy
++
+Severity
+}
+</annotation></semantics></math></p>
+<p>中文就是：</p>
+<blockquote>
+<p>先定义评测单元，再定义能力维度、最终结果、过程、证据、错误类型和错误严重度。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>是</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>的</mi><mi>一</mi><mi>部</mi><mi>分</mi><mi>不</mi><mi>是</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>本</mi><mi>身</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Metric
+是Schema的一部分
+不是Schema本身
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二核心心智模型-①-1">二、核心心智模型 ①</h1>
+<h1
+id="whatyoumeasure-决定-whatyoucanimprove"><code>WhatYouMeasure</code>
+决定 <code>WhatYouCanImprove</code></h1>
+<p>如果 Benchmark 只记录：</p>
+<pre class="text"><code>final_correct = true / false</code></pre>
+<p>那么系统失败时你只能知道：</p>
+<blockquote>
+<p>“错了。”</p>
+</blockquote>
+<p>却不知道：</p>
+<pre class="text"><code>Retriever没找到？
+Reranker排错？
+LLM理解错？
+证据引用错？
+Agent工具选错？
+格式错？
+该拒答却没拒答？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>⇒</mo><mi>C</mi><mi>o</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CoarseEvaluation
+\Rightarrow
+CoarseDiagnosis
+}
+</annotation></semantics></math></p>
+<p>评测 Schema 越粗，</p>
+<p>你能做的工程诊断就越粗。</p>
+<hr />
+<h1 id="三第一步定义-evaluation-unit">三、第一步：定义 Evaluation
+Unit</h1>
+<h1 id="evaluation-unit">Evaluation Unit</h1>
+<h2 id="评测单元">评测单元</h2>
+<p>到底“一条评测样本”是什么？</p>
+<p>可以是：</p>
+<pre class="text"><code>一个分类样本
+一个问题
+一段采购条款
+一份完整文档
+一次RAG问答
+一次Agent任务
+一个完整采购工作流</code></pre>
+<p>这些不是同一种 Evaluation Unit。</p>
+<p>例如：</p>
+<h3 id="item-level">Item-level</h3>
+<p>样本级</p>
+<p>评：</p>
+<blockquote>
+<p>单条输入输出。</p>
+</blockquote>
+<h3 id="document-level">Document-level</h3>
+<p>文档级</p>
+<p>评：</p>
+<blockquote>
+<p>一份完整采购文件的理解。</p>
+</blockquote>
+<h3 id="session-level">Session-level</h3>
+<p>会话级</p>
+<p>评：</p>
+<blockquote>
+<p>多轮交互是否保持状态。</p>
+</blockquote>
+<h3 id="task-level">Task-level</h3>
+<p>任务级</p>
+<p>评：</p>
+<blockquote>
+<p>Agent 是否最终完成真实目标。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>决</mi><mi>定</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EvaluationUnit
+决定
+MetricMeaning
+}
+</annotation></semantics></math></p>
+<p>如果 Unit 定义不清，</p>
+<p>不同指标会混在一起。</p>
+<hr />
+<h1 id="四task-taxonomy先把任务类型分清">四、Task
+Taxonomy：先把任务类型分清</h1>
+<p>政府采购 AI 至少可能包含：</p>
+<pre class="text"><code>Classification
+分类
+
+Extraction
+信息抽取
+
+Retrieval
+检索
+
+Ranking
+排序
+
+Question Answering
+问答
+
+Summarization
+摘要
+
+Risk Analysis
+风险分析
+
+Citation
+引用
+
+Tool Calling
+工具调用
+
+Workflow Completion
+工作流完成</code></pre>
+<p>每类任务的“正确”都不同。</p>
+<p>例如：</p>
+<blockquote>
+<p>Classification 可以有明确标签。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>Generation 往往不是唯一正确文本。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>不</mi><mi>能</mi><mi>覆</mi><mi>盖</mi><mi>A</mi><mi>l</mi><mi>l</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>T</mi><mi>y</mi><mi>p</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneMetric
+不能覆盖
+AllTaskTypes
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五核心心智模型-②-1">五、核心心智模型 ②</h1>
+<h1 id="tasktype-决定-evaluationlogic"><code>TaskType</code> 决定
+<code>EvaluationLogic</code></h1>
+<p>分类任务：</p>
+<blockquote>
+<p>更适合 Confusion Matrix、Precision、Recall、F1。</p>
+</blockquote>
+<p>检索任务：</p>
+<blockquote>
+<p>更适合 Recall@K、MRR、nDCG。</p>
+</blockquote>
+<p>生成任务：</p>
+<blockquote>
+<p>更适合事实性、Groundedness、完整性、引用质量等 Rubric。</p>
+</blockquote>
+<p>Agent：</p>
+<blockquote>
+<p>更关心 Task Completion、Tool Correctness、Recovery、Safety。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>C</mi><mi>h</mi><mi>o</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>必</mi><mi>须</mi><mi>由</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>s</mi><mi>驱</mi><mi>动</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MetricChoice
+必须由
+TaskSemantics
+驱动
+}
+</annotation></semantics></math></p>
+<p>不是哪个 Metric 流行就用哪个。</p>
+<hr />
+<h1 id="六capability-dimension不要把所有能力混成一个分数">六、Capability
+Dimension：不要把所有能力混成一个分数</h1>
+<h1 id="capability-dimension">Capability Dimension</h1>
+<h2 id="能力维度">能力维度</h2>
+<p>对政府采购系统，可以拆成：</p>
+<pre class="text"><code>Domain Understanding
+领域理解
+
+Factual Correctness
+事实正确性
+
+Risk Recognition
+风险识别
+
+Evidence Grounding
+证据支撑
+
+Citation Correctness
+引用正确性
+
+Instruction Following
+指令遵循
+
+Structured Output
+结构化输出
+
+Abstention
+拒答与不确定性
+
+Retrieval Quality
+检索质量
+
+Tool Use
+工具使用
+
+Task Completion
+任务完成
+
+Safety / Policy Compliance
+安全与策略遵循</code></pre>
+<p>于是一个样本可能：</p>
+<pre class="text"><code>结论正确 = 1
+证据正确 = 0
+引用正确 = 0
+格式正确 = 1</code></pre>
+<p>这比：</p>
+<pre class="text"><code>overall = 1</code></pre>
+<p>信息量高得多。</p>
+<hr />
+<h1 id="七outcome-metric-和-process-metric-必须分开">七、Outcome Metric
+和 Process Metric 必须分开</h1>
+<h1 id="outcome-metric">Outcome Metric</h1>
+<h2 id="结果指标">结果指标</h2>
+<p>回答：</p>
+<blockquote>
+<p>最终结果对不对？</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>最终风险类型是否正确
+最终答案是否正确
+任务是否完成</code></pre>
+<h1 id="process-metric">Process Metric</h1>
+<h2 id="过程指标">过程指标</h2>
+<p>回答：</p>
+<blockquote>
+<p>系统是怎样得到这个结果的？</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>是否检索到正确证据
+是否调用正确工具
+是否使用了正确参数
+是否进行了必要复核</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Outcome
+\neq
+Process
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八核心心智模型-③-1">八、核心心智模型 ③</h1>
+<h1
+id="rightanswerforwrongreason-仍然是系统风险"><code>RightAnswerForWrongReason</code>
+仍然是系统风险</h1>
+<p>如果系统：</p>
+<blockquote>
+<p>通过错误证据碰巧给出正确结论，</p>
+</blockquote>
+<p>今天可能得分。</p>
+<p>但换一个样本：</p>
+<blockquote>
+<p>很可能崩。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi><mo>+</mo><mi>I</mi><mi>n</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorrectOutcome
++
+InvalidProcess
+\neq
+ReliableSystem
+}
+</annotation></semantics></math></p>
+<p>特别是政府采购这类需要：</p>
+<pre class="text"><code>可解释
+可审计
+可追溯</code></pre>
+<p>的场景，</p>
+<p>过程质量不能被忽略。</p>
+<hr />
+<h1 id="九evidence-quality证据本身也要评">九、Evidence
+Quality：证据本身也要评</h1>
+<p>对于有 RAG 或引用的系统，</p>
+<p>不能只看：</p>
+<blockquote>
+<p>“有没有引用。”</p>
+</blockquote>
+<p>还要分：</p>
+<pre class="text"><code>Evidence Relevance
+证据是否相关
+
+Evidence Sufficiency
+证据是否足够
+
+Evidence Correctness
+证据是否支持结论
+
+Evidence Coverage
+关键结论是否都有证据</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CitationPresent
+\neq
+EvidenceValid
+}
+</annotation></semantics></math></p>
+<p>有引用，</p>
+<p>不代表引用真的支持答案。</p>
+<hr />
+<h1 id="十error-taxonomy错误分类体系为什么重要">十、Error
+Taxonomy：错误分类体系为什么重要？</h1>
+<p>假设 100 个失败样本。</p>
+<p>如果只记：</p>
+<pre class="text"><code>wrong = 100</code></pre>
+<p>价值很低。</p>
+<p>更专业的做法是：</p>
+<h1 id="error-taxonomy">Error Taxonomy</h1>
+<h2 id="错误分类体系">错误分类体系</h2>
+<p>例如：</p>
+<pre class="text"><code>E1 Domain Misunderstanding
+领域理解错误
+
+E2 Retrieval Miss
+检索漏召回
+
+E3 Ranking Error
+排序错误
+
+E4 Unsupported Claim
+无证据断言
+
+E5 Wrong Citation
+错误引用
+
+E6 Instruction Violation
+指令违反
+
+E7 Schema Error
+结构输出错误
+
+E8 Overclaim
+过度确定
+
+E9 Failed Abstention
+该拒答未拒答
+
+E10 Tool Error
+工具调用错误
+
+E11 State Error
+状态管理错误
+
+E12 Completion Failure
+任务未完成</code></pre>
+<p>这样才能回答：</p>
+<blockquote>
+<p>新模型到底把哪类错误减少了？</p>
+</blockquote>
+<hr />
+<h1 id="十一核心心智模型-④-1">十一、核心心智模型 ④</h1>
+<h1 id="errorcount-不如-errorstructure-有价值"><code>ErrorCount</code>
+不如 <code>ErrorStructure</code> 有价值</h1>
+<p>两个系统都错 100 条：</p>
+<pre class="text"><code>系统A：
+90条格式错
+10条事实错
+
+系统B：
+10条格式错
+90条事实错</code></pre>
+<p>这两个系统风险完全不同。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameErrorRate
+\neq
+SameRiskProfile
+}
+</annotation></semantics></math></p>
+<p>评测必须理解：</p>
+<blockquote>
+<p>错误结构。</p>
+</blockquote>
+<hr />
+<h1
+id="十二severity错误严重度必须进入-schema">十二、Severity：错误严重度必须进入
+Schema</h1>
+<p>同样是一个错误：</p>
+<pre class="text"><code>少一个标点</code></pre>
+<p>和：</p>
+<pre class="text"><code>把高风险限制条款判断成无风险</code></pre>
+<p>不能同等对待。</p>
+<p>所以需要：</p>
+<h1 id="severity">Severity</h1>
+<h2 id="错误严重度">错误严重度</h2>
+<p>例如：</p>
+<pre class="text"><code>S0 Cosmetic
+展示问题
+
+S1 Minor
+轻微错误
+
+S2 Material
+影响业务判断
+
+S3 Critical
+可能导致重大决策风险</code></pre>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ErrorProbability
+\neq
+ErrorCost
+}
+</annotation></semantics></math></p>
+<p>这为后面：</p>
+<blockquote>
+<p>风险加权、Release Gate</p>
+</blockquote>
+<p>打基础。</p>
+<hr />
+<h1 id="十三partial-credit生成任务为什么不能只有-0-1">十三、Partial
+Credit：生成任务为什么不能只有 0 / 1？</h1>
+<p>一段回答可能：</p>
+<pre class="text"><code>结论正确
+理由部分正确
+证据不完整
+格式完全正确</code></pre>
+<p>如果直接：</p>
+<pre class="text"><code>score = 0</code></pre>
+<p>会丢失信息。</p>
+<p>如果：</p>
+<pre class="text"><code>score = 1</code></pre>
+<p>又过于乐观。</p>
+<p>所以可以采用：</p>
+<h1 id="partial-credit">Partial Credit</h1>
+<h2 id="部分得分">部分得分</h2>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>维度</th>
+<th style="text-align: right;">分数</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>结论正确</td>
+<td style="text-align: right;">1.0</td>
+</tr>
+<tr class="even">
+<td>理由完整</td>
+<td style="text-align: right;">0.7</td>
+</tr>
+<tr class="odd">
+<td>证据充分</td>
+<td style="text-align: right;">0.5</td>
+</tr>
+<tr class="even">
+<td>引用正确</td>
+<td style="text-align: right;">1.0</td>
+</tr>
+<tr class="odd">
+<td>格式遵循</td>
+<td style="text-align: right;">1.0</td>
+</tr>
+</tbody>
+</table>
+<p>但需要注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>必</mi><mi>须</mi><mi>有</mi><mi>R</mi><mi>u</mi><mi>b</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PartialCredit
+必须有Rubric
+}
+</annotation></semantics></math></p>
+<p>不能靠评测者随意感觉。</p>
+<hr />
+<h1 id="十四核心心智模型-⑤-1">十四、核心心智模型 ⑤</h1>
+<h1
+id="partialcredit-的价值在诊断不在制造漂亮小数"><code>PartialCredit</code>
+的价值在诊断，不在制造漂亮小数</h1>
+<p>如果最终只是算：</p>
+<pre class="text"><code>0.83</code></pre>
+<p>但不知道 0.83 来自哪里，</p>
+<p>意义仍然有限。</p>
+<p>更重要的是：</p>
+<blockquote>
+<p>每个维度为什么得这个分。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>&gt;</mo><mi>O</mi><mi>p</mi><mi>a</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DecomposedScore
+&gt;
+OpaqueScore
+}
+</annotation></semantics></math></p>
+<p>这里的 <code>&gt;</code> 表示：</p>
+<blockquote>
+<p>工程诊断价值更高。</p>
+</blockquote>
+<hr />
+<h1 id="十五composite-score能不能把所有东西合成一个总分">十五、Composite
+Score：能不能把所有东西合成一个总分？</h1>
+<p>可以，</p>
+<p>但必须谨慎。</p>
+<h1 id="composite-score">Composite Score</h1>
+<h2 id="复合指标">复合指标</h2>
+<p>可以概念化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mo>=</mo><munder><mo>∑</mo><mi>i</mi></munder><msub><mi>w</mi><mi>i</mi></msub><msub><mi>s</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">
+S
+=
+\sum_i w_i s_i
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>i</mi></msub><mo>=</mo><mi>第</mi><mi>i</mi><mi>个</mi><mi>能</mi><mi>力</mi><mi>维</mi><mi>度</mi><mi>权</mi><mi>重</mi></mrow><annotation encoding="application/x-tex">
+w_i
+=
+第i个能力维度权重
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>s</mi><mi>i</mi></msub><mo>=</mo><mi>该</mi><mi>维</mi><mi>度</mi><mi>得</mi><mi>分</mi></mrow><annotation encoding="application/x-tex">
+s_i
+=
+该维度得分
+</annotation></semantics></math></p>
+<p>但风险是：</p>
+<blockquote>
+<p>高分维度可以把关键失败“平均掉”。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>格式 100
+语言 95
+事实 60
+安全 40</code></pre>
+<p>如果直接平均，</p>
+<p>总分仍可能看起来不错。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>不</mi><mi>能</mi><mi>替</mi><mi>代</mi><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CompositeScore
+不能替代
+CriticalGate
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六核心心智模型-⑥">十六、核心心智模型 ⑥</h1>
+<h1
+id="weightedaverage-不能把-critical-failure-洗掉"><code>WeightedAverage</code>
+不能把 Critical Failure 洗掉</h1>
+<p>对关键能力应该设置：</p>
+<h1 id="hard-gate">Hard Gate</h1>
+<h2 id="硬门槛">硬门槛</h2>
+<p>例如：</p>
+<pre class="text"><code>Critical Risk Recall &gt;= threshold
+
+Citation Correctness &gt;= threshold
+
+Failed Abstention &lt;= threshold</code></pre>
+<p>即使综合分很高，</p>
+<p>只要关键门槛没过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><mi>F</mi><mi>a</mi><mi>l</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseGate=False
+}
+</annotation></semantics></math></p>
+<p>这比单一总分安全得多。</p>
+<hr />
+<h1 id="十七evaluation-record每次评测到底要保存什么">十七、Evaluation
+Record：每次评测到底要保存什么？</h1>
+<p>建议每个样本记录：</p>
+<pre class="text"><code>benchmark_item_id
+
+task_type
+
+input
+
+gold_output
+
+gold_evidence
+
+model_output
+
+retrieved_context
+
+tool_trace
+
+outcome_score
+
+process_score
+
+evidence_score
+
+error_codes
+
+severity
+
+slice_tags
+
+judge_version
+
+metric_version
+
+evaluation_timestamp</code></pre>
+<p>这样评测不是一张最终分数表。</p>
+<p>而是：</p>
+<h1 id="evaluation-trace">Evaluation Trace</h1>
+<h2 id="评测追踪记录">评测追踪记录</h2>
+<hr />
+<h1 id="十八judge-到底是谁">十八、Judge 到底是谁？</h1>
+<p>不同任务可能使用：</p>
+<pre class="text"><code>Exact Matcher
+精确规则
+
+Programmatic Scorer
+程序评分器
+
+Domain Expert
+领域专家
+
+LLM-as-a-Judge
+大模型裁判
+
+Hybrid Judge
+混合裁判</code></pre>
+<p>所以 Evaluation Schema 还必须明确：</p>
+<h1 id="judge-type">Judge Type</h1>
+<h2 id="裁判类型">裁判类型</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>依</mi><mi>赖</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Score
+依赖
+Judge
+}
+</annotation></semantics></math></p>
+<p>如果 Judge 变了，</p>
+<p>分数也可能变。</p>
+<hr />
+<h1 id="十九核心心智模型-⑦-1">十九、核心心智模型 ⑦</h1>
+<h1
+id="judgeversion-也是-benchmark-protocol-的一部分"><code>JudgeVersion</code>
+也是 Benchmark Protocol 的一部分</h1>
+<p>如果使用 LLM-as-a-Judge，</p>
+<p>至少要版本化：</p>
+<pre class="text"><code>judge_model
+
+judge_prompt
+
+judge_temperature
+
+rubric_version</code></pre>
+<p>否则：</p>
+<blockquote>
+<p>同一个模型输出，换了 Judge，分数可能变。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>t</mi><mi>o</mi><mi>c</mi><mi>o</mi><mi>l</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+JudgeChange
+=
+ProtocolChange
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十evaluation-schema-应该支持-modelragagent-共用吗">二十、Evaluation
+Schema 应该支持 Model、RAG、Agent 共用吗？</h1>
+<p>应该：</p>
+<blockquote>
+<p>共用顶层框架，但允许任务专属字段。</p>
+</blockquote>
+<p>可以设计：</p>
+<pre class="text"><code>Common Layer
+通用层
+
++
+Task-specific Layer
+任务专属层</code></pre>
+<p>Common Layer：</p>
+<pre class="text"><code>correctness
+severity
+evidence
+slice
+error_type</code></pre>
+<p>RAG Layer：</p>
+<pre class="text"><code>retrieval_recall
+ranking
+context_quality</code></pre>
+<p>Agent Layer：</p>
+<pre class="text"><code>tool_selection
+tool_args
+state
+recovery
+completion</code></pre>
+<p>这样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mo>+</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SharedSchema
++
+TaskSpecificSchema
+}
+</annotation></semantics></math></p>
+<p>既能统一，</p>
+<p>又不会强行一刀切。</p>
+<hr />
+<h1 id="二十一evaluation-schema-的版本也必须冻结">二十一、Evaluation
+Schema 的版本也必须冻结</h1>
+<p>例如：</p>
+<pre class="text"><code>ProcurementEvaluationSchema_V1.0</code></pre>
+<p>以后发现：</p>
+<blockquote>
+<p>需要新增“Abstention Quality”。</p>
+</blockquote>
+<p>应该：</p>
+<pre class="text"><code>ProcurementEvaluationSchema_V1.1</code></pre>
+<p>而不是直接改旧字段。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>可</mi><mi>能</mi><mi>改</mi><mi>变</mi><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SchemaChange
+可能改变
+HistoricalScoreMeaning
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十二本阶段正式工程产物">二十二、本阶段正式工程产物</h1>
+<h1
+id="procurementevaluationschema_v0.1-2"><code>ProcurementEvaluationSchema_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>evaluation_schema_version
+
+evaluation_unit
+
+task_taxonomy
+
+capability_dimensions
+
+outcome_metrics
+
+process_metrics
+
+evidence_metrics
+
+error_taxonomy
+
+severity_levels
+
+partial_credit_policy
+
+composite_score_policy
+
+critical_gate_policy
+
+judge_type
+
+judge_version
+
+task_specific_fields
+
+slice_fields
+
+evaluation_trace_schema
+
+schema_versioning_policy</code></pre>
+<p>每个 Evaluation Item 至少记录：</p>
+<pre class="text"><code>item_id
+
+task_type
+
+gold_reference
+
+gold_evidence
+
+system_output
+
+system_trace
+
+dimension_scores
+
+error_codes
+
+severity
+
+slice_tags
+
+judge_metadata
+
+final_status</code></pre>
+<hr />
+<h1 id="二十三本阶段最重要的-9-个核心心智模型">二十三、本阶段最重要的 9
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>CorrectAnswer ≠ CompleteEvaluation</code>。最终答案正确，不代表过程、证据和系统行为都可靠。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>WhatYouMeasure → WhatYouCanImprove</code>。评测维度决定你能诊断和优化到什么粒度。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>TaskType → EvaluationLogic</code>。分类、检索、生成、Agent
+不应该被同一套指标粗暴衡量。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Outcome ≠ Process</code>。结果对不代表过程可靠，尤其在需要审计的系统里。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>SameErrorRate ≠ SameRiskProfile</code>。错误数量相同，错误结构和严重度可能完全不同。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑥：<code>PartialCredit</code> 必须基于
+Rubric。部分得分是诊断工具，不是随意打小数。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>CompositeScore ≠ ReleaseGate</code>。综合分不能掩盖关键能力失败。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑧：<code>JudgeVersion</code> 属于 Benchmark
+Protocol。换裁判就等于改变评测协议。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>SharedSchema + TaskSpecificSchema</code>。统一评测框架和任务专属维度必须同时存在。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四把-evaluation-schema-压成一张专业工程图">二十四、把
+Evaluation Schema 压成一张专业工程图</h1>
+<pre class="text"><code>                         Benchmark Item
+                           Gold样本
+                              │
+                              ▼
+                       Evaluation Unit
+                         定义评测单元
+                              │
+                              ▼
+                         Task Taxonomy
+                           识别任务类型
+                              │
+                              ▼
+                    Capability Dimensions
+                       拆分能力维度
+               ┌──────────────┼──────────────┐
+               ▼              ▼              ▼
+            Outcome         Process        Evidence
+             结果            过程            证据
+               │              │              │
+               └──────────────┼──────────────┘
+                              ▼
+                        Error Taxonomy
+                         错误类型归因
+                              │
+                              ▼
+                           Severity
+                          错误严重度
+                              │
+                              ▼
+                     Partial / Exact Score
+                         分维度评分
+                              │
+                              ▼
+                        Critical Gates
+                         关键能力门槛
+                              │
+                              ▼
+                       Evaluation Trace
+                         评测记录</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Evaluation Schema
+的本质不是“给模型打多少分”，而是把一次系统输出拆成结果、过程、证据、错误类型和严重度，使我们既能公平比较版本，又能知道系统到底为什么成功、为什么失败。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第九课-第-3-阶段掌握测试">第九课 · 第 3 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Correct Answer 不等于 Complete
+Evaluation；Evaluation Unit 为什么会改变指标含义；Task Taxonomy
+为什么必须先于 Metric；Outcome Metric 和 Process Metric
+有什么区别；为什么 Right Answer for Wrong Reason
+仍然是系统风险；Evidence Quality 应该拆成哪些维度；Error Taxonomy
+为什么比单纯 Error Count 更有价值；Severity 为什么必须进入
+Schema；Partial Credit 为什么需要 Rubric；Composite Score 为什么不能替代
+Critical Gate；Judge 为什么也要版本化；为什么 RAG、Agent 需要
+Task-specific Schema；以及为什么 Evaluation Schema
+本身也必须版本化。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>九</mi><mi>课</mi><mi>第</mi><mn>3</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第九课第3阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第九课-第-4-阶段">下一阶段：第九课 · 第 4 阶段</h1>
+<h1
+id="classification-metricsprecisionrecallf1pr-auc-与业务代价">Classification
+Metrics：Precision、Recall、F1、PR-AUC 与业务代价</h1>
+<h2
+id="为什么采购风险识别不能只看-accuracyfalse-negative-和-false-positive-在业务上到底谁更贵">为什么采购风险识别不能只看
+Accuracy？False Negative 和 False Positive 在业务上到底谁更贵？</h2>
+<p>下一阶段最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Accuracy
+\neq
+RiskQuality
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementclassificationmetricpolicy_v0.1"><code>ProcurementClassificationMetricPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage02.html">← 第 2 阶段</a><a class="btn" href="stage04.html">第 4 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

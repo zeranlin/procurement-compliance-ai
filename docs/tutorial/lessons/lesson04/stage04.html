@@ -1,0 +1,3347 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第4阶段：数据清洗与规范化</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>Cleaning ≠ Rewriting 清洗不是改写原文</li><li>原始文本必须保留， Normalized Text 应该是派生版本</li><li>可以统一“表现形式”， 不能擅自统一“业务含义”</li></ul></div><h1 id="第四课-第-4-阶段数据清洗与规范化">第四课 · 第 4
+阶段：数据清洗与规范化</h1>
+<h2
+id="为什么看起来更干净不一定代表数据更正确哪些东西可以删哪些字符绝对不能乱改">为什么“看起来更干净”不一定代表“数据更正确”？哪些东西可以删，哪些字符绝对不能乱改？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Cleaning ≠ Rewriting 清洗不是改写原文</strong></li>
+<li><strong>原始文本必须保留， Normalized Text
+应该是派生版本</strong></li>
+<li><strong>可以统一“表现形式”， 不能擅自统一“业务含义”</strong></li>
+<li><strong>数字、单位、否定词、比较符号、日期、编号
+都属于高风险信息</strong></li>
+<li><strong>自动修复必须可追踪、可回滚、可审计</strong></li>
+<li><strong>不确定的时候， 宁可标 Warning，也不要偷偷猜</strong></li>
+<li><strong>Cleaning ≠ Rewriting</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Raw Document</code></td>
+<td>原始文档：未经结构化处理的采购文件源材料</td>
+</tr>
+<tr class="even">
+<td><code>Normalization</code></td>
+<td>规范化：稳定中间激活与训练过程</td>
+</tr>
+<tr class="odd">
+<td><code>OCR</code></td>
+<td>OCR：把扫描图像中的文字转换成机器可读文本</td>
+</tr>
+<tr class="even">
+<td><code>Block</code></td>
+<td>版面块：文档解析后保留布局和位置的基本块</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Value</code></td>
+<td>Value/V：被注意力权重实际汇聚的内容向量</td>
+</tr>
+<tr class="even">
+<td><code>Recovery</code></td>
+<td>恢复：工具失败或中断后安全重试、降级和继续</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="even">
+<td><code>Layout</code></td>
+<td>版面结构：文字块、表格、列、坐标和阅读顺序信息</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第三阶段结束以后，我们已经完成了一件非常关键的事：</p>
+<pre class="text"><code>Raw Document
+      ↓
+ParsedDocument_V0.1
+      ↓
+Section Tree
+      ↓
+ClauseUnit_V0.1</code></pre>
+<p>也就是说，现在机器已经不只是拿到一堆 PDF 字符，而是开始知道：</p>
+<pre class="text"><code>这句话来自哪个项目
+来自哪份文件
+属于哪一章
+属于哪一节
+是不是一条完整 Clause
+原文在哪一页
+由哪些 Block 构成</code></pre>
+<p>接下来很多团队会非常自然地做一件事：</p>
+<blockquote>
+<p>“现在文本有了，我们清洗一下吧。”</p>
+</blockquote>
+<p>然后开始：</p>
+<div class="sourceCode" id="cb683"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb683-1"><a href="#cb683-1" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> text.replace(<span class="st">&quot; &quot;</span>, <span class="st">&quot;&quot;</span>)</span>
+<span id="cb683-2"><a href="#cb683-2" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> text.replace(<span class="st">&quot;</span><span class="ch">\n</span><span class="st">&quot;</span>, <span class="st">&quot;&quot;</span>)</span>
+<span id="cb683-3"><a href="#cb683-3" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> text.replace(<span class="st">&quot;</span><span class="ch">\t</span><span class="st">&quot;</span>, <span class="st">&quot;&quot;</span>)</span>
+<span id="cb683-4"><a href="#cb683-4" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> text.strip()</span></code></pre></div>
+<p>再加几十条正则。</p>
+<p>最后数据看起来非常漂亮。</p>
+<p>但这里藏着第四课里一个非常危险的问题：</p>
+<h1 id="更干净不一定等于更正确">“更干净”不一定等于“更正确”。</h1>
+<p>例如原文是：</p>
+<pre class="text"><code>投标报价不得超过 500 万元。</code></pre>
+<p>清理成：</p>
+<pre class="text"><code>投标报价不得超过500万元。</code></pre>
+<p>通常没什么问题。</p>
+<p>但如果某个清洗规则把：</p>
+<pre class="text"><code>不得</code></pre>
+<p>误删，变成：</p>
+<pre class="text"><code>投标报价超过500万元。</code></pre>
+<p>这已经不是格式错误了。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>语义被反转。</strong></p>
+</blockquote>
+<p>所以第四阶段真正要建立的不是一堆 <code>.replace()</code>。</p>
+<p>而是：</p>
+<h1 id="一套安全清洗的边界意识">一套“安全清洗”的边界意识。</h1>
+<hr />
+<h1
+id="一本阶段真正要解决的一个核心问题-2">一、本阶段真正要解决的一个核心问题</h1>
+<p>今天只解决：</p>
+<blockquote>
+<p><strong>怎样在不改变采购文件原始业务含义的前提下，把
+<code>ClauseUnit_V0.1</code>
+变成适合去重、标注、训练、检索和评测的规范文本？</strong></p>
+</blockquote>
+<p>也就是：</p>
+<pre class="text"><code>ClauseUnit_V0.1
+      ↓
+Safe Normalization
+      ↓
+CleanClause_V0.1</code></pre>
+<p>这里最重要的词不是：</p>
+<blockquote>
+<p>Clean。</p>
+</blockquote>
+<p>而是：</p>
+<h1 id="safe">Safe</h1>
+<hr />
+<h1 id="二先建立今天最重要的-6-个核心心智模型">二、先建立今天最重要的 6
+个核心心智模型</h1>
+<pre class="text"><code>① Cleaning ≠ Rewriting
+   清洗不是改写原文
+
+② 原始文本必须保留，
+   Normalized Text 应该是派生版本
+
+③ 可以统一“表现形式”，
+   不能擅自统一“业务含义”
+
+④ 数字、单位、否定词、比较符号、日期、编号
+   都属于高风险信息
+
+⑤ 自动修复必须可追踪、可回滚、可审计
+
+⑥ 不确定的时候，
+   宁可标 Warning，也不要偷偷猜</code></pre>
+<p>如果这六句话真正理解，</p>
+<p>第四阶段最重要的东西就掌握了一半。</p>
+<hr />
+<h1 id="三先把-cleaning-和-normalization-分开">三、先把 Cleaning 和
+Normalization 分开</h1>
+<p>这两个词经常混着用。</p>
+<p>可以先这样理解。</p>
+<h1 id="cleaning-2">Cleaning</h1>
+<p>主要解决：</p>
+<blockquote>
+<p>明显噪声。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>重复页眉
+重复页脚
+乱码控制字符
+OCR产生的异常空白
+无意义的页面装饰</code></pre>
+<hr />
+<h1 id="四normalization">四、Normalization</h1>
+<p>主要解决：</p>
+<blockquote>
+<p>同一个东西有很多不同写法。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>５００万元</code></pre>
+<p>和：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>可以规范成：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>全角数字和半角数字在这里通常只是表现形式不同。</p>
+</blockquote>
+<hr />
+<h1 id="五但这两个操作都不能变成">五、但这两个操作都不能变成</h1>
+<h1 id="semantic-editing">Semantic Editing</h1>
+<p>例如：</p>
+<pre class="text"><code>注册资本不低于500万元</code></pre>
+<p>不能为了“更自然”改成：</p>
+<pre class="text"><code>企业规模应达到较高水平</code></pre>
+<p>这已经不是 Normalization。</p>
+<p>而是：</p>
+<blockquote>
+<p>改写。</p>
+</blockquote>
+<hr />
+<h1
+id="六所以今天第一个非常重要的边界">六、所以今天第一个非常重要的边界</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>p</mi><mi>h</mi><mi>r</mi><mi>a</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Normalization
+\neq
+Paraphrasing
+}
+</annotation></semantics></math></p>
+<p>我们的目标不是让文字：</p>
+<blockquote>
+<p>更漂亮。</p>
+</blockquote>
+<p>而是让文字：</p>
+<blockquote>
+<p><strong>机器更容易稳定处理，同时保持原始语义。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七最推荐的数据结构是什么">七、最推荐的数据结构是什么？</h1>
+<p>永远不要只有：</p>
+<pre class="text"><code>clean_text</code></pre>
+<p>最好至少保留：</p>
+<pre class="text"><code>raw_text</code></pre>
+<p>和：</p>
+<pre class="text"><code>normalized_text</code></pre>
+<p>例如：</p>
+<div class="sourceCode" id="cb699"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb699-1"><a href="#cb699-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb699-2"><a href="#cb699-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;raw_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商注册资本不得低于５００ 万元。&quot;</span><span class="fu">,</span></span>
+<span id="cb699-3"><a href="#cb699-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalized_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商注册资本不得低于500万元。&quot;</span></span>
+<span id="cb699-4"><a href="#cb699-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="八为什么一定要保留-raw">八、为什么一定要保留 Raw？</h1>
+<p>因为半年后如果有人问：</p>
+<blockquote>
+<p>“500 万元是不是原文件真的这么写？”</p>
+</blockquote>
+<p>你可以直接检查：</p>
+<pre class="text"><code>raw_text</code></pre>
+<hr />
+<h1 id="九如果只保存-normalized-text">九、如果只保存 Normalized
+Text</h1>
+<p>你看到：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>却不知道：</p>
+<blockquote>
+<p>原来是不是 <code>５００ 万元</code></p>
+</blockquote>
+<p>甚至不知道：</p>
+<blockquote>
+<p>清洗器有没有把别的东西改错。</p>
+</blockquote>
+<hr />
+<h1 id="十所以推荐的基本结构是">十、所以推荐的基本结构是</h1>
+<pre class="text"><code>Original Source
+      ↓
+Raw Parsed Text
+      ↓
+Normalized Text
+      ↓
+Training / Retrieval View</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>Original
+↓
+疯狂replace
+↓
+覆盖原文</code></pre>
+<hr />
+<h1 id="十一这和照片修图完全一样">十一、这和照片修图完全一样</h1>
+<p>你不会因为：</p>
+<blockquote>
+<p>调亮了照片</p>
+</blockquote>
+<p>就把：</p>
+<blockquote>
+<p>RAW 原片删掉。</p>
+</blockquote>
+<p>数据工程也一样。</p>
+<hr />
+<h1 id="十二今天第二个核心心智模型">十二、今天第二个核心心智模型</h1>
+<h1 id="派生不覆盖">派生，不覆盖</h1>
+<p>可以记成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Raw
+\rightarrow
+Derived
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mo>→</mo><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>w</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Raw
+\rightarrow
+Overwrite
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十三现在开始处理最基础的问题whitespace">十三、现在开始处理最基础的问题：Whitespace</h1>
+<p>空格。</p>
+<p>政府采购解析结果里可能出现：</p>
+<pre class="text"><code>供应商    应    具有</code></pre>
+<p>或者：</p>
+<pre class="text"><code>供应商应具 有独立承担民事责任的能力</code></pre>
+<hr />
+<h1 id="十四这些空格可能来自">十四、这些空格可能来自</h1>
+<pre class="text"><code>PDF坐标
+OCR
+表格
+中英文排版
+人为输入</code></pre>
+<p>所以空格清洗：</p>
+<blockquote>
+<p>不能只写一句 <code>replace(" ", "")</code>。</p>
+</blockquote>
+<hr />
+<h1
+id="十五为什么全部删除空格很危险">十五、为什么全部删除空格很危险？</h1>
+<p>例如：</p>
+<pre class="text"><code>Windows Server 2025</code></pre>
+<p>删掉以后：</p>
+<pre class="text"><code>WindowsServer2025</code></pre>
+<p>Tokenizer 和检索结果可能发生变化。</p>
+<hr />
+<h1 id="十六再比如型号">十六、再比如型号</h1>
+<pre class="text"><code>ABC 1000 Pro</code></pre>
+<p>变成：</p>
+<pre class="text"><code>ABC1000Pro</code></pre>
+<p>可能已经不是：</p>
+<blockquote>
+<p>原始型号写法。</p>
+</blockquote>
+<hr />
+<h1 id="十七又例如英文法规技术参数">十七、又例如英文法规、技术参数</h1>
+<pre class="text"><code>SQL Server</code></pre>
+<p>空格本身：</p>
+<blockquote>
+<p>有意义。</p>
+</blockquote>
+<hr />
+<h1 id="十八所以更合理的方法是">十八、所以更合理的方法是</h1>
+<p>针对：</p>
+<h1 id="异常空格">异常空格</h1>
+<p>做规则。</p>
+<p>而不是：</p>
+<blockquote>
+<p>删除所有空格。</p>
+</blockquote>
+<hr />
+<h1 id="十九例如中文字符之间">十九、例如中文字符之间</h1>
+<pre class="text"><code>供 应 商</code></pre>
+<p>如果确认这是 OCR 导致的：</p>
+<blockquote>
+<p>单字间空格，</p>
+</blockquote>
+<p>可以安全考虑合并。</p>
+<hr />
+<h1 id="二十但">二十、但：</h1>
+<pre class="text"><code>Microsoft SQL Server</code></pre>
+<p>不能按同样规则处理。</p>
+<hr />
+<h1 id="二十一所以空格-normalization-需要理解">二十一、所以空格
+Normalization 需要理解</h1>
+<pre class="text"><code>字符类型
++
+邻近字符
++
+语言模式</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>全局删除。</p>
+</blockquote>
+<hr />
+<h1 id="二十二现在看换行">二十二、现在看换行</h1>
+<p>第三阶段已经知道：</p>
+<pre class="text"><code>Visual Line Break
+≠
+Semantic Boundary</code></pre>
+<p>所以：</p>
+<pre class="text"><code>供应商不得以不合理条件对其他供
+应商实行差别待遇。</code></pre>
+<p>应该恢复成：</p>
+<pre class="text"><code>供应商不得以不合理条件对其他供应商实行差别待遇。</code></pre>
+<hr />
+<h1
+id="二十三但不能把所有换行都删除">二十三、但不能把所有换行都删除</h1>
+<p>例如：</p>
+<pre class="text"><code>1. 资格条件
+2. 技术要求
+3. 商务要求</code></pre>
+<p>如果合成：</p>
+<pre class="text"><code>1.资格条件2.技术要求3.商务要求</code></pre>
+<p>结构反而坏了。</p>
+<hr />
+<h1 id="二十四所以要区分">二十四、所以要区分</h1>
+<pre class="text"><code>layout_line_break</code></pre>
+<p>和：</p>
+<pre class="text"><code>semantic_break</code></pre>
+<hr />
+<h1 id="二十五这也是为什么-cleaning-最好发生在">二十五、这也是为什么
+Cleaning 最好发生在</h1>
+<h1 id="structure-recovery-之后">Structure Recovery 之后</h1>
+<p>因为第三阶段已经告诉我们：</p>
+<blockquote>
+<p>哪些 Block 属于同一个 Clause。</p>
+</blockquote>
+<hr />
+<h1
+id="二十六如果在结构恢复之前就疯狂删除换行">二十六、如果在结构恢复之前就疯狂删除换行</h1>
+<p>你可能把：</p>
+<blockquote>
+<p>原本有价值的版式信号</p>
+</blockquote>
+<p>提前毁掉。</p>
+<hr />
+<h1
+id="二十七这就是课程为什么设计成">二十七、这就是课程为什么设计成</h1>
+<pre class="text"><code>Stage 2 Parsing
+      ↓
+Stage 3 Structure
+      ↓
+Stage 4 Cleaning</code></pre>
+<p>而不是反过来。</p>
+<hr />
+<h1 id="二十八现在进入-unicode">二十八、现在进入 Unicode</h1>
+<p>Unicode 是什么不用深入。</p>
+<p>只要理解：</p>
+<blockquote>
+<p>同样看起来的字符，计算机内部可能有不同编码表示。</p>
+</blockquote>
+<hr />
+<h1 id="二十九例如">二十九、例如：</h1>
+<pre class="text"><code>ＡＢＣ１２３</code></pre>
+<p>这是全角。</p>
+<p>而：</p>
+<pre class="text"><code>ABC123</code></pre>
+<p>是半角。</p>
+<hr />
+<h1 id="三十对很多自然语言任务来说">三十、对很多自然语言任务来说</h1>
+<p>把：</p>
+<pre class="text"><code>ＡＢＣ１２３</code></pre>
+<p>规范成：</p>
+<pre class="text"><code>ABC123</code></pre>
+<p>通常是合理的。</p>
+<hr />
+<h1
+id="三十一因为业务含义一般没有变化">三十一、因为业务含义一般没有变化</h1>
+<p>只是：</p>
+<blockquote>
+<p>字符表现形式不同。</p>
+</blockquote>
+<hr />
+<h1 id="三十二这种操作属于">三十二、这种操作属于</h1>
+<h1 id="unicode-normalization">Unicode Normalization</h1>
+<hr />
+<h1 id="三十三但-unicode-normalization-也不能闭眼做">三十三、但 Unicode
+Normalization 也不能闭眼做</h1>
+<p>例如某些：</p>
+<ul>
+<li>数学符号；</li>
+<li>法律符号；</li>
+<li>特殊单位；</li>
+<li>技术型号；</li>
+</ul>
+<p>不同字符：</p>
+<blockquote>
+<p>可能真的代表不同含义。</p>
+</blockquote>
+<hr />
+<h1 id="三十四比如">三十四、比如</h1>
+<pre class="text"><code>≤</code></pre>
+<p>和：</p>
+<pre class="text"><code>&lt;</code></pre>
+<p>绝对不能认为：</p>
+<blockquote>
+<p>差不多。</p>
+</blockquote>
+<hr />
+<h1 id="三十五因为">三十五、因为：</h1>
+<pre class="text"><code>≤ 10</code></pre>
+<p>表示：</p>
+<blockquote>
+<p>可以等于 10。</p>
+</blockquote>
+<p>而：</p>
+<pre class="text"><code>&lt; 10</code></pre>
+<p>表示：</p>
+<blockquote>
+<p>不可以等于 10。</p>
+</blockquote>
+<hr />
+<h1 id="三十六对于技术参数">三十六、对于技术参数</h1>
+<p>这一点尤其危险。</p>
+<p>例如：</p>
+<pre class="text"><code>响应时间≤2小时</code></pre>
+<p>和：</p>
+<pre class="text"><code>响应时间&lt;2小时</code></pre>
+<p>并不是完全相同要求。</p>
+<hr />
+<h1 id="三十七再比如">三十七、再比如：</h1>
+<pre class="text"><code>≥</code></pre>
+<p>和：</p>
+<pre class="text"><code>&gt;</code></pre>
+<p>也不能随便互换。</p>
+<hr />
+<h1 id="三十八所以比较运算符属于">三十八、所以比较运算符属于</h1>
+<h1 id="high-risk-symbols">High-risk Symbols</h1>
+<p>高风险符号。</p>
+<hr />
+<h1
+id="三十九采购数据中建议特别保护的符号包括">三十九、采购数据中建议特别保护的符号包括：</h1>
+<pre class="text"><code>&gt;
+&lt;
+≥
+≤
+=
+≠
+%
+‰
+±
+～
+-
++
+/
+×</code></pre>
+<p>它们很多：</p>
+<blockquote>
+<p>直接改变条件。</p>
+</blockquote>
+<hr />
+<h1 id="四十例如">四十、例如</h1>
+<pre class="text"><code>5±0.5mm</code></pre>
+<p>如果清洗成：</p>
+<pre class="text"><code>50.5mm</code></pre>
+<p>那就是灾难。</p>
+<hr />
+<h1 id="四十一再比如">四十一、再比如：</h1>
+<pre class="text"><code>1:1000</code></pre>
+<p>不能随便变成：</p>
+<pre class="text"><code>11000</code></pre>
+<hr />
+<h1
+id="四十二所以第三个核心心智模型">四十二、所以第三个核心心智模型：</h1>
+<blockquote>
+<p><strong>标点不总是装饰。</strong></p>
+</blockquote>
+<p>技术文档里的符号：</p>
+<blockquote>
+<p>经常就是数据本身。</p>
+</blockquote>
+<hr />
+<h1 id="四十三现在看数字">四十三、现在看数字</h1>
+<p>采购文档中数字极其重要。</p>
+<p>例如：</p>
+<pre class="text"><code>500万元
+3年
+2小时
+5分
+10%
+20人
+3个项目</code></pre>
+<p>这些很多时候：</p>
+<blockquote>
+<p>就是风险判断的核心。</p>
+</blockquote>
+<hr />
+<h1 id="四十四所以数字-normalization-必须特别保守">四十四、所以数字
+Normalization 必须特别保守</h1>
+<p>例如：</p>
+<pre class="text"><code>５００</code></pre>
+<p>转成：</p>
+<pre class="text"><code>500</code></pre>
+<p>一般安全。</p>
+<hr />
+<h1 id="四十五但是">四十五、但是：</h1>
+<pre class="text"><code>5OO</code></pre>
+<p>这里到底是：</p>
+<pre class="text"><code>500</code></pre>
+<p>还是字母：</p>
+<pre class="text"><code>O</code></pre>
+<p>就不能直接猜。</p>
+<hr />
+<h1 id="四十六尤其-ocr-常见">四十六、尤其 OCR 常见：</h1>
+<pre class="text"><code>0 ↔ O
+
+1 ↔ I
+
+5 ↔ S
+
+8 ↔ B</code></pre>
+<p>如果自动修：</p>
+<blockquote>
+<p>可能修对。</p>
+</blockquote>
+<p>也可能：</p>
+<blockquote>
+<p>创造假数据。</p>
+</blockquote>
+<hr />
+<h1 id="四十七例如型号">四十七、例如型号：</h1>
+<pre class="text"><code>ABO-100</code></pre>
+<p>里面的 <code>O</code>：</p>
+<blockquote>
+<p>可能真的就是字母 O。</p>
+</blockquote>
+<p>你如果改成：</p>
+<pre class="text"><code>AB0-100</code></pre>
+<p>反而错了。</p>
+<hr />
+<h1 id="四十八所以-ocr-correction-应分两类">四十八、所以 OCR Correction
+应分两类</h1>
+<pre class="text"><code>High-confidence Correction</code></pre>
+<p>和：</p>
+<pre class="text"><code>Ambiguous Correction</code></pre>
+<hr />
+<h1 id="四十九例如">四十九、例如</h1>
+<pre class="text"><code>５００万元</code></pre>
+<p>全角→半角：</p>
+<blockquote>
+<p>高置信度。</p>
+</blockquote>
+<hr />
+<h1 id="五十而">五十、而：</h1>
+<pre class="text"><code>S00万元</code></pre>
+<p>猜成：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>应该：</p>
+<blockquote>
+<p>谨慎得多。</p>
+</blockquote>
+<hr />
+<h1 id="五十一如果上下文非常明确">五十一、如果上下文非常明确：</h1>
+<pre class="text"><code>项目预算为S00万元</code></pre>
+<p>机器可以产生：</p>
+<pre class="text"><code>correction_candidate = &quot;500万元&quot;</code></pre>
+<p>但最好不要：</p>
+<blockquote>
+<p>静默覆盖。</p>
+</blockquote>
+<hr />
+<h1 id="五十二而是记录">五十二、而是记录：</h1>
+<pre class="text"><code>raw:
+S00万元
+
+normalized:
+500万元
+
+correction_type:
+ocr_candidate
+
+confidence:
+0.82</code></pre>
+<p>甚至：</p>
+<pre class="text"><code>needs_review = true</code></pre>
+<hr />
+<h1
+id="五十三这就是第四个核心心智模型">五十三、这就是第四个核心心智模型：</h1>
+<h1 id="自动修复要有证据等级">自动修复要有证据等级</h1>
+<p>不是：</p>
+<blockquote>
+<p>“我觉得像错字，所以改了。”</p>
+</blockquote>
+<hr />
+<h1 id="五十四特别是金额">五十四、特别是金额</h1>
+<p>例如：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>和：</p>
+<pre class="text"><code>5000万元</code></pre>
+<p>只差一个 0。</p>
+<p>但业务意义：</p>
+<blockquote>
+<p>差一个数量级。</p>
+</blockquote>
+<hr />
+<h1 id="五十五所以金额应该视为">五十五、所以金额应该视为：</h1>
+<h1 id="critical-field">Critical Field</h1>
+<p>关键字段。</p>
+<hr />
+<h1 id="五十六类似还有">五十六、类似还有：</h1>
+<pre class="text"><code>分值
+百分比
+日期
+年限
+数量
+人数
+距离
+响应时间
+业绩数量
+注册资本
+预算金额</code></pre>
+<p>这些字段：</p>
+<blockquote>
+<p>都值得更严格保护。</p>
+</blockquote>
+<hr />
+<h1 id="五十七现在看单位">五十七、现在看单位</h1>
+<p>例如：</p>
+<pre class="text"><code>500 万元</code></pre>
+<p>变成：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>通常安全。</p>
+<hr />
+<h1 id="五十八但">五十八、但：</h1>
+<pre class="text"><code>500元</code></pre>
+<p>和：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>绝对不能混。</p>
+<hr />
+<h1
+id="五十九所以不要做一种荒唐-normalization">五十九、所以不要做一种荒唐
+Normalization：</h1>
+<pre class="text"><code>所有金额
+统一变成数字</code></pre>
+<p>例如只保存：</p>
+<pre class="text"><code>500</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>单位丢了。</p>
+</blockquote>
+<hr />
+<h1 id="六十正确方式可以是">六十、正确方式可以是</h1>
+<p>保留文本：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>同时结构化派生：</p>
+<div class="sourceCode" id="cb768"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb768-1"><a href="#cb768-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb768-2"><a href="#cb768-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;amount_value&quot;</span><span class="fu">:</span> <span class="dv">500</span><span class="fu">,</span></span>
+<span id="cb768-3"><a href="#cb768-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;amount_unit&quot;</span><span class="fu">:</span> <span class="st">&quot;万元&quot;</span></span>
+<span id="cb768-4"><a href="#cb768-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="六十一甚至进一步">六十一、甚至进一步：</h1>
+<div class="sourceCode" id="cb769"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb769-1"><a href="#cb769-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb769-2"><a href="#cb769-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;amount_cny&quot;</span><span class="fu">:</span> <span class="dv">5000000</span></span>
+<span id="cb769-3"><a href="#cb769-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>但注意：</p>
+<blockquote>
+<p>这是结构化派生字段。</p>
+</blockquote>
+<p>不是修改原文。</p>
+<hr />
+<h1 id="六十二原文仍然保留">六十二、原文仍然保留：</h1>
+<pre class="text"><code>500万元</code></pre>
+<hr />
+<h1
+id="六十三这是一个非常重要的数据工程习惯">六十三、这是一个非常重要的数据工程习惯</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>B</mi><mi>y</mi><mi>A</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>&gt;</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>B</mi><mi>y</mi><mi>D</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>y</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NormalizeByAddingStructure
+&gt;
+NormalizeByDestroyingText
+}
+</annotation></semantics></math></p>
+<p>中文：</p>
+<blockquote>
+<p><strong>能通过增加结构化字段解决的问题，不要靠破坏原文解决。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六十四比如日期">六十四、比如日期</h1>
+<p>原文：</p>
+<pre class="text"><code>2026年9月15日</code></pre>
+<p>我们可以结构化成：</p>
+<pre class="text"><code>2026-09-15</code></pre>
+<p>但不需要删掉原文本身。</p>
+<hr />
+<h1 id="六十五可以保存">六十五、可以保存：</h1>
+<div class="sourceCode" id="cb773"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb773-1"><a href="#cb773-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb773-2"><a href="#cb773-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;date_raw&quot;</span><span class="fu">:</span> <span class="st">&quot;2026年9月15日&quot;</span><span class="fu">,</span></span>
+<span id="cb773-3"><a href="#cb773-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;date_iso&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-15&quot;</span></span>
+<span id="cb773-4"><a href="#cb773-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="六十六这样既方便机器排序">六十六、这样既方便机器排序，</h1>
+<p>又可以：</p>
+<blockquote>
+<p>精确回到原文。</p>
+</blockquote>
+<hr />
+<h1 id="六十七但日期也有危险情况">六十七、但日期也有危险情况</h1>
+<p>例如：</p>
+<pre class="text"><code>2026年9月</code></pre>
+<p>不能自动补成：</p>
+<pre class="text"><code>2026-09-01</code></pre>
+<p>因为原文：</p>
+<blockquote>
+<p>根本没有说 1 日。</p>
+</blockquote>
+<hr />
+<h1 id="六十八这叫">六十八、这叫：</h1>
+<h1 id="information-fabrication">Information Fabrication</h1>
+<p>制造原文不存在的信息。</p>
+<hr />
+<h1 id="六十九所以-normalization-可以">六十九、所以 Normalization
+可以</h1>
+<blockquote>
+<p>统一已有信息。</p>
+</blockquote>
+<p>不能：</p>
+<blockquote>
+<p>补造未知信息。</p>
+</blockquote>
+<hr />
+<h1 id="七十再看一个日期">七十、再看一个日期</h1>
+<pre class="text"><code>9月15日前</code></pre>
+<p>不要只结构化成：</p>
+<pre class="text"><code>2026-09-15</code></pre>
+<p>因为你会丢掉：</p>
+<pre class="text"><code>前</code></pre>
+<p>也就是：</p>
+<blockquote>
+<p>Deadline Semantics。</p>
+</blockquote>
+<hr />
+<h1
+id="七十一所以业务语义字段可能是">七十一、所以业务语义字段可能是：</h1>
+<pre class="text"><code>date = 2026-09-15
+operator = before_or_on</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>只剩日期。</p>
+</blockquote>
+<hr />
+<h1 id="七十二这和比较符号完全一样">七十二、这和比较符号完全一样</h1>
+<p>文本：</p>
+<pre class="text"><code>不少于3年</code></pre>
+<p>可以结构化成：</p>
+<pre class="text"><code>operator = &gt;=
+value = 3
+unit = year</code></pre>
+<p>但原文：</p>
+<blockquote>
+<p>仍保留。</p>
+</blockquote>
+<hr />
+<h1
+id="七十三这类结构化会对后面规则引擎非常有价值">七十三、这类结构化会对后面规则引擎非常有价值</h1>
+<p>比如：</p>
+<pre class="text"><code>registration_years &gt;= 5</code></pre>
+<p>可以直接进入：</p>
+<blockquote>
+<p>规则检查。</p>
+</blockquote>
+<hr />
+<h1 id="七十四但是注意">七十四、但是注意：</h1>
+<h1 id="extraction-cleaning">Extraction ≠ Cleaning</h1>
+<p>抽取：</p>
+<pre class="text"><code>operator/value/unit</code></pre>
+<p>属于：</p>
+<blockquote>
+<p>更高层的数据结构化。</p>
+</blockquote>
+<p>今天我们只是提前建立正确思路。</p>
+<hr />
+<h1
+id="七十五现在进入极其危险的一类字符">七十五、现在进入极其危险的一类字符</h1>
+<h1 id="negation">Negation</h1>
+<p>否定词。</p>
+<p>政府采购中常见：</p>
+<pre class="text"><code>不
+不得
+不应
+不可
+无需
+不得超过
+不得低于
+不接受
+不允许
+禁止
+未
+无</code></pre>
+<hr />
+<h1
+id="七十六这些词绝对不能当停用词">七十六、这些词绝对不能当“停用词”</h1>
+<p>普通 NLP 时代经常有人做：</p>
+<pre class="text"><code>Stopword Removal</code></pre>
+<p>把：</p>
+<pre class="text"><code>的
+了
+和
+不</code></pre>
+<p>之类删掉。</p>
+<hr />
+<h1 id="七十七如果把">七十七、如果把：</h1>
+<pre class="text"><code>不</code></pre>
+<p>删掉：</p>
+<pre class="text"><code>本项目不接受联合体</code></pre>
+<p>变成：</p>
+<pre class="text"><code>本项目接受联合体</code></pre>
+<p>意思直接反转。</p>
+<hr />
+<h1 id="七十八所以对于我们的-procurementai">七十八、所以对于我们的
+ProcurementAI：</h1>
+<h1 id="不建议做传统停用词删除">不建议做传统停用词删除</h1>
+<p>至少：</p>
+<blockquote>
+<p>绝不能把否定词机械删除。</p>
+</blockquote>
+<hr />
+<h1 id="七十九事实上现代-transformer">七十九、事实上现代
+Transformer</h1>
+<p>通常也：</p>
+<blockquote>
+<p>不需要把自然语言预先删成关键词袋。</p>
+</blockquote>
+<hr />
+<h1 id="八十模型真正需要的是">八十、模型真正需要的是：</h1>
+<blockquote>
+<p>完整语义。</p>
+</blockquote>
+<p>不是：</p>
+<pre class="text"><code>项目
+接受
+联合体</code></pre>
+<p>这种残缺关键词。</p>
+<hr />
+<h1
+id="八十一所以第五个核心心智模型">八十一、所以第五个核心心智模型</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mi>C</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>≠</mo><mi>传</mi><mi>统</mi><mi>B</mi><mi>a</mi><mi>g</mi><mo>−</mo><mi>o</mi><mi>f</mi><mo>−</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>s</mi><mi>预</mi><mi>处</mi><mi>理</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLM Cleaning
+\neq
+传统Bag-of-Words预处理
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八十二我们不会做类似">八十二、我们不会做类似：</h1>
+<pre class="text"><code>去停用词
+词干化
+删标点
+只留关键词</code></pre>
+<p>这种传统文本分类式暴力处理。</p>
+<hr />
+<h1 id="八十三因为对-llm-来说">八十三、因为对 LLM 来说：</h1>
+<blockquote>
+<p>语法、关系、否定、条件、修饰范围</p>
+</blockquote>
+<p>都很重要。</p>
+<hr />
+<h1 id="八十四现在看标点">八十四、现在看标点</h1>
+<p>有人会想：</p>
+<blockquote>
+<p>“标点都是噪声，删掉能省 Token。”</p>
+</blockquote>
+<p>很危险。</p>
+<hr />
+<h1 id="八十五例如">八十五、例如：</h1>
+<pre class="text"><code>A、B不得参加。</code></pre>
+<p>和：</p>
+<pre class="text"><code>A不得参加，B可以参加。</code></pre>
+<p>标点结构：</p>
+<blockquote>
+<p>帮助表达关系。</p>
+</blockquote>
+<hr />
+<h1 id="八十六再比如">八十六、再比如：</h1>
+<pre class="text"><code>供应商应满足：
+1. 条件A；
+2. 条件B；
+3. 条件C。</code></pre>
+<p>如果全部删掉：</p>
+<pre class="text"><code>供应商应满足条件A条件B条件C</code></pre>
+<p>层级：</p>
+<blockquote>
+<p>变差。</p>
+</blockquote>
+<hr />
+<h1 id="八十七所以-normalization-可以统一">八十七、所以 Normalization
+可以统一</h1>
+<pre class="text"><code>；;</code></pre>
+<p>这类视觉变体。</p>
+<p>但不能：</p>
+<blockquote>
+<p>把标点全部删掉。</p>
+</blockquote>
+<hr />
+<h1 id="八十八现在看中文引号">八十八、现在看中文引号</h1>
+<p>可能有：</p>
+<pre class="text"><code>“政府采购”</code></pre>
+<p>和：</p>
+<pre class="text"><code>&quot;政府采购&quot;</code></pre>
+<p>需要不需要统一？</p>
+<hr />
+<h1
+id="八十九如果只是训练普通语言模型">八十九、如果只是训练普通语言模型：</h1>
+<blockquote>
+<p>可以考虑统一。</p>
+</blockquote>
+<p>但如果原始引用格式本身：</p>
+<blockquote>
+<p>有法律引用意义，</p>
+</blockquote>
+<p>也可以保留。</p>
+<hr />
+<h1 id="九十更稳妥的方法依然是">九十、更稳妥的方法依然是：</h1>
+<pre class="text"><code>raw_text
++
+normalized_text</code></pre>
+<hr />
+<h1 id="九十一现在看括号">九十一、现在看括号</h1>
+<p>例如：</p>
+<pre class="text"><code>（含）</code></pre>
+<p>和：</p>
+<pre class="text"><code>（不含）</code></pre>
+<p>括号内容：</p>
+<blockquote>
+<p>绝对不能因为觉得“像备注”就删。</p>
+</blockquote>
+<hr />
+<h1 id="九十二例如">九十二、例如：</h1>
+<pre class="text"><code>500万元以上（不含500万元）</code></pre>
+<p>如果清理掉括号：</p>
+<pre class="text"><code>500万元以上</code></pre>
+<p>业务条件：</p>
+<blockquote>
+<p>已经改变。</p>
+</blockquote>
+<hr />
+<h1 id="九十三类似">九十三、类似：</h1>
+<pre class="text"><code>3年以内（含3年）</code></pre>
+<p>和：</p>
+<pre class="text"><code>3年以内（不含3年）</code></pre>
+<p>不能混。</p>
+<hr />
+<h1
+id="九十四因此括号里的内容可能是">九十四、因此括号里的内容可能是</h1>
+<h1 id="semantic-modifier">Semantic Modifier</h1>
+<p>语义修饰条件。</p>
+<hr />
+<h1
+id="九十五采购文本里建议默认策略">九十五、采购文本里建议默认策略：</h1>
+<blockquote>
+<p><strong>括号内容保留，除非有非常明确证据它只是版式噪声。</strong></p>
+</blockquote>
+<hr />
+<h1 id="九十六现在看编号">九十六、现在看编号</h1>
+<p>例如：</p>
+<pre class="text"><code>（一）</code></pre>
+<pre class="text"><code>1.</code></pre>
+<pre class="text"><code>1）</code></pre>
+<p>要不要全部删掉？</p>
+<hr />
+<h1 id="九十七第三阶段已经告诉我们">九十七、第三阶段已经告诉我们：</h1>
+<p>编号：</p>
+<blockquote>
+<p>本身包含结构信息。</p>
+</blockquote>
+<p>所以 Master Layer：</p>
+<blockquote>
+<p>不应该删。</p>
+</blockquote>
+<hr />
+<h1 id="九十八训练-view-是否保留编号">九十八、训练 View
+是否保留编号？</h1>
+<p>看任务。</p>
+<p>例如：</p>
+<pre class="text"><code>父Clause:
+供应商应满足以下条件：
+
+（一）……
+（二）……</code></pre>
+<p>编号可以帮助模型理解：</p>
+<blockquote>
+<p>子项关系。</p>
+</blockquote>
+<hr />
+<h1 id="九十九所以通常建议">九十九、所以通常建议：</h1>
+<blockquote>
+<p>在结构化 Clause View 中保留。</p>
+</blockquote>
+<hr />
+<h1 id="一百但我们还可以单独结构化">一百、但我们还可以单独结构化：</h1>
+<pre class="text"><code>raw_number = &quot;（二）&quot;</code></pre>
+<p>于是模型输入不一定：</p>
+<blockquote>
+<p>必须依赖这个字符。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一这就是">一百零一、这就是：</h1>
+<pre class="text"><code>Text
++
+Metadata</code></pre>
+<p>一起服务不同用途。</p>
+<hr />
+<h1
+id="一百零二现在处理重复页眉页脚">一百零二、现在处理重复页眉页脚</h1>
+<p>第二阶段已经识别：</p>
+<pre class="text"><code>header
+footer</code></pre>
+<p>第四阶段终于可以真正：</p>
+<blockquote>
+<p>从 Normalized Text View 中去除。</p>
+</blockquote>
+<hr />
+<h1 id="一百零三注意">一百零三、注意：</h1>
+<p>不是删除 Raw Block。</p>
+<p>而是：</p>
+<pre class="text"><code>include_in_clean_view = false</code></pre>
+<p>或者：</p>
+<pre class="text"><code>block_role = footer</code></pre>
+<hr />
+<h1 id="一百零四raw-parsed-layer">一百零四、Raw Parsed Layer：</h1>
+<blockquote>
+<p>仍保留。</p>
+</blockquote>
+<hr />
+<h1 id="一百零五比如">一百零五、比如：</h1>
+<pre class="text"><code>某某政府采购中心
+第37页</code></pre>
+<p>如果确认是重复 Footer，</p>
+<p>Normalized Clause：</p>
+<blockquote>
+<p>不再包含。</p>
+</blockquote>
+<hr />
+<h1 id="一百零六这叫">一百零六、这叫</h1>
+<h1 id="non-destructive-cleaning">Non-destructive Cleaning</h1>
+<p>非破坏性清洗。</p>
+<hr />
+<h1 id="一百零七同样适用于网页模板">一百零七、同样适用于网页模板</h1>
+<p>HTML 中：</p>
+<pre class="text"><code>首页
+登录
+网站地图
+版权信息</code></pre>
+<p>可以：</p>
+<blockquote>
+<p>从 Content View 排除。</p>
+</blockquote>
+<p>但原始网页抓取：</p>
+<blockquote>
+<p>最好仍保留。</p>
+</blockquote>
+<hr />
+<h1 id="一百零八现在看重复内容">一百零八、现在看重复内容</h1>
+<p>有些 PDF 解析器会把同一文字抽两次。</p>
+<p>例如：</p>
+<pre class="text"><code>供应商应具有独立承担民事责任的能力。
+供应商应具有独立承担民事责任的能力。</code></pre>
+<hr />
+<h1 id="一百零九是不是直接删一条">一百零九、是不是直接删一条？</h1>
+<p>不一定。</p>
+<hr />
+<h1 id="一百一十如果两条来自">一百一十、如果两条来自：</h1>
+<blockquote>
+<p>同一个页面、同一个 bbox、相同内容，</p>
+</blockquote>
+<p>很可能：</p>
+<blockquote>
+<p>Parser Duplicate。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十一但如果它们来自">一百一十一、但如果它们来自：</h1>
+<pre class="text"><code>资格条件</code></pre>
+<p>和：</p>
+<pre class="text"><code>合同条款</code></pre>
+<p>只是碰巧内容一样，</p>
+<p>这可能：</p>
+<blockquote>
+<p>是真实重复。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十二两者不能混">一百一十二、两者不能混。</h1>
+<p>所以：</p>
+<h1 id="parsing-duplicate">Parsing Duplicate</h1>
+<p>和：</p>
+<h1 id="document-duplicate">Document Duplicate</h1>
+<p>是两个问题。</p>
+<hr />
+<h1
+id="一百一十三解析器产生的假重复">一百一十三、解析器产生的假重复</h1>
+<p>可以在 Cleaning 中处理。</p>
+<hr />
+<h1 id="一百一十四真实文档里的重复-clause">一百一十四、真实文档里的重复
+Clause</h1>
+<p>应该：</p>
+<blockquote>
+<p>保留到第五阶段专门做去重判断。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十五这就是为什么第四课把">一百一十五、这就是为什么第四课把</h1>
+<pre class="text"><code>Cleaning</code></pre>
+<p>和：</p>
+<pre class="text"><code>Deduplication</code></pre>
+<p>拆成两个阶段。</p>
+<hr />
+<h1 id="一百一十六cleaning-只负责">一百一十六、Cleaning 只负责：</h1>
+<blockquote>
+<p>明显表现层噪声。</p>
+</blockquote>
+<p>第五阶段才处理：</p>
+<blockquote>
+<p>相同/近似业务内容。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十七现在看-ocr-noise">一百一十七、现在看 OCR Noise</h1>
+<p>例如：</p>
+<pre class="text"><code>供 应 商□□□应具备</code></pre>
+<p>其中：</p>
+<pre class="text"><code>□□□</code></pre>
+<p>可能是无法识别字符。</p>
+<hr />
+<h1 id="一百一十八是否直接删除">一百一十八、是否直接删除？</h1>
+<p>危险。</p>
+<p>因为这三个字符：</p>
+<blockquote>
+<p>可能正好是关键内容。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十九例如真正原文可能是">一百一十九、例如真正原文可能是：</h1>
+<pre class="text"><code>供应商不得应……</code></pre>
+<p>虽然这个例子语法怪，但核心思想是：</p>
+<blockquote>
+<p>你不知道丢的是什么。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十所以-unknown-character-应该更像">一百二十、所以 Unknown
+Character 应该更像：</h1>
+<pre class="text"><code>&lt;UNK_OCR&gt;</code></pre>
+<p>或者：</p>
+<blockquote>
+<p>保留替代符并加 Warning。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十一例如">一百二十一、例如：</h1>
+<div class="sourceCode" id="cb826"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb826-1"><a href="#cb826-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb826-2"><a href="#cb826-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalized_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商□□□应具备……&quot;</span><span class="fu">,</span></span>
+<span id="cb826-3"><a href="#cb826-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;warnings&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb826-4"><a href="#cb826-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;UNRESOLVED_OCR_GLYPH&quot;</span></span>
+<span id="cb826-5"><a href="#cb826-5" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb826-6"><a href="#cb826-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="一百二十二而不是">一百二十二、而不是：</h1>
+<pre class="text"><code>供应商应具备……</code></pre>
+<p>然后假装：</p>
+<blockquote>
+<p>中间什么都没有。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十三这叫">一百二十三、这叫：</h1>
+<h1 id="preserve-uncertainty">Preserve Uncertainty</h1>
+<p>保留不确定性。</p>
+<hr />
+<h1 id="一百二十四因为缺数据">一百二十四、因为“缺数据”</h1>
+<p>和：</p>
+<blockquote>
+<p>“确定没有数据”</p>
+</blockquote>
+<p>不是一回事。</p>
+<hr />
+<h1 id="一百二十五这在专业-ai-系统中特别重要">一百二十五、这在专业 AI
+系统中特别重要。</h1>
+<hr />
+<h1 id="一百二十六现在看错别字">一百二十六、现在看错别字</h1>
+<p>假设招标文件原文真的写：</p>
+<pre class="text"><code>供应商因提供相关证书。</code></pre>
+<p>可能作者本来想写：</p>
+<pre class="text"><code>应提供</code></pre>
+<hr />
+<h1 id="一百二十七我们要不要帮它改">一百二十七、我们要不要帮它改？</h1>
+<p>默认：</p>
+<blockquote>
+<p>不应该直接修改 Raw。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十八因为数据工程的任务不是">一百二十八、因为数据工程的任务不是：</h1>
+<blockquote>
+<p>替采购人润色文件。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十九可以做">一百二十九、可以做：</h1>
+<pre class="text"><code>suspected_typo = true</code></pre>
+<p>甚至提供：</p>
+<pre class="text"><code>suggested_text</code></pre>
+<p>但原文：</p>
+<blockquote>
+<p>必须保留。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十这和法律证据意识有关">一百三十、这和法律证据意识有关</h1>
+<p>以后用户问：</p>
+<blockquote>
+<p>“原文件到底写了什么？”</p>
+</blockquote>
+<p>系统必须回答：</p>
+<blockquote>
+<p>原文。</p>
+</blockquote>
+<p>不能回答：</p>
+<blockquote>
+<p>我们觉得作者应该这么写。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十一所以">一百三十一、所以：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mo>&gt;</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>u</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>B</mi><mi>e</mi><mi>a</mi><mi>u</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourceTruth
+&gt;
+LinguisticBeauty
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百三十二现在看繁体与简体">一百三十二、现在看繁体与简体</h1>
+<p>例如：</p>
+<pre class="text"><code>採購</code></pre>
+<p>和：</p>
+<pre class="text"><code>采购</code></pre>
+<p>要不要统一？</p>
+<hr />
+<h1 id="一百三十三对于大量中文检索">一百三十三、对于大量中文检索，</h1>
+<p>可以考虑构建：</p>
+<blockquote>
+<p>规范化搜索 View。</p>
+</blockquote>
+<p>但不要直接：</p>
+<blockquote>
+<p>删除原始文本。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十四因为某些正式文件来源">一百三十四、因为某些正式文件来源：</h1>
+<blockquote>
+<p>字体和原文形式本身也有追溯意义。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十五所以可以">一百三十五、所以可以：</h1>
+<pre class="text"><code>raw_text</code></pre>
+<p>保留原始。</p>
+<p>同时：</p>
+<pre class="text"><code>search_normalized_text</code></pre>
+<p>做简繁规范化。</p>
+<hr />
+<h1
+id="一百三十六这就出现一个很重要的概念">一百三十六、这就出现一个很重要的概念</h1>
+<h1 id="multiple-views">Multiple Views</h1>
+<p>同一个 Clause：</p>
+<blockquote>
+<p>可以有多个派生文本 View。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十七例如">一百三十七、例如：</h1>
+<pre class="text"><code>raw_text</code></pre>
+<p>用于：</p>
+<blockquote>
+<p>审计和追溯。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十八">一百三十八、</h1>
+<pre class="text"><code>normalized_text</code></pre>
+<p>用于：</p>
+<blockquote>
+<p>SFT / Evaluation。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十九">一百三十九、</h1>
+<pre class="text"><code>search_text</code></pre>
+<p>用于：</p>
+<blockquote>
+<p>BM25 / 检索。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十">一百四十、</h1>
+<pre class="text"><code>display_text</code></pre>
+<p>用于：</p>
+<blockquote>
+<p>用户界面。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十一这四个-text-view">一百四十一、这四个 Text View</h1>
+<p>不一定：</p>
+<blockquote>
+<p>完全一样。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十二这是一种非常成熟的数据系统思路">一百四十二、这是一种非常成熟的数据系统思路</h1>
+<p>不要逼：</p>
+<blockquote>
+<p>一个字符串同时满足所有任务。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十三比如-bm25-search-view">一百四十三、比如 BM25 Search
+View</h1>
+<p>可能会做更多：</p>
+<blockquote>
+<p>空格和 Unicode 统一。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十四而-gold-evaluation-view">一百四十四、而 Gold
+Evaluation View</h1>
+<p>可能：</p>
+<blockquote>
+<p>更接近原文。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十五因此">一百四十五、因此：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneSource
+\rightarrow
+MultipleSafeViews
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百四十六现在看标点统一">一百四十六、现在看标点统一</h1>
+<p>例如：</p>
+<pre class="text"><code>,</code></pre>
+<p>和：</p>
+<pre class="text"><code>，</code></pre>
+<p>是否统一成中文逗号？</p>
+<p>可以。</p>
+<p>但要先确认：</p>
+<blockquote>
+<p>不影响技术表达。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十七例如-csv-或型号">一百四十七、例如 CSV 或型号：</h1>
+<pre class="text"><code>A,B,C</code></pre>
+<p>也许逗号就是：</p>
+<blockquote>
+<p>数据格式的一部分。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十八所以不同-section-type">一百四十八、所以不同 Section
+Type</h1>
+<p>甚至可以使用：</p>
+<blockquote>
+<p>不同 Normalization Policy。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十九例如普通正文">一百四十九、例如普通正文</h1>
+<p>可以更积极：</p>
+<blockquote>
+<p>统一全半角标点。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十技术参数表">一百五十、技术参数表</h1>
+<p>应该：</p>
+<blockquote>
+<p>更保守。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十一评分表">一百五十一、评分表</h1>
+<p>尤其：</p>
+<pre class="text"><code>数字
+%
+±
+≤
+≥</code></pre>
+<p>几乎：</p>
+<blockquote>
+<p>原样保护。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十二这叫">一百五十二、这叫</h1>
+<h1 id="context-sensitive-normalization">Context-sensitive
+Normalization</h1>
+<hr />
+<h1 id="一百五十三不是所有文本">一百五十三、不是所有文本：</h1>
+<blockquote>
+<p>同一套 regex 打到底。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十四现在看表格中的空白单元格">一百五十四、现在看表格中的空白单元格</h1>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>一级指标</th>
+<th>二级指标</th>
+<th style="text-align: right;">分值</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>技术</td>
+<td>方案</td>
+<td style="text-align: right;">10</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>人员</td>
+<td style="text-align: right;">10</td>
+</tr>
+</tbody>
+</table>
+<p>空白一级指标：</p>
+<blockquote>
+<p>可能继承“技术”。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十五如果-cleaning-阶段看到">一百五十五、如果 Cleaning
+阶段看到：</h1>
+<pre class="text"><code>empty</code></pre>
+<p>就删掉这一行，</p>
+<p>那就出大问题。</p>
+<hr />
+<h1 id="一百五十六空白">一百五十六、空白：</h1>
+<blockquote>
+<p>不总是垃圾。</p>
+</blockquote>
+<p>有时代表：</p>
+<h1 id="merged-cell-semantics">Merged Cell Semantics</h1>
+<hr />
+<h1
+id="一百五十七正确做法可能是结构化">一百五十七、正确做法可能是结构化：</h1>
+<pre class="text"><code>raw_cell = &quot;&quot;
+inherited_value = &quot;技术&quot;</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>偷偷把原表改掉。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十八同样">一百五十八、同样，</h1>
+<p>表格中的：</p>
+<pre class="text"><code>—</code></pre>
+<p>可能表示：</p>
+<ul>
+<li>无；</li>
+<li>不适用；</li>
+<li>横线装饰；</li>
+<li>同上。</li>
+</ul>
+<p>不能一刀切。</p>
+<hr />
+<h1 id="一百五十九所以表格数据-normalization">一百五十九、所以表格数据
+Normalization：</h1>
+<blockquote>
+<p>要比普通正文更谨慎。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十现在讲电话号码邮箱联系人">一百六十、现在讲电话号码、邮箱、联系人</h1>
+<p>采购文档经常包含：</p>
+<pre class="text"><code>联系人
+手机号
+邮箱
+地址</code></pre>
+<p>这些不是“噪声”。</p>
+<p>但它们也不一定应该：</p>
+<blockquote>
+<p>进入模型训练。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十一这属于">一百六十一、这属于：</h1>
+<h1 id="privacy-sensitive-data-filtering-1">Privacy / Sensitive Data
+Filtering</h1>
+<p>严格说：</p>
+<blockquote>
+<p>和 Cleaning 不完全一回事。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十二为什么要分开">一百六十二、为什么要分开？</h1>
+<p>如果你把：</p>
+<pre class="text"><code>138xxxxxx</code></pre>
+<p>删掉，</p>
+<p>应该知道：</p>
+<blockquote>
+<p>是出于隐私治理。</p>
+</blockquote>
+<p>不是因为：</p>
+<blockquote>
+<p>它解析错了。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十三所以建议分别记录">一百六十三、所以建议分别记录：</h1>
+<pre class="text"><code>normalization_log</code></pre>
+<p>和：</p>
+<pre class="text"><code>privacy_redaction_log</code></pre>
+<p>不要混。</p>
+<hr />
+<h1 id="一百六十四例如">一百六十四、例如：</h1>
+<div class="sourceCode" id="cb851"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb851-1"><a href="#cb851-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb851-2"><a href="#cb851-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;operation&quot;</span><span class="fu">:</span> <span class="st">&quot;redact_phone&quot;</span><span class="fu">,</span></span>
+<span id="cb851-3"><a href="#cb851-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;privacy_policy&quot;</span></span>
+<span id="cb851-4"><a href="#cb851-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>而不是：</p>
+<pre class="text"><code>cleaning</code></pre>
+<p>三个字带过。</p>
+<hr />
+<h1 id="一百六十五这就是-data-governance">一百六十五、这就是 Data
+Governance</h1>
+<blockquote>
+<p>每一次改变数据，都应该知道为什么。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十六现在进入非常重要的东西">一百六十六、现在进入非常重要的东西</h1>
+<h1 id="normalization-log">Normalization Log</h1>
+<p>如果 Clean Text 被修改过，</p>
+<p>最好记录：</p>
+<blockquote>
+<p>改了什么。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十七例如-raw">一百六十七、例如 Raw：</h1>
+<pre class="text"><code>供应商注册资本不得低于５００ 万元。</code></pre>
+<p>Clean：</p>
+<pre class="text"><code>供应商注册资本不得低于500万元。</code></pre>
+<p>可以记录：</p>
+<div class="sourceCode" id="cb855"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb855-1"><a href="#cb855-1" aria-hidden="true" tabindex="-1"></a><span class="ot">[</span></span>
+<span id="cb855-2"><a href="#cb855-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span></span>
+<span id="cb855-3"><a href="#cb855-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;rule&quot;</span><span class="fu">:</span> <span class="st">&quot;fullwidth_digit_to_ascii&quot;</span><span class="fu">,</span></span>
+<span id="cb855-4"><a href="#cb855-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;before&quot;</span><span class="fu">:</span> <span class="st">&quot;５００&quot;</span><span class="fu">,</span></span>
+<span id="cb855-5"><a href="#cb855-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;after&quot;</span><span class="fu">:</span> <span class="st">&quot;500&quot;</span></span>
+<span id="cb855-6"><a href="#cb855-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb855-7"><a href="#cb855-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span></span>
+<span id="cb855-8"><a href="#cb855-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;rule&quot;</span><span class="fu">:</span> <span class="st">&quot;remove_space_between_number_and_unit&quot;</span><span class="fu">,</span></span>
+<span id="cb855-9"><a href="#cb855-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;before&quot;</span><span class="fu">:</span> <span class="st">&quot;500 万元&quot;</span><span class="fu">,</span></span>
+<span id="cb855-10"><a href="#cb855-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;after&quot;</span><span class="fu">:</span> <span class="st">&quot;500万元&quot;</span></span>
+<span id="cb855-11"><a href="#cb855-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb855-12"><a href="#cb855-12" aria-hidden="true" tabindex="-1"></a><span class="ot">]</span></span></code></pre></div>
+<hr />
+<h1
+id="一百六十八是不是每个字符修改都必须人工看">一百六十八、是不是每个字符修改都必须人工看？</h1>
+<p>当然不是。</p>
+<p>日志：</p>
+<blockquote>
+<p>机器自动产生。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十九为什么日志重要">一百六十九、为什么日志重要？</h1>
+<p>因为如果半年后发现：</p>
+<pre class="text"><code>Normalization Rule 17</code></pre>
+<p>有 Bug，</p>
+<p>可以直接查询：</p>
+<blockquote>
+<p>哪些 Clause 用过 Rule 17。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十然后只重跑受影响数据">一百七十、然后只重跑受影响数据。</h1>
+<hr />
+<h1 id="一百七十一如果没有日志">一百七十一、如果没有日志，</h1>
+<p>你只能：</p>
+<blockquote>
+<p>全库重跑，</p>
+</blockquote>
+<p>甚至：</p>
+<blockquote>
+<p>不知道哪些数据被改错。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十二所以-normalization-也需要">一百七十二、所以
+Normalization 也需要</h1>
+<h1 id="data-lineage">Data Lineage</h1>
+<hr />
+<h1 id="一百七十三第一阶段讲">一百七十三、第一阶段讲：</h1>
+<pre class="text"><code>Sample
+↓
+来源</code></pre>
+<p>第二阶段讲：</p>
+<pre class="text"><code>Text
+↓
+Parser</code></pre>
+<p>第三阶段讲：</p>
+<pre class="text"><code>Clause
+↓
+Source Blocks</code></pre>
+<p>第四阶段进一步：</p>
+<pre class="text"><code>Normalized Text
+↓
+Normalization Operations</code></pre>
+<p>整条 Lineage 越来越完整。</p>
+<hr />
+<h1
+id="一百七十四这就是未来-procurementdataset_v0.1">一百七十四、这就是未来
+<code>ProcurementDataset_V0.1</code></h1>
+<p>真正有工程价值的原因。</p>
+<p>不是只有：</p>
+<blockquote>
+<p>文本和标签。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十五现在讨论-idempotence">一百七十五、现在讨论
+Idempotence</h1>
+<p>这是一个稍微工程一点的词。</p>
+<p>不用怕。</p>
+<p>它意思很简单。</p>
+<p>如果文本：</p>
+<pre class="text"><code>T</code></pre>
+<p>经过 Normalizer：</p>
+<pre class="text"><code>N(T)</code></pre>
+<p>再跑一次：</p>
+<pre class="text"><code>N(N(T))</code></pre>
+<p>结果最好仍然一样。</p>
+<hr />
+<h1 id="一百七十六可以写成">一百七十六、可以写成：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+N(N(x))=N(x)
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百七十七为什么">一百七十七、为什么？</h1>
+<p>如果第一次运行得到：</p>
+<pre class="text"><code>500 万元
+→
+500万元</code></pre>
+<p>第二次又变成：</p>
+<pre class="text"><code>500万元
+→
+5000000元</code></pre>
+<p>第三次：</p>
+<pre class="text"><code>5000000元
+→
+5,000,000元</code></pre>
+<p>Pipeline：</p>
+<blockquote>
+<p>每跑一次结果都不同。</p>
+</blockquote>
+<p>非常难维护。</p>
+<hr />
+<h1 id="一百七十八所以一个好的-normalizer">一百七十八、所以一个好的
+Normalizer：</h1>
+<blockquote>
+<p><strong>重复执行应该稳定。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百七十九这就是今天极少数值得记住的工程公式之一">一百七十九、这就是今天极少数值得记住的工程公式之一：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Normalize(Normalize(x))
+=
+Normalize(x)
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百八十这叫">一百八十、这叫：</h1>
+<h1 id="idempotent">Idempotent</h1>
+<p>幂等。</p>
+<hr />
+<h1 id="一百八十一以后你会发现">一百八十一、以后你会发现：</h1>
+<p>数据 Pipeline 很喜欢幂等。</p>
+<p>因为：</p>
+<blockquote>
+<p>可以安全重跑。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十二现在看-normalization-version">一百八十二、现在看
+Normalization Version</h1>
+<p>今天：</p>
+<pre class="text"><code>normalizer_v0.1</code></pre>
+<p>以后可能发现：</p>
+<blockquote>
+<p>空格规则有问题。</p>
+</blockquote>
+<p>升级：</p>
+<pre class="text"><code>normalizer_v0.2</code></pre>
+<hr />
+<h1 id="一百八十三每条-cleanclause-最好知道">一百八十三、每条
+CleanClause 最好知道：</h1>
+<pre class="text"><code>normalizer_version</code></pre>
+<hr />
+<h1 id="一百八十四否则">一百八十四、否则：</h1>
+<p>100 万条数据里：</p>
+<blockquote>
+<p>一半 v0.1，一半 v0.3，</p>
+</blockquote>
+<p>没人知道。</p>
+<hr />
+<h1
+id="一百八十五所以版本字段至少包括">一百八十五、所以版本字段至少包括：</h1>
+<pre class="text"><code>parser_version
+structure_version
+normalizer_version
+schema_version</code></pre>
+<p>以后还会有：</p>
+<pre class="text"><code>label_version
+dataset_version</code></pre>
+<hr />
+<h1 id="一百八十六这一整套版本控制">一百八十六、这一整套版本控制：</h1>
+<blockquote>
+<p>最终会在第 11 阶段正式串起来。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十七现在看一个完整清洗示例">一百八十七、现在看一个完整清洗示例</h1>
+<p>Raw：</p>
+<pre class="text"><code>第 37 页
+某某市政府采购中心
+
+（二）供应商注册资本不得低于５００ 万元，
+且须在本 市连续经营不少于 5 年。
+
+项目编号：ABC-2026-001</code></pre>
+<hr />
+<h1 id="一百八十八结构阶段已经知道">一百八十八、结构阶段已经知道：</h1>
+<pre class="text"><code>第37页
+某某市政府采购中心
+项目编号</code></pre>
+<p>属于：</p>
+<blockquote>
+<p>Header / Footer / Metadata。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十九于是-clean-clause-可以变成">一百八十九、于是 Clean
+Clause 可以变成：</h1>
+<pre class="text"><code>（二）供应商注册资本不得低于500万元，且须在本市连续经营不少于5年。</code></pre>
+<hr />
+<h1 id="一百九十发生了什么">一百九十、发生了什么？</h1>
+<pre class="text"><code>重复页眉页脚
+→ 从Clean View排除
+
+５００
+→ 500
+
+500 万元
+→ 500万元
+
+本 市
+→ 本市
+
+5 年
+→ 5年</code></pre>
+<hr />
+<h1 id="一百九十一但是没有做什么">一百九十一、但是没有做什么？</h1>
+<p>没有改：</p>
+<pre class="text"><code>不得低于</code></pre>
+<p>没有改：</p>
+<pre class="text"><code>且须</code></pre>
+<p>没有改：</p>
+<pre class="text"><code>本市</code></pre>
+<p>没有把：</p>
+<pre class="text"><code>不少于5年</code></pre>
+<p>改成：</p>
+<pre class="text"><code>5年以上</code></pre>
+<hr />
+<h1 id="一百九十二最后那个特别重要">一百九十二、最后那个特别重要</h1>
+<p>虽然：</p>
+<pre class="text"><code>不少于5年</code></pre>
+<p>和：</p>
+<pre class="text"><code>5年以上</code></pre>
+<p>日常理解非常接近。</p>
+<p>但我们不应该在 Cleaning 中：</p>
+<blockquote>
+<p>主动改写。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十三因为">一百九十三、因为：</h1>
+<blockquote>
+<p>Cleaning 的职责不是语言同义改写。</p>
+</blockquote>
+<hr />
+<h1
+id="一百九十四如果未来需要统一逻辑表达">一百九十四、如果未来需要统一逻辑表达</h1>
+<p>可以额外结构化：</p>
+<pre class="text"><code>operator = &gt;=
+value = 5
+unit = year</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>改原句。</p>
+</blockquote>
+<hr />
+<h1
+id="一百九十五再看一个有风险的例子">一百九十五、再看一个有风险的例子</h1>
+<p>Raw：</p>
+<pre class="text"><code>技术参数：CPU 主频≥3.0GHz，核心数不少于32核。</code></pre>
+<p>错误 Cleaning：</p>
+<pre class="text"><code>技术参数CPU主频3.0GHz核心数32核</code></pre>
+<hr />
+<h1 id="一百九十六它删掉了">一百九十六、它删掉了：</h1>
+<pre class="text"><code>≥</code></pre>
+<p>和：</p>
+<pre class="text"><code>不少于</code></pre>
+<p>于是：</p>
+<blockquote>
+<p>约束关系丢失。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十七模型现在不知道">一百九十七、模型现在不知道：</h1>
+<pre class="text"><code>3.0</code></pre>
+<p>是：</p>
+<ul>
+<li>等于；</li>
+<li>至少；</li>
+<li>不超过；</li>
+<li>推荐值。</li>
+</ul>
+<hr />
+<h1 id="一百九十八所以这种清洗">一百九十八、所以这种“清洗”</h1>
+<p>不是 Cleaning。</p>
+<p>是：</p>
+<h1 id="information-destruction">Information Destruction</h1>
+<hr />
+<h1 id="一百九十九再看评分案例">一百九十九、再看评分案例</h1>
+<p>Raw：</p>
+<pre class="text"><code>近三年每提供1个同类项目业绩得2分，最高得10分。</code></pre>
+<p>错误 Normalization：</p>
+<pre class="text"><code>同类项目业绩2分10分</code></pre>
+<hr />
+<h1 id="二百这对关键词搜索">二百、这对关键词搜索：</h1>
+<blockquote>
+<p>也许还能凑合。</p>
+</blockquote>
+<p>但对 LLM：</p>
+<blockquote>
+<p>业务关系几乎被摧毁。</p>
+</blockquote>
+<hr />
+<h1
+id="二百零一所以我们从今天开始要坚定一个原则">二百零一、所以我们从今天开始要坚定一个原则：</h1>
+<h1 id="llm-需要完整语言关系">LLM 需要完整语言关系</h1>
+<p>不是：</p>
+<blockquote>
+<p>极限压缩的关键词。</p>
+</blockquote>
+<hr />
+<h1
+id="二百零二现在看数字中的千位分隔符">二百零二、现在看数字中的千位分隔符</h1>
+<pre class="text"><code>5,000,000元</code></pre>
+<p>和：</p>
+<pre class="text"><code>5000000元</code></pre>
+<p>是否统一？</p>
+<p>可以考虑。</p>
+<hr />
+<h1
+id="二百零三但要先判断逗号是不是">二百零三、但要先判断逗号是不是：</h1>
+<blockquote>
+<p>数字分隔符。</p>
+</blockquote>
+<hr />
+<h1 id="二百零四例如">二百零四、例如：</h1>
+<pre class="text"><code>型号A,B,C</code></pre>
+<p>这里：</p>
+<blockquote>
+<p>不是数字逗号。</p>
+</blockquote>
+<hr />
+<h1 id="二百零五所以规则应该">二百零五、所以规则应该：</h1>
+<blockquote>
+<p>有 Pattern Context。</p>
+</blockquote>
+<p>而不是：</p>
+<div class="sourceCode" id="cb894"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb894-1"><a href="#cb894-1" aria-hidden="true" tabindex="-1"></a>replace(<span class="st">&quot;,&quot;</span>, <span class="st">&quot;&quot;</span>)</span></code></pre></div>
+<hr />
+<h1 id="二百零六再看小数点">二百零六、再看小数点</h1>
+<pre class="text"><code>3.0GHz</code></pre>
+<p>绝对不能清成：</p>
+<pre class="text"><code>30GHz</code></pre>
+<hr />
+<h1 id="二百零七扫描文档里">二百零七、扫描文档里：</h1>
+<pre class="text"><code>3．0</code></pre>
+<p>可能使用全角句点。</p>
+<p>这个可以：</p>
+<blockquote>
+<p>规范成 <code>3.0</code>。</p>
+</blockquote>
+<p>但必须确认：</p>
+<blockquote>
+<p>它位于数字之间。</p>
+</blockquote>
+<hr />
+<h1 id="二百零八这叫局部规则">二百零八、这叫局部规则</h1>
+<p>例如：</p>
+<pre class="text"><code>数字 + 全角小数点 + 数字
+→
+数字 + &quot;.&quot; + 数字</code></pre>
+<p>比：</p>
+<blockquote>
+<p>全局把所有 <code>．</code> 变成 <code>.</code></p>
+</blockquote>
+<p>更安全。</p>
+<hr />
+<h1 id="二百零九现在看百分号">二百零九、现在看百分号</h1>
+<pre class="text"><code>10％</code></pre>
+<p>可以规范：</p>
+<pre class="text"><code>10%</code></pre>
+<hr />
+<h1 id="二百一十但">二百一十、但：</h1>
+<pre class="text"><code>0.1</code></pre>
+<p>不能自动转成：</p>
+<pre class="text"><code>10%</code></pre>
+<p>除非：</p>
+<blockquote>
+<p>业务 Schema 明确知道这是比例字段。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十一为什么">二百一十一、为什么？</h1>
+<p>因为 <code>0.1</code>：</p>
+<blockquote>
+<p>可能就是数值 0.1。</p>
+</blockquote>
+<p>不是一定：</p>
+<blockquote>
+<p>百分之十。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十二所以清洗器不能">二百一十二、所以清洗器不能：</h1>
+<blockquote>
+<p>自作聪明。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十三现在看金额中文数字">二百一十三、现在看金额中文数字</h1>
+<pre class="text"><code>人民币伍佰万元整</code></pre>
+<p>要不要直接改成：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>不建议覆盖。</p>
+<hr />
+<h1 id="二百一十四可以做结构化解析">二百一十四、可以做结构化解析：</h1>
+<pre class="text"><code>amount_cny = 5000000</code></pre>
+<p>但：</p>
+<pre class="text"><code>raw_text</code></pre>
+<p>继续保存：</p>
+<pre class="text"><code>人民币伍佰万元整</code></pre>
+<hr />
+<h1
+id="二百一十五这对于合同和金额审查特别重要">二百一十五、这对于合同和金额审查特别重要。</h1>
+<hr />
+<h1
+id="二百一十六现在看文件中的特殊空字符">二百一十六、现在看文件中的特殊空字符</h1>
+<p>例如：</p>
+<pre class="text"><code>\u00A0</code></pre>
+<p>Non-breaking space。</p>
+<p>人眼：</p>
+<blockquote>
+<p>看起来就是空格。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十七还有">二百一十七、还有：</h1>
+<pre class="text"><code>zero-width space</code></pre>
+<p>人眼：</p>
+<blockquote>
+<p>完全看不见。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十八这些可能严重影响">二百一十八、这些可能严重影响</h1>
+<pre class="text"><code>字符串比较
+Hash
+去重
+关键词搜索</code></pre>
+<hr />
+<h1 id="二百一十九所以这类-unicode-控制字符">二百一十九、所以这类
+Unicode 控制字符：</h1>
+<blockquote>
+<p>通常可以安全规范化。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十例如零宽空格">二百二十、例如零宽空格</h1>
+<p>如果确认不承载语义：</p>
+<blockquote>
+<p>可以删除。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十一这类操作属于典型">二百二十一、这类操作属于典型</h1>
+<h1 id="safe-normalization">Safe Normalization</h1>
+<hr />
+<h1
+id="二百二十二和下面这些形成鲜明对比">二百二十二、和下面这些形成鲜明对比：</h1>
+<pre class="text"><code>删除“不得”
+删除“以上”
+删除“含”
+修改数字
+修改单位
+修改比较符</code></pre>
+<p>这些属于：</p>
+<h1 id="high-risk-normalization">High-risk Normalization</h1>
+<hr />
+<h1
+id="二百二十三于是我们可以第一次建立">二百二十三、于是我们可以第一次建立</h1>
+<h1 id="normalization-risk-levels">Normalization Risk Levels</h1>
+<p>概念上分三类。</p>
+<hr />
+<h1 id="二百二十四low-risk">二百二十四、Low Risk</h1>
+<p>例如：</p>
+<pre class="text"><code>零宽空格
+全角英文字母→半角
+连续无意义空白
+明确重复页脚</code></pre>
+<p>通常：</p>
+<blockquote>
+<p>可自动处理。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十五medium-risk">二百二十五、Medium Risk</h1>
+<p>例如：</p>
+<pre class="text"><code>OCR断行合并
+中文字符间异常空格
+表格单元格换行</code></pre>
+<p>需要：</p>
+<blockquote>
+<p>上下文规则和质量检测。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十六high-risk">二百二十六、High Risk</h1>
+<p>例如：</p>
+<pre class="text"><code>数字修改
+单位修复
+否定词修复
+比较符修复
+法律条号修复
+型号修复</code></pre>
+<p>最好：</p>
+<blockquote>
+<p>不自动静默修改。</p>
+</blockquote>
+<hr />
+<h1
+id="二百二十七这张分类不是法律标准">二百二十七、这张分类不是法律标准。</h1>
+<p>只是：</p>
+<blockquote>
+<p>我们工程上的风险思维。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十八这种设计可以让-pipeline-做">二百二十八、这种设计可以让
+Pipeline 做：</h1>
+<pre class="text"><code>Low Risk
+→ 自动
+
+Medium Risk
+→ 自动 + Warning
+
+High Risk
+→ 建议值 + 人工核验</code></pre>
+<hr />
+<h1 id="二百二十九这和最终-procurementai-的架构">二百二十九、这和最终
+ProcurementAI 的架构：</h1>
+<pre class="text"><code>Rule
++
+Model
++
+Human</code></pre>
+<p>再次一致。</p>
+<hr />
+<h1 id="二百三十现在看一条-ocr-文本">二百三十、现在看一条 OCR 文本</h1>
+<pre class="text"><code>供应商注册资本不得低于5OO万元。</code></pre>
+<p>我们可以怎么处理？</p>
+<hr />
+<h1 id="二百三十一错误做法">二百三十一、错误做法：</h1>
+<pre class="text"><code>直接改500</code></pre>
+<p>不记录。</p>
+<hr />
+<h1 id="二百三十二更好的方式">二百三十二、更好的方式：</h1>
+<div class="sourceCode" id="cb919"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb919-1"><a href="#cb919-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb919-2"><a href="#cb919-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;raw_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商注册资本不得低于5OO万元。&quot;</span><span class="fu">,</span></span>
+<span id="cb919-3"><a href="#cb919-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalized_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商注册资本不得低于5OO万元。&quot;</span><span class="fu">,</span></span>
+<span id="cb919-4"><a href="#cb919-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;correction_candidate&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商注册资本不得低于500万元。&quot;</span><span class="fu">,</span></span>
+<span id="cb919-5"><a href="#cb919-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;warnings&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb919-6"><a href="#cb919-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;AMBIGUOUS_OCR_NUMERIC_TOKEN&quot;</span></span>
+<span id="cb919-7"><a href="#cb919-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb919-8"><a href="#cb919-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百三十三如果后续人工确认">二百三十三、如果后续人工确认：</h1>
+<pre class="text"><code>500万元</code></pre>
+<p>再产生：</p>
+<pre class="text"><code>verified_text</code></pre>
+<hr />
+<h1 id="二百三十四这样系统明确区分">二百三十四、这样系统明确区分：</h1>
+<pre class="text"><code>机器猜测</code></pre>
+<p>和：</p>
+<pre class="text"><code>专家确认</code></pre>
+<hr />
+<h1
+id="二百三十五这个区别对-gold-dataset-极其重要">二百三十五、这个区别对
+Gold Dataset 极其重要。</h1>
+<hr />
+<h1 id="二百三十六现在讨论法律名称">二百三十六、现在讨论法律名称</h1>
+<p>例如：</p>
+<pre class="text"><code>《中华人民共和国政府采购法》</code></pre>
+<p>不要清洗成：</p>
+<pre class="text"><code>中华人民共和国政府采购法</code></pre>
+<p>虽然一般搜索仍能找到。</p>
+<hr />
+<h1
+id="二百三十七为什么最好保留书名号">二百三十七、为什么最好保留书名号？</h1>
+<p>因为它帮助模型识别：</p>
+<blockquote>
+<p>这是正式规范名称。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十八同样">二百三十八、同样：</h1>
+<pre class="text"><code>第三十一条</code></pre>
+<p>不要随便：</p>
+<blockquote>
+<p>删除“第”和“条”。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十九因为">二百三十九、因为：</h1>
+<pre class="text"><code>31</code></pre>
+<p>本身语义弱很多。</p>
+<hr />
+<h1 id="二百四十如果做-rag-索引可以额外派生">二百四十、如果做 RAG
+索引，可以额外派生：</h1>
+<pre class="text"><code>article_number = 31</code></pre>
+<p>但原文：</p>
+<blockquote>
+<p>保留。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十一这是我们反复强调的">二百四十一、这是我们反复强调的：</h1>
+<h1 id="add-structure-dont-destroy-meaning">Add Structure, Don’t Destroy
+Meaning</h1>
+<hr />
+<h1 id="二百四十二现在讲-markdown-化">二百四十二、现在讲 Markdown
+化</h1>
+<p>为了喂 LLM，</p>
+<p>有些系统会把表格转成：</p>
+<div class="sourceCode" id="cb929"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"><span id="cb929-1"><a href="#cb929-1" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> 评分项 <span class="pp">|</span> 分值 <span class="pp">|</span> 规则 <span class="pp">|</span></span>
+<span id="cb929-2"><a href="#cb929-2" aria-hidden="true" tabindex="-1"></a><span class="pp">|---|---:|---|</span></span>
+<span id="cb929-3"><a href="#cb929-3" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> 本地服务 <span class="pp">|</span> 5 <span class="pp">|</span> 本市有机构得5分 <span class="pp">|</span></span></code></pre></div>
+<p>这是可以的。</p>
+<hr />
+<h1 id="二百四十三但这个-markdown-应该是">二百四十三、但这个 Markdown
+应该是：</h1>
+<h1 id="view">View</h1>
+<p>不是：</p>
+<blockquote>
+<p>唯一 Master Data。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十四master-仍然应该保留">二百四十四、Master
+仍然应该保留：</h1>
+<pre class="text"><code>rows
+columns
+cells
+headers</code></pre>
+<hr />
+<h1
+id="二百四十五这样以后模型格式变化">二百四十五、这样以后模型格式变化，</h1>
+<p>可以重新生成：</p>
+<pre class="text"><code>Markdown
+JSON
+Plain Text</code></pre>
+<p>而不用：</p>
+<blockquote>
+<p>重新解析 PDF。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十六这就是第四课一直在建立的核心数据哲学">二百四十六、这就是第四课一直在建立的核心数据哲学：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>i</mi><mi>c</mi><mi>h</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>→</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RichMasterData
+\rightarrow
+TaskSpecificViews
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二百四十七现在第一次设计-cleanclause_v0.1">二百四十七、现在第一次设计
+<code>CleanClause_V0.1</code></h1>
+<p>它可以概念上长这样：</p>
+<div class="sourceCode" id="cb932"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb932-1"><a href="#cb932-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb932-2"><a href="#cb932-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb932-3"><a href="#cb932-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC-00152-01&quot;</span><span class="fu">,</span></span>
+<span id="cb932-4"><a href="#cb932-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb932-5"><a href="#cb932-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_path&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb932-6"><a href="#cb932-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;第三章 采购需求&quot;</span><span class="ot">,</span></span>
+<span id="cb932-7"><a href="#cb932-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;3.2 售后服务&quot;</span></span>
+<span id="cb932-8"><a href="#cb932-8" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb932-9"><a href="#cb932-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb932-10"><a href="#cb932-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;raw_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后 2 小时内到达项目现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb932-11"><a href="#cb932-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalized_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后2小时内到达项目现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb932-12"><a href="#cb932-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb932-13"><a href="#cb932-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_block_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb932-14"><a href="#cb932-14" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;B00872&quot;</span></span>
+<span id="cb932-15"><a href="#cb932-15" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb932-16"><a href="#cb932-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb932-17"><a href="#cb932-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalizer_version&quot;</span><span class="fu">:</span> <span class="st">&quot;normalizer_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb932-18"><a href="#cb932-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb932-19"><a href="#cb932-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalization_ops&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb932-20"><a href="#cb932-20" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;remove_unnecessary_space_between_number_and_unit&quot;</span></span>
+<span id="cb932-21"><a href="#cb932-21" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb932-22"><a href="#cb932-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb932-23"><a href="#cb932-23" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;warnings&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb932-24"><a href="#cb932-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb932-25"><a href="#cb932-25" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalization_status&quot;</span><span class="fu">:</span> <span class="st">&quot;auto_verified&quot;</span></span>
+<span id="cb932-26"><a href="#cb932-26" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1
+id="二百四十八这里已经有几个重要字段">二百四十八、这里已经有几个重要字段</h1>
+<pre class="text"><code>raw_text
+normalized_text
+normalizer_version
+normalization_ops
+warnings</code></pre>
+<hr />
+<h1 id="二百四十九如果-ocr-有不确定内容">二百四十九、如果 OCR
+有不确定内容</h1>
+<p>可能：</p>
+<pre class="text"><code>normalization_status =
+needs_review</code></pre>
+<hr />
+<h1 id="二百五十如果专家已经确认">二百五十、如果专家已经确认：</h1>
+<pre class="text"><code>human_verified</code></pre>
+<hr />
+<h1 id="二百五十一所以-cleaning-同样可以有质量状态">二百五十一、所以
+Cleaning 同样可以有质量状态。</h1>
+<hr />
+<h1 id="二百五十二现在把第-14-阶段的数据对象串起来">二百五十二、现在把第
+1～4 阶段的数据对象串起来</h1>
+<pre class="text"><code>Stage 1
+TaskSchema_V0.1
+
+Stage 2
+ParsedDocument_V0.1
+
+Stage 3
+ClauseUnit_V0.1
+
+Stage 4
+CleanClause_V0.1</code></pre>
+<hr />
+<h1
+id="二百五十三它们不是四份互不相关的数据">二百五十三、它们不是四份互不相关的数据。</h1>
+<p>而是一条 Lineage：</p>
+<pre class="text"><code>Raw File
+   ↓
+ParsedDocument
+   ↓
+ClauseUnit
+   ↓
+CleanClause
+   ↓
+Annotated Sample</code></pre>
+<hr />
+<h1
+id="二百五十四未来如果某个-gold-sample-出问题">二百五十四、未来如果某个
+Gold Sample 出问题，</h1>
+<p>我们可以：</p>
+<pre class="text"><code>Gold Sample
+↓
+CleanClause
+↓
+ClauseUnit
+↓
+Source Blocks
+↓
+Page
+↓
+Original File</code></pre>
+<p>一路追到底。</p>
+<hr />
+<h1
+id="二百五十五这才是真正专业的数据资产">二百五十五、这才是真正专业的数据资产。</h1>
+<hr />
+<h1
+id="二百五十六现在看一个反例过度清洗">二百五十六、现在看一个反例：过度清洗</h1>
+<p>原文：</p>
+<pre class="text"><code>供应商近3年（2023年1月1日至投标截止日）至少具有5个类似项目业绩。</code></pre>
+<p>某清洗器想“简化文本”：</p>
+<pre class="text"><code>供应商近3年至少具有5个类似项目业绩。</code></pre>
+<hr />
+<h1 id="二百五十七看起来更干净">二百五十七、看起来更干净。</h1>
+<p>实际上删掉了：</p>
+<pre class="text"><code>2023年1月1日至投标截止日</code></pre>
+<p>这可能：</p>
+<blockquote>
+<p>正是争议核心。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十八所以">二百五十八、所以：</h1>
+<h1 id="redundancy-to-human-redundancy-to-model">Redundancy to human ≠
+Redundancy to model</h1>
+<p>你觉得某句话“啰嗦”。</p>
+<p>它可能：</p>
+<blockquote>
+<p>对业务判断非常关键。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十九再一个例子">二百五十九、再一个例子</h1>
+<p>Raw：</p>
+<pre class="text"><code>供应商须具有ISO 9001认证（认证范围须包含信息系统运维服务）。</code></pre>
+<p>过度清洗：</p>
+<pre class="text"><code>供应商须具有ISO 9001认证。</code></pre>
+<hr />
+<h1 id="二百六十括号里的">二百六十、括号里的：</h1>
+<pre class="text"><code>认证范围</code></pre>
+<p>被删除。</p>
+<p>但它：</p>
+<blockquote>
+<p>可能正是限制性的核心。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十一所以不要用">二百六十一、所以不要用：</h1>
+<blockquote>
+<p>“看起来像补充说明”</p>
+</blockquote>
+<p>作为删除依据。</p>
+<hr />
+<h1 id="二百六十二再看一个评分规则">二百六十二、再看一个评分规则</h1>
+<pre class="text"><code>具有本地服务机构得5分；承诺中标后设立服务机构得3分；其他不得分。</code></pre>
+<p>如果只保留：</p>
+<pre class="text"><code>本地服务机构得5分</code></pre>
+<p>你就丢掉了：</p>
+<blockquote>
+<p>其它竞争方式。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十三于是模型风险判断">二百六十三、于是模型风险判断：</h1>
+<blockquote>
+<p>可能变得过于激进。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十四这就是为什么-clean-data-也必须">二百六十四、这就是为什么
+Clean Data 也必须：</h1>
+<blockquote>
+<p>保持完整关系。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十五现在讲-normalization-testing">二百六十五、现在讲
+Normalization Testing</h1>
+<p>Normalizer 也应该有测试集。</p>
+<p>比如准备几十个案例：</p>
+<pre class="text"><code>全角数字
+OCR空格
+比较符
+中文/英文标点
+金额
+日期
+型号
+法律条号
+否定词
+表格</code></pre>
+<hr />
+<h1 id="二百六十六每条测试记录">二百六十六、每条测试记录：</h1>
+<pre class="text"><code>Input
+Expected Output
+Must Preserve Tokens</code></pre>
+<hr />
+<h1 id="二百六十七例如">二百六十七、例如：</h1>
+<pre class="text"><code>Input:
+注册资本不得低于５００ 万元。
+
+Expected:
+注册资本不得低于500万元。
+
+Must Preserve:
+不得低于
+500
+万元</code></pre>
+<hr />
+<h1 id="二百六十八再例如">二百六十八、再例如：</h1>
+<pre class="text"><code>Input:
+响应时间≤2小时。
+
+Expected:
+响应时间≤2小时。
+
+Must Preserve:
+≤
+2
+小时</code></pre>
+<hr />
+<h1 id="二百六十九再例如">二百六十九、再例如：</h1>
+<pre class="text"><code>Input:
+本项目不接受联合体投标。
+
+Expected:
+本项目不接受联合体投标。
+
+Must Preserve:
+不接受</code></pre>
+<hr />
+<h1 id="二百七十这样每次改-normalizer">二百七十、这样每次改
+Normalizer：</h1>
+<blockquote>
+<p>跑一遍回归测试。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十一否则你修复">二百七十一、否则你修复：</h1>
+<blockquote>
+<p>空格规则</p>
+</blockquote>
+<p>可能意外破坏：</p>
+<blockquote>
+<p>技术型号。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十二这叫">二百七十二、这叫：</h1>
+<h1 id="regression-test">Regression Test</h1>
+<p>第一课我们在模型里讲过。</p>
+<p>现在：</p>
+<blockquote>
+<p>数据 Pipeline 也需要。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十三所以整个项目里">二百七十三、所以整个项目里：</h1>
+<h1 id="几乎所有重要模块都应该被评测">几乎所有重要模块都应该被评测</h1>
+<p>不仅：</p>
+<blockquote>
+<p>LLM。</p>
+</blockquote>
+<p>还包括：</p>
+<pre class="text"><code>Parser
+Structure Recovery
+Normalizer
+Deduplicator
+Label Pipeline
+RAG</code></pre>
+<hr />
+<h1
+id="二百七十四这是成熟-ai-工程和-demo-最大的区别之一">二百七十四、这是成熟
+AI 工程和 Demo 最大的区别之一。</h1>
+<hr />
+<h1
+id="二百七十五现在做一个安全清洗决策树">二百七十五、现在做一个安全清洗决策树</h1>
+<pre class="text"><code>发现异常文本
+   │
+   ▼
+是否明确属于表现层噪声？
+   │
+   ├── 是
+   │    ↓
+   │  可以自动规范
+   │
+   └── 否
+        │
+        ▼
+是否可能改变业务含义？
+        │
+        ├── 否
+        │    ↓
+        │  规则规范 + 日志
+        │
+        └── 是
+             │
+             ▼
+       不静默修改
+             │
+      ┌──────┴──────┐
+      ▼             ▼
+   Warning      Human Review</code></pre>
+<hr />
+<h1
+id="二百七十六如果只能记一张操作图">二百七十六、如果只能记一张操作图，</h1>
+<p>就记这张。</p>
+<hr />
+<h1
+id="二百七十七现在给数据字段分风险">二百七十七、现在给数据字段分风险</h1>
+<p>可以建立类似：</p>
+<pre class="text"><code>Protected Tokens</code></pre>
+<p>保护字段。</p>
+<hr />
+<h1 id="二百七十八第一类">二百七十八、第一类：</h1>
+<h1 id="negation-1">Negation</h1>
+<pre class="text"><code>不
+不得
+禁止
+无需
+未
+无</code></pre>
+<hr />
+<h1 id="二百七十九第二类">二百七十九、第二类：</h1>
+<h1 id="comparison">Comparison</h1>
+<pre class="text"><code>大于
+小于
+以上
+以下
+不少于
+不高于
+≤
+≥</code></pre>
+<hr />
+<h1 id="二百八十第三类">二百八十、第三类：</h1>
+<h1 id="quantity">Quantity</h1>
+<pre class="text"><code>金额
+人数
+数量
+分值
+比例
+时间
+期限
+距离
+容量
+性能参数</code></pre>
+<hr />
+<h1 id="二百八十一第四类">二百八十一、第四类：</h1>
+<h1 id="identity">Identity</h1>
+<pre class="text"><code>项目编号
+法规名称
+条号
+型号
+证书名称
+机构名称</code></pre>
+<hr />
+<h1 id="二百八十二第五类">二百八十二、第五类：</h1>
+<h1 id="scope-modifier">Scope Modifier</h1>
+<pre class="text"><code>仅
+全部
+任一
+同时
+至少
+最多
+其中
+除外
+含
+不含</code></pre>
+<hr />
+<h1 id="二百八十三这些词看起来很小">二百八十三、这些词看起来很小。</h1>
+<p>但经常：</p>
+<blockquote>
+<p>决定整个 Clause 的约束范围。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十四例如">二百八十四、例如：</h1>
+<pre class="text"><code>至少一个</code></pre>
+<p>和：</p>
+<pre class="text"><code>全部</code></pre>
+<p>完全不是同一个条件。</p>
+<hr />
+<h1 id="二百八十五所以-normalizer-最好有">二百八十五、所以 Normalizer
+最好有：</h1>
+<h1 id="protected-pattern-tests">Protected Pattern Tests</h1>
+<hr />
+<h1 id="二百八十六例如如果清洗前后">二百八十六、例如如果清洗前后：</h1>
+<pre class="text"><code>不得</code></pre>
+<p>消失了，</p>
+<p>自动触发：</p>
+<pre class="text"><code>NEGATION_CHANGED</code></pre>
+<hr />
+<h1
+id="二百八十七如果数字数量发生变化">二百八十七、如果数字数量发生变化：</h1>
+<pre class="text"><code>500
+→
+5000</code></pre>
+<p>触发：</p>
+<pre class="text"><code>NUMERIC_TOKEN_CHANGED</code></pre>
+<hr />
+<h1 id="二百八十八如果">二百八十八、如果：</h1>
+<pre class="text"><code>≤
+→
+&lt;</code></pre>
+<p>触发：</p>
+<pre class="text"><code>COMPARATOR_CHANGED</code></pre>
+<hr />
+<h1 id="二百八十九这叫">二百八十九、这叫：</h1>
+<h1 id="semantic-guardrail">Semantic Guardrail</h1>
+<p>语义护栏。</p>
+<hr />
+<h1 id="二百九十甚至可以做一个简单-diff">二百九十、甚至可以做一个简单
+Diff</h1>
+<pre class="text"><code>Raw
+vs
+Normalized</code></pre>
+<p>自动检查：</p>
+<blockquote>
+<p>哪些字符变了。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十一如果变化只发生在">二百九十一、如果变化只发生在：</h1>
+<pre class="text"><code>全角数字
+多余空格
+零宽字符</code></pre>
+<p>风险较低。</p>
+<hr />
+<h1 id="二百九十二如果变化触及">二百九十二、如果变化触及：</h1>
+<pre class="text"><code>数字
+比较符
+否定词
+单位</code></pre>
+<p>风险升高。</p>
+<hr />
+<h1
+id="二百九十三这样-cleaning-就不再是一堆黑盒-.replace">二百九十三、这样
+Cleaning 就不再是一堆黑盒 <code>.replace()</code>。</h1>
+<p>而变成：</p>
+<blockquote>
+<p>可审计的 Transformation Pipeline。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十四现在谈-schema-validation">二百九十四、现在谈 Schema
+Validation</h1>
+<p>CleanClause 还可以做结构验证。</p>
+<p>例如：</p>
+<pre class="text"><code>normalized_text不能为空</code></pre>
+<hr />
+<h1 id="二百九十五">二百九十五、</h1>
+<pre class="text"><code>raw_text必须存在</code></pre>
+<hr />
+<h1 id="二百九十六">二百九十六、</h1>
+<pre class="text"><code>clause_id必须存在</code></pre>
+<hr />
+<h1 id="二百九十七">二百九十七、</h1>
+<pre class="text"><code>normalizer_version必须存在</code></pre>
+<hr />
+<h1 id="二百九十八如果发生文本修改">二百九十八、如果发生文本修改：</h1>
+<pre class="text"><code>normalization_ops</code></pre>
+<p>不能为空。</p>
+<hr />
+<h1 id="二百九十九如果存在高风险-warning">二百九十九、如果存在高风险
+Warning：</h1>
+<pre class="text"><code>normalization_status</code></pre>
+<p>不能自动标：</p>
+<pre class="text"><code>verified</code></pre>
+<hr />
+<h1 id="三百这就开始形成">三百、这就开始形成：</h1>
+<h1 id="data-contract">Data Contract</h1>
+<p>数据契约。</p>
+<hr />
+<h1 id="三百零一第一阶段我们说-schema-是合同">三百零一、第一阶段我们说
+Schema 是合同。</h1>
+<p>现在终于看到：</p>
+<blockquote>
+<p>合同可以被程序验证。</p>
+</blockquote>
+<hr />
+<h1 id="三百零二例如">三百零二、例如：</h1>
+<div class="sourceCode" id="cb978"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb978-1"><a href="#cb978-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> raw_text <span class="op">!=</span> <span class="st">&quot;&quot;</span></span>
+<span id="cb978-2"><a href="#cb978-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> normalized_text <span class="op">!=</span> <span class="st">&quot;&quot;</span></span>
+<span id="cb978-3"><a href="#cb978-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> clause_id <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span></span></code></pre></div>
+<p>真实工程会更复杂。</p>
+<p>但思想就是：</p>
+<blockquote>
+<p>不让坏数据悄悄流下去。</p>
+</blockquote>
+<hr />
+<h1 id="三百零三这叫">三百零三、这叫：</h1>
+<h1 id="fail-loudly">Fail Loudly</h1>
+<p>发现异常：</p>
+<blockquote>
+<p>明确报出来。</p>
+</blockquote>
+<p>不要：</p>
+<h1 id="fail-silently">Fail Silently</h1>
+<p>悄悄产生坏数据。</p>
+<hr />
+<h1 id="三百零四例如-ocr-异常">三百零四、例如 OCR 异常：</h1>
+<pre class="text"><code>供应商□□□5OO万元</code></pre>
+<p>系统不应该：</p>
+<blockquote>
+<p>默默当成正常 Clause。</p>
+</blockquote>
+<hr />
+<h1 id="三百零五应该带">三百零五、应该带：</h1>
+<pre class="text"><code>warnings</code></pre>
+<p>让下游知道：</p>
+<blockquote>
+<p>这条数据不完全可信。</p>
+</blockquote>
+<hr />
+<h1 id="三百零六以后第-12-阶段组装-dataset-时">三百零六、以后第 12
+阶段组装 Dataset 时，</h1>
+<p>可以直接过滤：</p>
+<pre class="text"><code>normalization_status != verified</code></pre>
+<p>的样本。</p>
+<hr />
+<h1 id="三百零七gold-set-更可以要求">三百零七、Gold Set
+更可以要求：</h1>
+<pre class="text"><code>parse_verified
++
+structure_verified
++
+normalization_verified
++
+expert_label_verified</code></pre>
+<hr />
+<h1 id="三百零八这就是-gold-的真正含义">三百零八、这就是 Gold
+的真正含义：</h1>
+<blockquote>
+<p>不只是 Label 专家看过。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>整条数据链都可信。</p>
+</blockquote>
+<hr />
+<h1
+id="三百零九现在说一个特别常见的错误">三百零九、现在说一个特别常见的错误：</h1>
+<h1 id="用-llm-自动清理全部数据">用 LLM 自动“清理”全部数据</h1>
+<p>例如：</p>
+<blockquote>
+<p>“请把下面采购条款改写成规范、通顺、简洁的中文。”</p>
+</blockquote>
+<hr />
+<h1 id="三百一十llm-很可能输出">三百一十、LLM 很可能输出：</h1>
+<blockquote>
+<p>更漂亮。</p>
+</blockquote>
+<p>但它可能：</p>
+<ul>
+<li>删细节；</li>
+<li>合并条件；</li>
+<li>改数字；</li>
+<li>改语气；</li>
+<li>补推论。</li>
+</ul>
+<hr />
+<h1 id="三百一十一这对于">三百一十一、这对于：</h1>
+<h1 id="data-cleaning">Data Cleaning</h1>
+<p>是非常危险的。</p>
+<hr />
+<h1 id="三百一十二llm-可以做什么">三百一十二、LLM 可以做什么？</h1>
+<p>它可以：</p>
+<blockquote>
+<p>帮助发现可疑文本。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>这段是不是OCR错误？</code></pre>
+<p>或者：</p>
+<pre class="text"><code>这里是不是疑似乱码？</code></pre>
+<hr />
+<h1 id="三百一十三但对于高风险字段">三百一十三、但对于高风险字段：</h1>
+<blockquote>
+<p>最好让它提出 Candidate，</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>直接覆盖 Source Truth。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十四可以记住">三百一十四、可以记住：</h1>
+<pre class="text"><code>LLM as Inspector
+&gt;
+LLM as Silent Rewriter</code></pre>
+<p>对于高价值数据尤其如此。</p>
+<hr />
+<h1 id="三百一十五现在看-cleaning-的成本问题">三百一十五、现在看
+Cleaning 的成本问题</h1>
+<p>是不是所有 100 万条 Clause：</p>
+<blockquote>
+<p>都要专家逐条校对？</p>
+</blockquote>
+<p>不现实。</p>
+<hr />
+<h1 id="三百一十六合理方式是">三百一十六、合理方式是：</h1>
+<pre class="text"><code>低风险规则
+→ 全自动
+
+中风险
+→ 抽样QA
+
+高风险
+→ 人工复核
+
+Gold Set
+→ 高强度复核</code></pre>
+<hr />
+<h1 id="三百一十七这叫">三百一十七、这叫：</h1>
+<h1 id="tiered-quality-control">Tiered Quality Control</h1>
+<p>分层质量控制。</p>
+<hr />
+<h1
+id="三百一十八它和我们的数据质量阶梯非常一致">三百一十八、它和我们的数据质量阶梯非常一致。</h1>
+<hr />
+<h1 id="三百一十九例如">三百一十九、例如：</h1>
+<pre class="text"><code>CPT Corpus</code></pre>
+<p>可以容忍：</p>
+<blockquote>
+<p>少量格式噪声。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十-1">三百二十、</h1>
+<pre class="text"><code>SFT Training</code></pre>
+<p>要求：</p>
+<blockquote>
+<p>明显更高。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十一-1">三百二十一、</h1>
+<pre class="text"><code>Gold Benchmark</code></pre>
+<p>要求：</p>
+<blockquote>
+<p>极高。</p>
+</blockquote>
+<hr />
+<h1
+id="三百二十二所以不存在一个万能">三百二十二、所以不存在一个万能：</h1>
+<pre class="text"><code>clean = true</code></pre>
+<hr />
+<h1 id="三百二十三data-quality-必须">三百二十三、Data Quality
+必须：</h1>
+<blockquote>
+<p>根据用途定义。</p>
+</blockquote>
+<hr />
+<h1
+id="三百二十四现在给第四阶段建立完整-pipeline">三百二十四、现在给第四阶段建立完整
+Pipeline</h1>
+<pre class="text"><code>ClauseUnit_V0.1
+       │
+       ▼
+ Preserve Raw Text
+       │
+       ▼
+ Unicode Normalization
+       │
+       ▼
+ Safe Whitespace Cleanup
+       │
+       ▼
+ Line-break Repair
+       │
+       ▼
+ Header/Footer Exclusion
+       │
+       ▼
+ OCR Noise Detection
+       │
+       ▼
+ Critical Token Guardrails
+       │
+       ▼
+ Numeric / Unit Validation
+       │
+       ▼
+ Normalization Diff
+       │
+       ▼
+ Quality Warnings
+       │
+       ▼
+ CleanClause_V0.1</code></pre>
+<hr />
+<h1
+id="三百二十五注意这里没有一步叫">三百二十五、注意这里没有一步叫：</h1>
+<pre class="text"><code>Rewrite to Beautiful Chinese</code></pre>
+<p>这不是我们的目标。</p>
+<hr />
+<h1
+id="三百二十六本阶段最容易犯的-12-个错误">三百二十六、本阶段最容易犯的
+12 个错误</h1>
+<p>第一类错误是：</p>
+<blockquote>
+<p><strong>直接覆盖 Raw Text。</strong></p>
+</blockquote>
+<p>一旦错了，无法回滚。</p>
+<p>第二类错误是：</p>
+<blockquote>
+<p><strong>删除所有空格。</strong></p>
+</blockquote>
+<p>会破坏英文、型号和结构。</p>
+<p>第三类错误是：</p>
+<blockquote>
+<p><strong>删除所有换行。</strong></p>
+</blockquote>
+<p>会破坏 Section / List / Clause 关系。</p>
+<p>第四类错误是：</p>
+<blockquote>
+<p><strong>删除所有标点。</strong></p>
+</blockquote>
+<p>技术符号和逻辑结构会丢。</p>
+<p>第五类错误是：</p>
+<blockquote>
+<p><strong>做传统停用词删除。</strong></p>
+</blockquote>
+<p>尤其可能删掉否定词。</p>
+<p>第六类错误是：</p>
+<blockquote>
+<p><strong>OCR 猜到什么就自动改什么。</strong></p>
+</blockquote>
+<p>会制造假数据。</p>
+<p>第七类错误是：</p>
+<blockquote>
+<p><strong>修改数字却不记录。</strong></p>
+</blockquote>
+<p>极其危险。</p>
+<p>第八类错误是：</p>
+<blockquote>
+<p><strong>单位和数字分开保存后把单位丢掉。</strong></p>
+</blockquote>
+<p>业务意义会改变。</p>
+<p>第九类错误是：</p>
+<blockquote>
+<p><strong>删除括号内容。</strong></p>
+</blockquote>
+<p>括号经常包含关键限定。</p>
+<p>第十类错误是：</p>
+<blockquote>
+<p><strong>把真实重复当成解析重复删掉。</strong></p>
+</blockquote>
+<p>这应该留到去重阶段。</p>
+<p>第十一类错误是：</p>
+<blockquote>
+<p><strong>用 LLM 批量润色原始条款。</strong></p>
+</blockquote>
+<p>会产生隐性语义漂移。</p>
+<p>第十二类错误是：</p>
+<blockquote>
+<p><strong>Normalizer 没版本、没日志、没测试。</strong></p>
+</blockquote>
+<p>半年后几乎无法追责。</p>
+<hr />
+<h1 id="三百二十七本阶段最重要的-5-个">三百二十七、本阶段最重要的 5
+个“≠”</h1>
+<pre class="text"><code>Cleaning
+≠
+Rewriting</code></pre>
+<pre class="text"><code>Normalized Text
+≠
+Source Truth</code></pre>
+<pre class="text"><code>Whitespace
+≠
+Always Noise</code></pre>
+<pre class="text"><code>Punctuation
+≠
+Always Decoration</code></pre>
+<pre class="text"><code>Cleaner-looking
+≠
+More Correct</code></pre>
+<p>最后这一条尤其重要。</p>
+<hr />
+<h1 id="三百二十八再记一个最重要的">三百二十八、再记一个最重要的“=”</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SafeNormalization
+=
+SemanticPreservation
++
+Traceability
++
+Reversibility
++
+Consistency
+}
+</annotation></semantics></math></p>
+<p>翻译成人话：</p>
+<blockquote>
+<p><strong>好的清洗不是把文本变漂亮，而是在尽量保持原始语义的前提下，让表示方式更稳定，同时保证每次修改都能追踪、能回滚、能重复得到同样结果。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三百二十九现在把第四课前四阶段连起来">三百二十九、现在把第四课前四阶段连起来</h1>
+<pre class="text"><code>第四课 · 第1阶段
+Task Schema
+│
+│  定义：一条业务样本是什么
+▼
+
+第四课 · 第2阶段
+ParsedDocument
+│
+│  恢复：文件里到底写了什么
+▼
+
+第四课 · 第3阶段
+ClauseUnit
+│
+│  恢复：这些文字属于哪里
+▼
+
+第四课 · 第4阶段
+CleanClause
+│
+│  规范：怎样安全统一文本表现
+▼</code></pre>
+<p>我们离真正的数据集：</p>
+<blockquote>
+<p>已经越来越近。</p>
+</blockquote>
+<hr />
+<h1
+id="三百三十但现在会出现一个新问题">三百三十、但现在会出现一个新问题</h1>
+<p>假设我们收集了：</p>
+<pre class="text"><code>10万条 CleanClause</code></pre>
+<p>看起来都很干净。</p>
+<p>但里面可能有：</p>
+<pre class="text"><code>同一个项目重复下载3次
+
+同一公告HTML和PDF各来一份
+
+同一条法规被复制到50个文档
+
+不同项目使用同一个模板
+
+同一个条款只是换了项目名称</code></pre>
+<hr />
+<h1 id="三百三十一也就是说">三百三十一、也就是说：</h1>
+<blockquote>
+<p><strong>文本干净，不代表数据独立。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三百三十二如果这些重复数据直接进入训练">三百三十二、如果这些重复数据直接进入训练</h1>
+<p>某类模板可能：</p>
+<blockquote>
+<p>被重复几十倍。</p>
+</blockquote>
+<p>模型会误以为：</p>
+<blockquote>
+<p>这是整个行业最重要的规律。</p>
+</blockquote>
+<hr />
+<h1 id="三百三十三更危险的是">三百三十三、更危险的是</h1>
+<p>如果同一条重复内容：</p>
+<pre class="text"><code>一份进入Train
+一份进入Test</code></pre>
+<p>你会得到：</p>
+<blockquote>
+<p>非常漂亮但完全虚假的 Benchmark。</p>
+</blockquote>
+<hr />
+<h1 id="三百三十四所以第四阶段之后">三百三十四、所以第四阶段之后，</h1>
+<p>下一个大问题就是：</p>
+<h1 id="deduplication">Deduplication</h1>
+<hr />
+<h1 id="三百三十五本阶段掌握测试">三百三十五、本阶段掌握测试</h1>
+<p>如果现在不看前文，你能自己回答下面这些问题，本阶段就真正掌握了：</p>
+<blockquote>
+<p>为什么 Cleaning 不等于 Rewrite？</p>
+</blockquote>
+<blockquote>
+<p>为什么必须同时保留 <code>raw_text</code> 和
+<code>normalized_text</code>？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Normalized Text 只能是派生版本？</p>
+</blockquote>
+<blockquote>
+<p>为什么不能简单删除所有空格？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Visual Line Break 和 Semantic Break 必须区分？</p>
+</blockquote>
+<blockquote>
+<p>为什么全角数字转半角通常属于低风险 Normalization？</p>
+</blockquote>
+<blockquote>
+<p>为什么
+<code>&lt;</code>、<code>≤</code>、<code>&gt;</code>、<code>≥</code>
+绝对不能随便互换？</p>
+</blockquote>
+<blockquote>
+<p>为什么金额、分值、比例、年限、响应时间属于高风险信息？</p>
+</blockquote>
+<blockquote>
+<p>为什么 OCR 中的 <code>O</code> 和 <code>0</code>
+不能总是自动纠正？</p>
+</blockquote>
+<blockquote>
+<p>为什么单位不能被丢弃？</p>
+</blockquote>
+<blockquote>
+<p>为什么“2026年9月”不能自动变成“2026-09-01”？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>9月15日前</code> 不能只保存一个日期值？</p>
+</blockquote>
+<blockquote>
+<p>为什么否定词绝对不能作为普通停用词删除？</p>
+</blockquote>
+<blockquote>
+<p>为什么现代 LLM 数据通常不需要传统 Stopword Removal？</p>
+</blockquote>
+<blockquote>
+<p>为什么括号内容不能默认认为是噪声？</p>
+</blockquote>
+<blockquote>
+<p>为什么编号最好保留？</p>
+</blockquote>
+<blockquote>
+<p>为什么页眉页脚可以从 Clean View 去除，却仍应保留在 Raw Parsed
+Layer？</p>
+</blockquote>
+<blockquote>
+<p>Parsing Duplicate 和真实文档重复有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>为什么真正的业务去重要留到下一阶段？</p>
+</blockquote>
+<blockquote>
+<p>为什么无法识别的 OCR 字符不能直接静默删除？</p>
+</blockquote>
+<blockquote>
+<p>为什么原文件中的疑似错别字不能随便替作者改正？</p>
+</blockquote>
+<blockquote>
+<p>为什么同一个 Clause 可以有 Raw、Normalized、Search、Display 多个
+View？</p>
+</blockquote>
+<blockquote>
+<p>为什么金额、日期等更适合“增加结构字段”，而不是改写原文？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Normalization Log？</p>
+</blockquote>
+<blockquote>
+<p>为什么需要 <code>normalizer_version</code>？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Idempotence？</p>
+</blockquote>
+<blockquote>
+<p>为什么希望满足：</p>
+</blockquote>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>N</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+N(N(x))=N(x)
+</annotation></semantics></math></p>
+<blockquote>
+<p>为什么 Normalizer 也需要 Regression Test？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Semantic Guardrail？</p>
+</blockquote>
+<blockquote>
+<p>为什么数字、单位、否定词、比较符变化应该触发 Warning？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Gold Dataset 对清洗质量的要求应该高于普通 CPT Corpus？</p>
+</blockquote>
+<blockquote>
+<p>为什么不建议让 LLM 批量“润色”采购原文后直接作为训练真相？</p>
+</blockquote>
+<p>如果这些问题你可以自己完整解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>4</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第4阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三百三十六本阶段最终只记一句话">三百三十六、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>政府采购数据清洗的目标不是把文本变得漂亮，而是在不改变原始业务含义的前提下，安全地统一字符、空格、换行和版式噪声；所有高风险修改都必须可追踪、可回滚，并且原始文本永远保留。</strong></p>
+</blockquote>
+<p>最后压成一张图：</p>
+<pre class="text"><code>                    ClauseUnit_V0.1
+                           │
+                           ▼
+                    Preserve Raw Text
+                           │
+                           ▼
+              ┌────────────────────────┐
+              │ Safe Normalization     │
+              │                        │
+              │ Unicode                │
+              │ Whitespace             │
+              │ Line Break             │
+              │ Header / Footer        │
+              │ OCR Noise              │
+              └────────────┬───────────┘
+                           │
+                           ▼
+                 Semantic Guardrails
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+           数字/单位      否定词       比较符
+              │            │            │
+              └────────────┼────────────┘
+                           ▼
+                  Normalization Diff
+                           │
+                           ▼
+                   Warning / Review
+                           │
+                           ▼
+                   CleanClause_V0.1
+                           │
+               ┌───────────┼───────────┐
+               ▼           ▼           ▼
+             SFT          RAG        Evaluation</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-5-阶段">下一阶段：第四课 · 第 5 阶段</h1>
+<h2
+id="去重与近似去重为什么-100-万条干净数据可能实际上只有-30-万条独立信息为什么重复数据不仅浪费训练还会制造虚假的-benchmark">去重与近似去重——为什么
+100 万条“干净数据”可能实际上只有 30
+万条独立信息？为什么重复数据不仅浪费训练，还会制造虚假的
+Benchmark？</h2>
+<p>第五阶段我们会第一次真正解决：</p>
+<pre class="text"><code>Exact Duplicate</code></pre>
+<p>与：</p>
+<pre class="text"><code>Near Duplicate</code></pre>
+<p>以及一个政府采购数据中特别麻烦的问题：</p>
+<pre class="text"><code>不同项目
++
+同一份模板
++
+只替换项目名称、金额和日期</code></pre>
+<p>它们到底算不算重复？</p>
+<p>我们会建立这张脑图：</p>
+<pre class="text"><code>Duplicate
+│
+├── File-level Duplicate
+│
+├── Document-level Duplicate
+│
+├── Clause-level Duplicate
+│
+├── Template Duplicate
+│
+└── Semantic Near Duplicate</code></pre>
+<p>并第一次真正解释：</p>
+<blockquote>
+<p>为什么单纯用 SHA-256 只能解决最容易的一层。</p>
+</blockquote>
+<p>以及为什么：</p>
+<pre class="text"><code>Train/Test Leakage</code></pre>
+<p>很多时候不是发生在完全相同的文本上，</p>
+<p>而是发生在：</p>
+<blockquote>
+<p><strong>模板级近重复。</strong></p>
+</blockquote>
+<p>最终第五阶段会得到第一版：</p>
+<h1 id="dedupedclauseset_v0.1"><code>DedupedClauseSet_V0.1</code></h1>
+<p>也就是把第四课的数据第一次从“干净”推进到：</p>
+<blockquote>
+<p><strong>尽量独立、尽量不重复。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

@@ -1,0 +1,2546 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第9阶段：从“模型能跑”到“模型服务能用”</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>Latency ≠ Throughput。单个用户等多久与服务器单位时间处理多少请求是不同指标。</li><li>TTFT ≠ Decode Speed。首 Token 等待时间和后续 Token 流速来自不同阶段瓶颈。</li><li>Batching 可以提高 GPU 利用率和吞吐，但过度 Batch 也可能增加排队与单请求延迟。</li></ul></div><h1 id="第三课-第-9-阶段从模型能跑到模型服务能用">第三课 · 第 9
+阶段：从“模型能跑”到“模型服务能用”</h1>
+<h2
+id="ttfttpslatencythroughputbatchingcontinuous-batchingvllm-与-pagedattention-到底在解决什么">TTFT、TPS、Latency、Throughput、Batching、Continuous
+Batching、vLLM 与 PagedAttention 到底在解决什么？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Latency ≠
+Throughput。单个用户等多久与服务器单位时间处理多少请求是不同指标。</strong></li>
+<li><strong>TTFT ≠ Decode Speed。首 Token 等待时间和后续 Token
+流速来自不同阶段瓶颈。</strong></li>
+<li><strong>Batching 可以提高 GPU 利用率和吞吐，但过度 Batch
+也可能增加排队与单请求延迟。</strong></li>
+<li><strong>Continuous Batching / PagedAttention 的价值在于动态请求与 KV
+Cache 管理，不是改变模型能力。</strong></li>
+<li><strong>Serving Benchmark 必须使用真实输入长度、输出长度、并发和
+P95/P99，而不是只看一个 tokens/s。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>TTFT</code></td>
+<td>首 Token 时间：用户等待第一个输出 Token 的时间</td>
+</tr>
+<tr class="odd">
+<td><code>Throughput</code></td>
+<td>吞吐：单位时间内处理请求或生成 Token 的能力</td>
+</tr>
+<tr class="even">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+<tr class="odd">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="even">
+<td><code>Continuous Batching</code></td>
+<td>连续批处理：动态把不同时间到达的请求加入 GPU 批次</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="odd">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="even">
+<td><code>KV Cache</code></td>
+<td>KV 缓存：生成时缓存历史 Key/Value 以减少重复计算</td>
+</tr>
+<tr class="odd">
+<td><code>Serving</code></td>
+<td>服务化：把模型包装成可扩展、可观测、可治理的在线服务</td>
+</tr>
+<tr class="even">
+<td><code>Inference</code></td>
+<td>推理：系统接收请求并产生结果的在线计算过程</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 8 阶段为止，我们已经解决了一个人的问题：</p>
+<pre class="text"><code>一个用户
+    ↓
+一个Prompt
+    ↓
+模型
+    ↓
+一个Token一个Token生成
+    ↓
+得到回答</code></pre>
+<p>如果我们只是坐在电脑前：</p>
+<blockquote>
+<p>自己测试模型，</p>
+</blockquote>
+<p>到这里似乎已经够了。</p>
+<p>但政府采购 AI 最终不是：</p>
+<blockquote>
+<p>一个人在 Jupyter Notebook 里玩模型。</p>
+</blockquote>
+<p>而是可能变成：</p>
+<pre class="text"><code>采购人A ─┐
+代理机构B ─┤
+审查人员C ─┤
+专家D     ─┼──→ ProcurementAI
+监管人员E ─┤
+……       ─┘</code></pre>
+<p>这时候问题完全变了。</p>
+<p>我们不再只问：</p>
+<blockquote>
+<p><strong>模型能不能生成答案？</strong></p>
+</blockquote>
+<p>而是开始问：</p>
+<blockquote>
+<p><strong>第一个字多久出来？</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>后面生成快不快？</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>10个人一起问会怎样？</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>50个人一起上传长文件会怎样？</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>GPU 有没有大量时间其实在浪费？</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>KV Cache 怎么管理才不会把显存弄得一地碎片？</strong></p>
+</blockquote>
+<p>这一阶段，就是从：</p>
+<h1 id="model-inference">Model Inference</h1>
+<p>第一次真正走向：</p>
+<h1 id="inference-serving">Inference Serving</h1>
+<hr />
+<h1 id="一本阶段先只建立-6-个核心心智模型">一、本阶段先只建立 6
+个核心心智模型</h1>
+<p>先不要背任何框架名字。</p>
+<p>这一阶段最重要的是下面六句话：</p>
+<pre class="text"><code>① TTFT
+=
+用户等多久看到第一个Token
+
+② TPS
+=
+第一个Token出来以后，后续Token吐得有多快
+
+③ Latency
+=
+一个请求从进入系统到完成，总共等多久
+
+④ Throughput
+=
+整套系统单位时间能处理多少工作
+
+⑤ Batching
+=
+让很多请求一起使用GPU，
+避免GPU只服务一个人
+
+⑥ vLLM / PagedAttention这一类技术
+=
+主要是在提高“服务效率”和“KV内存利用率”
+不是让模型Weight突然变聪明</code></pre>
+<p>先把这六根柱子立住。</p>
+<hr />
+<h1
+id="二先看一个最生活化的场景政府办事大厅">二、先看一个最生活化的场景：政府办事大厅</h1>
+<p>想象一个办事大厅。</p>
+<p>只有一个窗口。</p>
+<p>来了一个人：</p>
+<pre class="text"><code>用户A</code></pre>
+<p>窗口人员给他处理业务。</p>
+<p>三分钟完成。</p>
+<p>你会觉得：</p>
+<blockquote>
+<p>挺快。</p>
+</blockquote>
+<hr />
+<h1 id="三现在突然来了-50-个人">三、现在突然来了 50 个人</h1>
+<pre class="text"><code>A
+B
+C
+D
+E
+...
+第50个人</code></pre>
+<p>窗口工作人员的能力：</p>
+<blockquote>
+<p>完全没变。</p>
+</blockquote>
+<p>但系统体验：</p>
+<blockquote>
+<p>彻底变了。</p>
+</blockquote>
+<p>为什么？</p>
+<p>因为现在除了：</p>
+<blockquote>
+<p>“一个业务办得有多快”</p>
+</blockquote>
+<p>还多了：</p>
+<blockquote>
+<p>“大家要排多久队”。</p>
+</blockquote>
+<p>这就是模型服务与单模型测试的区别。</p>
+<hr />
+<h1 id="四一个-llm-服务请求实际上有很多时间组成">四、一个 LLM
+服务请求实际上有很多时间组成</h1>
+<p>用户点击：</p>
+<blockquote>
+<p>“开始审查”</p>
+</blockquote>
+<p>到最终报告完成，</p>
+<p>可以粗略想成：</p>
+<pre class="text"><code>用户提交请求
+      │
+      ▼
+排队
+      │
+      ▼
+Prompt进入GPU
+      │
+      ▼
+Prefill
+      │
+      ▼
+第一个Token出现
+      │
+      ▼
+Decode
+Token
+Token
+Token
+...
+      │
+      ▼
+回答完成</code></pre>
+<p>于是：</p>
+<blockquote>
+<p>“模型速度”</p>
+</blockquote>
+<p>根本不是一个单一数字。</p>
+<hr />
+<h1 id="五第一个核心指标ttft">五、第一个核心指标：TTFT</h1>
+<h1 id="time-to-first-token-1">Time To First Token</h1>
+<p>可以直接翻译：</p>
+<blockquote>
+<p><strong>从用户提交请求，到看到第一个生成
+Token，需要多久。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>点击“开始审查”
+       │
+       │ 2.3 秒
+       ▼
+“该……”
+ ↑
+第一个Token</code></pre>
+<p>那么：</p>
+<pre class="text"><code>TTFT ≈ 2.3秒</code></pre>
+<hr />
+<h1 id="六为什么-ttft-对用户体验特别重要">六、为什么 TTFT
+对用户体验特别重要？</h1>
+<p>想象两个系统。</p>
+<h3 id="系统-a">系统 A</h3>
+<p>点击以后：</p>
+<pre class="text"><code>0.8秒</code></pre>
+<p>就开始：</p>
+<blockquote>
+<p>“该条款……”</p>
+</blockquote>
+<p>然后慢慢继续生成。</p>
+<hr />
+<h3 id="系统-b">系统 B</h3>
+<p>点击以后：</p>
+<pre class="text"><code>12秒</code></pre>
+<p>屏幕完全没动静。</p>
+<p>然后突然高速生成。</p>
+<hr />
+<p>多数用户会觉得：</p>
+<blockquote>
+<p>A 更“灵”。</p>
+</blockquote>
+<p>哪怕最终整篇报告完成时间：</p>
+<blockquote>
+<p>未必差很多。</p>
+</blockquote>
+<hr />
+<h1 id="七ttft-主要发生在哪一段">七、TTFT 主要发生在哪一段？</h1>
+<p>最重要的一段就是我们第五阶段学过的：</p>
+<h1 id="prefill-1">Prefill</h1>
+<p>也就是：</p>
+<blockquote>
+<p>先处理整个 Prompt。</p>
+</blockquote>
+<hr />
+<h1 id="八短-prompt-和长-prompt-的区别">八、短 Prompt 和长 Prompt
+的区别</h1>
+<p>用户 A：</p>
+<pre class="text"><code>请判断以下资格条件是否合理。</code></pre>
+<p>可能只有：</p>
+<pre class="text"><code>几十Token</code></pre>
+<hr />
+<p>用户 B：</p>
+<p>上传：</p>
+<pre class="text"><code>180页招标文件
++
+法规证据
++
+系统Prompt</code></pre>
+<p>可能变成：</p>
+<pre class="text"><code>几十K Token</code></pre>
+<hr />
+<p>第二个请求在模型生成第一个 Token 之前：</p>
+<blockquote>
+<p>必须先读完整个输入。</p>
+</blockquote>
+<p>所以通常：</p>
+<pre class="text"><code>Prompt更长
+↓
+Prefill工作更多
+↓
+TTFT更长</code></pre>
+<hr />
+<h1 id="九把-prefill-想成专家先读材料">九、把 Prefill
+想成专家“先读材料”</h1>
+<p>你把一页材料交给专家：</p>
+<blockquote>
+<p>很快开始回答。</p>
+</blockquote>
+<p>你把 400 页材料交给专家：</p>
+<blockquote>
+<p>他不可能第 0.1 秒就开始给最终结论。</p>
+</blockquote>
+<p>至少要：</p>
+<blockquote>
+<p>先阅读。</p>
+</blockquote>
+<p>LLM 也是一样。</p>
+<hr />
+<h1 id="十所以-procurementai-第一个非常现实的问题出现了">十、所以
+ProcurementAI 第一个非常现实的问题出现了</h1>
+<p>如果用户上传：</p>
+<blockquote>
+<p>整本采购文件，</p>
+</blockquote>
+<p>我们不能只问：</p>
+<pre class="text"><code>模型支持128K吗？</code></pre>
+<p>还要问：</p>
+<pre class="text"><code>128K Prefill
+用户要等多久？</code></pre>
+<p>这就是：</p>
+<blockquote>
+<p><strong>Context 能塞进去</strong></p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p><strong>Context 实际好不好用</strong></p>
+</blockquote>
+<p>之间的区别。</p>
+<hr />
+<h1 id="十一第二个指标tps">十一、第二个指标：TPS</h1>
+<p>第一个 Token 出来以后，</p>
+<p>系统开始：</p>
+<pre class="text"><code>Token
+Token
+Token
+Token
+Token</code></pre>
+<p>连续生成。</p>
+<p>这时我们关注：</p>
+<h1 id="tokens-per-second">Tokens Per Second</h1>
+<p>简称：</p>
+<h1 id="tps">TPS</h1>
+<hr />
+<h1 id="十二例如">十二、例如</h1>
+<p>模型 1 秒钟：</p>
+<blockquote>
+<p>生成 50 个 Token。</p>
+</blockquote>
+<p>可以粗略说：</p>
+<pre class="text"><code>50 token/s</code></pre>
+<hr />
+<h1 id="十三tps-是阅读前还是写答案速度">十三、TPS
+是“阅读前”还是“写答案”速度？</h1>
+<p>更直觉地说：</p>
+<blockquote>
+<p>TPS 主要让你感受模型 <strong>后续写答案有多快</strong>。</p>
+</blockquote>
+<p>而 TTFT：</p>
+<blockquote>
+<p>更像模型 <strong>开始说话前要准备多久</strong>。</p>
+</blockquote>
+<hr />
+<h1 id="十四用采购专家类比">十四、用采购专家类比</h1>
+<h3 id="ttft">TTFT</h3>
+<p>像：</p>
+<blockquote>
+<p>专家看完材料以后，多快开始开口。</p>
+</blockquote>
+<h3 id="tps-1">TPS</h3>
+<p>像：</p>
+<blockquote>
+<p>专家开始说以后，说话速度多快。</p>
+</blockquote>
+<p>这两个指标：</p>
+<blockquote>
+<p>完全不是一回事。</p>
+</blockquote>
+<hr />
+<h1 id="十五来看两个模型">十五、来看两个模型</h1>
+<h3 id="模型-a-2">模型 A</h3>
+<pre class="text"><code>TTFT = 1秒
+TPS  = 20 token/s</code></pre>
+<h3 id="模型-b-2">模型 B</h3>
+<pre class="text"><code>TTFT = 5秒
+TPS  = 80 token/s</code></pre>
+<p>哪个更快？</p>
+<p>答案：</p>
+<blockquote>
+<p><strong>问题问得不完整。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十六如果只回答-20-token">十六、如果只回答 20 Token</h1>
+<p>模型 A：</p>
+<blockquote>
+<p>很可能体验更好。</p>
+</blockquote>
+<p>因为 B：</p>
+<blockquote>
+<p>光准备就等 5 秒。</p>
+</blockquote>
+<hr />
+<h1 id="十七如果要生成-5000-token-长报告">十七、如果要生成 5000 Token
+长报告</h1>
+<p>模型 B：</p>
+<blockquote>
+<p>后续生成速度巨大优势可能逐渐体现出来。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi><mi>长</mi><mi>度</mi><mo>+</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>长</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Prompt长度
++
+Output长度
+}
+</annotation></semantics></math></p>
+<p>会影响：</p>
+<blockquote>
+<p>用户到底更在意 TTFT 还是 TPS。</p>
+</blockquote>
+<hr />
+<h1 id="十八第三个指标latency">十八、第三个指标：Latency</h1>
+<p>Latency：</p>
+<blockquote>
+<p><strong>一个请求从进入系统，到得到所需结果，要等多久。</strong></p>
+</blockquote>
+<p>这是一个更完整的概念。</p>
+<hr />
+<h1 id="十九不要把-latency-只理解成模型-forward-时间">十九、不要把
+Latency 只理解成模型 Forward 时间</h1>
+<p>真实请求可能经历：</p>
+<pre class="text"><code>请求进入
+  ↓
+排队
+  ↓
+Tokenizer
+  ↓
+Prefill
+  ↓
+Decode
+  ↓
+后处理
+  ↓
+JSON校验
+  ↓
+Citation验证
+  ↓
+最终返回</code></pre>
+<p>全部加起来：</p>
+<blockquote>
+<p>才是用户真正体验到的等待时间。</p>
+</blockquote>
+<hr />
+<h1
+id="二十所以一个非常重要的心智模型">二十、所以一个非常重要的心智模型</h1>
+<p>可以把总等待时间粗略看成：</p>
+<pre class="text"><code>Total Latency
+=
+Queue Time
++
+Prefill Time
++
+Decode Time
++
+其它系统开销</code></pre>
+<p>这不是要你背公式。</p>
+<p>只是告诉你：</p>
+<blockquote>
+<p>“慢”可能慢在不同位置。</p>
+</blockquote>
+<hr />
+<h1 id="二十一一个-procurementai-案例">二十一、一个 ProcurementAI
+案例</h1>
+<p>用户说：</p>
+<blockquote>
+<p>“为什么模型今天这么慢？”</p>
+</blockquote>
+<p>你不能马上回答：</p>
+<blockquote>
+<p>“GPU 不够快。”</p>
+</blockquote>
+<p>可能实际是：</p>
+<pre class="text"><code>GPU Forward      很快
+但前面排队       18秒</code></pre>
+<p>真正的问题：</p>
+<blockquote>
+<p>并发调度。</p>
+</blockquote>
+<hr />
+<h1 id="二十二另一个案例">二十二、另一个案例</h1>
+<p>排队只有：</p>
+<pre class="text"><code>0.1秒</code></pre>
+<p>但用户上传：</p>
+<pre class="text"><code>100K Token</code></pre>
+<p>Prefill：</p>
+<blockquote>
+<p>非常长。</p>
+</blockquote>
+<p>这时真正的问题：</p>
+<blockquote>
+<p>Context / Prefill。</p>
+</blockquote>
+<hr />
+<h1 id="二十三再一个案例">二十三、再一个案例</h1>
+<p>Prompt 很短。</p>
+<p>但要求：</p>
+<blockquote>
+<p>生成 6000 Token 审查报告。</p>
+</blockquote>
+<p>TTFT：</p>
+<blockquote>
+<p>很快。</p>
+</blockquote>
+<p>最后完成：</p>
+<blockquote>
+<p>很慢。</p>
+</blockquote>
+<p>问题主要：</p>
+<h1 id="decode-1">Decode</h1>
+<hr />
+<h1
+id="二十四所以以后排查性能第一件事不是问">二十四、所以以后排查性能第一件事不是问</h1>
+<blockquote>
+<p>“模型快不快？”</p>
+</blockquote>
+<p>而应该拆成：</p>
+<pre class="text"><code>Queue慢？
+
+Prefill慢？
+
+Decode慢？
+
+还是后处理慢？</code></pre>
+<p>这和之前显存阶段：</p>
+<blockquote>
+<p>先找 dominant term</p>
+</blockquote>
+<p>是同一种专家思维。</p>
+<hr />
+<h1 id="二十五第四个指标throughput">二十五、第四个指标：Throughput</h1>
+<p>Throughput 可以翻译成：</p>
+<blockquote>
+<p><strong>吞吐量。</strong></p>
+</blockquote>
+<p>它回答的是：</p>
+<blockquote>
+<p>整套系统单位时间能够完成多少工作。</p>
+</blockquote>
+<hr />
+<h1 id="二十六例如">二十六、例如</h1>
+<p>系统 A：</p>
+<pre class="text"><code>每秒总共生成50 Token</code></pre>
+<p>系统 B：</p>
+<pre class="text"><code>每秒总共生成500 Token</code></pre>
+<p>B：</p>
+<blockquote>
+<p>整体吞吐更高。</p>
+</blockquote>
+<hr />
+<h1 id="二十七也可以用-request-来衡量">二十七、也可以用 Request
+来衡量</h1>
+<p>例如：</p>
+<pre class="text"><code>每分钟完成100个请求</code></pre>
+<p>或者：</p>
+<pre class="text"><code>每秒处理20个请求</code></pre>
+<p>取决于：</p>
+<blockquote>
+<p>业务定义。</p>
+</blockquote>
+<hr />
+<h1 id="二十八latency-与-throughput-不是同一个东西">二十八、Latency 与
+Throughput 不是同一个东西</h1>
+<p>这是本阶段特别重要的一组区别。</p>
+<h3 id="latency">Latency</h3>
+<p>关心：</p>
+<blockquote>
+<p><strong>一个用户等多久。</strong></p>
+</blockquote>
+<h3 id="throughput">Throughput</h3>
+<p>关心：</p>
+<blockquote>
+<p><strong>整个系统一小时能服务多少用户。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十九用高速公路类比">二十九、用高速公路类比</h1>
+<p>Latency：</p>
+<blockquote>
+<p>一辆车从入口到出口要多久。</p>
+</blockquote>
+<p>Throughput：</p>
+<blockquote>
+<p>一小时能通过多少辆车。</p>
+</blockquote>
+<hr />
+<h1 id="三十一条车道可能单车很快">三十、一条车道可能单车很快</h1>
+<p>但只能：</p>
+<blockquote>
+<p>一辆一辆过。</p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p>单请求 Latency 很漂亮，</p>
+</blockquote>
+<p>系统 Throughput：</p>
+<blockquote>
+<p>可能很差。</p>
+</blockquote>
+<hr />
+<h1
+id="三十一这就是很多跑分视频容易误导的地方">三十一、这就是很多“跑分视频”容易误导的地方</h1>
+<p>有人展示：</p>
+<pre class="text"><code>一个用户
+一个Prompt
+一张GPU</code></pre>
+<p>然后说：</p>
+<blockquote>
+<p>“模型每秒 70 Token，非常快。”</p>
+</blockquote>
+<p>这只能说明：</p>
+<blockquote>
+<p>单请求某种条件下挺快。</p>
+</blockquote>
+<p>并不能说明：</p>
+<blockquote>
+<p>100 个用户来时系统仍然很好。</p>
+</blockquote>
+<hr />
+<h1 id="三十二现在终于进入-batching">三十二、现在终于进入 Batching</h1>
+<p>GPU 有一个特点：</p>
+<blockquote>
+<p>它特别擅长做大量并行计算。</p>
+</blockquote>
+<p>如果你每次只给 GPU：</p>
+<blockquote>
+<p>一丁点工作，</p>
+</blockquote>
+<p>它很多计算单元：</p>
+<blockquote>
+<p>可能吃不饱。</p>
+</blockquote>
+<hr />
+<h1 id="三十三想象一个-100-人大厨房">三十三、想象一个 100 人大厨房</h1>
+<p>你有：</p>
+<blockquote>
+<p>100 个厨师。</p>
+</blockquote>
+<p>但现在每次只进来：</p>
+<blockquote>
+<p>1 个三明治订单。</p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>1个厨师工作
+99个厨师发呆</code></pre>
+<p>很浪费。</p>
+<hr />
+<h1 id="三十四如果一次来了-32-个订单">三十四、如果一次来了 32
+个订单</h1>
+<p>可以：</p>
+<blockquote>
+<p>同时处理。</p>
+</blockquote>
+<p>GPU 利用率：</p>
+<blockquote>
+<p>可能明显提高。</p>
+</blockquote>
+<p>这就是 Batching 的第一层直觉。</p>
+<hr />
+<h1 id="三十五batching-不是让模型变聪明">三十五、Batching
+不是让模型变聪明</h1>
+<p>Batching 改变的是：</p>
+<blockquote>
+<p><strong>我们怎样把工作交给 GPU。</strong></p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>Weight。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Batching
+=
+Serving Efficiency</code></pre>
+<p>不是：</p>
+<pre class="text"><code>Model Intelligence</code></pre>
+<hr />
+<h1 id="三十六最简单的-static-batching">三十六、最简单的 Static
+Batching</h1>
+<p>假设系统规定：</p>
+<blockquote>
+<p>凑齐 8 个请求，再一起运行。</p>
+</blockquote>
+<pre class="text"><code>A ┐
+B │
+C │
+D ├──→ Batch 8 → GPU
+E │
+F │
+G │
+H ┘</code></pre>
+<p>这样可以：</p>
+<blockquote>
+<p>提高并行效率。</p>
+</blockquote>
+<hr />
+<h1 id="三十七但马上出现一个问题">三十七、但马上出现一个问题</h1>
+<p>请求 A：</p>
+<pre class="text"><code>输出50 Token</code></pre>
+<p>请求 B：</p>
+<pre class="text"><code>输出3000 Token</code></pre>
+<p>请求 C：</p>
+<pre class="text"><code>输出200 Token</code></pre>
+<hr />
+<h1 id="三十八谁先结束">三十八、谁先结束？</h1>
+<p>A：</p>
+<blockquote>
+<p>很快。</p>
+</blockquote>
+<p>但如果是传统固定 Batch 思维，</p>
+<p>可能出现：</p>
+<blockquote>
+<p>A 已经没事干了，但这个 Batch 还被 B 拖着。</p>
+</blockquote>
+<p>这就是一种：</p>
+<h1 id="waste">Waste</h1>
+<hr />
+<h1 id="三十九用旅游大巴理解-static-batch">三十九、用旅游大巴理解 Static
+Batch</h1>
+<p>8 个人坐一辆大巴。</p>
+<p>规则：</p>
+<blockquote>
+<p>必须所有人办完事，大巴才能走。</p>
+</blockquote>
+<hr />
+<h3 id="a">A</h3>
+<p>办事：</p>
+<blockquote>
+<p>5分钟。</p>
+</blockquote>
+<h3 id="b-1">B</h3>
+<p>办事：</p>
+<blockquote>
+<p>2小时。</p>
+</blockquote>
+<hr />
+<p>结果 A：</p>
+<blockquote>
+<p>等 B 两小时。</p>
+</blockquote>
+<p>整个资源利用：</p>
+<blockquote>
+<p>很差。</p>
+</blockquote>
+<hr />
+<h1 id="四十而-llm-请求天然就是长短不一">四十、而 LLM
+请求天然就是“长短不一”</h1>
+<p>因为每个用户：</p>
+<ul>
+<li>Prompt 长度不同；</li>
+<li>Output 长度不同；</li>
+<li>EOS 出现时间不同。</li>
+</ul>
+<p>所以：</p>
+<blockquote>
+<p>固定 Batch 非常别扭。</p>
+</blockquote>
+<hr />
+<h1 id="四十一这就引出-continuous-batching">四十一、这就引出 Continuous
+Batching</h1>
+<p>名字看起来复杂。</p>
+<p>其实直觉非常简单：</p>
+<blockquote>
+<p><strong>谁结束了，谁就退出；有新请求，就尽快补进来。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十二还是一辆动态公交">四十二、还是一辆动态公交</h1>
+<p>开始：</p>
+<pre class="text"><code>A
+B
+C
+D</code></pre>
+<p>一起在 GPU 上跑。</p>
+<hr />
+<h2 id="a-先结束">1. A 先结束</h2>
+<p>A 下车。</p>
+<p>马上有：</p>
+<pre class="text"><code>E</code></pre>
+<p>进入。</p>
+<p>现在：</p>
+<pre class="text"><code>B
+C
+D
+E</code></pre>
+<p>继续。</p>
+<hr />
+<h2 id="c-又结束">2. C 又结束</h2>
+<p>C 下车。</p>
+<p>新请求：</p>
+<pre class="text"><code>F</code></pre>
+<p>加入。</p>
+<hr />
+<h1 id="四十三这就是-continuous-的感觉">四十三、这就是 Continuous
+的感觉</h1>
+<p>不是：</p>
+<pre class="text"><code>一批开始
+↓
+必须整批全部结束
+↓
+下一批才能开始</code></pre>
+<p>而更像：</p>
+<pre class="text"><code>GPU始终保持一个动态工作池
+
+完成一个
+↓
+腾出位置
+
+新请求
+↓
+及时补进来</code></pre>
+<hr />
+<h1 id="四十四这对-llm-特别合适">四十四、这对 LLM 特别合适</h1>
+<p>因为 Decode 本来就是：</p>
+<pre class="text"><code>一步
+生成一个Token
+
+下一步
+再生成一个Token</code></pre>
+<p>所以推理引擎有机会在：</p>
+<blockquote>
+<p>多个请求之间动态调度。</p>
+</blockquote>
+<hr />
+<h1
+id="四十五第五个核心心智模型正式出现">四十五、第五个核心心智模型正式出现</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>o</mi><mi>u</mi><mi>s</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>把</mi><mi>G</mi><mi>P</mi><mi>U</mi><mi>当</mi><mi>成</mi><mi>持</mi><mi>续</mi><mi>运</mi><mi>行</mi><mi>的</mi><mi>公</mi><mi>共</mi><mi>服</mi><mi>务</mi><mi>平</mi><mi>台</mi><mi>而</mi><mi>不</mi><mi>是</mi><mi>一</mi><mi>批</mi><mi>一</mi><mi>批</mi><mi>死</mi><mi>等</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ContinuousBatching
+=
+把GPU当成持续运行的公共服务平台
+而不是一批一批死等
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十六政府采购大厅类比">四十六、政府采购大厅类比</h1>
+<p>传统 Static Batch：</p>
+<blockquote>
+<p>每 10 个人一组。</p>
+</blockquote>
+<p>只要其中一个：</p>
+<blockquote>
+<p>业务特别复杂，</p>
+</blockquote>
+<p>另外 9 个：</p>
+<blockquote>
+<p>都跟着等。</p>
+</blockquote>
+<hr />
+<p>Continuous Batching：</p>
+<blockquote>
+<p>谁办完谁走。</p>
+</blockquote>
+<p>新的人：</p>
+<blockquote>
+<p>有窗口就补进来。</p>
+</blockquote>
+<p>所以整个大厅：</p>
+<blockquote>
+<p>更高效。</p>
+</blockquote>
+<hr />
+<h1 id="四十七为什么-throughput-会提高">四十七、为什么 Throughput
+会提高？</h1>
+<p>因为 GPU：</p>
+<blockquote>
+<p>更少时间闲着。</p>
+</blockquote>
+<p>同样一小时：</p>
+<blockquote>
+<p>可以处理更多 Token / 请求。</p>
+</blockquote>
+<p>所以 Continuous Batching 主要优化：</p>
+<h1 id="system-utilization">System Utilization</h1>
+<hr />
+<h1 id="四十八但-throughput-提高是不是一定让每个用户都更快">四十八、但
+Throughput 提高是不是一定让每个用户都更快？</h1>
+<p>不一定。</p>
+<p>这是一个非常重要的 Trade-off。</p>
+<hr />
+<h1 id="四十九假设-gpu-同时服务很多用户">四十九、假设 GPU
+同时服务很多用户</h1>
+<p>优点：</p>
+<blockquote>
+<p>总吞吐高。</p>
+</blockquote>
+<p>但每个人：</p>
+<blockquote>
+<p>可能要和别人分享 GPU 时间。</p>
+</blockquote>
+<p>于是某些情况下：</p>
+<blockquote>
+<p>单用户 TPS 可能下降。</p>
+</blockquote>
+<hr />
+<h1 id="五十所以又出现一组经典矛盾">五十、所以又出现一组经典矛盾</h1>
+<pre class="text"><code>单用户极致速度
+vs
+整机最大吞吐</code></pre>
+<p>这两个目标：</p>
+<blockquote>
+<p>不总是一致。</p>
+</blockquote>
+<hr />
+<h1
+id="五十一这就是为什么生产推理需要-scheduler">五十一、这就是为什么生产推理需要
+Scheduler</h1>
+<p>Scheduler：</p>
+<blockquote>
+<p>调度器。</p>
+</blockquote>
+<p>它决定：</p>
+<pre class="text"><code>谁先上GPU？
+
+谁继续生成？
+
+谁暂时等待？
+
+一次允许多少Sequence？
+
+Prefill和Decode怎么排？</code></pre>
+<hr />
+<h1 id="五十二scheduler-像大厅叫号系统">五十二、Scheduler
+像大厅叫号系统</h1>
+<p>不是模型专家本身。</p>
+<p>它负责：</p>
+<blockquote>
+<p><strong>谁什么时候得到服务资源。</strong></p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Scheduler
+≠
+LLM</code></pre>
+<hr />
+<h1
+id="五十三一个很重要的问题prefill-和-decode-的计算特征不太一样">五十三、一个很重要的问题：Prefill
+和 Decode 的计算特征不太一样</h1>
+<p>不用进入 GPU 微架构。</p>
+<p>只先建立直觉。</p>
+<h3 id="prefill-2">Prefill</h3>
+<p>一次处理：</p>
+<blockquote>
+<p>很多输入 Token。</p>
+</blockquote>
+<p>可以形成：</p>
+<blockquote>
+<p>较大的矩阵计算。</p>
+</blockquote>
+<p>通常更加：</p>
+<blockquote>
+<p>Compute-heavy。</p>
+</blockquote>
+<hr />
+<h3 id="decode-2">Decode</h3>
+<p>每一步：</p>
+<blockquote>
+<p>每个 Sequence 只增加少量新 Token。</p>
+</blockquote>
+<p>却需要不断：</p>
+<blockquote>
+<p>读取大量 Weight 和 KV。</p>
+</blockquote>
+<p>很多场景下会更加受：</p>
+<blockquote>
+<p>Memory Bandwidth</p>
+</blockquote>
+<p>影响。</p>
+<hr />
+<h1 id="五十四用专家办公室类比">五十四、用专家办公室类比</h1>
+<p>Prefill：</p>
+<blockquote>
+<p>一次性读一大摞文件。</p>
+</blockquote>
+<p>Decode：</p>
+<blockquote>
+<p>每写一句话，都不断回头查自己的知识和已经读过的笔记。</p>
+</blockquote>
+<p>两者工作模式：</p>
+<blockquote>
+<p>不一样。</p>
+</blockquote>
+<hr />
+<h1 id="五十五所以-prefill-和-decode-会争-gpu">五十五、所以 Prefill 和
+Decode 会争 GPU</h1>
+<p>假设正在有 20 个用户：</p>
+<blockquote>
+<p>一个 Token 一个 Token Decode。</p>
+</blockquote>
+<p>突然来了用户 X：</p>
+<pre class="text"><code>100K Token Prompt</code></pre>
+<p>X 的 Prefill：</p>
+<blockquote>
+<p>是一大坨工作。</p>
+</blockquote>
+<hr />
+<h1 id="五十六如果系统让-x-一口气霸占-gpu">五十六、如果系统让 X
+一口气霸占 GPU</h1>
+<p>其他正在聊天的人可能感觉：</p>
+<blockquote>
+<p>突然卡住。</p>
+</blockquote>
+<p>这就是服务系统中的：</p>
+<h1 id="scheduling-problem">Scheduling Problem</h1>
+<hr />
+<h1
+id="五十七这有点像高速公路突然来了一辆超长车队">五十七、这有点像高速公路突然来了一辆超长车队</h1>
+<p>原来：</p>
+<blockquote>
+<p>大家平稳通过。</p>
+</blockquote>
+<p>突然：</p>
+<blockquote>
+<p>100 辆重型卡车一起占道。</p>
+</blockquote>
+<p>其它小车：</p>
+<blockquote>
+<p>延迟暴涨。</p>
+</blockquote>
+<hr />
+<h1
+id="五十八所以好的推理服务不仅要batch">五十八、所以好的推理服务不仅要“Batch”</h1>
+<p>还要考虑：</p>
+<blockquote>
+<p><strong>Batch 谁、什么时候 Batch、Prefill 怎么切、Decode
+怎么公平调度。</strong></p>
+</blockquote>
+<p>这已经开始进入真正的系统工程。</p>
+<hr />
+<h1 id="五十九现在回到第-7-阶段的-kv-cache">五十九、现在回到第 7 阶段的
+KV Cache</h1>
+<p>每一个活跃用户都有：</p>
+<blockquote>
+<p>自己的 KV Cache。</p>
+</blockquote>
+<p>比如：</p>
+<pre class="text"><code>User A → KV_A
+User B → KV_B
+User C → KV_C
+User D → KV_D</code></pre>
+<p>随着：</p>
+<blockquote>
+<p>请求不断进入、结束，</p>
+</blockquote>
+<p>这些 Cache：</p>
+<blockquote>
+<p>不断申请、增长、释放。</p>
+</blockquote>
+<hr />
+<h1
+id="六十如果内存管理很笨会发生什么">六十、如果内存管理很笨，会发生什么？</h1>
+<p>想象一块显存：</p>
+<pre class="text"><code>[AAAAAA][BBBBBBBB][CCCC][DDDDDD]</code></pre>
+<p>A 完成了。</p>
+<p>释放：</p>
+<pre class="text"><code>[      ][BBBBBBBB][CCCC][DDDDDD]</code></pre>
+<hr />
+<h1 id="六十一后来-c-又完成">六十一、后来 C 又完成</h1>
+<pre class="text"><code>[      ][BBBBBBBB][    ][DDDDDD]</code></pre>
+<p>现在总空闲：</p>
+<blockquote>
+<p>可能不少。</p>
+</blockquote>
+<p>但空位：</p>
+<blockquote>
+<p>被切成很多小块。</p>
+</blockquote>
+<p>这就是我们第 7 阶段说过的：</p>
+<h1 id="fragmentation">Fragmentation</h1>
+<hr />
+<h1 id="六十二然后来了一个长请求-e">六十二、然后来了一个长请求 E</h1>
+<p>它想要一大块连续空间。</p>
+<p>虽然：</p>
+<blockquote>
+<p>总空闲显存够，</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>连续的大块不够。</p>
+</blockquote>
+<p>结果：</p>
+<blockquote>
+<p>内存利用很差甚至 OOM。</p>
+</blockquote>
+<hr />
+<h1 id="六十三这就是为什么-kv-cache-管理非常关键">六十三、这就是为什么
+KV Cache 管理非常关键</h1>
+<p>它不是：</p>
+<blockquote>
+<p>一个小附件。</p>
+</blockquote>
+<p>在长 Context、多并发服务中，</p>
+<p>KV Cache 可能就是：</p>
+<blockquote>
+<p>显存调度的核心对象之一。</p>
+</blockquote>
+<hr />
+<h1 id="六十四现在进入-pagedattention-的核心直觉">六十四、现在进入
+PagedAttention 的核心直觉</h1>
+<p>先不要看论文公式。</p>
+<p>只看名字：</p>
+<h1 id="paged">Paged</h1>
+<p>分页。</p>
+<p>这个思想和操作系统管理内存：</p>
+<blockquote>
+<p>很像。</p>
+</blockquote>
+<hr />
+<h1
+id="六十五传统思路像给每个用户一整套连续房间">六十五、传统思路像给每个用户一整套连续房间</h1>
+<p>用户 A 预计可能需要：</p>
+<pre class="text"><code>100个房间</code></pre>
+<p>于是提前：</p>
+<blockquote>
+<p>给他留 100 个连续房间。</p>
+</blockquote>
+<p>但他最后只用了：</p>
+<pre class="text"><code>20个</code></pre>
+<p>剩下 80：</p>
+<blockquote>
+<p>被浪费。</p>
+</blockquote>
+<hr />
+<h1 id="六十六paged-的思路">六十六、Paged 的思路</h1>
+<p>不要提前要求：</p>
+<blockquote>
+<p>一整块连续大空间。</p>
+</blockquote>
+<p>而是把 KV Cache 切成很多：</p>
+<h1 id="blocks-pages">Blocks / Pages</h1>
+<hr />
+<h1 id="六十七像一本活页夹">六十七、像一本活页夹</h1>
+<p>用户 A：</p>
+<pre class="text"><code>Block 7
+Block 9
+Block 31
+Block 42</code></pre>
+<p>虽然这些 Block：</p>
+<blockquote>
+<p>在物理显存里不连续，</p>
+</blockquote>
+<p>系统仍然知道：</p>
+<blockquote>
+<p>它们逻辑上属于 A 的连续上下文。</p>
+</blockquote>
+<hr />
+<h1 id="六十八用户-b-可能占">六十八、用户 B 可能占</h1>
+<pre class="text"><code>Block 2
+Block 8
+Block 15</code></pre>
+<p>也不需要：</p>
+<blockquote>
+<p>挨在一起。</p>
+</blockquote>
+<hr />
+<h1
+id="六十九所以-pagedattention-最值得记的不是-attention-公式">六十九、所以
+PagedAttention 最值得记的不是 Attention 公式</h1>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>V</mi><mi>逻</mi><mi>辑</mi><mi>上</mi><mi>连</mi><mi>续</mi><mi>不</mi><mi>要</mi><mi>求</mi><mi>物</mi><mi>理</mi><mi>显</mi><mi>存</mi><mi>里</mi><mi>必</mi><mi>须</mi><mi>整</mi><mi>块</mi><mi>连</mi><mi>续</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KV逻辑上连续
+不要求物理显存里必须整块连续
+}
+</annotation></semantics></math></p>
+<p>这是最重要的直觉。</p>
+<hr />
+<h1 id="七十用政府档案库理解">七十、用政府档案库理解</h1>
+<p>以前：</p>
+<blockquote>
+<p>一个项目必须占一个完整柜子。</p>
+</blockquote>
+<p>项目只有 10 页：</p>
+<blockquote>
+<p>也占一整柜。</p>
+</blockquote>
+<p>非常浪费。</p>
+<hr />
+<p>Paged 思路：</p>
+<blockquote>
+<p>每个项目按照文件盒分页存放。</p>
+</blockquote>
+<p>比如项目 A：</p>
+<pre class="text"><code>盒17
+盒21
+盒38</code></pre>
+<p>系统目录知道：</p>
+<blockquote>
+<p>这三个盒子都属于项目 A。</p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p>不必物理连续。</p>
+</blockquote>
+<hr />
+<h1 id="七十一这样有什么好处">七十一、这样有什么好处？</h1>
+<p>主要直觉上有三个：</p>
+<pre class="text"><code>① 减少大块连续预留浪费
+
+② 减轻显存碎片问题
+
+③ 更灵活地让KV随着Sequence增长</code></pre>
+<hr />
+<h1
+id="七十二注意pagedattention-不会让-kv-cache-消失">七十二、注意：PagedAttention
+不会让 KV Cache 消失</h1>
+<p>它做的不是：</p>
+<pre class="text"><code>原本10GB KV
+↓
+突然变0GB</code></pre>
+<p>而是：</p>
+<blockquote>
+<p><strong>把显存管理得更聪明。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="七十三这和第-6-阶段-quantization-是完全不同的问题">七十三、这和第 6
+阶段 Quantization 是完全不同的问题</h1>
+<p>Quantization：</p>
+<blockquote>
+<p>改变一个数字占多大。</p>
+</blockquote>
+<p>PagedAttention：</p>
+<blockquote>
+<p>改变这些数据怎么组织和分配内存。</p>
+</blockquote>
+<hr />
+<h1 id="七十四两者可以同时存在">七十四、两者可以同时存在</h1>
+<p>例如：</p>
+<pre class="text"><code>4-bit Weight
++
+高效KV管理</code></pre>
+<p>一个优化：</p>
+<blockquote>
+<p>Weight。</p>
+</blockquote>
+<p>一个优化：</p>
+<blockquote>
+<p>Runtime KV Memory。</p>
+</blockquote>
+<p>不是二选一。</p>
+<hr />
+<h1 id="七十五现在终于可以理解-vllm-是什么角色">七十五、现在终于可以理解
+vLLM 是什么角色</h1>
+<p>不要先把 vLLM 理解成：</p>
+<blockquote>
+<p>一个新模型。</p>
+</blockquote>
+<p>它不是：</p>
+<pre class="text"><code>Llama
+Qwen
+Mistral</code></pre>
+<p>这种 Model Weight。</p>
+<hr />
+<h1 id="七十六vllm-更像什么">七十六、vLLM 更像什么？</h1>
+<p>可以先理解成：</p>
+<blockquote>
+<p><strong>专门负责让 LLM 高效提供推理服务的一套引擎。</strong></p>
+</blockquote>
+<p>也就是：</p>
+<pre class="text"><code>用户请求
+   ↓
+vLLM等Inference Engine
+   ↓
+调度 / Batching / KV管理
+   ↓
+真正的Model Weight
+   ↓
+GPU</code></pre>
+<hr />
+<h1
+id="七十七所以如果你用同一个模型">七十七、所以如果你用同一个模型</h1>
+<p>方案 A：</p>
+<pre class="text"><code>Transformers
+单请求简单generate</code></pre>
+<p>方案 B：</p>
+<pre class="text"><code>高性能Inference Engine</code></pre>
+<p>模型 Weight：</p>
+<blockquote>
+<p>可以完全一样。</p>
+</blockquote>
+<p>业务质量：</p>
+<blockquote>
+<p>理论上核心模型没有因为换 Serving Engine 就突然学会新知识。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>系统吞吐和资源利用可能差非常多。</p>
+</blockquote>
+<hr />
+<h1
+id="七十八这就是第六个核心心智模型">七十八、这就是第六个核心心智模型</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>E</mi><mi>n</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ServingEngine
+\neq
+ModelIntelligence
+}
+</annotation></semantics></math></p>
+<p>它主要解决：</p>
+<blockquote>
+<p><strong>如何更有效率地运行模型。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七十九一个采购大厅总类比">七十九、一个采购大厅总类比</h1>
+<p>现在我们把整个 Stage 9 都放进一个大厅。</p>
+<h3 id="model-weight">Model Weight</h3>
+<blockquote>
+<p>专家团队。</p>
+</blockquote>
+<h3 id="gpu">GPU</h3>
+<blockquote>
+<p>专家所在的办事大厅。</p>
+</blockquote>
+<h3 id="kv-cache-1">KV Cache</h3>
+<blockquote>
+<p>每个案件的临时工作档案。</p>
+</blockquote>
+<h3 id="scheduler">Scheduler</h3>
+<blockquote>
+<p>叫号系统。</p>
+</blockquote>
+<h3 id="continuous-batching">Continuous Batching</h3>
+<blockquote>
+<p>有空位就让下一案件进来。</p>
+</blockquote>
+<h3 id="pagedattention-1">PagedAttention</h3>
+<blockquote>
+<p>案件档案不用强制占连续完整柜子，而是分页灵活存储。</p>
+</blockquote>
+<h3 id="vllm">vLLM</h3>
+<blockquote>
+<p>整套高效率办事大厅管理系统之一。</p>
+</blockquote>
+<p>这张类比，基本可以贯穿本阶段。</p>
+<hr />
+<h1 id="八十现在区分四个性能指标">八十、现在区分四个性能指标</h1>
+<p>把它们放一张图：</p>
+<pre class="text"><code>用户发请求
+    │
+    │&lt;------ TTFT -------&gt;
+    ▼
+第一个Token
+    │
+    │ Token Token Token...
+    │&lt;--- TPS描述这一段 ---&gt;
+    ▼
+回答完成
+
+
+从请求进入
+一直到回答完成
+&lt;------ Latency ------&gt;
+
+
+整个服务器
+单位时间处理多少请求/Token
+&lt;------ Throughput ------&gt;</code></pre>
+<p>这张图要记牢。</p>
+<hr />
+<h1 id="八十一一个具体数字案例">八十一、一个具体数字案例</h1>
+<p>系统 A：</p>
+<pre class="text"><code>TTFT = 1秒
+TPS = 25 token/s</code></pre>
+<p>输出：</p>
+<pre class="text"><code>500 Token</code></pre>
+<p>粗略感觉：</p>
+<blockquote>
+<p>先等 1 秒，</p>
+</blockquote>
+<p>然后后面约：</p>
+<blockquote>
+<p>20 秒左右生成。</p>
+</blockquote>
+<p>总时间：</p>
+<blockquote>
+<p>约 21 秒级别，再加其它开销。</p>
+</blockquote>
+<hr />
+<h1 id="八十二系统-b">八十二、系统 B</h1>
+<pre class="text"><code>TTFT = 5秒
+TPS = 100 token/s</code></pre>
+<p>同样 500 Token：</p>
+<blockquote>
+<p>先等 5 秒，</p>
+</blockquote>
+<p>后面约：</p>
+<blockquote>
+<p>5 秒。</p>
+</blockquote>
+<p>总共：</p>
+<blockquote>
+<p>约 10 秒级别。</p>
+</blockquote>
+<hr />
+<h1 id="八十三如果只输出-20-token-呢">八十三、如果只输出 20 Token
+呢？</h1>
+<p>A：</p>
+<blockquote>
+<p>可能用户感觉更灵。</p>
+</blockquote>
+<p>B：</p>
+<blockquote>
+<p>5 秒第一字等待反而明显。</p>
+</blockquote>
+<p>所以性能指标一定要和：</p>
+<blockquote>
+<p><strong>真实工作负载</strong></p>
+</blockquote>
+<p>一起看。</p>
+<hr />
+<h1
+id="八十四这也是为什么-benchmark-不能只给一个-tps">八十四、这也是为什么
+Benchmark 不能只给一个 TPS</h1>
+<p>如果别人告诉你：</p>
+<pre class="text"><code>模型速度 = 100 token/s</code></pre>
+<p>你至少还应该问：</p>
+<pre class="text"><code>什么GPU？
+
+什么Model？
+
+什么Precision？
+
+Prompt多长？
+
+Output多长？
+
+Batch是多少？
+
+并发是多少？
+
+是单请求TPS还是系统总吞吐？
+
+TTFT是多少？</code></pre>
+<p>否则这个数字：</p>
+<blockquote>
+<p>很容易失去意义。</p>
+</blockquote>
+<hr />
+<h1 id="八十五采购-ai-的-benchmark-更不能只测hello">八十五、采购 AI 的
+Benchmark 更不能只测“Hello”</h1>
+<p>真实用户可能输入：</p>
+<h3 id="case-a">Case A</h3>
+<pre class="text"><code>200 Token</code></pre>
+<p>一个资格条件。</p>
+<h3 id="case-b">Case B</h3>
+<pre class="text"><code>8K Token</code></pre>
+<p>一章采购需求。</p>
+<h3 id="case-c">Case C</h3>
+<pre class="text"><code>32K Token</code></pre>
+<p>完整文件片段。</p>
+<h3 id="case-d">Case D</h3>
+<pre class="text"><code>长Prompt
++
+长RAG证据
++
+2000 Token报告</code></pre>
+<p>性能：</p>
+<blockquote>
+<p>会完全不同。</p>
+</blockquote>
+<hr />
+<h1
+id="八十六所以我们未来至少要建立几类-workload">八十六、所以我们未来至少要建立几类
+Workload</h1>
+<pre class="text"><code>短输入 + 短输出
+
+长输入 + 短输出
+
+短输入 + 长输出
+
+长输入 + 长输出</code></pre>
+<p>这四类：</p>
+<blockquote>
+<p>对系统压力完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="八十七长输入-短输出">八十七、长输入 + 短输出</h1>
+<p>例如：</p>
+<blockquote>
+<p>审查 100 页文件，只输出 5 个风险点。</p>
+</blockquote>
+<p>特点：</p>
+<pre class="text"><code>Prefill重
+Decode较轻</code></pre>
+<p>更关注：</p>
+<blockquote>
+<p>TTFT。</p>
+</blockquote>
+<hr />
+<h1 id="八十八短输入-长输出">八十八、短输入 + 长输出</h1>
+<p>例如：</p>
+<blockquote>
+<p>给一个项目概要，生成 3000 Token 审查报告。</p>
+</blockquote>
+<p>特点：</p>
+<pre class="text"><code>Prefill轻
+Decode重</code></pre>
+<p>更关注：</p>
+<blockquote>
+<p>TPS 和总 Latency。</p>
+</blockquote>
+<hr />
+<h1 id="八十九长输入-长输出">八十九、长输入 + 长输出</h1>
+<p>这个最狠。</p>
+<p>例如：</p>
+<pre class="text"><code>30K采购文件
++
+5K法规证据
++
+输出4K审查报告</code></pre>
+<p>它同时压力：</p>
+<pre class="text"><code>Prefill
++
+KV Cache
++
+Decode</code></pre>
+<p>这才接近很多真实采购 AI 工作负载。</p>
+<hr />
+<h1 id="九十现在说-queueing">九十、现在说 Queueing</h1>
+<p>单用户测试：</p>
+<blockquote>
+<p>没有排队。</p>
+</blockquote>
+<p>生产：</p>
+<blockquote>
+<p>有排队。</p>
+</blockquote>
+<hr />
+<h1 id="九十一假设一张-gpu-每秒最多服务某个负载">九十一、假设一张 GPU
+每秒最多服务某个负载</h1>
+<p>突然在 1 秒钟内来了：</p>
+<pre class="text"><code>100个请求</code></pre>
+<p>GPU 不可能：</p>
+<blockquote>
+<p>同时无限处理。</p>
+</blockquote>
+<p>所以一部分：</p>
+<blockquote>
+<p>必须排队。</p>
+</blockquote>
+<hr />
+<h1 id="九十二排队会让-ttft-变差">九十二、排队会让 TTFT 变差</h1>
+<p>注意：</p>
+<p>用户感受到的“第一字等待”在产品层面可能包括：</p>
+<pre class="text"><code>Queue Time
++
+Prefill Time</code></pre>
+<p>所以即使模型 Prefill 很快，</p>
+<p>队伍太长：</p>
+<blockquote>
+<p>用户仍然觉得慢。</p>
+</blockquote>
+<hr />
+<h1
+id="九十三这就是为什么平均值不够">九十三、这就是为什么平均值不够</h1>
+<p>假设：</p>
+<pre class="text"><code>平均TTFT = 2秒</code></pre>
+<p>听起来很好。</p>
+<p>但真实可能是：</p>
+<pre class="text"><code>90%用户：1秒
+
+最后10%用户：12秒</code></pre>
+<p>那一部分用户：</p>
+<blockquote>
+<p>体验很差。</p>
+</blockquote>
+<hr />
+<h1 id="九十四因此生产性能经常看-percentile">九十四、因此生产性能经常看
+Percentile</h1>
+<p>例如：</p>
+<pre class="text"><code>P50
+P95
+P99</code></pre>
+<p>先只理解直觉。</p>
+<hr />
+<h1 id="九十五p50">九十五、P50</h1>
+<p>大约：</p>
+<blockquote>
+<p>一半用户比它快，一半比它慢。</p>
+</blockquote>
+<p>可以把它理解成：</p>
+<blockquote>
+<p>典型用户体验。</p>
+</blockquote>
+<hr />
+<h1 id="九十六p95">九十六、P95</h1>
+<p>大约：</p>
+<blockquote>
+<p>95% 的请求都不比这个值更慢太多。</p>
+</blockquote>
+<p>更能看：</p>
+<blockquote>
+<p>较差用户的体验。</p>
+</blockquote>
+<hr />
+<h1 id="九十七p99">九十七、P99</h1>
+<p>关注：</p>
+<blockquote>
+<p>尾部极慢请求。</p>
+</blockquote>
+<p>对于生产系统，</p>
+<p>这种：</p>
+<h1 id="tail-latency">Tail Latency</h1>
+<p>很重要。</p>
+<hr />
+<h1
+id="九十八为什么政府采购系统尤其不能只看平均值">九十八、为什么政府采购系统尤其不能只看平均值？</h1>
+<p>因为某个特别大的采购文件：</p>
+<blockquote>
+<p>可能把队列堵住。</p>
+</blockquote>
+<p>普通请求：</p>
+<blockquote>
+<p>也被拖慢。</p>
+</blockquote>
+<p>如果只看平均：</p>
+<blockquote>
+<p>可能掩盖问题。</p>
+</blockquote>
+<hr />
+<h1
+id="九十九一个超长文件堵大厅的例子">九十九、一个“超长文件堵大厅”的例子</h1>
+<p>正常请求：</p>
+<pre class="text"><code>2K Token</code></pre>
+<p>突然来了一个：</p>
+<pre class="text"><code>120K Token</code></pre>
+<p>如果调度器处理不合理，</p>
+<p>这个大 Prefill：</p>
+<blockquote>
+<p>可能对其它用户产生明显影响。</p>
+</blockquote>
+<p>这类似：</p>
+<h1 id="head-of-line-blocking">Head-of-Line Blocking</h1>
+<hr />
+<h1 id="一百直觉是什么">一百、直觉是什么？</h1>
+<p>排队第一位：</p>
+<blockquote>
+<p>是一个超级复杂案件。</p>
+</blockquote>
+<p>后面：</p>
+<blockquote>
+<p>20 个简单案件。</p>
+</blockquote>
+<p>如果规则是：</p>
+<blockquote>
+<p>必须第一个完全办完，后面才能开始，</p>
+</blockquote>
+<p>所有简单案件：</p>
+<blockquote>
+<p>都被拖死。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一优秀-scheduler-要尽量避免这种低效">一百零一、优秀
+Scheduler 要尽量避免这种低效</h1>
+<p>也就是说：</p>
+<blockquote>
+<p>不只是追求 GPU 100% 忙，</p>
+</blockquote>
+<p>还要兼顾：</p>
+<ul>
+<li>公平；</li>
+<li>响应时间；</li>
+<li>长短请求；</li>
+<li>Prefill / Decode 混合。</li>
+</ul>
+<p>所以：</p>
+<blockquote>
+<p>Serving 是一个调度问题。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零二这和操作系统越来越像了">一百零二、这和操作系统越来越像了</h1>
+<p>一个 LLM Serving Engine 其实在同时管理：</p>
+<pre class="text"><code>计算资源
++
+显存
++
+请求队列
++
+KV Cache
++
+执行顺序</code></pre>
+<p>这已经不只是：</p>
+<blockquote>
+<p>“调用 model.generate()”。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零三为什么-hugging-face-generate-仍然很重要">一百零三、为什么
+Hugging Face <code>generate()</code> 仍然很重要？</h1>
+<p>因为学习、实验、单请求验证时：</p>
+<blockquote>
+<p>它简单、直观。</p>
+</blockquote>
+<p>我们的课程前面用它：</p>
+<blockquote>
+<p>非常合适。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零四但为什么生产可能需要专门推理引擎">一百零四、但为什么生产可能需要专门推理引擎？</h1>
+<p>因为生产目标变成：</p>
+<pre class="text"><code>多人
++
+高吞吐
++
+低延迟
++
+长Context
++
+更高GPU利用率</code></pre>
+<p>这不是简单：</p>
+<blockquote>
+<p>多写一个 for 循环</p>
+</blockquote>
+<p>就能解决。</p>
+<hr />
+<h1
+id="一百零五所以不要形成另一个极端">一百零五、所以不要形成另一个极端</h1>
+<p>不是：</p>
+<blockquote>
+<p>“Transformers 不专业，vLLM 才专业。”</p>
+</blockquote>
+<p>而是：</p>
+<pre class="text"><code>不同工具
+适合不同阶段</code></pre>
+<hr />
+<h1 id="一百零六学习阶段">一百零六、学习阶段</h1>
+<p>我们需要：</p>
+<pre class="text"><code>容易看懂
+容易调试
+容易观察Tensor</code></pre>
+<p>简单框架：</p>
+<blockquote>
+<p>很有价值。</p>
+</blockquote>
+<hr />
+<h1 id="一百零七生产服务阶段">一百零七、生产服务阶段</h1>
+<p>我们开始追求：</p>
+<pre class="text"><code>Batching
+Scheduling
+KV管理
+并发
+吞吐</code></pre>
+<p>专业 Serving Engine：</p>
+<blockquote>
+<p>价值开始变大。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零八这是开发环境和生产环境的区别">一百零八、这是“开发环境”和“生产环境”的区别</h1>
+<p>开发：</p>
+<blockquote>
+<p>追求理解和可调试性。</p>
+</blockquote>
+<p>生产：</p>
+<blockquote>
+<p>追求可靠、稳定、高利用率。</p>
+</blockquote>
+<p>不要过早：</p>
+<blockquote>
+<p>把所有生产优化塞进第一天学习。</p>
+</blockquote>
+<hr />
+<h1 id="一百零九现在回到-procurementai">一百零九、现在回到
+ProcurementAI</h1>
+<p>假设我们未来有：</p>
+<pre class="text"><code>100个采购单位</code></pre>
+<p>每天提交：</p>
+<blockquote>
+<p>采购文件风险审查。</p>
+</blockquote>
+<p>如果每个用户都独占：</p>
+<blockquote>
+<p>一套 14B 模型，</p>
+</blockquote>
+<p>成本会非常夸张。</p>
+<hr />
+<h1 id="一百一十更合理的方向">一百一十、更合理的方向</h1>
+<p>通常希望：</p>
+<pre class="text"><code>一套或多套共享Model Weight
+        │
+        ├─ User A KV
+        ├─ User B KV
+        ├─ User C KV
+        └─ ...</code></pre>
+<p>然后推理引擎：</p>
+<blockquote>
+<p>动态调度。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十一这就是为什么-stage-7-和-stage-9-是连续的">一百一十一、这就是为什么
+Stage 7 和 Stage 9 是连续的</h1>
+<p>Stage 7 问：</p>
+<blockquote>
+<p>显存里装了什么？</p>
+</blockquote>
+<p>Stage 9 问：</p>
+<blockquote>
+<p><strong>这些显存资源怎么在很多请求之间高效使用？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百一十二一个非常重要的系统公式不需要公式">一百一十二、一个非常重要的系统公式不需要公式</h1>
+<p>可以直接记成：</p>
+<pre class="text"><code>单请求性能
+≠
+多用户服务能力</code></pre>
+<p>再重复一遍：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SingleRequestSpeed
+\neq
+ServingCapacity
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百一十三为什么一张-gpu-tps-很高throughput-仍可能不高">一百一十三、为什么一张
+GPU TPS 很高，Throughput 仍可能不高？</h1>
+<p>如果它始终：</p>
+<blockquote>
+<p>一次只服务一个请求，</p>
+</blockquote>
+<p>GPU 并行能力：</p>
+<blockquote>
+<p>没有被充分利用。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十四为什么-throughput-很高某用户却觉得慢">一百一十四、为什么
+Throughput 很高，某用户却觉得慢？</h1>
+<p>因为系统：</p>
+<blockquote>
+<p>同时服务很多请求。</p>
+</blockquote>
+<p>单个请求可能：</p>
+<blockquote>
+<p>得不到全部 GPU 资源。</p>
+</blockquote>
+<p>这就是：</p>
+<pre class="text"><code>Throughput
+vs
+Latency</code></pre>
+<p>Trade-off。</p>
+<hr />
+<h1
+id="一百一十五生产系统真正要优化的是业务-sla">一百一十五、生产系统真正要优化的是“业务
+SLA”</h1>
+<p>SLA 先简单理解成：</p>
+<blockquote>
+<p>我们承诺什么体验。</p>
+</blockquote>
+<p>例如未来可以设想：</p>
+<pre class="text"><code>普通条款审查
+第一Token P95 &lt; 某阈值
+
+完整文件审查
+总报告完成 &lt; 某阈值
+
+系统
+支持至少某并发</code></pre>
+<p>具体数字：</p>
+<blockquote>
+<p>必须靠真实 Benchmark 决定。</p>
+</blockquote>
+<p>现在不先拍脑袋。</p>
+<hr />
+<h1
+id="一百一十六为什么不能先定100用户并发">一百一十六、为什么不能先定“100用户并发”？</h1>
+<p>因为：</p>
+<blockquote>
+<p>“100 个用户”本身信息不够。</p>
+</blockquote>
+<p>100 个用户如果都只发：</p>
+<pre class="text"><code>20 Token Prompt</code></pre>
+<p>与 100 个用户都发：</p>
+<pre class="text"><code>50K Token文件</code></pre>
+<p>是两个世界。</p>
+<hr />
+<h1
+id="一百一十七所以并发容量必须带-workload">一百一十七、所以并发容量必须带
+Workload</h1>
+<p>更专业的描述是：</p>
+<pre class="text"><code>在什么输入长度
+什么输出长度
+什么模型
+什么精度
+什么硬件
+
+条件下
+支持多少并发</code></pre>
+<hr />
+<h1
+id="一百一十八未来我们的-procurement-benchmark-不仅测质量">一百一十八、未来我们的
+Procurement Benchmark 不仅测质量</h1>
+<p>还应该同时记录：</p>
+<pre class="text"><code>Quality
++
+TTFT
++
+TPS
++
+Latency
++
+Throughput
++
+Peak VRAM</code></pre>
+<p>这才接近：</p>
+<blockquote>
+<p>真正模型选型。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十九为什么最聪明模型不一定是最佳生产模型">一百一十九、为什么“最聪明模型”不一定是最佳生产模型？</h1>
+<p>假设：</p>
+<h3 id="model-a">Model A</h3>
+<p>业务准确率：</p>
+<pre class="text"><code>94%</code></pre>
+<p>但：</p>
+<pre class="text"><code>只能2并发
+TTFT很高
+需要4张GPU</code></pre>
+<hr />
+<h3 id="model-b">Model B</h3>
+<p>业务准确率：</p>
+<pre class="text"><code>93.5%</code></pre>
+<p>但：</p>
+<pre class="text"><code>支持20并发
+TTFT低
+1张GPU</code></pre>
+<p>如果 B 已经超过业务质量门槛：</p>
+<blockquote>
+<p>它可能更有价值。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十这是再次回到-pareto-思维">一百二十、这是再次回到 Pareto
+思维</h1>
+<p>系统设计不是只追：</p>
+<pre class="text"><code>最高Accuracy</code></pre>
+<p>而是：</p>
+<pre class="text"><code>Quality
+Cost
+Latency
+Throughput
+VRAM
+Reliability</code></pre>
+<p>共同优化。</p>
+<hr />
+<h1
+id="一百二十一现在做一个完整办事大厅总图">一百二十一、现在做一个完整“办事大厅”总图</h1>
+<pre class="text"><code>                    用户请求
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+         Request A           Request B ...
+             │                   │
+             └─────────┬─────────┘
+                       ▼
+                    Queue
+                       │
+                       ▼
+                   Scheduler
+                       │
+                       ▼
+             Continuous Batching
+                       │
+                       ▼
+              ┌────────────────┐
+              │      GPU       │
+              │                │
+              │ Shared Weights │
+              │                │
+              │ KV A           │
+              │ KV B           │
+              │ KV C           │
+              └────────────────┘
+                       │
+                       ▼
+               Token Generation
+                       │
+                       ▼
+                     用户</code></pre>
+<p>而 PagedAttention 类思路：</p>
+<blockquote>
+<p>主要在中间帮助更灵活地管理 KV Cache。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十二五个最容易混淆的概念一次分开">一百二十二、五个最容易混淆的概念，一次分开</h1>
+<table>
+<thead>
+<tr class="header">
+<th>概念</th>
+<th>最直白的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TTFT</td>
+<td>用户多久看到第一个字？</td>
+</tr>
+<tr class="even">
+<td>TPS</td>
+<td>开始生成后，吐字多快？</td>
+</tr>
+<tr class="odd">
+<td>Latency</td>
+<td>这个请求总共等多久？</td>
+</tr>
+<tr class="even">
+<td>Throughput</td>
+<td>整台服务器单位时间干多少活？</td>
+</tr>
+<tr class="odd">
+<td>Concurrency</td>
+<td>同时有多少请求处于活跃状态？</td>
+</tr>
+</tbody>
+</table>
+<p>这五个：</p>
+<blockquote>
+<p>不能混成一个“速度”。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十三再区分-batching-和-concurrency">一百二十三、再区分
+Batching 和 Concurrency</h1>
+<p>Concurrency：</p>
+<blockquote>
+<p>同时有很多请求。</p>
+</blockquote>
+<p>Batching：</p>
+<blockquote>
+<p>系统把多个请求组织起来一起高效计算。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>有并发
+≠
+一定高效Batching</code></pre>
+<hr />
+<h1
+id="一百二十四一个很烂的服务器也可以有100并发">一百二十四、一个很烂的服务器也可以“有100并发”</h1>
+<p>只是：</p>
+<blockquote>
+<p>99个人都在排队。</p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p>Concurrency Number 本身不是性能。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十五continuous-batching-的真正价值">一百二十五、Continuous
+Batching 的真正价值</h1>
+<p>不是：</p>
+<blockquote>
+<p>“让所有人瞬间完成。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>让动态长短不一的 LLM 请求更充分共享 GPU。</strong></p>
+</blockquote>
+<p>这句话最准确。</p>
+<hr />
+<h1 id="一百二十六pagedattention-的真正价值">一百二十六、PagedAttention
+的真正价值</h1>
+<p>不是：</p>
+<blockquote>
+<p>“Attention 更聪明。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>更灵活地组织 KV Cache
+的显存块，减少连续大块分配和浪费。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百二十七vllm-的真正价值">一百二十七、vLLM 的真正价值</h1>
+<p>先记成：</p>
+<blockquote>
+<p><strong>一个高性能 LLM Serving Engine。</strong></p>
+</blockquote>
+<p>核心目标是：</p>
+<pre class="text"><code>更高GPU利用率
++
+更好的KV管理
++
+更高吞吐
++
+更成熟的服务调度</code></pre>
+<p>具体版本实现：</p>
+<blockquote>
+<p>后面实操时再看。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十八所以这三者的关系不要混">一百二十八、所以这三者的关系不要混</h1>
+<pre class="text"><code>Continuous Batching
+=
+调度思想
+
+
+PagedAttention
+=
+KV内存管理/Attention执行思想
+
+
+vLLM
+=
+实现高性能推理服务的引擎之一</code></pre>
+<p>不是：</p>
+<blockquote>
+<p>三个同义词。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十九思维实验-a">一百二十九、思维实验 A</h1>
+<p>一个模型：</p>
+<pre class="text"><code>单请求TPS = 100</code></pre>
+<p>是不是说明：</p>
+<blockquote>
+<p>100 个用户一起时每个人还是 100 TPS？</p>
+</blockquote>
+<p>当然不是。</p>
+<hr />
+<h1 id="一百三十思维实验-b">一百三十、思维实验 B</h1>
+<p>模型 TTFT 很高。</p>
+<p>第一步该调 Temperature 吗？</p>
+<p>不是。</p>
+<p>Temperature：</p>
+<blockquote>
+<p>控制 Sampling。</p>
+</blockquote>
+<p>TTFT：</p>
+<blockquote>
+<p>主要是 Serving / Queue / Prefill 问题。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十一思维实验-c">一百三十一、思维实验 C</h1>
+<p>模型已经 4-bit。</p>
+<p>系统 Throughput 还是低。</p>
+<p>是不是继续量化到更低 bit 就一定解决？</p>
+<p>不一定。</p>
+<p>可能瓶颈在：</p>
+<ul>
+<li>Batching；</li>
+<li>Scheduler；</li>
+<li>KV；</li>
+<li>CPU；</li>
+<li>网络；</li>
+<li>Prefill。</li>
+</ul>
+<hr />
+<h1 id="一百三十二思维实验-d">一百三十二、思维实验 D</h1>
+<p>PagedAttention 能不能让一个 8GB GPU 神奇容纳无限 KV Cache？</p>
+<p>不能。</p>
+<p>它提高：</p>
+<blockquote>
+<p>内存管理效率。</p>
+</blockquote>
+<p>不会：</p>
+<blockquote>
+<p>创造无限显存。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十三思维实验-e">一百三十三、思维实验 E</h1>
+<p>Continuous Batching 以后总 Throughput 提高。</p>
+<p>为什么单用户 TPS 可能下降一点？</p>
+<p>因为：</p>
+<blockquote>
+<p>GPU 同时服务更多 Sequence。</p>
+</blockquote>
+<p>资源：</p>
+<blockquote>
+<p>被共享。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十四思维实验-f">一百三十四、思维实验 F</h1>
+<p>用户说：</p>
+<blockquote>
+<p>“点击以后 15 秒没反应，之后文字飞快出来。”</p>
+</blockquote>
+<p>更像哪里慢？</p>
+<p>优先怀疑：</p>
+<pre class="text"><code>Queue / Prefill / TTFT</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>Decode TPS。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十五思维实验-g">一百三十五、思维实验 G</h1>
+<p>用户说：</p>
+<blockquote>
+<p>“第一个字马上出来，但完整报告半天写不完。”</p>
+</blockquote>
+<p>更像：</p>
+<h1 id="decode-3">Decode</h1>
+<p>或者：</p>
+<blockquote>
+<p>输出太长。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十六思维实验-h">一百三十六、思维实验 H</h1>
+<p>单用户测试一切完美。</p>
+<p>20 用户一起就崩。</p>
+<p>说明至少要调查：</p>
+<pre class="text"><code>并发KV
++
+Batching
++
+Peak VRAM
++
+Scheduler</code></pre>
+<p>而不是马上：</p>
+<blockquote>
+<p>重训模型。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十七本阶段最容易犯的九个错误">一百三十七、本阶段最容易犯的九个错误</h1>
+<h3 id="错误-1-4">错误 1</h3>
+<blockquote>
+<p>TPS 就是模型所有速度。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-2-4">错误 2</h3>
+<blockquote>
+<p>TTFT 和 TPS 是一回事。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-3-4">错误 3</h3>
+<blockquote>
+<p>单用户很快，就代表生产系统很快。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-4-4">错误 4</h3>
+<blockquote>
+<p>Throughput 高，就意味着每个用户都最快。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-5-4">错误 5</h3>
+<blockquote>
+<p>Batch 越大永远越好。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-6-4">错误 6</h3>
+<blockquote>
+<p>Continuous Batching 会提高模型智力。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-7-3">错误 7</h3>
+<blockquote>
+<p>PagedAttention 会减少模型参数。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-8-2">错误 8</h3>
+<blockquote>
+<p>vLLM 是一种新的基础模型。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-9">错误 9</h3>
+<blockquote>
+<p>平均 Latency 很低，生产体验就一定好。</p>
+</blockquote>
+<p>错。</p>
+<p>还要看：</p>
+<blockquote>
+<p>P95 / P99。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十八把第三课第-19-阶段串起来">一百三十八、把第三课第 1～9
+阶段串起来</h1>
+<pre class="text"><code>Stage 1
+GPU / VRAM是什么？
+        ↓
+Stage 2
+软件怎么调用GPU？
+        ↓
+Stage 3
+模型文件是什么？
+        ↓
+Stage 4
+模型怎么加载？
+        ↓
+Stage 5
+一个请求怎么生成文字？
+        ↓
+Stage 6
+Weight怎么压缩？
+        ↓
+Stage 7
+显存怎么做账？
+        ↓
+Stage 8
+Next Token怎么选？
+        ↓
+Stage 9
+很多请求怎么高效共享模型？</code></pre>
+<p>到这里，</p>
+<p>我们已经从：</p>
+<blockquote>
+<p>“我会运行一个 LLM”</p>
+</blockquote>
+<p>走到了：</p>
+<blockquote>
+<p><strong>“我开始理解一个 LLM
+服务为什么能或不能真正上线。”</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百三十九本阶段掌握标准">一百三十九、本阶段掌握标准</h1>
+<p>这一阶段结束以后，你应该能够不用背术语，自己解释：</p>
+<blockquote>
+<p>TTFT 到底在衡量什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么长 Prompt 往往会增加 TTFT？</p>
+</blockquote>
+<blockquote>
+<p>TPS 到底是在测哪一段？</p>
+</blockquote>
+<blockquote>
+<p>Latency 和 TPS 为什么不是一回事？</p>
+</blockquote>
+<blockquote>
+<p>Throughput 和 Latency 为什么可能互相 Trade-off？</p>
+</blockquote>
+<blockquote>
+<p>单用户 TPS 很高为什么不代表多用户服务能力强？</p>
+</blockquote>
+<blockquote>
+<p>GPU 为什么适合 Batching？</p>
+</blockquote>
+<blockquote>
+<p>Static Batch 在 LLM 上为什么容易浪费？</p>
+</blockquote>
+<blockquote>
+<p>Continuous Batching 为什么特别适合长短不一的生成请求？</p>
+</blockquote>
+<blockquote>
+<p>Scheduler 在模型服务中到底负责什么？</p>
+</blockquote>
+<blockquote>
+<p>Prefill 和 Decode 从工作模式上有什么不同？</p>
+</blockquote>
+<blockquote>
+<p>为什么超长 Prompt 可能影响其它正在 Decode 的请求？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Head-of-Line Blocking？</p>
+</blockquote>
+<blockquote>
+<p>KV Cache 为什么会出现碎片和预留浪费？</p>
+</blockquote>
+<blockquote>
+<p>PagedAttention 的“分页”直觉是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么逻辑连续的 KV 不一定必须物理连续？</p>
+</blockquote>
+<blockquote>
+<p>PagedAttention 为什么不是“新的 Attention 智力算法”？</p>
+</blockquote>
+<blockquote>
+<p>vLLM 和 Model Weight 是什么关系？</p>
+</blockquote>
+<blockquote>
+<p>为什么换 Serving Engine 不等于重新训练模型？</p>
+</blockquote>
+<blockquote>
+<p>为什么生产系统要看 P95 / P99 而不能只看平均值？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Benchmark 必须包含真实的 Prompt 长度、Output 长度和并发？</p>
+</blockquote>
+<blockquote>
+<p>为什么 ProcurementAI
+的质量评测和性能评测最终必须放在同一张选型表里？</p>
+</blockquote>
+<p>如果这些都能自己讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>三</mi><mi>课</mi><mi>第</mi><mn>9</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第三课第9阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百四十本阶段最终只记一句话">一百四十、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>“模型能生成答案”只是推理的起点；真正的模型服务还必须解决排队、Prefill、Decode、并发、Batching、KV
+Cache 和调度问题。TTFT 决定用户多久看到第一字，TPS
+决定后续生成速度，Latency 描述一个请求整体等待时间，Throughput
+描述整套系统能干多少活，而 Continuous Batching、PagedAttention 和 vLLM
+这一类技术，本质是在提高 GPU 与 KV Cache
+的服务效率，而不是提高模型本身的知识和智力。</strong></p>
+</blockquote>
+<p>最后把整个阶段压成一张图：</p>
+<pre class="text"><code>                    多个用户
+                       │
+                       ▼
+                     Queue
+                       │
+                       ▼
+                   Scheduler
+                       │
+                       ▼
+             Continuous Batching
+                       │
+                       ▼
+        ┌─────────────────────────┐
+        │          GPU            │
+        │                         │
+        │     Shared Weights      │
+        │                         │
+        │  KV_A  KV_B  KV_C ...  │
+        │       ↑                 │
+        │   Paged KV管理          │
+        └─────────────────────────┘
+                       │
+            ┌──────────┴──────────┐
+            ▼                     ▼
+         Prefill                Decode
+            │                     │
+            ▼                     ▼
+          TTFT                   TPS
+            └──────────┬──────────┘
+                       ▼
+                    Latency
+
+整个系统单位时间处理多少工作
+                       │
+                       ▼
+                  Throughput</code></pre>
+<h1 id="下一阶段第三课-第-10-阶段">下一阶段：第三课 · 第 10 阶段</h1>
+<h2
+id="第三课最终闭环怎样真正选择一个政府采购基础模型并建立第一个-procurementai-baseline">第三课最终闭环：怎样真正选择一个政府采购基础模型，并建立第一个
+ProcurementAI Baseline？</h2>
+<p>第 10 阶段会把第三课前 9
+个阶段第一次全部变成一张<strong>真实选型表</strong>。</p>
+<p>我们不再抽象地问：</p>
+<blockquote>
+<p>“哪个开源模型最强？”</p>
+</blockquote>
+<p>而是按真正项目的方法比较候选模型：</p>
+<pre class="text"><code>模型能力
++
+中文能力
++
+Context
++
+Tokenizer
++
+License
++
+VRAM
++
+量化方式
++
+TTFT
++
+TPS
++
+Throughput
++
+采购Gold Set
++
+法规引用正确率
++
+风险漏报率</code></pre>
+<p>最后形成第三课最重要的成果：</p>
+<pre class="text"><code>ProcurementAI Base Model Selection Matrix</code></pre>
+<p>并且第一次定义：</p>
+<blockquote>
+<p><strong>ProcurementModel V0.1 的 Baseline
+到底应该怎么建立。</strong></p>
+</blockquote>
+<p>到了第 10 阶段，第三课就会完整闭环：从 <strong>GPU → CUDA → 模型文件
+→ 加载 → 推理 → 精度 → 显存 → Sampling → Serving → 最终模型选型与
+Baseline</strong>。</p>
+<hr /><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

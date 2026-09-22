@@ -1,0 +1,512 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第8阶段：Observability：Metrics、Logs、Tracing、GPU 与业务监控</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第8阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>Monitoring ≠ GPUUtilizationOnly。</li><li>Observability = Metrics + Logs + Traces + Quality + Cost。</li><li>HealthyGPU ≠ HealthyAI。</li></ul></div><h1 id="第十课-第-8-阶段">第十课 · 第 8 阶段</h1>
+<h1
+id="observabilitymetricslogstracinggpu-与业务监控-1">Observability：Metrics、Logs、Tracing、GPU
+与业务监控</h1>
+<h2
+id="线上突然变慢答错rag-漏检agent-工具失败到底怎样知道发生了什么发生在哪一层影响多少用户">线上突然变慢、答错、RAG
+漏检、Agent
+工具失败，到底怎样知道“发生了什么、发生在哪一层、影响多少用户”？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-7">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-7">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Monitoring ≠ GPUUtilizationOnly。</strong></li>
+<li><strong>Observability = Metrics + Logs + Traces + Quality +
+Cost。</strong></li>
+<li><strong>HealthyGPU ≠ HealthyAI。</strong></li>
+<li><strong>Metrics 适合聚合，Logs/Traces 适合高基数细节。</strong></li>
+<li><strong>没有 Trace Span 只能知道慢，不能知道哪里慢。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-7">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="even">
+<td><code>Observability</code></td>
+<td>可观测性：通过指标、日志、追踪理解系统内部状态</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="odd">
+<td><code>Monitoring</code></td>
+<td>监控：持续观察系统、模型和业务指标是否健康</td>
+</tr>
+<tr class="even">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-7">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>系统上线以后，</p>
+<p>最危险的不只是：</p>
+<blockquote>
+<p>出问题。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>出了问题却不知道原因。</strong></p>
+</blockquote>
+<p>所以本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>≠</mo><mi>G</mi><mi>P</mi><mi>U</mi><mi>U</mi><mi>t</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Monitoring
+\neq
+GPUUtilizationOnly
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementobservabilitypolicy_v0.1-1"><code>ProcurementObservabilityPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一monitoring-与-observability">一、Monitoring 与
+Observability</h1>
+<h1 id="monitoring">Monitoring</h1>
+<h2 id="监控">监控</h2>
+<p>关注：</p>
+<blockquote>
+<p>已知指标有没有异常。</p>
+</blockquote>
+<h1 id="observability">Observability</h1>
+<h2 id="可观测性">可观测性</h2>
+<p>关注：</p>
+<blockquote>
+<p>能否通过系统产生的信号推断内部发生了什么。</p>
+</blockquote>
+<p>经典三类信号：</p>
+<pre class="text"><code>Metrics
+Logs
+Traces</code></pre>
+<p>对 AI 系统还要补：</p>
+<pre class="text"><code>Quality Signals
+Cost Signals</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>s</mi><mo>+</mo><mi>L</mi><mi>o</mi><mi>g</mi><mi>s</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>s</mi><mo>+</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Observability
+=
+Metrics
++
+Logs
++
+Traces
++
+Quality
++
+Cost
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二metrics-至少分四层">二、Metrics 至少分四层</h1>
+<h2 id="infrastructure">Infrastructure</h2>
+<pre class="text"><code>GPU Utilization
+GPU Memory
+CPU
+RAM
+Network
+Disk</code></pre>
+<h2 id="inference-1">Inference</h2>
+<pre class="text"><code>TTFT
+TPOT
+E2E
+Queue Time
+Tokens/s
+Batch
+KV Utilization
+OOM</code></pre>
+<h2 id="application">Application</h2>
+<pre class="text"><code>Request Rate
+Error Rate
+Timeout
+Retry
+RAG Latency
+Tool Failure</code></pre>
+<h2 id="quality">Quality</h2>
+<pre class="text"><code>Abstention Rate
+Citation Failure
+User Correction
+Escalation Rate
+Audit Failure</code></pre>
+<hr />
+<h1 id="三核心心智模型-①-2">三、核心心智模型 ①</h1>
+<h1 id="healthygpu-healthyai"><code>HealthyGPU ≠ HealthyAI</code></h1>
+<p>GPU 95% 利用率、</p>
+<p>没有 OOM，</p>
+<p>但系统仍可能：</p>
+<pre class="text"><code>引用错误
+RAG漏检
+Agent重复提交</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>r</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>H</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>t</mi><mi>h</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InfrastructureHealth
+\neq
+ProductQuality
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四golden-signals">四、Golden Signals</h1>
+<p>传统服务常关注：</p>
+<pre class="text"><code>Latency
+Traffic
+Errors
+Saturation</code></pre>
+<p>AI 系统还应该显式加入：</p>
+<pre class="text"><code>Quality
+Cost</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>I</mi><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>H</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>t</mi><mi>h</mi><mo>=</mo><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mo>+</mo><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>s</mi><mo>+</mo><mi>S</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AIServiceHealth
+=
+Latency
++
+Traffic
++
+Errors
++
+Saturation
++
+Quality
++
+Cost
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五logs">五、Logs</h1>
+<p>日志可以记录：</p>
+<pre class="text"><code>request_id
+model_version
+prompt_version
+rag_version
+tool_calls
+status_code
+latency
+token_count
+error_code</code></pre>
+<p>但用户原文、采购文件、敏感字段：</p>
+<blockquote>
+<p>需要脱敏和留存策略。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>L</mi><mi>o</mi><mi>g</mi><mi>s</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreLogs
+\neq
+BetterObservability
+}
+</annotation></semantics></math></p>
+<p>日志应该：</p>
+<blockquote>
+<p>结构化、分级、采样、可关联。</p>
+</blockquote>
+<hr />
+<h1 id="六tracing">六、Tracing</h1>
+<p>一次请求可能：</p>
+<pre class="text"><code>Gateway
+↓
+Retriever
+↓
+Reranker
+↓
+LLM
+↓
+Tool A
+↓
+LLM
+↓
+Tool B</code></pre>
+<p>总延迟 12 秒时，</p>
+<p>Trace 可以告诉我们：</p>
+<blockquote>
+<p>哪个步骤耗了多少时间。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Trace
+=
+LatencyAttribution
++
+FailureAttribution
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七span">七、Span</h1>
+<p>Trace 中每个步骤是：</p>
+<h1 id="span">Span</h1>
+<h2 id="链路片段">链路片段</h2>
+<p>例如：</p>
+<pre class="text"><code>retrieval_span
+rerank_span
+prefill_span
+decode_span
+tool_span</code></pre>
+<p>没有 Span：</p>
+<blockquote>
+<p>只能知道“慢”。</p>
+</blockquote>
+<p>有 Span：</p>
+<blockquote>
+<p>才能知道“哪里慢”。</p>
+</blockquote>
+<hr />
+<h1 id="八核心心智模型-②">八、核心心智模型 ②</h1>
+<h1 id="metrics-聚合logs-traces-解释细节">Metrics 聚合，Logs / Traces
+解释细节</h1>
+<p>像：</p>
+<pre class="text"><code>request_id
+document_id</code></pre>
+<p>这种高基数字段，</p>
+<p>不适合无限作为 Metric Label。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>s</mi><mi>用</mi><mi>于</mi><mi>A</mi><mi>g</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Metrics
+用于Aggregation
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>s</mi><mi>/</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>用</mi><mi>于</mi><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>C</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>D</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Logs/Traces
+用于HighCardinalityDetail
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九slo-与-error-budget">九、SLO 与 Error Budget</h1>
+<p>当 SLO 明确以后，</p>
+<p>允许的失败空间可以理解为：</p>
+<h1 id="error-budget">Error Budget</h1>
+<h2 id="错误预算">错误预算</h2>
+<p>它可以帮助决定：</p>
+<blockquote>
+<p>当前应该继续发布新功能，还是先修稳定性。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ErrorBudget
+=
+ReliabilityChangeBudget
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十核心心智模型-③-2">十、核心心智模型 ③</h1>
+<h1 id="slo-不是-dashboard-装饰而是发布节奏控制器">SLO 不是 Dashboard
+装饰，而是发布节奏控制器</h1>
+<p>Error Budget 接近耗尽时：</p>
+<blockquote>
+<p>应降低发布频率、优先恢复稳定性。</p>
+</blockquote>
+<hr />
+<h1 id="十一alert">十一、Alert</h1>
+<p>好的告警应该对应：</p>
+<pre class="text"><code>SLO风险
+用户影响
+安全异常
+资源耗尽</code></pre>
+<p>例如：</p>
+<pre class="text"><code>P99 TTFT持续超阈值
+OOM上升
+Queue持续增长
+Tool权限错误
+Critical Citation Error</code></pre>
+<p>告警太多会造成：</p>
+<h1 id="alert-fatigue">Alert Fatigue</h1>
+<h2 id="告警疲劳">告警疲劳</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>l</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>V</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>m</mi><mi>e</mi><mo>≠</mo><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>A</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AlertVolume
+\neq
+OperationalAwareness
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二online-quality-monitoring">十二、Online Quality
+Monitoring</h1>
+<p>线上可以观察：</p>
+<pre class="text"><code>用户纠错率
+人工转交率
+拒答率
+引用失败率
+工具失败率
+抽样人工审核</code></pre>
+<p>它们是：</p>
+<h1 id="proxy-signals">Proxy Signals</h1>
+<h2 id="代理质量信号">代理质量信号</h2>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OnlineSignal
+\neq
+GroundTruth
+}
+</annotation></semantics></math></p>
+<p>不能完全替代：</p>
+<pre class="text"><code>ProcurementBench_V1</code></pre>
+<hr />
+<h1 id="十三drift-monitoring">十三、Drift Monitoring</h1>
+<p>线上输入可能变化：</p>
+<pre class="text"><code>文档更长
+行业变化
+新格式
+OCR质量下降</code></pre>
+<p>因此要监控：</p>
+<h1 id="input-drift">Input Drift</h1>
+<h2 id="输入漂移">输入漂移</h2>
+<p>以及：</p>
+<h1 id="output-drift">Output Drift</h1>
+<h2 id="输出漂移">输出漂移</h2>
+<p>例如：</p>
+<pre class="text"><code>标签分布
+拒答率
+输出长度
+风险类型分布</code></pre>
+<hr />
+<h1 id="十四cost-monitoring">十四、Cost Monitoring</h1>
+<p>成本与：</p>
+<pre class="text"><code>Input Tokens
+Output Tokens
+GPU Time
+Tool Calls
+Retrieval</code></pre>
+<p>相关。</p>
+<p>可以记录：</p>
+<pre class="text"><code>cost_per_request
+cost_per_1k_requests
+cost_per_successful_task</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi><mo>&gt;</mo><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CostPerSuccessfulOutcome
+&gt;
+CostPerRequest
+}
+</annotation></semantics></math></p>
+<p>这里表示：</p>
+<blockquote>
+<p>更接近真实效率。</p>
+</blockquote>
+<hr />
+<h1 id="十五本阶段正式工程产物">十五、本阶段正式工程产物</h1>
+<h1
+id="procurementobservabilitypolicy_v0.1-2"><code>ProcurementObservabilityPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>observability_policy_version
+metric_catalog
+log_schema
+trace_schema
+request_id
+trace_id
+span_policy
+gpu_metrics
+inference_metrics
+rag_metrics
+agent_metrics
+tool_metrics
+quality_proxy_metrics
+cost_metrics
+slo_dashboard
+error_budget
+alert_rules
+alert_severity
+sampling_policy
+pii_redaction
+retention_policy
+drift_monitoring
+online_audit
+incident_linkage
+release_gate</code></pre>
+<hr />
+<h1 id="十六本阶段最重要的-9-个核心心智模型">十六、本阶段最重要的 9
+个核心心智模型</h1>
+<blockquote>
+<p><strong>① <code>Monitoring ≠ GPUUtilizationOnly</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>②
+<code>Observability = Metrics + Logs + Traces + Quality + Cost</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③ <code>HealthyGPU ≠ HealthyAI</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④ Metrics 适合聚合，Logs/Traces 适合高基数细节。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤ 没有 Trace Span 只能知道慢，不能知道哪里慢。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥ <code>SLO + ErrorBudget</code>
+应控制发布节奏。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦ <code>AlertVolume ≠ Awareness</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧ <code>OnlineSignal ≠ GroundTruth</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑨ <code>CostPerSuccessfulOutcome</code> 比单纯 Cost per
+Request 更完整。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第十课-第-9-阶段">下一阶段：第十课 · 第 9 阶段</h1>
+<h1 id="model-versioningcanaryshadowab-与-rollback">Model
+Versioning、Canary、Shadow、A/B 与 Rollback</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>w</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mo>≠</mo><mi>N</mi><mi>e</mi><mi>w</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>l</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>i</mi><mi>v</mi><mi>e</mi><mn>100</mn><mi>P</mi><mi>e</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NewVersionReady
+\neq
+NewVersionShouldReceive100PercentTraffic
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementreleaserolloutpolicy_v0.1"><code>ProcurementReleaseRolloutPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage07.html">← 第 7 阶段</a><a class="btn" href="stage09.html">第 9 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

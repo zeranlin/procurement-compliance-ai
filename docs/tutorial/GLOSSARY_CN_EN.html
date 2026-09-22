@@ -1,0 +1,721 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>英文工程术语中文释义总表</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}main{max-width:1160px;margin:0 auto;padding:34px 28px 100px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:30px}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}.badge{display:inline-block;background:var(--quote);border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin-right:6px}@media(max-width:800px){main{padding:14px}article{padding:22px 17px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>英文工程术语中文释义总表</strong><a class="btn" href="index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note">V2：核心心智模型前置 + 中文释义增强 + 原正文保留。</div><h1 id="英文工程术语-中文释义总表v2">英文工程术语 →
+中文释义总表（V2）</h1>
+<blockquote>
+<p>保留英文工程标识，中文解释说明其在机器学习 / 大模型 / 政府采购 AI
+中的实际含义。</p>
+</blockquote>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文术语</th>
+<th>中文释义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Accuracy</code></td>
+<td>准确率：全部样本中判断正确的比例</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Activation Function</code></td>
+<td>激活函数：给网络引入非线性表达能力</td>
+</tr>
+<tr class="even">
+<td><code>Adapter</code></td>
+<td>适配器：附加在基座模型上的轻量可训练参数模块</td>
+</tr>
+<tr class="odd">
+<td><code>Adjudication</code></td>
+<td>专家裁决：对分歧样本形成最终 Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="odd">
+<td><code>Alpha</code></td>
+<td>LoRA Alpha：控制低秩更新缩放幅度</td>
+</tr>
+<tr class="even">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="odd">
+<td><code>Annotation Guideline</code></td>
+<td>标注规范：统一专家如何理解字段、边界和例外</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="odd">
+<td><code>Backpropagation</code></td>
+<td>反向传播：把最终损失沿计算图反向分配到参数</td>
+</tr>
+<tr class="even">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark Contamination</code></td>
+<td>基准污染：Benchmark 内容进入训练/开发导致评测失真</td>
+</tr>
+<tr class="odd">
+<td><code>BF16</code></td>
+<td>BF16：保留较大指数范围的 16 位浮点，常用于大模型</td>
+</tr>
+<tr class="even">
+<td><code>Block</code></td>
+<td>版面块：文档解析后保留布局和位置的基本块</td>
+</tr>
+<tr class="odd">
+<td><code>BM25</code></td>
+<td>BM25：基于词频和逆文档频率的经典词法检索算法</td>
+</tr>
+<tr class="even">
+<td><code>Calibration</code></td>
+<td>校准：使模型置信度更接近实际正确率</td>
+</tr>
+<tr class="odd">
+<td><code>Canary</code></td>
+<td>灰度发布：让有限真实流量先使用新版本</td>
+</tr>
+<tr class="even">
+<td><code>Capability Boundary</code></td>
+<td>能力边界：明确模型/工具允许做什么、不允许做什么</td>
+</tr>
+<tr class="odd">
+<td><code>Catastrophic Forgetting</code></td>
+<td>灾难性遗忘：领域训练后通用能力明显退化</td>
+</tr>
+<tr class="even">
+<td><code>Causal LM</code></td>
+<td>因果语言模型：只能利用前文 Token 预测后续 Token</td>
+</tr>
+<tr class="odd">
+<td><code>Causal Mask</code></td>
+<td>因果掩码：阻止当前位置看到未来 Token</td>
+</tr>
+<tr class="even">
+<td><code>Chat Template</code></td>
+<td>对话模板：把角色消息转换成模型训练/推理序列</td>
+</tr>
+<tr class="odd">
+<td><code>Checkpoint</code></td>
+<td>检查点：保存模型和训练状态以便恢复/发布</td>
+</tr>
+<tr class="even">
+<td><code>Chunking</code></td>
+<td>分块：把长文档切成适合检索和上下文组装的片段</td>
+</tr>
+<tr class="odd">
+<td><code>Citation</code></td>
+<td>引用：把生成结论和具体来源建立可追踪链接</td>
+</tr>
+<tr class="even">
+<td><code>Clause Segmentation</code></td>
+<td>条款切分：把连续文档恢复成可审查业务条款</td>
+</tr>
+<tr class="odd">
+<td><code>Confidence Interval</code></td>
+<td>置信区间：表示有限样本指标的不确定范围</td>
+</tr>
+<tr class="even">
+<td><code>Context Assembly</code></td>
+<td>上下文组装：按顺序、预算和去重策略组织证据</td>
+</tr>
+<tr class="odd">
+<td><code>Continued Pretraining</code></td>
+<td>继续预训练：让基座模型适应特定领域语言和知识分布</td>
+</tr>
+<tr class="even">
+<td><code>Continuous Batching</code></td>
+<td>连续批处理：动态把不同时间到达的请求加入 GPU 批次</td>
+</tr>
+<tr class="odd">
+<td><code>Cosine Similarity</code></td>
+<td>余弦相似度：比较两个向量方向相似程度</td>
+</tr>
+<tr class="even">
+<td><code>Counterfactual</code></td>
+<td>反事实：改变关键事实，检查正确结论是否应随之变化</td>
+</tr>
+<tr class="odd">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="even">
+<td><code>CPU</code></td>
+<td>CPU：负责通用控制、数据准备和部分算子</td>
+</tr>
+<tr class="odd">
+<td><code>CUDA</code></td>
+<td>CUDA：NVIDIA GPU 通用并行计算平台与软件生态</td>
+</tr>
+<tr class="even">
+<td><code>CUDA Toolkit</code></td>
+<td>CUDA 工具包：开发、编译和运行 CUDA 程序的工具与库</td>
+</tr>
+<tr class="odd">
+<td><code>Curriculum</code></td>
+<td>课程式训练：按难度、类型或阶段安排训练数据顺序</td>
+</tr>
+<tr class="even">
+<td><code>Data Leakage</code></td>
+<td>数据泄漏：训练阶段获得了本不应看到的测试或未来信息</td>
+</tr>
+<tr class="odd">
+<td><code>Data Mixture</code></td>
+<td>数据混合：控制通用语料和领域语料等来源比例</td>
+</tr>
+<tr class="even">
+<td><code>Data Unit</code></td>
+<td>数据单元：从原始文件切出的可追踪业务片段</td>
+</tr>
+<tr class="odd">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="even">
+<td><code>Decide</code></td>
+<td>Decide/决策：根据目标和状态选择下一步动作</td>
+</tr>
+<tr class="odd">
+<td><code>Deduplication</code></td>
+<td>去重：识别并处理完全重复或近似重复的数据</td>
+</tr>
+<tr class="even">
+<td><code>device_map</code></td>
+<td>设备映射：指定模型模块放在哪个 GPU/CPU</td>
+</tr>
+<tr class="odd">
+<td><code>Domain Corpus</code></td>
+<td>领域语料：用于继续预训练的政府采购专业文本集合</td>
+</tr>
+<tr class="even">
+<td><code>Drift</code></td>
+<td>漂移：数据、业务、政策或模型行为分布发生变化</td>
+</tr>
+<tr class="odd">
+<td><code>Driver</code></td>
+<td>驱动：操作系统与 GPU 硬件之间的底层接口</td>
+</tr>
+<tr class="even">
+<td><code>dtype</code></td>
+<td>数据类型：FP32/FP16/BF16 等，影响显存、速度和数值稳定性</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>Epoch</code></td>
+<td>训练轮次：训练数据完整遍历一次</td>
+</tr>
+<tr class="odd">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="even">
+<td><code>External Knowledge</code></td>
+<td>外部知识：位于模型参数之外、可检索可更新的资料</td>
+</tr>
+<tr class="odd">
+<td><code>Forward Propagation</code></td>
+<td>前向传播：输入逐层计算直到得到预测</td>
+</tr>
+<tr class="even">
+<td><code>FP16</code></td>
+<td>FP16：16 位浮点，节省显存但数值范围较窄</td>
+</tr>
+<tr class="odd">
+<td><code>Frozen Data</code></td>
+<td>冻结数据：评测周期内不随意改动的 Benchmark 样本</td>
+</tr>
+<tr class="even">
+<td><code>Generalization</code></td>
+<td>泛化：对未见项目、时间、地区和表达的有效能力</td>
+</tr>
+<tr class="odd">
+<td><code>Gold Benchmark</code></td>
+<td>Gold Benchmark：由高质量证据、专家标注和治理形成的正式评测集</td>
+</tr>
+<tr class="even">
+<td><code>Governance</code></td>
+<td>治理：控制版本、权限、污染、审批和发布决策</td>
+</tr>
+<tr class="odd">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="even">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient Accumulation</code></td>
+<td>梯度累积：多次小 Batch 累积梯度后再更新参数</td>
+</tr>
+<tr class="even">
+<td><code>Hard Negative</code></td>
+<td>高难负例：表面像风险但正确结论不应判风险</td>
+</tr>
+<tr class="odd">
+<td><code>Hard Positive</code></td>
+<td>高难正例：没有明显关键词但确实需要识别的风险</td>
+</tr>
+<tr class="even">
+<td><code>Hidden Layer</code></td>
+<td>隐藏层：逐层形成内部表示的中间网络层</td>
+</tr>
+<tr class="odd">
+<td><code>Hugging Face</code></td>
+<td>Hugging Face：开源模型、数据与 Transformer 工具生态</td>
+</tr>
+<tr class="even">
+<td><code>Human-in-the-loop</code></td>
+<td>人在回路：高风险或不确定任务引入人工复核</td>
+</tr>
+<tr class="odd">
+<td><code>Hybrid Retrieval</code></td>
+<td>混合检索：结合词法/稀疏检索与向量语义检索</td>
+</tr>
+<tr class="even">
+<td><code>Idempotency</code></td>
+<td>幂等：重复执行不会产生不可控重复副作用</td>
+</tr>
+<tr class="odd">
+<td><code>Inference</code></td>
+<td>推理：系统接收请求并产生结果的在线计算过程</td>
+</tr>
+<tr class="even">
+<td><code>Initialization</code></td>
+<td>初始化：训练开始前设置参数初值</td>
+</tr>
+<tr class="odd">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="even">
+<td><code>JSON Schema</code></td>
+<td>JSON Schema：约束工具输入输出字段和类型</td>
+</tr>
+<tr class="odd">
+<td><code>Key</code></td>
+<td>Key/K：其他 Token 表示“我可被怎样匹配”的向量</td>
+</tr>
+<tr class="even">
+<td><code>KV Cache</code></td>
+<td>KV 缓存：生成时缓存历史 Key/Value 以减少重复计算</td>
+</tr>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>Label Schema</code></td>
+<td>标签结构：定义风险状态、类型、等级、证据等标注字段</td>
+</tr>
+<tr class="odd">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+<tr class="even">
+<td><code>LayerNorm</code></td>
+<td>LayerNorm：按特征维度规范化中间表示</td>
+</tr>
+<tr class="odd">
+<td><code>Layout</code></td>
+<td>版面结构：文字块、表格、列、坐标和阅读顺序信息</td>
+</tr>
+<tr class="even">
+<td><code>Learning Rate</code></td>
+<td>学习率：控制每次参数更新步幅</td>
+</tr>
+<tr class="odd">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="odd">
+<td><code>Loss Mask</code></td>
+<td>损失掩码：指定哪些 Token 参与训练 Loss</td>
+</tr>
+<tr class="even">
+<td><code>max_new_tokens</code></td>
+<td>最大新 Token 数：限制模型输出长度</td>
+</tr>
+<tr class="odd">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+<tr class="even">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+<tr class="odd">
+<td><code>MLOps</code></td>
+<td>MLOps：模型、数据、版本、部署、监控和回滚的工程体系</td>
+</tr>
+<tr class="even">
+<td><code>MLP</code></td>
+<td>MLP/前馈网络：对每个位置表示做非线性变换</td>
+</tr>
+<tr class="odd">
+<td><code>Monitoring</code></td>
+<td>监控：持续观察系统、模型和业务指标是否健康</td>
+</tr>
+<tr class="even">
+<td><code>Multi-Head Attention</code></td>
+<td>多头注意力：并行从不同子空间建模关系</td>
+</tr>
+<tr class="odd">
+<td><code>Near-duplicate</code></td>
+<td>近重复：表面略有差异但实质高度相似的数据</td>
+</tr>
+<tr class="even">
+<td><code>Neuron</code></td>
+<td>神经元：加权、偏置和非线性变换的最小计算单元</td>
+</tr>
+<tr class="odd">
+<td><code>Next Token Prediction</code></td>
+<td>下一 Token 预测：大语言模型预训练核心目标</td>
+</tr>
+<tr class="even">
+<td><code>NF4</code></td>
+<td>NF4：适合近似正态权重的 4 位量化格式</td>
+</tr>
+<tr class="odd">
+<td><code>Normalization</code></td>
+<td>规范化：稳定中间激活与训练过程</td>
+</tr>
+<tr class="even">
+<td><code>Observability</code></td>
+<td>可观测性：通过指标、日志、追踪理解系统内部状态</td>
+</tr>
+<tr class="odd">
+<td><code>Observe</code></td>
+<td>Observe/观察：读取当前状态和工具结果</td>
+</tr>
+<tr class="even">
+<td><code>OCR</code></td>
+<td>OCR：把扫描图像中的文字转换成机器可读文本</td>
+</tr>
+<tr class="odd">
+<td><code>Offloading</code></td>
+<td>卸载：把部分权重/计算转移到 CPU 或磁盘</td>
+</tr>
+<tr class="even">
+<td><code>OOD</code></td>
+<td>分布外数据：明显偏离训练/验证分布的新输入</td>
+</tr>
+<tr class="odd">
+<td><code>Optimizer</code></td>
+<td>优化器：依据梯度规则更新参数</td>
+</tr>
+<tr class="even">
+<td><code>Overfitting</code></td>
+<td>过拟合：训练集很好但新项目泛化变差</td>
+</tr>
+<tr class="odd">
+<td><code>Padding</code></td>
+<td>补齐：把不同长度序列补到统一批次长度</td>
+</tr>
+<tr class="even">
+<td><code>Parametric Memory</code></td>
+<td>参数记忆：编码在模型权重中的知识和模式</td>
+</tr>
+<tr class="odd">
+<td><code>Parser</code></td>
+<td>解析器：把 PDF/Word/HTML 转换为结构化可处理内容</td>
+</tr>
+<tr class="even">
+<td><code>Pipeline Parallel</code></td>
+<td>流水线并行：把不同层/阶段分配到不同 GPU</td>
+</tr>
+<tr class="odd">
+<td><code>Planning</code></td>
+<td>任务规划：把目标拆成可执行、带依赖的子任务</td>
+</tr>
+<tr class="even">
+<td><code>Precision</code></td>
+<td>精确率：系统报出的风险中真正成立的比例</td>
+</tr>
+<tr class="odd">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="even">
+<td><code>Prompt Injection</code></td>
+<td>提示注入：外部文本试图越权改变系统指令/工具行为</td>
+</tr>
+<tr class="odd">
+<td><code>PyTorch</code></td>
+<td>PyTorch：张量计算、自动求导和训练/推理框架</td>
+</tr>
+<tr class="even">
+<td><code>QLoRA</code></td>
+<td>QLoRA：量化基座模型并训练 LoRA，以降低显存成本</td>
+</tr>
+<tr class="odd">
+<td><code>Quantization</code></td>
+<td>量化：用更低位宽表示权重/激活以降低显存和计算成本</td>
+</tr>
+<tr class="even">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="odd">
+<td><code>Query Rewriting</code></td>
+<td>查询改写：把问题改成更适合检索的表达</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="even">
+<td><code>Raw Document</code></td>
+<td>原始文档：未经结构化处理的采购文件源材料</td>
+</tr>
+<tr class="odd">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="even">
+<td><code>Recall@K</code></td>
+<td>Recall@K：相关证据是否进入前 K 条检索结果</td>
+</tr>
+<tr class="odd">
+<td><code>Recovery</code></td>
+<td>恢复：工具失败或中断后安全重试、降级和继续</td>
+</tr>
+<tr class="even">
+<td><code>Red Team</code></td>
+<td>红队：主动构造对抗和异常场景寻找未知失败模式</td>
+</tr>
+<tr class="odd">
+<td><code>Regression</code></td>
+<td>回归测试：更新后验证旧能力和关键切片没有退化</td>
+</tr>
+<tr class="even">
+<td><code>Replay</code></td>
+<td>回放：混入旧/通用数据以减少遗忘</td>
+</tr>
+<tr class="odd">
+<td><code>Representation</code></td>
+<td>表示：模型内部承载语义或特征的向量结构</td>
+</tr>
+<tr class="even">
+<td><code>Reranker</code></td>
+<td>重排器：对初筛候选做更精细相关性排序</td>
+</tr>
+<tr class="odd">
+<td><code>Residual Connection</code></td>
+<td>残差连接：让信息跨层直接传递、改善深层优化</td>
+</tr>
+<tr class="even">
+<td><code>Response</code></td>
+<td>目标响应：希望模型学习生成的答案部分</td>
+</tr>
+<tr class="odd">
+<td><code>Retention</code></td>
+<td>能力保持：领域增强时尽量保住原有通用能力</td>
+</tr>
+<tr class="even">
+<td><code>RMSNorm</code></td>
+<td>RMSNorm：基于均方根的轻量归一化</td>
+</tr>
+<tr class="odd">
+<td><code>Rollback</code></td>
+<td>回滚：出现问题时恢复上一稳定系统版本</td>
+</tr>
+<tr class="even">
+<td><code>RoPE</code></td>
+<td>RoPE：旋转位置编码，把位置信息融入注意力</td>
+</tr>
+<tr class="odd">
+<td><code>Routing</code></td>
+<td>路由：决定当前任务交给哪个工具/模块</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>Self-Attention</code></td>
+<td>自注意力：同一序列内部各位置计算相关性并聚合</td>
+</tr>
+<tr class="odd">
+<td><code>Serving</code></td>
+<td>服务化：把模型包装成可扩展、可观测、可治理的在线服务</td>
+</tr>
+<tr class="even">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="odd">
+<td><code>Shortcut Learning</code></td>
+<td>捷径学习：利用表面相关线索而非真正任务规律</td>
+</tr>
+<tr class="even">
+<td><code>Softmax</code></td>
+<td>Softmax：把一组分数转换成归一化权重</td>
+</tr>
+<tr class="odd">
+<td><code>Speculative Decoding</code></td>
+<td>投机解码：先生成候选、再由大模型验证以加速生成</td>
+</tr>
+<tr class="even">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="odd">
+<td><code>Stable Protocol</code></td>
+<td>稳定协议：固定输入、工具、提示和输出判定方式</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="odd">
+<td><code>Step</code></td>
+<td>训练步：通常指一次优化器更新</td>
+</tr>
+<tr class="even">
+<td><code>Structured Output</code></td>
+<td>结构化输出：按照固定字段和枚举生成可校验结果</td>
+</tr>
+<tr class="odd">
+<td><code>Synthetic Data</code></td>
+<td>合成数据：由规则/模型生成、需质量控制的训练数据</td>
+</tr>
+<tr class="even">
+<td><code>Target Modules</code></td>
+<td>目标模块：指定 LoRA 插入哪些线性层</td>
+</tr>
+<tr class="odd">
+<td><code>Temperature</code></td>
+<td>温度：控制采样分布平滑程度和随机性</td>
+</tr>
+<tr class="even">
+<td><code>Tensor Parallel</code></td>
+<td>张量并行：把同一层矩阵计算拆到多张 GPU</td>
+</tr>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Threshold</code></td>
+<td>阈值：把连续分数转成业务动作的决策门槛</td>
+</tr>
+<tr class="odd">
+<td><code>Throughput</code></td>
+<td>吞吐：单位时间内处理请求或生成 Token 的能力</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenization</code></td>
+<td>Token 化：把文本转换成 Token 序列</td>
+</tr>
+<tr class="even">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenizer Audit</code></td>
+<td>分词器审计：检查专业术语、数字、符号的 Token 化质量</td>
+</tr>
+<tr class="even">
+<td><code>tokens/s</code></td>
+<td>每秒 Token 数：衡量生成速度或系统吞吐的常见指标</td>
+</tr>
+<tr class="odd">
+<td><code>Tool Calling</code></td>
+<td>工具调用：模型按受控协议选择工具并构造参数</td>
+</tr>
+<tr class="even">
+<td><code>Tool Registry</code></td>
+<td>工具注册表：管理工具能力、权限和版本</td>
+</tr>
+<tr class="odd">
+<td><code>top_k</code></td>
+<td>Top-k：只在概率最高的 k 个 Token 中采样</td>
+</tr>
+<tr class="even">
+<td><code>top_p</code></td>
+<td>Top-p：在累计概率达到 p 的候选 Token 中采样</td>
+</tr>
+<tr class="odd">
+<td><code>TPOT</code></td>
+<td>每输出 Token 时间：首 Token 后平均生成一个 Token 的耗时</td>
+</tr>
+<tr class="even">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="odd">
+<td><code>Transformers</code></td>
+<td>Transformers：Hugging Face 的模型加载与推理库</td>
+</tr>
+<tr class="even">
+<td><code>Truncation</code></td>
+<td>截断：超过最大长度时裁掉部分 Token</td>
+</tr>
+<tr class="odd">
+<td><code>TTFT</code></td>
+<td>首 Token 时间：用户等待第一个输出 Token 的时间</td>
+</tr>
+<tr class="even">
+<td><code>Underfitting</code></td>
+<td>欠拟合：模型连训练数据主要规律都没有学好</td>
+</tr>
+<tr class="odd">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="even">
+<td><code>Value</code></td>
+<td>Value/V：被注意力权重实际汇聚的内容向量</td>
+</tr>
+<tr class="odd">
+<td><code>Vector Database</code></td>
+<td>向量数据库：存储向量并支持相似度检索</td>
+</tr>
+<tr class="even">
+<td><code>VRAM</code></td>
+<td>显存：GPU 上存放权重、激活和 KV Cache 等的高速内存</td>
+</tr>
+</tbody>
+</table>
+</article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("v2theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("v2theme")||"light";</script></body></html>

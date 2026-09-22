@@ -1,0 +1,1318 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第8课 · 第4阶段：CPT Training Objective：Next Token Prediction、Sequence、Context Length 与 Loss</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第8课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>做 CPT、领域语料混合、能力保持、灾难性遗忘和 Synthetic Data。<ul><li>ObjectiveFormula 相同 ≠ LearningContext 相同。Next Token Prediction 的公式没变，但 Sequence 怎样构造会改变模型看到的条件上下文。</li><li>Sequence Boundary = Dependency Boundary。切在哪里，会决定哪些跨段关系能够在一次训练上下文中被直接学习。</li><li>ChooseContextLength ≠ MaxSupportedContext。Context Length 应由任务依赖距离、文档长度分布和计算预算共同决定。</li></ul></div><h1 id="第八课-第-4-阶段">第八课 · 第 4 阶段</h1>
+<h1
+id="cpt-training-objectivenext-token-predictionsequencecontext-length-与-loss-1">CPT
+Training Objective：Next Token Prediction、Sequence、Context Length 与
+Loss</h1>
+<h2
+id="cpt-明明还是-next-token-prediction为什么数据拼接方式sequence-lengthpacking-和-loss-masking-会直接改变模型到底在学什么-1">CPT
+明明还是 Next Token Prediction，为什么数据拼接方式、Sequence
+Length、Packing 和 Loss Masking 会直接改变模型到底在学什么？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>ObjectiveFormula 相同 ≠ LearningContext 相同。Next Token
+Prediction 的公式没变，但 Sequence
+怎样构造会改变模型看到的条件上下文。</strong></li>
+<li><strong>Sequence Boundary = Dependency
+Boundary。切在哪里，会决定哪些跨段关系能够在一次训练上下文中被直接学习。</strong></li>
+<li><strong>ChooseContextLength ≠ MaxSupportedContext。Context Length
+应由任务依赖距离、文档长度分布和计算预算共同决定。</strong></li>
+<li><strong>Attention Mask ≠ Loss
+Mask。前者控制能看什么，后者控制哪里算损失，这是两套完全不同的机制。</strong></li>
+<li><strong>TruncationPolicy =
+ImplicitSamplingPolicy。截断不是简单裁长度，而是在重新定义哪些文档区域更常进入训练。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="odd">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="even">
+<td><code>Loss Mask</code></td>
+<td>损失掩码：指定哪些 Token 参与训练 Loss</td>
+</tr>
+<tr class="odd">
+<td><code>Next Token Prediction</code></td>
+<td>下一 Token 预测：大语言模型预训练核心目标</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 3 阶段我们已经锁定：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Text
+\rightarrow
+Tokenizer
+\rightarrow
+TokenIDs
+}
+</annotation></semantics></math></p>
+<p>现在问题继续往下走。</p>
+<p>Tokenizer 已经把采购文本变成：</p>
+<pre class="text"><code>[1542, 3098, 881, 7712, ...]</code></pre>
+<p>但这些 Token IDs 还不能直接丢给 GPU。</p>
+<p>我们还必须决定：</p>
+<pre class="text"><code>怎样组成Sequence？
+一条Sequence多长？
+多个文档能不能拼在一起？
+文档边界怎样表示？
+哪些Token参与Loss？
+长文档截断还是切块？
+Padding算不算Loss？</code></pre>
+<p>这些选择看起来像：</p>
+<blockquote>
+<p>“数据管道细节”。</p>
+</blockquote>
+<p>实际上它们会直接改变：</p>
+<blockquote>
+<p><strong>模型正在解决的学习问题。</strong></p>
+</blockquote>
+<p>所以本阶段最终形成：</p>
+<h1
+id="procurementcptobjectivepolicy_v0.1-1"><code>ProcurementCPTObjectivePolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-3">一、先锁死本阶段最重要的一句话</h1>
+<p>同一份 Corpus，</p>
+<p>只要 Sequence 构造方式不同，</p>
+<p>模型实际接受的训练任务就已经不同。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mo>+</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameCorpus
++
+DifferentSequenceConstruction
+=
+DifferentLearningProblem
+}
+</annotation></semantics></math></p>
+<p>所以 CPT 的训练目标不能只写一句：</p>
+<pre class="text"><code>Next Token Prediction</code></pre>
+<p>还必须进一步明确：</p>
+<pre class="text"><code>Sequence Construction
+序列怎样构造
+
+Context Length
+每条序列多长
+
+Packing
+多个样本怎样拼接
+
+Document Boundary
+文档边界怎样表达
+
+Loss Masking
+哪些位置参与损失
+
+Truncation
+超长文本怎样处理
+
+Sampling
+不同长度文档怎样进入训练</code></pre>
+<p>这些共同决定：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EffectiveTrainingObjective
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二cpt-的数学目标其实没有变">二、CPT 的数学目标其实没有变</h1>
+<p>CPT 仍然是：</p>
+<h1 id="causal-language-modeling">Causal Language Modeling</h1>
+<h2 id="因果语言建模">因果语言建模</h2>
+<p>也就是：</p>
+<blockquote>
+<p>根据前面的 Token，预测下一个 Token。</p>
+</blockquote>
+<p>对一个 Token 序列：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>1</mn></msub><mo>,</mo><msub><mi>x</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>x</mi><mi>T</mi></msub></mrow><annotation encoding="application/x-tex">
+x_1,x_2,\dots,x_T
+</annotation></semantics></math></p>
+<p>模型学习：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>t</mi></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>x</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p_\theta(x_t|x_{&lt;t})
+</annotation></semantics></math></p>
+<p>训练 Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ℒ</mi><mo>=</mo><mi>−</mi><munderover><mo>∑</mo><mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow><mi>T</mi></munderover><mo>log</mo><msub><mi>p</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>t</mi></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>x</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathcal{L}
+=
+-\sum_{t=1}^{T}
+\log p_\theta(x_t|x_{&lt;t})
+</annotation></semantics></math></p>
+<p>翻译成人话：</p>
+<pre class="text"><code>前面已经看到：
+“供应商应当具有”
+
+模型预测：
+下一个Token是什么？</code></pre>
+<p>然后继续：</p>
+<pre class="text"><code>“供应商应当具有独立”
+→ 预测下一个Token
+
+“供应商应当具有独立承担”
+→ 再预测下一个Token</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>本</mi><mi>质</mi><mi>仍</mi><mi>然</mi><mi>是</mi><mi>L</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>u</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPT
+本质仍然是LanguageModeling
+}
+</annotation></semantics></math></p>
+<p>变化的不是基本目标，</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>训练数据分布与 Sequence 组织方式。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三核心心智模型-①objective-不只是公式还包括你给模型看什么样的上下文">三、核心心智模型
+①：Objective 不只是公式，还包括“你给模型看什么样的上下文”</h1>
+<p>很多人看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mo>log</mo><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>t</mi></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>x</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+-\log p(x_t|x_{&lt;t})
+</annotation></semantics></math></p>
+<p>就觉得：</p>
+<blockquote>
+<p>“目标函数确定了，剩下都是工程细节。”</p>
+</blockquote>
+<p>这是不够专业的。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">
+x_{&lt;t}
+</annotation></semantics></math></p>
+<p>到底是什么，</p>
+<p>完全取决于：</p>
+<pre class="text"><code>Sequence怎么切
+文档是否拼接
+上下文长度
+是否跨文档
+是否包含模板
+哪里被截断</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>相</mi><mi>同</mi><mo>⇏</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>相</mi><mi>同</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ObjectiveFormula
+相同
+\not\Rightarrow
+LearningContext
+相同
+}
+</annotation></semantics></math></p>
+<p>进一步：</p>
+<blockquote>
+<p><strong>模型学到的统计关系，取决于你怎样构造它能看到的条件上下文。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四sequence-construction原始文档怎样变成训练序列">四、Sequence
+Construction：原始文档怎样变成训练序列？</h1>
+<p>假设有一份采购文件：</p>
+<pre class="text"><code>封面
+采购公告
+资格条件
+采购需求
+评分办法
+合同条款
+附件</code></pre>
+<p>Tokenize 后有：</p>
+<pre class="text"><code>18000 tokens</code></pre>
+<p>而你的训练 Sequence Length 是：</p>
+<pre class="text"><code>4096</code></pre>
+<p>那么必须把文档处理成若干训练序列。</p>
+<p>最简单：</p>
+<pre class="text"><code>Sequence 1
+Token 1～4096
+
+Sequence 2
+Token 4097～8192
+
+Sequence 3
+Token 8193～12288
+
+Sequence 4
+Token 12289～16384
+
+Sequence 5
+剩余Token</code></pre>
+<p>这叫：</p>
+<h1 id="chunked-sequential-construction">Chunked Sequential
+Construction</h1>
+<h2 id="顺序切分构造">顺序切分构造</h2>
+<p>但这只是第一种方案。</p>
+<hr />
+<h1
+id="五核心心智模型-②sequence-boundary-会改变模型看到的关系距离">五、核心心智模型
+②：Sequence Boundary 会改变模型看到的“关系距离”</h1>
+<p>假设资格条件在：</p>
+<pre class="text"><code>Token 3800</code></pre>
+<p>而评分办法在：</p>
+<pre class="text"><code>Token 4500</code></pre>
+<p>如果 Sequence Length 是：</p>
+<pre class="text"><code>4096</code></pre>
+<p>这两个内容会被分到：</p>
+<blockquote>
+<p>两个训练 Sequence。</p>
+</blockquote>
+<p>模型在这条训练样本里：</p>
+<blockquote>
+<p>看不到它们之间的直接上下文关系。</p>
+</blockquote>
+<p>如果 Sequence Length 是：</p>
+<pre class="text"><code>8192</code></pre>
+<p>它们可能在同一个上下文里。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mi>决</mi><mi>定</mi><mi>哪</mi><mi>些</mi><mi>关</mi><mi>系</mi><mi>能</mi><mi>够</mi><mi>在</mi><mi>一</mi><mi>次</mi><mi>训</mi><mi>练</mi><mi>上</mi><mi>下</mi><mi>文</mi><mi>中</mi><mi>被</mi><mi>直</mi><mi>接</mi><mi>建</mi><mi>模</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ContextLength
+决定
+哪些关系能够在一次训练上下文中被直接建模
+}
+</annotation></semantics></math></p>
+<p>这就是为什么 Context Length 不只是：</p>
+<blockquote>
+<p>“能装多少字”。</p>
+</blockquote>
+<p>它决定：</p>
+<blockquote>
+<p><strong>模型可以学习多远的依赖关系。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六context-length长一点一定更好吗">六、Context
+Length：长一点一定更好吗？</h1>
+<p>不一定。</p>
+<p>更长 Context 的好处：</p>
+<pre class="text"><code>完整章节更容易保留
+
+跨章节关系更容易同场出现
+
+长文档结构信息保留更多
+
+减少人为切断</code></pre>
+<p>但代价包括：</p>
+<pre class="text"><code>显存压力更大
+
+训练吞吐下降
+
+Attention计算更贵
+
+Batch Size可能变小
+
+短文档需要更多Packing</code></pre>
+<p>经典 Attention 计算对序列长度通常有近似：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mrow><mo stretchy="true" form="prefix">(</mo><msup><mi>L</mi><mn>2</mn></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+O(L^2)
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+L
+=
+SequenceLength
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongerContext
+\neq
+FreeImprovement
+}
+</annotation></semantics></math></p>
+<p>Context Length 是：</p>
+<blockquote>
+<p>能力收益、训练成本与数据分布之间的折中。</p>
+</blockquote>
+<hr />
+<h1
+id="七核心心智模型-③context-length-应该由目标依赖距离决定而不是越长越专业">七、核心心智模型
+③：Context Length 应该由“目标依赖距离”决定，而不是越长越专业</h1>
+<p>专业决策不是：</p>
+<pre class="text"><code>模型支持128K
+→ 就训练128K</code></pre>
+<p>而应该先问：</p>
+<pre class="text"><code>采购任务真正需要学习多远的上下文关系？
+
+一份典型采购文件有多长？
+
+风险判断常依赖同一章节还是跨章节？
+
+长文档样本占多少？
+
+预算是否允许？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>o</mi><mi>o</mi><mi>s</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mo>=</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>D</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ChooseContextLength
+=
+TaskDependencyDistance
++
+DocumentLengthDistribution
++
+ComputeBudget
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>S</mi><mi>u</mi><mi>p</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MaxSupportedContext
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="八packing为什么短文档不应该大量浪费-padding">八、Packing：为什么短文档不应该大量浪费
+Padding？</h1>
+<p>假设 Sequence Length：</p>
+<pre class="text"><code>4096</code></pre>
+<p>但某些公告只有：</p>
+<pre class="text"><code>700 tokens
+900 tokens
+1200 tokens</code></pre>
+<p>如果一条文档占一条 Sequence，</p>
+<p>剩余位置只能 Padding：</p>
+<pre class="text"><code>700 real tokens
++
+3396 padding tokens</code></pre>
+<p>大量算力浪费在：</p>
+<blockquote>
+<p>无效位置。</p>
+</blockquote>
+<p>所以常用：</p>
+<h1 id="packing">Packing</h1>
+<h2 id="样本拼接">样本拼接</h2>
+<p>例如：</p>
+<pre class="text"><code>Document A
+700 tokens
+
+&lt;EOS&gt;
+
+Document B
+900 tokens
+
+&lt;EOS&gt;
+
+Document C
+1200 tokens
+
+&lt;EOS&gt;</code></pre>
+<p>拼成同一个 4096 Sequence。</p>
+<p>这样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>U</mi><mi>t</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>提</mi><mi>高</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenUtilization
+提高
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九packing-的完整流程">九、Packing 的完整流程</h1>
+<p>英文流程：</p>
+<pre class="text"><code>Documents
+↓
+Tokenize
+↓
+Append EOS
+↓
+Length-aware Grouping
+↓
+Pack into Fixed-length Sequences
+↓
+Attention / Loss Policy
+↓
+Training Batch</code></pre>
+<p>中文解释：</p>
+<pre class="text"><code>多份原始文档
+↓
+转成Token IDs
+↓
+每份文档结尾加入EOS
+↓
+根据长度做组合
+↓
+尽量填满固定Sequence
+↓
+明确跨文档Attention和Loss规则
+↓
+组成训练Batch</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>不</mi><mi>是</mi><mi>简</mi><mi>单</mi><mi>字</mi><mi>符</mi><mi>串</mi><mi>拼</mi><mi>接</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Packing
+不是简单字符串拼接
+}
+</annotation></semantics></math></p>
+<p>它涉及：</p>
+<blockquote>
+<p>文档边界、Attention 行为与 Loss 语义。</p>
+</blockquote>
+<hr />
+<h1 id="十document-boundary为什么-eos-非常重要">十、Document
+Boundary：为什么 EOS 非常重要？</h1>
+<p>假设直接把两个完全无关文档拼起来：</p>
+<pre class="text"><code>Document A最后一句
++
+Document B第一句</code></pre>
+<p>如果没有边界，</p>
+<p>模型会看到一种虚假的统计关系：</p>
+<blockquote>
+<p>A 结尾之后天然接 B 开头。</p>
+</blockquote>
+<p>所以需要：</p>
+<h1 id="eos">EOS</h1>
+<h2 id="end-of-sequence-文档结束标记">End Of Sequence /
+文档结束标记</h2>
+<p>例如：</p>
+<pre class="text"><code>Document A
+&lt;EOS&gt;
+Document B
+&lt;EOS&gt;</code></pre>
+<p>EOS 告诉模型：</p>
+<blockquote>
+<p>前一文档结束了。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>显</mi><mi>式</mi><mi>表</mi><mi>达</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DocumentBoundary
+必须显式表达
+}
+</annotation></semantics></math></p>
+<p>否则 Packing 可能制造：</p>
+<h1 id="false-transition">False Transition</h1>
+<h2 id="虚假文档过渡">虚假文档过渡</h2>
+<hr />
+<h1 id="十一跨文档-attention-到底要不要允许">十一、跨文档 Attention
+到底要不要允许？</h1>
+<p>这是更细的工程问题。</p>
+<p>在一些标准 causal LM packing 中：</p>
+<blockquote>
+<p>后面的文档仍可能 Attention 到前一文档 Token，</p>
+</blockquote>
+<p>只是中间有 EOS。</p>
+<p>这通常是可接受的工程实现。</p>
+<p>但如果你希望：</p>
+<blockquote>
+<p>文档之间完全隔离，</p>
+</blockquote>
+<p>就需要：</p>
+<h1 id="block-diagonal-attention-mask">Block-diagonal Attention
+Mask</h1>
+<h2 id="分块对角注意力掩码">分块对角注意力掩码</h2>
+<p>概念上：</p>
+<pre class="text"><code>Document A
+只能看A内部历史
+
+Document B
+只能看B内部历史
+
+Document C
+只能看C内部历史</code></pre>
+<p>这能更严格避免跨样本信息串扰，</p>
+<p>但实现复杂度更高。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>明</mi><mi>确</mi><mi>C</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PackingPolicy
+必须明确
+CrossDocumentAttention
+}
+</annotation></semantics></math></p>
+<p>不能默认“拼起来就结束”。</p>
+<hr />
+<h1 id="十二loss-masking不是所有-token-都应该参与-loss">十二、Loss
+Masking：不是所有 Token 都应该参与 Loss</h1>
+<p>训练序列里可能包含：</p>
+<pre class="text"><code>真实正文Token
+EOS
+PAD
+特殊控制Token
+某些结构占位Token</code></pre>
+<p>一般来说：</p>
+<h1 id="padding-token">Padding Token</h1>
+<h2 id="填充-token">填充 Token</h2>
+<p>不应该参与语言建模 Loss。</p>
+<p>可以用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>m</mi><mi>t</mi></msub><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">
+m_t
+\in
+\{0,1\}
+</annotation></semantics></math></p>
+<p>表示某个位置是否计入 Loss。</p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ℒ</mi><mo>=</mo><mi>−</mi><munderover><mo>∑</mo><mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow><mi>T</mi></munderover><msub><mi>m</mi><mi>t</mi></msub><mo>log</mo><msub><mi>p</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>t</mi></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>x</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathcal{L}
+=
+-\sum_{t=1}^{T}
+m_t
+\log p_\theta(x_t|x_{&lt;t})
+</annotation></semantics></math></p>
+<p>其中：</p>
+<pre class="text"><code>m_t = 1
+这个Token参与训练损失
+
+m_t = 0
+这个Token忽略</code></pre>
+<p>这就是：</p>
+<h1 id="loss-mask">Loss Mask</h1>
+<h2 id="损失掩码">损失掩码</h2>
+<hr />
+<h1
+id="十三核心心智模型-④attention-mask-和-loss-mask-不是一回事">十三、核心心智模型
+④：Attention Mask 和 Loss Mask 不是一回事</h1>
+<p>这两个名字很像，</p>
+<p>但作用完全不同。</p>
+<h1 id="attention-mask">Attention Mask</h1>
+<h2 id="注意力掩码">注意力掩码</h2>
+<p>决定：</p>
+<blockquote>
+<p>当前 Token 能看哪些历史位置。</p>
+</blockquote>
+<h1 id="loss-mask-1">Loss Mask</h1>
+<h2 id="损失掩码-1">损失掩码</h2>
+<p>决定：</p>
+<blockquote>
+<p>当前 Token 的预测错误要不要计入训练 Loss。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo>≠</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AttentionMask
+\neq
+LossMask
+}
+</annotation></semantics></math></p>
+<p>一个 Token：</p>
+<blockquote>
+<p>可以被其他 Token 看见，</p>
+</blockquote>
+<p>但自己不一定参与 Loss。</p>
+<p>这是非常重要的底层区别。</p>
+<hr />
+<h1 id="十四cpt-和-sft-的-loss-mask-通常不一样">十四、CPT 和 SFT 的 Loss
+Mask 通常不一样</h1>
+<p>CPT 典型目标：</p>
+<blockquote>
+<p>对绝大多数真实文本 Token 都计算 Next Token Loss。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>采购人应当根据项目特点...</code></pre>
+<p>基本整段都参与 Loss。</p>
+<p>而 SFT 里经常：</p>
+<pre class="text"><code>User Prompt
+→ mask掉Loss
+
+Assistant Response
+→ 计算Loss</code></pre>
+<p>也就是只训练：</p>
+<blockquote>
+<p>Assistant 的目标回答。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>通</mi><mi>常</mi><mi>更</mi><mi>接</mi><mi>近</mi><mi>F</mi><mi>u</mi><mi>l</mi><mi>l</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>L</mi><mi>M</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPTLossMask
+通常更接近FullTextLM
+}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>F</mi><mi>T</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>通</mi><mi>常</mi><mi>更</mi><mi>接</mi><mi>近</mi><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>p</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SFTLossMask
+通常更接近TargetResponseOnly
+}
+</annotation></semantics></math></p>
+<p>这也是 CPT 和 SFT 的根本区别之一。</p>
+<hr />
+<h1
+id="十五truncation超长文档直接截断有什么问题">十五、Truncation：超长文档直接截断有什么问题？</h1>
+<p>假设文档：</p>
+<pre class="text"><code>50000 tokens</code></pre>
+<p>训练 Context：</p>
+<pre class="text"><code>8192</code></pre>
+<p>如果简单：</p>
+<pre class="text"><code>只保留前8192 tokens</code></pre>
+<p>那么模型长期看到的是：</p>
+<blockquote>
+<p>文档前半部分。</p>
+</blockquote>
+<p>采购文件通常前面可能是：</p>
+<pre class="text"><code>公告
+须知
+资格部分</code></pre>
+<p>后面则可能是：</p>
+<pre class="text"><code>技术需求
+评分表
+合同
+附件</code></pre>
+<p>于是长期训练后：</p>
+<blockquote>
+<p>Corpus 表面完整，实际后半段系统性缺失。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="truncation-bias">Truncation Bias</h1>
+<h2 id="截断偏差">截断偏差</h2>
+<hr />
+<h1
+id="十六核心心智模型-⑤truncation-是-sampling-decision不只是长度处理">十六、核心心智模型
+⑤：Truncation 是 Sampling Decision，不只是长度处理</h1>
+<p>一旦你决定：</p>
+<pre class="text"><code>保留前4096</code></pre>
+<p>你其实是在提高：</p>
+<blockquote>
+<p>文档前部内容的采样概率。</p>
+</blockquote>
+<p>降低：</p>
+<blockquote>
+<p>文档后部内容的采样概率。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>u</mi><mi>n</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mo>=</mo><mi>I</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TruncationPolicy
+=
+ImplicitSamplingPolicy
+}
+</annotation></semantics></math></p>
+<p>更好的长文档策略可能包括：</p>
+<pre class="text"><code>Sequential Chunking
+顺序分块
+
+Random Window Sampling
+随机窗口采样
+
+Section-aware Sampling
+按章节采样
+
+Importance-aware Sampling
+按重要区域采样
+
+Multi-window Sampling
+同一长文档抽多个窗口</code></pre>
+<hr />
+<h1
+id="十七采购文档为什么特别适合-section-aware-sampling">十七、采购文档为什么特别适合
+Section-aware Sampling？</h1>
+<p>政府采购文档天然有章节结构：</p>
+<pre class="text"><code>采购公告
+供应商须知
+资格条件
+采购需求
+技术参数
+评分办法
+合同条款
+附件</code></pre>
+<p>如果只是机械按 Token 长度切，</p>
+<p>可能把：</p>
+<pre class="text"><code>一个评分项</code></pre>
+<p>从中间切断。</p>
+<p>Section-aware 的思路是：</p>
+<blockquote>
+<p>尽量保持语义章节完整。</p>
+</blockquote>
+<p>流程：</p>
+<pre class="text"><code>Document
+原始文档
+↓
+Section Parse
+识别章节结构
+↓
+Section Tokens
+每章Token化
+↓
+Length Check
+判断长度
+↓
+Keep / Split / Pack
+整章保留、长章再切、短章拼接</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>A</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>往</mi><mi>往</mi><mi>比</mi><mi>B</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>更</mi><mi>适</mi><mi>合</mi><mi>领</mi><mi>域</mi><mi>文</mi><mi>档</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+StructureAwareSequence
+往往比
+BlindChunking
+更适合领域文档
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十八sliding-window-要不要用">十八、Sliding Window
+要不要用？</h1>
+<p>对于超长章节，</p>
+<p>可以使用：</p>
+<h1 id="sliding-window">Sliding Window</h1>
+<h2 id="滑动窗口">滑动窗口</h2>
+<p>例如：</p>
+<pre class="text"><code>Window 1
+Token 1～4096
+
+Window 2
+Token 3073～7168
+
+Window 3
+Token 6145～10240</code></pre>
+<p>有：</p>
+<pre class="text"><code>1024 tokens overlap</code></pre>
+<p>好处：</p>
+<blockquote>
+<p>降低边界切断。</p>
+</blockquote>
+<p>坏处：</p>
+<blockquote>
+<p>重叠区域被重复训练。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>l</mi><mi>a</mi><mi>p</mi><mi>提</mi><mi>高</mi><mi>上</mi><mi>下</mi><mi>文</mi><mi>连</mi><mi>续</mi><mi>性</mi><mi>但</mi><mi>增</mi><mi>加</mi><mi>重</mi><mi>复</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>权</mi><mi>重</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Overlap
+提高上下文连续性
+但增加重复Token权重
+}
+</annotation></semantics></math></p>
+<p>是否使用，</p>
+<p>要看：</p>
+<blockquote>
+<p>长文本依赖和重复训练成本。</p>
+</blockquote>
+<hr />
+<h1
+id="十九sequence-length-distribution不要只记录一个-max_length">十九、Sequence
+Length Distribution：不要只记录一个 max_length</h1>
+<p>即使配置：</p>
+<pre class="text"><code>max_seq_length = 8192</code></pre>
+<p>实际训练序列可能是：</p>
+<pre class="text"><code>2048
+4096
+8192
+不同长度混合</code></pre>
+<p>所以需要记录：</p>
+<h1 id="sequence-length-distribution">Sequence Length Distribution</h1>
+<h2 id="序列长度分布">序列长度分布</h2>
+<p>例如：</p>
+<pre class="text"><code>P50 = 4096
+P90 = 8192
+Padding Rate = 3%
+Packed Token Utilization = 96%</code></pre>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mo>≠</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MaxLength
+\neq
+ActualTrainingLengthDistribution
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十核心心智模型-⑥训练看过长文本不等于模型学会长上下文能力">二十、核心心智模型
+⑥：训练“看过长文本”不等于模型“学会长上下文能力”</h1>
+<p>假设你训练了 8192 Token Sequence。</p>
+<p>这只能说明：</p>
+<blockquote>
+<p>模型训练时见过 8192 长度上下文。</p>
+</blockquote>
+<p>不自动意味着：</p>
+<pre class="text"><code>能够准确利用8000Token前的信息
+能够做跨章节推理
+能够可靠长文档检索</code></pre>
+<p>这些能力必须单独评测。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongSequenceExposure
+\neq
+LongContextCompetence
+}
+</annotation></semantics></math></p>
+<p>真正长上下文能力还受到：</p>
+<pre class="text"><code>Base Model原生位置编码
+Attention结构
+训练长度分布
+数据任务结构
+评测方式</code></pre>
+<p>影响。</p>
+<hr />
+<h1
+id="二十一perplexity为什么它能看-cpt-学习但不能单独代表业务能力">二十一、Perplexity：为什么它能看
+CPT 学习，但不能单独代表业务能力？</h1>
+<p>Causal LM 常用：</p>
+<h1 id="perplexity">Perplexity</h1>
+<h2 id="困惑度">困惑度</h2>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>P</mi><mi>L</mi><mo>=</mo><mo>exp</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>ℒ</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+PPL
+=
+\exp(\mathcal{L})
+</annotation></semantics></math></p>
+<p>如果 Loss 更低，</p>
+<p>Perplexity 通常也更低。</p>
+<p>可以直觉理解：</p>
+<blockquote>
+<p>模型对下一个 Token 更不“意外”。</p>
+</blockquote>
+<p>因此 CPT 后：</p>
+<pre class="text"><code>Procurement Validation Corpus
+PPL下降</code></pre>
+<p>说明：</p>
+<blockquote>
+<p>模型对采购语言分布建模得更好。</p>
+</blockquote>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LowerPerplexity
+\neq
+BetterProcurementAgent
+}
+</annotation></semantics></math></p>
+<p>因为它不直接证明：</p>
+<pre class="text"><code>风险判断更准
+引用更准
+指令遵循更好
+工具调用更好</code></pre>
+<p>所以 Perplexity 是：</p>
+<blockquote>
+<p>Language Modeling Metric。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>最终业务 KPI。</p>
+</blockquote>
+<hr />
+<h1
+id="二十二核心心智模型-⑦token-level-loss-和-business-level-quality-必须分层">二十二、核心心智模型
+⑦：Token-level Loss 和 Business-level Quality 必须分层</h1>
+<p>CPT 优化的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenPredictionLoss
+}
+</annotation></semantics></math></p>
+<p>但最终我们关心的是：</p>
+<pre class="text"><code>领域理解
+风险识别
+长文档理解
+专业语言
+通用能力
+SFT后任务表现</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingMetric
+\neq
+ProductMetric
+}
+</annotation></semantics></math></p>
+<p>专业评测必须分层：</p>
+<pre class="text"><code>Layer 1
+CPT Loss / Perplexity
+语言建模层
+
+Layer 2
+Domain Probes
+领域理解探针
+
+Layer 3
+Downstream Tasks
+下游采购任务
+
+Layer 4
+General Regression
+通用能力回归</code></pre>
+<hr />
+<h1
+id="二十三effective-tokens真正参与-loss-的-token-才算有效训练量">二十三、Effective
+Tokens：真正参与 Loss 的 Token 才算有效训练量</h1>
+<p>假设 Batch 中一共：</p>
+<pre class="text"><code>1,000,000 token positions</code></pre>
+<p>其中：</p>
+<pre class="text"><code>Padding 100,000
+Masked positions 20,000</code></pre>
+<p>真正计算 Loss 的只有：</p>
+<pre class="text"><code>880,000</code></pre>
+<p>所以可以定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>=</mo><munder><mo>∑</mo><mi>t</mi></munder><msub><mi>m</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">
+EffectiveTrainingTokens
+=
+\sum_t m_t
+</annotation></semantics></math></p>
+<p>这和第 2 阶段的：</p>
+<blockquote>
+<p>Effective Domain Tokens</p>
+</blockquote>
+<p>概念不同。</p>
+<p>第 2 阶段关注：</p>
+<blockquote>
+<p>数据质量后的有效语料。</p>
+</blockquote>
+<p>本阶段关注：</p>
+<blockquote>
+<p>真正进入 Loss 的训练 Token。</p>
+</blockquote>
+<p>所以两层应该分开：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>≠</mo><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EffectiveCorpusTokens
+\neq
+EffectiveTrainingTokens
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十四token-utilizationpacking-做得好不好可以量化">二十四、Token
+Utilization：Packing 做得好不好可以量化</h1>
+<p>定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mi>t</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mfrac><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>l</mi><mi>o</mi><mi>t</mi><mi>s</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Utilization
+=
+\frac{RealTokens}{TotalSequenceSlots}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>4096长度 × 100 sequences
+=
+409600 slots
+
+真实Token
+=
+397000</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mi>t</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≈</mo><mn>96.9</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+Utilization
+\approx
+96.9\%
+</annotation></semantics></math></p>
+<p>如果 Utilization 很低：</p>
+<blockquote>
+<p>大量算力浪费在 Padding。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>可</mi><mi>以</mi><mi>用</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>U</mi><mi>t</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>衡</mi><mi>量</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PackingQuality
+可以用TokenUtilization衡量
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十五政府采购-cpt-的推荐-sequence-construction-思路">二十五、政府采购
+CPT 的推荐 Sequence Construction 思路</h1>
+<p>第一版可以采用：</p>
+<pre class="text"><code>Document Parse
+文档结构解析
+↓
+Section-aware Split
+优先按章节切分
+↓
+Tokenizer
+转成Token IDs
+↓
+Long Section Split
+超长章节再分块
+↓
+EOS Boundary
+每个独立文档/样本加入边界
+↓
+Length-aware Packing
+短样本按长度合理拼接
+↓
+Loss Mask
+PAD等无效位置不计Loss
+↓
+Batch
+进入训练</code></pre>
+<p>这里的核心逻辑是：</p>
+<blockquote>
+<p><strong>优先保护语义结构，再优化 GPU 利用率。</strong></p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>先把所有 Token 填满。</p>
+</blockquote>
+<hr />
+<h1
+id="二十六本阶段正式工程产物procurementcptobjectivepolicy_v0.1">二十六、本阶段正式工程产物：<code>ProcurementCPTObjectivePolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>objective_type
+=
+causal_language_modeling
+
+sequence_length
+
+sequence_length_distribution
+
+document_boundary_policy
+
+eos_policy
+
+packing_enabled
+
+packing_strategy
+
+cross_document_attention_policy
+
+loss_mask_policy
+
+padding_loss_policy
+
+truncation_policy
+
+long_document_policy
+
+section_aware_split
+
+sliding_window_policy
+
+window_overlap
+
+sampling_policy
+
+effective_training_tokens
+
+token_utilization
+
+validation_loss
+
+validation_perplexity
+
+domain_probe_metrics
+
+general_regression_metrics
+
+objective_policy_version</code></pre>
+<p>训练 Trace 至少记录：</p>
+<pre class="text"><code>corpus_version
+
+tokenizer_version
+
+sequence_builder_version
+
+max_sequence_length
+
+actual_sequence_length
+
+packing_rate
+
+padding_rate
+
+masked_token_rate
+
+effective_training_tokens
+
+loss
+
+perplexity</code></pre>
+<p>这样以后才能回答：</p>
+<blockquote>
+<p><strong>为什么同一个 Corpus，两次 CPT 结果不一样？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十七本阶段最重要的-7-个核心心智模型">二十七、本阶段最重要的 7
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>ObjectiveFormula 相同 ≠ LearningContext 相同</code>。Next Token
+Prediction 的公式没变，但 Sequence
+怎样构造会改变模型看到的条件上下文。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>Sequence Boundary = Dependency Boundary</code>。切在哪里，会决定哪些跨段关系能够在一次训练上下文中被直接学习。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>ChooseContextLength ≠ MaxSupportedContext</code>。Context
+Length 应由任务依赖距离、文档长度分布和计算预算共同决定。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Attention Mask ≠ Loss Mask</code>。前者控制能看什么，后者控制哪里算损失，这是两套完全不同的机制。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>TruncationPolicy = ImplicitSamplingPolicy</code>。截断不是简单裁长度，而是在重新定义哪些文档区域更常进入训练。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>LongSequenceExposure ≠ LongContextCompetence</code>。训练见过长序列，不代表模型已经具备可靠长上下文推理能力。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>TrainingMetric ≠ ProductMetric</code>。CPT
+Loss / Perplexity
+下降只证明语言建模改善，最终仍需领域任务和通用回归评测。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十八把完整-cpt-objective-流程压成一张专业工程图">二十八、把完整
+CPT Objective 流程压成一张专业工程图</h1>
+<pre class="text"><code>                    ProcurementCPTCorpus
+                         领域语料
+                            │
+                            ▼
+                        Tokenizer
+                     文本转Token IDs
+                            │
+                            ▼
+                     Section Parsing
+                      识别章节结构
+                            │
+                            ▼
+                  Sequence Construction
+                       构造训练序列
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+       Context Length     Packing      Truncation
+       上下文长度       样本拼接        截断策略
+             │              │              │
+             └──────────────┼──────────────┘
+                            ▼
+                    Document Boundary
+                    EOS / 文档边界
+                            │
+                            ▼
+                 Attention / Loss Policy
+                 注意力与损失掩码策略
+                            │
+                            ▼
+                      Training Batch
+                         训练Batch
+                            │
+                            ▼
+                  Next Token Prediction
+                      下一个Token预测
+                            │
+                            ▼
+                    Loss / Perplexity
+                    损失与困惑度
+                            │
+                            ▼
+                  Domain + Regression Eval
+                    领域与通用回归评测</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>CPT 不是“把语料 Tokenize
+后直接训练”，而是先决定模型每次能看到什么上下文、文档怎样拼接、哪里是边界、哪些位置真正参与
+Loss；这些 Sequence 级决策共同定义了模型实际在学习的任务。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第八课-第-4-阶段掌握测试">第八课 · 第 4 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：CPT 为什么仍然是 Causal Language
+Modeling；为什么同一个 Loss 公式并不代表同一个学习任务；Sequence
+Construction 怎样改变上下文关系；Context Length
+为什么决定可直接建模的依赖距离；为什么更长 Context 不一定更好；Packing
+解决什么问题；为什么 Packing 必须显式处理 Document Boundary；EOS
+的作用是什么；跨文档 Attention 是否允许为什么要成为 Policy；Attention
+Mask 和 Loss Mask 有什么本质区别；CPT 和 SFT 的 Loss Mask
+为什么通常不同；为什么直接保留文档前 N 个 Token 会形成 Truncation
+Bias；为什么
+<code>TruncationPolicy = ImplicitSamplingPolicy</code>；Section-aware
+Sampling 为什么适合采购文档；Sliding Window 的收益和代价是什么；为什么
+<code>max_seq_length</code>
+不等于真实训练长度分布；为什么长序列曝光不等于长上下文能力；Perplexity
+能说明什么、不能说明什么；Effective Corpus Tokens 和 Effective Training
+Tokens
+有什么区别；以及为什么最终评测必须同时看训练指标、领域能力和通用能力回归。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mi>第</mi><mn>4</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课第4阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第八课-第-5-阶段">下一阶段：第八课 · 第 5 阶段</h1>
+<h1
+id="data-mixture-sampling领域语料比例质量权重重复控制与采样策略">Data
+Mixture &amp; Sampling：领域语料比例、质量权重、重复控制与采样策略</h1>
+<h2
+id="corpus-已经干净了sequence-也构造好了但不同类型语料到底各训练多少为什么-10-倍数据量并不意味着应该获得-10-倍训练权重">Corpus
+已经干净了，Sequence 也构造好了，但不同类型语料到底各训练多少？为什么 10
+倍数据量并不意味着应该获得 10 倍训练权重？</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Data Mixture
+数据混合
+
+Sampling Weight
+采样权重
+
+Temperature Sampling
+温度采样
+
+Quality Weighting
+质量加权
+
+Domain Balance
+领域平衡
+
+Replay Mix
+通用语料回放混合
+
+Oversampling
+过采样
+
+Undersampling
+欠采样
+
+Duplicate Exposure
+重复曝光
+
+Epoch / Token Exposure
+训练曝光量
+
+Mixture Drift
+混合分布漂移</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementcptmixturepolicy_v0.1"><code>ProcurementCPTMixturePolicy_V0.1</code></h1>
+<p>下一阶段最关键的一条边界会是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorpusShare
+\neq
+TrainingShare
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>某类数据在磁盘里占 50%，不代表训练时就应该贡献 50%
+的梯度。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

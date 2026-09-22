@@ -1,0 +1,1046 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第9阶段：Query Rewrite、Metadata Filter 与多路检索</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，User Query 不一定适合直接检索；Query Processing 的职责是恢复上下文、显式化检索条件和生成必要的检索变体，但绝不能改变用户真实意图。</li><li>第二，Query Expansion 是“同一意图的多种表达”，Query Decomposition 是“把复杂问题拆成多个子意图”，两者不是一回事。</li><li>第三，时间、辖区、版本、文号、金额、条款号、否定词和“投标前 / 中标后”等高风险字段必须被精确保护；不确定 Metadata 应标记 unknown 或请求澄清，而不是自动猜。</li></ul></div><h1 id="第六课-第-9-阶段">第六课 · 第 9 阶段</h1>
+<h1 id="query-rewritemetadata-filter-与多路检索-1">Query
+Rewrite、Metadata Filter 与多路检索</h1>
+<h2
+id="用户问得不标准信息藏在上下文里retriever-应该怎样先理解查询再去搜-1">用户问得不标准、信息藏在上下文里，Retriever
+应该怎样先“理解查询”再去搜？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，User Query 不一定适合直接检索；Query Processing
+的职责是恢复上下文、显式化检索条件和生成必要的检索变体，但绝不能改变用户真实意图。</strong></li>
+<li><strong>第二，Query Expansion 是“同一意图的多种表达”，Query
+Decomposition
+是“把复杂问题拆成多个子意图”，两者不是一回事。</strong></li>
+<li><strong>第三，时间、辖区、版本、文号、金额、条款号、否定词和“投标前
+/ 中标后”等高风险字段必须被精确保护；不确定 Metadata 应标记 unknown
+或请求澄清，而不是自动猜。</strong></li>
+<li><strong>第四，Metadata Filter
+可以大幅缩小错误搜索空间，但只有确定条件才适合 Hard
+Filter；错误过滤比排序错误更危险，因为它会让 Gold Evidence
+根本没有机会进入 Candidate Set。</strong></li>
+<li><strong>第五，Query Rewrite、Multi-query、Routing 和 Metadata Filter
+是否值得启用，最终都必须回到 ProcurementRetrievalBenchmark_V0.1 做
+A/B，并额外监控 Intent Preservation、Identifier Preservation 和 Metadata
+Extraction Accuracy。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="even">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="odd">
+<td><code>Reranker</code></td>
+<td>重排器：对初筛候选做更精细相关性排序</td>
+</tr>
+<tr class="even">
+<td><code>Drift</code></td>
+<td>漂移：数据、业务、政策或模型行为分布发生变化</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 8 阶段，我们的检索链已经变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>→</mo><mi>H</mi><mi>y</mi><mi>b</mi><mi>r</mi><mi>i</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>p</mi><mi>K</mi></mrow><annotation encoding="application/x-tex">
+Query
+\rightarrow
+HybridRetrieval
+\rightarrow
+Reranker
+\rightarrow
+TopK
+</annotation></semantics></math></p>
+<p>这条链本身已经很强。</p>
+<p>但它隐含了一个前提：</p>
+<blockquote>
+<p><strong>用户原始 Query 本身已经足够适合检索。</strong></p>
+</blockquote>
+<p>现实里经常不是这样。</p>
+<p>用户可能只说：</p>
+<pre class="text"><code>“这个要求合法么？”</code></pre>
+<p>但真正决定检索结果的信息，可能藏在上文：</p>
+<pre class="text"><code>2026年
+广东省
+政府采购
+投标前
+本地机构
+资格条件</code></pre>
+<p>又或者用户会问：</p>
+<blockquote>
+<p>“那个 17 号文件里关于资格审查的规定现在还有效吗？”</p>
+</blockquote>
+<p>这里同时包含：</p>
+<pre class="text"><code>“17号文件”
+→ 文号识别
+
+“资格审查”
+→ 主题
+
+“现在还有效吗”
+→ 时间有效性</code></pre>
+<p>如果把原句原封不动送给 Retriever：</p>
+<blockquote>
+<p>很可能检索目标并不完整。</p>
+</blockquote>
+<p>所以今天正式进入：</p>
+<h1 id="query-processing">Query Processing</h1>
+<h2 id="查询处理">查询处理</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementqueryprocessingpolicy_v0.1-1"><code>ProcurementQueryProcessingPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-4">一、先锁死本阶段最重要的一句话</h1>
+<p>用户的：</p>
+<h1 id="user-query">User Query</h1>
+<p>不一定等于系统最终拿去搜索的：</p>
+<h1 id="retrieval-query">Retrieval Query</h1>
+<p>两者职责不同。</p>
+<p>User Query 是：</p>
+<blockquote>
+<p><strong>用户自然表达出来的问题。</strong></p>
+</blockquote>
+<p>Retrieval Query 是：</p>
+<blockquote>
+<p><strong>为了让检索系统更容易找到正确证据而构造的查询表示。</strong></p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UserQuery
+\neq
+RetrievalQuery
+}
+</annotation></semantics></math></p>
+<p>但还有一个更重要的限制：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>w</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>不</mi><mi>能</mi><mi>改</mi><mi>变</mi><mi>用</mi><mi>户</mi><mi>真</mi><mi>实</mi><mi>意</mi><mi>图</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rewrite
+不能改变用户真实意图
+}
+</annotation></semantics></math></p>
+<p>所以 Query Processing 的目标不是：</p>
+<blockquote>
+<p>“把问题改成系统喜欢的答案。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>把隐含的检索条件显式化，同时尽量保持原始语义不变。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二query-rewrite先把依赖上下文的问题改写成可独立检索的问题">二、Query
+Rewrite：先把“依赖上下文的问题”改写成可独立检索的问题</h1>
+<p>假设对话是：</p>
+<pre class="text"><code>用户：
+某省2026年的采购项目要求供应商投标前必须已有本地办事处。
+
+用户：
+这个要求合法么？</code></pre>
+<p>如果只拿最后一句：</p>
+<pre class="text"><code>这个要求合法么？</code></pre>
+<p>去检索，</p>
+<p>Retriever 几乎不知道：</p>
+<pre class="text"><code>“这个”指什么
+哪个地区
+哪个时间
+哪类采购
+什么条件</code></pre>
+<p>所以我们需要把它改写成：</p>
+<pre class="text"><code>2026年某省政府采购项目中，
+将“供应商投标前必须已经设立本地办事处”
+作为资格条件是否存在合规风险？</code></pre>
+<p>这就是：</p>
+<h1 id="conversational-query-rewrite">Conversational Query Rewrite</h1>
+<h2 id="对话查询改写">对话查询改写</h2>
+<p>它的目标是：</p>
+<blockquote>
+<p><strong>把指代、上下文、时间、地区和核心业务对象恢复出来。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三rewrite-不是回答问题">三、Rewrite 不是回答问题</h1>
+<p>这是一个非常容易出错的地方。</p>
+<p>Query Rewrite 模型不能偷偷把：</p>
+<pre class="text"><code>“这个要求合法么？”</code></pre>
+<p>改成：</p>
+<pre class="text"><code>“为什么这个不合法的要求违反政府采购规定？”</code></pre>
+<p>因为这已经把：</p>
+<blockquote>
+<p><strong>待判断问题</strong></p>
+</blockquote>
+<p>改写成了：</p>
+<blockquote>
+<p><strong>预设结论的问题。</strong></p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="query-drift">Query Drift</h1>
+<h2 id="查询漂移">查询漂移</h2>
+<p>所以 Rewrite 必须满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>−</mo><mi>I</mi><mi>n</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>c</mi><mi>l</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PreserveIntent
++
+RecoverContext
+-
+InjectConclusion
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>补全信息，但不提前替用户下结论。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四哪些信息必须在-rewrite-时优先保护">四、哪些信息必须在 Rewrite
+时优先保护？</h1>
+<p>对于政府采购检索，有一些字段属于：</p>
+<h1 id="high-risk-retrieval-tokens">High-risk Retrieval Tokens</h1>
+<h2 id="高风险检索信息">高风险检索信息</h2>
+<p>它们一旦被改错，</p>
+<p>整个检索方向就会错。</p>
+<p>例如：</p>
+<pre class="text"><code>数字
+金额
+日期
+文号
+条款号
+地区
+机构名
+项目编号
+投标前 / 中标后
+不得 / 可以
+必须 / 建议</code></pre>
+<p>尤其要保护：</p>
+<h1 id="negation">Negation</h1>
+<h2 id="否定词">否定词</h2>
+<p>例如：</p>
+<pre class="text"><code>“不得要求”</code></pre>
+<p>不能改成：</p>
+<pre class="text"><code>“可以要求”</code></pre>
+<p>同样：</p>
+<pre class="text"><code>“投标前”</code></pre>
+<p>不能被改写成：</p>
+<pre class="text"><code>“中标后”</code></pre>
+<p>所以 Query Rewrite 不能只追求：</p>
+<blockquote>
+<p>“语言更通顺。”</p>
+</blockquote>
+<p>而要追求：</p>
+<blockquote>
+<p><strong>检索语义不失真。</strong></p>
+</blockquote>
+<hr />
+<h1 id="五query-expansion不只是改写还可以增加同义检索表达">五、Query
+Expansion：不只是改写，还可以增加“同义检索表达”</h1>
+<p>Rewrite 主要解决：</p>
+<blockquote>
+<p>原 Query 不完整、不独立。</p>
+</blockquote>
+<p>另一个问题是：</p>
+<blockquote>
+<p>同一业务概念有很多表达方式。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>本地办事处
+本地分支机构
+属地服务机构
+当地服务网点
+区域性服务机构</code></pre>
+<p>如果只搜索用户原词：</p>
+<blockquote>
+<p>可能漏掉法规里的另一种表达。</p>
+</blockquote>
+<p>所以可以做：</p>
+<h1 id="query-expansion">Query Expansion</h1>
+<h2 id="查询扩展">查询扩展</h2>
+<p>例如生成多个检索表达：</p>
+<pre class="text"><code>Q1:
+投标前必须设立本地办事处
+
+Q2:
+参与采购活动前预先设立本地分支机构
+
+Q3:
+将属地服务机构作为供应商准入条件</code></pre>
+<p>然后分别检索。</p>
+<p>这就是：</p>
+<h1 id="multi-query-retrieval">Multi-query Retrieval</h1>
+<h2 id="多查询检索">多查询检索</h2>
+<hr />
+<h1 id="六query-expansion-不能随便扩展精确标识符">六、Query Expansion
+不能随便扩展精确标识符</h1>
+<p>假设用户问：</p>
+<pre class="text"><code>财库〔2026〕17号</code></pre>
+<p>Query Expansion 绝不能“语义扩展”成：</p>
+<pre class="text"><code>财库〔2026〕71号
+财库〔2025〕17号</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>文号不是近义词。</p>
+</blockquote>
+<p>同样：</p>
+<pre class="text"><code>100万元</code></pre>
+<p>也不能自动扩成：</p>
+<pre class="text"><code>1000万元</code></pre>
+<p>所以一个非常重要的规则是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>T</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>可</mi><mi>以</mi><mi>扩</mi><mi>展</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SemanticTerm
+可以扩展
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>e</mi><mi>r</mi><mi>必</mi><mi>须</mi><mi>保</mi><mi>护</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExactIdentifier
+必须保护
+}
+</annotation></semantics></math></p>
+<p>Query Processing 必须区分：</p>
+<pre class="text"><code>可语义扩展的信息
+vs
+必须精确保留的信息</code></pre>
+<hr />
+<h1 id="七metadata-extraction把自然语言里的检索条件抽出来">七、Metadata
+Extraction：把自然语言里的检索条件抽出来</h1>
+<p>假设用户问：</p>
+<blockquote>
+<p>“按照2026年广东省现行政府采购规则，投标前要求供应商设立本地机构是否合适？”</p>
+</blockquote>
+<p>这里其实同时包含：</p>
+<pre class="text"><code>query_time = 2026
+jurisdiction = 广东省
+validity = current_at_query_time
+domain = 政府采购
+topic = 本地机构准入
+stage = 投标前</code></pre>
+<p>这些信息不应该全部只塞在自然语言里。</p>
+<p>可以抽成结构化：</p>
+<div class="sourceCode" id="cb317"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb317-1"><a href="#cb317-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb317-2"><a href="#cb317-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026&quot;</span><span class="fu">,</span></span>
+<span id="cb317-3"><a href="#cb317-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;广东省&quot;</span><span class="fu">,</span></span>
+<span id="cb317-4"><a href="#cb317-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;domain&quot;</span><span class="fu">:</span> <span class="st">&quot;government_procurement&quot;</span><span class="fu">,</span></span>
+<span id="cb317-5"><a href="#cb317-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;topic&quot;</span><span class="fu">:</span> <span class="st">&quot;local_presence_requirement&quot;</span><span class="fu">,</span></span>
+<span id="cb317-6"><a href="#cb317-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;procurement_stage&quot;</span><span class="fu">:</span> <span class="st">&quot;pre_bid&quot;</span><span class="fu">,</span></span>
+<span id="cb317-7"><a href="#cb317-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;validity_requirement&quot;</span><span class="fu">:</span> <span class="st">&quot;valid_at_query_time&quot;</span></span>
+<span id="cb317-8"><a href="#cb317-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这就是：</p>
+<h1 id="metadata-extraction">Metadata Extraction</h1>
+<h2 id="查询元数据抽取">查询元数据抽取</h2>
+<p>然后把它交给：</p>
+<h1 id="metadata-filter">Metadata Filter</h1>
+<hr />
+<h1 id="八hard-filter-和-soft-constraint-必须区分">八、Hard Filter 和
+Soft Constraint 必须区分</h1>
+<p>不是所有 Metadata 都应该直接：</p>
+<blockquote>
+<p>一刀切过滤。</p>
+</blockquote>
+<p>有些条件非常明确：</p>
+<pre class="text"><code>query_time = 2024-06-01</code></pre>
+<p>如果我们知道某文件：</p>
+<pre class="text"><code>effective_from = 2025-01-01</code></pre>
+<p>那它显然不应该作为：</p>
+<blockquote>
+<p>2024 年问题的有效依据。</p>
+</blockquote>
+<p>这种可以是：</p>
+<h1 id="hard-filter">Hard Filter</h1>
+<h2 id="硬过滤">硬过滤</h2>
+<hr />
+<p>但如果用户只说：</p>
+<pre class="text"><code>“某省”</code></pre>
+<p>而系统不确定具体省份，</p>
+<p>就不能自己猜：</p>
+<pre class="text"><code>jurisdiction = 广东省</code></pre>
+<p>然后把其它地区全部过滤掉。</p>
+<p>这种信息不确定时，</p>
+<p>应该：</p>
+<pre class="text"><code>unknown
+needs_clarification
+or
+soft_preference</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>≠</mo><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UncertainMetadata
+\neq
+HardFilter
+}
+</annotation></semantics></math></p>
+<p>否则 Query Processing 会在 Retriever 之前：</p>
+<blockquote>
+<p><strong>把正确证据提前杀掉。</strong></p>
+</blockquote>
+<hr />
+<h1 id="九temporal-filter时间过滤应该怎么理解">九、Temporal
+Filter：时间过滤应该怎么理解？</h1>
+<p>如果用户明确问：</p>
+<blockquote>
+<p>“2023年当时适用什么规定？”</p>
+</blockquote>
+<p>那么查询目标不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+LatestDocument
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>A</mi><mi>t</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>2023</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+ValidAt(2023)
+</annotation></semantics></math></p>
+<p>假设文档：</p>
+<pre class="text"><code>V1
+effective_from = 2020-01-01
+effective_to   = 2024-12-31
+
+V2
+effective_from = 2025-01-01
+effective_to   = null</code></pre>
+<p>对于 Query Time：</p>
+<pre class="text"><code>2023-06-01</code></pre>
+<p>应该优先保留：</p>
+<pre class="text"><code>V1</code></pre>
+<p>而不是 V2。</p>
+<p>概念条件可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>e</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>_</mi><mi>f</mi><mi>r</mi><mi>o</mi><mi>m</mi><mo>≤</mo><mi>q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>_</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+effective\_from
+\le
+query\_time
+</annotation></semantics></math></p>
+<p>且：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>e</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>_</mi><mi>t</mi><mi>o</mi><mtext mathvariant="normal">为空</mtext><mspace width="1.0em"></mspace><mi>或</mi><mspace width="1.0em"></mspace><mi>e</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>_</mi><mi>t</mi><mi>o</mi><mo>≥</mo><mi>q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>_</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+effective\_to
+\text{为空}
+\quad
+或
+\quad
+effective\_to
+\ge
+query\_time
+</annotation></semantics></math></p>
+<p>当然真实法律效力判断可能还需要更复杂的业务规则，</p>
+<p>但检索层至少要做到：</p>
+<blockquote>
+<p><strong>不把明显尚未生效或已经失效的版本当作当前 Gold
+Candidate。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十jurisdiction-filter地区也不能只做字符串匹配">十、Jurisdiction
+Filter：地区也不能只做字符串匹配</h1>
+<p>用户可能问：</p>
+<pre class="text"><code>广东省</code></pre>
+<p>知识库可能有：</p>
+<pre class="text"><code>国家级规则
+广东省规则
+广州市规则
+深圳市规则</code></pre>
+<p>这时：</p>
+<blockquote>
+<p>只保留 <code>jurisdiction = 广东省</code></p>
+</blockquote>
+<p>可能又太粗暴。</p>
+<p>因为国家级规则：</p>
+<blockquote>
+<p>仍然可能适用。</p>
+</blockquote>
+<p>而某市规则是否适用：</p>
+<blockquote>
+<p>又要看用户问题具体发生在哪个市。</p>
+</blockquote>
+<p>所以 Jurisdiction 更合理的结构是：</p>
+<pre class="text"><code>national
+province
+city
+district
+special_system</code></pre>
+<p>并建立：</p>
+<h1 id="jurisdiction-hierarchy">Jurisdiction Hierarchy</h1>
+<h2 id="辖区层级">辖区层级</h2>
+<p>查询时做：</p>
+<blockquote>
+<p><strong>适用范围展开，而不是简单字符串等于。</strong></p>
+</blockquote>
+<p>例如省级 Query 可以考虑：</p>
+<pre class="text"><code>国家级
++
+目标省级</code></pre>
+<p>是否加入市级：</p>
+<blockquote>
+<p>要看 Query 是否明确到了对应城市。</p>
+</blockquote>
+<hr />
+<h1
+id="十一多路检索不只是同一个-query-跑三遍">十一、多路检索不只是“同一个
+Query 跑三遍”</h1>
+<p>真正有价值的 Multi-query Retrieval，</p>
+<p>通常是：</p>
+<blockquote>
+<p><strong>让不同 Query 负责问题的不同检索面。</strong></p>
+</blockquote>
+<p>假设用户问：</p>
+<blockquote>
+<p>“投标前必须有本地办事处，而且要求注册满三年，这两个条件分别有没有风险？”</p>
+</blockquote>
+<p>这其实有两个子问题：</p>
+<pre class="text"><code>Subquery A
+本地机构准入限制
+
+Subquery B
+经营年限 / 注册年限准入限制</code></pre>
+<p>如果把整句话只做一个 Embedding，</p>
+<p>可能其中一个主题被另一个主题稀释。</p>
+<p>所以可以做：</p>
+<h1 id="query-decomposition">Query Decomposition</h1>
+<h2 id="查询分解">查询分解</h2>
+<p>形成：</p>
+<pre class="text"><code>Q1
+投标前必须设本地办事处作为资格条件
+
+Q2
+要求供应商注册经营满三年作为资格条件</code></pre>
+<p>分别检索，</p>
+<p>再合并证据。</p>
+<hr />
+<h1 id="十二query-decomposition-和-query-expansion-不一样">十二、Query
+Decomposition 和 Query Expansion 不一样</h1>
+<p>这两个很容易混。</p>
+<h1 id="query-expansion-1">Query Expansion</h1>
+<p>是：</p>
+<blockquote>
+<p><strong>一个意图，生成多个表达。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>本地办事处
+≈
+本地分支机构
+≈
+属地服务机构</code></pre>
+<hr />
+<h1 id="query-decomposition-1">Query Decomposition</h1>
+<p>是：</p>
+<blockquote>
+<p><strong>一个复杂问题，拆成多个子意图。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>本地机构要求
++
+三年经营年限要求</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>p</mi><mi>a</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>,</mo><mspace width="0.222em"></mspace><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Expansion
+=
+SameIntent,\ MultipleExpressions
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>u</mi><mi>b</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Decomposition
+=
+MultipleSubIntents
+}
+</annotation></semantics></math></p>
+<p>这两个会产生完全不同的检索结构。</p>
+<hr />
+<h1
+id="十三query-routing不是所有-query-都必须走完全相同的检索路径">十三、Query
+Routing：不是所有 Query 都必须走完全相同的检索路径</h1>
+<p>如果 Query 是：</p>
+<pre class="text"><code>“财库〔2026〕17号第十二条”</code></pre>
+<p>这类精确标识符很强，</p>
+<p>BM25 / Exact Match 的价值很大。</p>
+<p>如果 Query 是：</p>
+<pre class="text"><code>“有没有规则禁止把本地办公地点作为投标门槛？”</code></pre>
+<p>Dense Retrieval 的语义能力非常重要。</p>
+<p>如果 Query 同时有：</p>
+<pre class="text"><code>文号
++
+自然语言问题</code></pre>
+<p>Hybrid 往往更合适。</p>
+<p>所以可以引入：</p>
+<h1 id="query-routing">Query Routing</h1>
+<h2 id="查询路由">查询路由</h2>
+<p>概念上：</p>
+<pre class="text"><code>Identifier-heavy
+→ Sparse强权重
+
+Semantic Question
+→ Dense强权重
+
+Mixed Query
+→ Hybrid
+
+Multi-part Query
+→ Decompose + Hybrid</code></pre>
+<p>但第一版系统不一定要做复杂 Routing。</p>
+<p>一个非常稳妥的默认仍然是：</p>
+<blockquote>
+<p><strong>Hybrid Retrieval 作为主路径，Routing 只有在 Benchmark
+证明有收益时再启用。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十四multi-query-检索后结果必须合并并保留来源查询">十四、Multi-query
+检索后，结果必须合并并保留“来源查询”</h1>
+<p>假设我们生成：</p>
+<pre class="text"><code>Q0
+Original Query
+
+Q1
+Rewritten Query
+
+Q2
+Expanded Query
+
+Q3
+Subquery A
+
+Q4
+Subquery B</code></pre>
+<p>每条 Query 都可能召回一批候选。</p>
+<p>最终不能只把它们：</p>
+<blockquote>
+<p>全部堆在一起。</p>
+</blockquote>
+<p>至少需要：</p>
+<pre class="text"><code>Dedup
+Version Check
+Metadata Check
+Fusion
+Rerank</code></pre>
+<p>同时应该保留：</p>
+<h1 id="query-provenance">Query Provenance</h1>
+<h2 id="查询来源链">查询来源链</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb340"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb340-1"><a href="#cb340-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb340-2"><a href="#cb340-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;chunk_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC_001_A12_C01&quot;</span><span class="fu">,</span></span>
+<span id="cb340-3"><a href="#cb340-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;retrieved_by&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb340-4"><a href="#cb340-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;original_query&quot;</span><span class="ot">,</span></span>
+<span id="cb340-5"><a href="#cb340-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;rewrite_1&quot;</span><span class="ot">,</span></span>
+<span id="cb340-6"><a href="#cb340-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;subquery_A&quot;</span></span>
+<span id="cb340-7"><a href="#cb340-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb340-8"><a href="#cb340-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这样后续分析时我们能知道：</p>
+<blockquote>
+<p><strong>到底是哪条查询路径把 Gold Evidence 找回来的。</strong></p>
+</blockquote>
+<p>这对 Debug 非常有价值。</p>
+<hr />
+<h1 id="十五为什么-original-query-最好不要丢">十五、为什么 Original
+Query 最好不要丢？</h1>
+<p>Rewrite 模型可能犯错。</p>
+<p>例如原始 Query：</p>
+<blockquote>
+<p>“中标后建立本地服务网点是否可以？”</p>
+</blockquote>
+<p>错误 Rewrite：</p>
+<blockquote>
+<p>“投标前要求本地服务网点是否可以？”</p>
+</blockquote>
+<p>这时如果系统只用 Rewrite：</p>
+<blockquote>
+<p>检索方向已经完全变了。</p>
+</blockquote>
+<p>所以一个稳妥策略是：</p>
+<pre class="text"><code>Original Query
++
+Rewritten Query</code></pre>
+<p>都保留一条检索路径，</p>
+<p>然后统一 Fusion / Rerank。</p>
+<p>这叫：</p>
+<h1 id="rewrite-fallback">Rewrite Fallback</h1>
+<h2 id="改写回退">改写回退</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>w</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>最</mi><mi>好</mi><mi>是</mi><mi>增</mi><mi>加</mi><mi>检</mi><mi>索</mi><mi>机</mi><mi>会</mi><mi>而</mi><mi>不</mi><mi>是</mi><mi>单</mi><mi>点</mi><mi>替</mi><mi>换</mi><mi>原</mi><mi>始</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rewrite
+最好是增加检索机会
+而不是单点替换原始Query
+}
+</annotation></semantics></math></p>
+<p>至少第一版系统如此更稳。</p>
+<hr />
+<h1
+id="十六query-processing-最大的风险hallucinated-constraint">十六、Query
+Processing 最大的风险：Hallucinated Constraint</h1>
+<p>LLM 做 Query Rewrite 时，</p>
+<p>很容易“补得太聪明”。</p>
+<p>原问题：</p>
+<blockquote>
+<p>“这个条件合理吗？”</p>
+</blockquote>
+<p>上下文只明确：</p>
+<pre class="text"><code>政府采购
+本地服务要求</code></pre>
+<p>但模型可能自动补成：</p>
+<pre class="text"><code>广东省
+2026年
+投标前
+资格条件</code></pre>
+<p>如果这些信息原本根本没有，</p>
+<p>这就是：</p>
+<h1 id="hallucinated-constraint">Hallucinated Constraint</h1>
+<h2 id="幻觉约束">幻觉约束</h2>
+<p>它比普通语言幻觉更危险。</p>
+<p>因为它会直接影响：</p>
+<pre class="text"><code>Metadata Filter
+Query Rewrite
+Retriever Candidate Space</code></pre>
+<p>最终正确证据甚至没有机会出现。</p>
+<p>因此 Query Processing 必须遵守：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>n</mi><mo>≠</mo><mi>I</mi><mi>n</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>U</mi><mi>n</mi><mi>k</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExtractKnown
+\neq
+InventUnknown
+}
+</annotation></semantics></math></p>
+<p>不确定字段应该明确记录：</p>
+<pre class="text"><code>null
+unknown
+needs_clarification</code></pre>
+<p>而不是自动猜值。</p>
+<hr />
+<h1
+id="十七什么时候应该直接向用户-clarify而不是继续自动检索">十七、什么时候应该直接向用户
+Clarify，而不是继续自动检索？</h1>
+<p>假设用户问：</p>
+<blockquote>
+<p>“这个地方政策现在还能用吗？”</p>
+</blockquote>
+<p>但上下文里没有：</p>
+<pre class="text"><code>政策名称
+地区
+时间
+文号</code></pre>
+<p>系统可以做宽检索，</p>
+<p>但得到的大量候选可能无法可靠区分。</p>
+<p>这种情况下，</p>
+<p>最合理的行为可能是：</p>
+<h1 id="clarification">Clarification</h1>
+<h2 id="澄清">澄清</h2>
+<p>也就是询问：</p>
+<blockquote>
+<p>“你指的是哪份政策 / 哪个地区？”</p>
+</blockquote>
+<p>因此 RAG 不应该被设计成：</p>
+<blockquote>
+<p><strong>无论信息够不够，都必须立刻给一个检索结果。</strong></p>
+</blockquote>
+<p>正确系统应该允许：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>s</mi><mi>u</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>f</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InsufficientQueryInformation
+\rightarrow
+Clarify
+}
+</annotation></semantics></math></p>
+<p>这和第五课、第六课一直强调的：</p>
+<h1 id="needs_review"><code>needs_review</code></h1>
+<p>是同一种可靠性思想。</p>
+<hr />
+<h1 id="十八怎样评测-query-rewrite-有没有帮助">十八、怎样评测 Query
+Rewrite 有没有帮助？</h1>
+<p>不能只看 Rewrite 文本：</p>
+<blockquote>
+<p>“看起来更专业了。”</p>
+</blockquote>
+<p>要做 A/B。</p>
+<p>至少比较：</p>
+<pre class="text"><code>A
+Original Query Only
+
+B
+Rewrite Only
+
+C
+Original + Rewrite
+
+D
+Original + Rewrite + Expansion
+
+E
+Decomposition + Multi-query</code></pre>
+<p>固定：</p>
+<pre class="text"><code>Knowledge Base
+Chunk Policy
+Embedding
+BM25
+Metadata Policy
+Reranker
+Final Top-K</code></pre>
+<p>然后比较：</p>
+<pre class="text"><code>Hit@K
+Recall@K
+MRR
+Hard Negative Above Gold Rate
+No-answer False Retrieval Rate
+Latency</code></pre>
+<p>同时增加 Query Processing 自己的指标：</p>
+<pre class="text"><code>Rewrite Intent Preservation Rate
+Metadata Extraction Accuracy
+Identifier Preservation Rate
+Negation Preservation Rate
+Temporal Constraint Accuracy
+Jurisdiction Extraction Accuracy
+Clarification Accuracy</code></pre>
+<p>这一步非常关键。</p>
+<p>否则 Query Rewrite 很容易：</p>
+<blockquote>
+<p>让 Retrieval 指标整体上升一点，但在少量高风险问题上改错关键条件。</p>
+</blockquote>
+<hr />
+<h1
+id="十九本阶段工程产物procurementqueryprocessingpolicy_v0.1">十九、本阶段工程产物：<code>ProcurementQueryProcessingPolicy_V0.1</code></h1>
+<p>第一版至少记录：</p>
+<pre class="text"><code>rewrite_enabled
+=
+true / false
+
+conversation_context_used
+
+preserve_original_query
+=
+true
+
+query_expansion_enabled
+
+query_decomposition_enabled
+
+max_rewrite_queries
+max_subqueries
+
+protected_fields:
+  number
+  amount
+  date
+  document_number
+  article_number
+  jurisdiction
+  organization
+  negation
+  procurement_stage
+
+metadata_fields:
+  query_time
+  jurisdiction
+  document_type
+  procurement_stage
+  validity_requirement
+
+hard_filter_policy
+soft_constraint_policy
+
+unknown_metadata_policy
+=
+unknown / clarify
+
+query_routing_policy
+
+multi_query_fusion
+=
+rrf / rerank / other
+
+query_provenance_logging
+=
+enabled
+
+benchmark_version</code></pre>
+<p>并且每次线上查询最好记录：</p>
+<pre class="text"><code>original_query
+rewritten_queries
+subqueries
+extracted_metadata
+applied_filters
+retrieval_route
+candidate_sources
+final_evidence</code></pre>
+<p>这样发生错误时，</p>
+<p>我们才能从头重放整个检索过程。</p>
+<hr />
+<h1 id="二十把本阶段压成最精准的-5-句话">二十、把本阶段压成最精准的 5
+句话</h1>
+<blockquote>
+<p><strong>第一，User Query 不一定适合直接检索；Query Processing
+的职责是恢复上下文、显式化检索条件和生成必要的检索变体，但绝不能改变用户真实意图。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Query Expansion 是“同一意图的多种表达”，Query
+Decomposition
+是“把复杂问题拆成多个子意图”，两者不是一回事。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，时间、辖区、版本、文号、金额、条款号、否定词和“投标前 /
+中标后”等高风险字段必须被精确保护；不确定 Metadata 应标记 unknown
+或请求澄清，而不是自动猜。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Metadata Filter
+可以大幅缩小错误搜索空间，但只有确定条件才适合 Hard
+Filter；错误过滤比排序错误更危险，因为它会让 Gold Evidence
+根本没有机会进入 Candidate Set。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Query Rewrite、Multi-query、Routing 和 Metadata Filter
+是否值得启用，最终都必须回到
+<code>ProcurementRetrievalBenchmark_V0.1</code> 做 A/B，并额外监控
+Intent Preservation、Identifier Preservation 和 Metadata Extraction
+Accuracy。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-8">本阶段最核心的一张图</h1>
+<pre class="text"><code>                      Conversation
+                           │
+                           ▼
+                     Original Query
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+           Rewrite      Metadata     Decompose
+              │         Extraction       │
+              ▼            │             ▼
+        Rewritten Q        │          Subqueries
+              │            │             │
+              └──────┬─────┴─────┬───────┘
+                     ▼           ▼
+                Hard / Soft    Query Expansion
+                   Filter          │
+                     │             │
+                     └──────┬──────┘
+                            ▼
+                    Multi-query Retrieval
+                            │
+                  ┌─────────┴─────────┐
+                  ▼                   ▼
+                BM25                Dense
+                  │                   │
+                  └─────────┬─────────┘
+                            ▼
+                     Fusion / Dedup
+                            │
+                            ▼
+                         Reranker
+                            │
+                            ▼
+                       Final Evidence</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>不要急着“搜”；先确认系统到底知道用户在问什么、哪些条件是真的、哪些条件还不知道，然后再决定搜什么、在哪个范围搜、用几条查询去搜。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-9-阶段掌握测试">第六课 · 第 9 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 User Query 不等于 Retrieval
+Query；Query Rewrite
+为什么不能提前注入结论；哪些数字、时间、否定词、文号、地区和采购阶段属于必须保护的高风险字段；Query
+Expansion 和 Query Decomposition 有什么根本区别；为什么 Exact Identifier
+不能被语义扩展；Metadata Extraction
+为什么应该把时间、辖区和有效性条件结构化；Hard Filter 和 Soft Constraint
+应该怎样区分；为什么不确定 Metadata 不能直接拿来过滤；Temporal Filter
+为什么要找 <code>ValidAt(QueryTime)</code>
+而不是永远找最新版本；Jurisdiction
+为什么需要层级关系而不是字符串等于；Query Routing
+在什么情况下有价值；为什么 Multi-query 结果必须保留 Query
+Provenance；为什么第一版最好保留 Original Query 作为 Rewrite
+Fallback；什么是 Hallucinated Constraint；什么时候系统应该
+Clarify；以及为什么 Query Processing 本身也必须有独立 Benchmark。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>9</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第9阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第六课-第-10-阶段">下一阶段：第六课 · 第 10 阶段</h1>
+<h1 id="context-assemblycitation-与-grounded-generation">Context
+Assembly、Citation 与 Grounded Generation</h1>
+<h2
+id="找到正确证据以后怎样把它们真正交给-llm而不是把一堆-chunk-粗暴塞进-prompt">找到正确证据以后，怎样把它们真正交给
+LLM，而不是把一堆 Chunk 粗暴塞进 Prompt？</h2>
+<p>到第 9 阶段，我们已经有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>H</mi><mi>y</mi><mi>b</mi><mi>r</mi><mi>i</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>p</mi><mi>K</mi></mrow><annotation encoding="application/x-tex">
+QueryProcessing
+\rightarrow
+HybridRetrieval
+\rightarrow
+Reranker
+\rightarrow
+EvidenceTopK
+</annotation></semantics></math></p>
+<p>下一阶段要解决的是：</p>
+<blockquote>
+<p><strong>正确证据已经找到了，怎样排序、去重、压缩、组织、引用，并让
+LLM 明确区分“证据支持的事实”和“模型自己的推断”？</strong></p>
+</blockquote>
+<p>我们会正式进入：</p>
+<pre class="text"><code>Context Budget
+Evidence Selection
+Context Ordering
+Deduplication
+Source Labels
+Citation Mapping
+Grounded Prompt
+Conflict Handling
+Insufficient Evidence</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementcontextassemblypolicy_v0.1"><code>ProcurementContextAssemblyPolicy_V0.1</code></h1>
+<p>这一步会把前面 9 个阶段真正接到：</p>
+<h1 id="procurementlm_v0.1"><code>ProcurementLM_V0.1</code></h1>
+<p>上。</p>
+<p>也就是从：</p>
+<blockquote>
+<p><strong>“检索系统找到了正确证据”</strong></p>
+</blockquote>
+<p>真正走向：</p>
+<blockquote>
+<p><strong>“模型基于正确证据回答，而且回答能追溯到证据。”</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

@@ -1,0 +1,2310 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第2阶段：SFT 到底在训练什么？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>第一，SFT 仍然是在做 Next Token Prediction，只是正确答案来自我们的专家数据。</li><li>第二，Forward 负责产生预测，Cross Entropy 把预测和正确 Token 比较后得到 Loss。</li><li>第三，Loss 只告诉模型“错多少”，Backward 才通过链式法则计算每个可训练参数应该往哪个方向调整。</li></ul></div><h1 id="第五课-第-2-阶段">第五课 · 第 2 阶段</h1>
+<h1 id="sft-到底在训练什么-1">SFT 到底在训练什么？</h1>
+<h2 id="一次-sft-step-里专家答案究竟怎样变成参数更新">一次 SFT Step
+里，专家答案究竟怎样变成参数更新？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，SFT 仍然是在做 Next Token
+Prediction，只是正确答案来自我们的专家数据。</strong></li>
+<li><strong>第二，Forward 负责产生预测，Cross Entropy 把预测和正确 Token
+比较后得到 Loss。</strong></li>
+<li><strong>第三，Loss 只告诉模型“错多少”，Backward
+才通过链式法则计算每个可训练参数应该往哪个方向调整。</strong></li>
+<li><strong>第四，loss.backward() 负责计算 Gradient，optimizer.step()
+才真正更新参数。</strong></li>
+<li><strong>第五，SFT 的最终效果，是大量小的参数更新不断重塑 P(Response
+| Prompt)；训练 Loss 下降并不等于真实业务能力一定提升。</strong></li>
+<li><strong>优化目标正在改善。</strong></li>
+<li><strong>Business Quality ↑</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Step</code></td>
+<td>训练步：通常指一次优化器更新</td>
+</tr>
+<tr class="odd">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="even">
+<td><code>Optimizer</code></td>
+<td>优化器：依据梯度规则更新参数</td>
+</tr>
+<tr class="odd">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="odd">
+<td><code>Response</code></td>
+<td>目标响应：希望模型学习生成的答案部分</td>
+</tr>
+<tr class="even">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 1 阶段我们已经解决了一个非常关键的问题：</p>
+<blockquote>
+<p><strong>哪些 Token 应该学？</strong></p>
+</blockquote>
+<p>我们建立了这条链：</p>
+<pre class="text"><code>Messages
+   ↓
+Chat Template
+   ↓
+Tokenizer
+   ↓
+input_ids
+   ↓
+labels
+   ↓
+Loss Mask</code></pre>
+<p>也就是说，我们已经能告诉训练系统：</p>
+<pre class="text"><code>Prompt
+=
+给模型看的条件
+
+Assistant Response
+=
+主要学习目标</code></pre>
+<p>但还有一个更深的问题。</p>
+<p>假设专家答案是：</p>
+<blockquote>
+<p>“该条款存在潜在供应商资格风险。”</p>
+</blockquote>
+<p>Base Model 却更倾向于回答：</p>
+<blockquote>
+<p>“该条款不存在明显风险。”</p>
+</blockquote>
+<p>这两个答案之间的差异：</p>
+<blockquote>
+<p><strong>究竟怎样从一串文字，变成一次真实的参数更新？</strong></p>
+</blockquote>
+<p>今天只解决这一件事。</p>
+<p>最终你需要在脑中形成：</p>
+<h1 id="sfttrainingstep_v0.1"><code>SFTTrainingStep_V0.1</code></h1>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-1">一、本阶段只解决一个核心问题</h1>
+<blockquote>
+<p><strong>一个 Assistant Token 预测错误以后，Loss 怎样产生，Gradient
+怎样反向传播，Optimizer 又怎样最终改变模型参数？</strong></p>
+</blockquote>
+<p>整阶段只有这一条主线：</p>
+<pre class="text"><code>正确答案 Token
+      │
+      ▼
+Forward
+前向计算
+      │
+      ▼
+Logits
+每个候选 Token 的原始分数
+      │
+      ▼
+Probability
+转成概率
+      │
+      ▼
+Cross Entropy
+和正确答案比较
+      │
+      ▼
+Loss
+预测错误有多严重
+      │
+      ▼
+Backward
+反向传播
+      │
+      ▼
+Gradient
+参数应该往哪个方向改
+      │
+      ▼
+Optimizer
+真正执行参数更新
+      │
+      ▼
+下一次更容易预测正确答案</code></pre>
+<p>中文压缩成：</p>
+<blockquote>
+<p><strong>先预测 → 再比较 → 算错多少 → 找谁负责 →
+改一点参数。</strong></p>
+</blockquote>
+<p>这就是一次 SFT Step 的本质。</p>
+<hr />
+<h1 id="二先锁死本阶段-5-个核心心智模型">二、先锁死本阶段 5
+个核心心智模型</h1>
+<p>今天真正需要长期记住的只有五句话。</p>
+<h2 id="心智模型-1sft-本质仍然是-next-token-prediction">心智模型 1：SFT
+本质仍然是 Next Token Prediction</h2>
+<p>SFT 并没有给 Transformer 安装一个新的“问答模块”。</p>
+<p>它仍然只干一件事：</p>
+<blockquote>
+<p><strong>根据前面的 Token，预测下一个 Token。</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>F</mi><mi>T</mi><mo>=</mo><mi>受</mi><mi>监</mi><mi>督</mi><mi>的</mi><mi>N</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SFT
+=
+受监督的 Next Token Prediction
+}
+</annotation></semantics></math></p>
+<p>所谓“监督”，就是：</p>
+<blockquote>
+<p>我们已经知道这个位置正确的下一个 Token 应该是什么。</p>
+</blockquote>
+<hr />
+<h2 id="心智模型-2forward-负责做答案loss-负责判多少分">心智模型
+2：Forward 负责“做答案”，Loss 负责“判多少分”</h2>
+<p>Forward：</p>
+<blockquote>
+<p>模型根据当前参数做一次预测。</p>
+</blockquote>
+<p>Loss：</p>
+<blockquote>
+<p>拿预测结果和专家答案比较。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Forward
+=
+当前模型会怎么答？
+
+Loss
+=
+这个回答离专家答案有多远？</code></pre>
+<p>这两个角色必须分开。</p>
+<hr />
+<h2 id="心智模型-3gradient-不是错误大小而是参数应该往哪边改">心智模型
+3：Gradient 不是“错误大小”，而是“参数应该往哪边改”</h2>
+<p>Loss 只告诉我们：</p>
+<blockquote>
+<p>错得多不多。</p>
+</blockquote>
+<p>Gradient 才告诉我们：</p>
+<blockquote>
+<p><strong>每个可训练参数应该增一点还是减一点。</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Loss
+\neq
+Gradient
+}
+</annotation></semantics></math></p>
+<p>更准确地说：</p>
+<pre class="text"><code>Loss
+告诉你：
+总体犯错程度
+
+Gradient
+告诉你：
+每个参数该怎么动</code></pre>
+<hr />
+<h2 id="心智模型-4backward-计算修改建议optimizer-才真正改参数">心智模型
+4：Backward 计算修改建议，Optimizer 才真正改参数</h2>
+<p>这是非常容易混淆的一对。</p>
+<pre class="text"><code>loss.backward()</code></pre>
+<p>主要负责：</p>
+<blockquote>
+<p>算 Gradient。</p>
+</blockquote>
+<p>而：</p>
+<pre class="text"><code>optimizer.step()</code></pre>
+<p>才负责：</p>
+<blockquote>
+<p>真正更新参数。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>≠</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backward
+\neq
+ParameterUpdate
+}
+</annotation></semantics></math></p>
+<p>正确顺序是：</p>
+<pre class="text"><code>Backward
+↓
+得到 Gradient
+↓
+Optimizer Step
+↓
+参数变化</code></pre>
+<hr />
+<h2 id="心智模型-5lora-训练时base-model-负责计算但主要不被更新">心智模型
+5：LoRA 训练时，Base Model 负责计算，但主要不被更新</h2>
+<p>以后我们会正式讲 LoRA。</p>
+<p>今天先建立一个准确心智模型：</p>
+<pre class="text"><code>Base Model
+大量参数
+被冻结
+      │
+      │ 仍参与 Forward
+      │ 仍传递计算信号
+      ▼
+LoRA Parameters
+少量可训练参数
+      │
+      ▼
+接收 Gradient
+      │
+      ▼
+Optimizer 更新</code></pre>
+<p>所以：</p>
+<blockquote>
+<p><strong>冻结 ≠ 不参与计算。</strong></p>
+</blockquote>
+<p>更准确地说：</p>
+<blockquote>
+<p>Base Model 仍然参与 Forward 和反向信号传播，但被冻结的权重本身不由
+Optimizer 更新。</p>
+</blockquote>
+<p>这句话后面非常重要。</p>
+<hr />
+<h1
+id="三现在从一个真实采购案例开始">三、现在从一个真实采购案例开始</h1>
+<p>我们的 Prompt：</p>
+<pre class="text"><code>User:
+
+请判断以下采购条款是否存在潜在风险：
+
+“投标人须在本市设立固定服务机构方可参与投标。”</code></pre>
+<p>专家 Response：</p>
+<pre class="text"><code>Assistant:
+
+风险判断：存在潜在风险。
+风险类型：供应商资格条件。</code></pre>
+<p>经过第 1 阶段以后，我们已经得到：</p>
+<pre class="text"><code>Prompt Tokens
+→ 不计算主要 Loss
+
+Assistant Tokens
+→ 计算 Loss</code></pre>
+<p>假设现在模型正在学习 Assistant 的第一个答案 Token：</p>
+<pre class="text"><code>“存在”</code></pre>
+<hr />
+<h1 id="四第一步forward-pass">四、第一步：Forward Pass</h1>
+<h1 id="forward-pass">Forward Pass</h1>
+<h2 id="前向传播-前向计算">前向传播 / 前向计算</h2>
+<p>模型拿到：</p>
+<pre class="text"><code>Prompt
++
+前面已经提供的正确 Token</code></pre>
+<p>然后经过：</p>
+<pre class="text"><code>Embedding
+   ↓
+Transformer Layers
+   ↓
+Attention
+   ↓
+MLP
+   ↓
+Final Hidden State
+   ↓
+LM Head</code></pre>
+<p>最后输出：</p>
+<h1 id="logits">Logits</h1>
+<hr />
+<h1 id="五logits-到底是什么">五、Logits 到底是什么？</h1>
+<p>假设词表只有五个候选 Token：</p>
+<pre class="text"><code>存在
+不存在
+需要
+符合
+无法</code></pre>
+<p>模型输出：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Token</th>
+<th style="text-align: right;">Logit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>存在</td>
+<td style="text-align: right;">1.2</td>
+</tr>
+<tr class="even">
+<td>不存在</td>
+<td style="text-align: right;">2.8</td>
+</tr>
+<tr class="odd">
+<td>需要</td>
+<td style="text-align: right;">0.9</td>
+</tr>
+<tr class="even">
+<td>符合</td>
+<td style="text-align: right;">0.4</td>
+</tr>
+<tr class="odd">
+<td>无法</td>
+<td style="text-align: right;">0.1</td>
+</tr>
+</tbody>
+</table>
+<p>Logit 可以简单理解成：</p>
+<blockquote>
+<p><strong>模型对每个候选 Token 的原始打分。</strong></p>
+</blockquote>
+<p>注意：</p>
+<p>它还不是概率。</p>
+<p>因为：</p>
+<pre class="text"><code>2.8</code></pre>
+<p>不是：</p>
+<blockquote>
+<p>280%。</p>
+</blockquote>
+<hr />
+<h1 id="六logits-是模型当前偏好的原始形态">六、Logits
+是模型“当前偏好”的原始形态</h1>
+<p>这里正确答案其实是：</p>
+<pre class="text"><code>存在</code></pre>
+<p>但当前最大 Logit 是：</p>
+<pre class="text"><code>不存在</code></pre>
+<p>这说明：</p>
+<blockquote>
+<p>当前模型更偏向错误答案。</p>
+</blockquote>
+<p>也就是说：</p>
+<pre class="text"><code>Base Model当前参数
+        ↓
+认为“不存在”
+比“存在”
+更可能</code></pre>
+<p>这正是我们需要通过训练纠正的地方。</p>
+<hr />
+<h1 id="七第二步softmax">七、第二步：Softmax</h1>
+<p>Softmax 负责：</p>
+<blockquote>
+<p>把所有 Logit 转换成一个概率分布。</p>
+</blockquote>
+<p>可以把它理解成：</p>
+<pre class="text"><code>Logits
+原始分数
+   ↓
+Softmax
+   ↓
+Probabilities
+候选Token概率</code></pre>
+<p>公式知道意思就够：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>i</mi></msub><mo>=</mo><mfrac><msup><mi>e</mi><msub><mi>z</mi><mi>i</mi></msub></msup><mrow><munder><mo>∑</mo><mi>j</mi></munder><msup><mi>e</mi><msub><mi>z</mi><mi>j</mi></msub></msup></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+P_i
+=
+\frac{e^{z_i}}
+{\sum_j e^{z_j}}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mi>i</mi></msub><annotation encoding="application/x-tex">z_i</annotation></semantics></math>：某个
+Token 的 Logit；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mi>i</mi></msub><annotation encoding="application/x-tex">P_i</annotation></semantics></math>：转换后的概率。</li>
+</ul>
+<hr />
+<h1 id="八假设转换以后得到">八、假设转换以后得到</h1>
+<table>
+<thead>
+<tr class="header">
+<th>Token</th>
+<th style="text-align: right;">Probability</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>存在</td>
+<td style="text-align: right;">0.14</td>
+</tr>
+<tr class="even">
+<td>不存在</td>
+<td style="text-align: right;">0.70</td>
+</tr>
+<tr class="odd">
+<td>需要</td>
+<td style="text-align: right;">0.09</td>
+</tr>
+<tr class="even">
+<td>符合</td>
+<td style="text-align: right;">0.05</td>
+</tr>
+<tr class="odd">
+<td>无法</td>
+<td style="text-align: right;">0.02</td>
+</tr>
+</tbody>
+</table>
+<p>专家正确答案：</p>
+<pre class="text"><code>存在</code></pre>
+<p>但是模型只给：</p>
+<pre class="text"><code>14%</code></pre>
+<p>而给错误答案：</p>
+<pre class="text"><code>不存在
+=
+70%</code></pre>
+<p>这时候：</p>
+<blockquote>
+<p>必须产生一个比较大的惩罚。</p>
+</blockquote>
+<hr />
+<h1 id="九第三步cross-entropy">九、第三步：Cross Entropy</h1>
+<h1 id="cross-entropy">Cross Entropy</h1>
+<h2 id="交叉熵损失">交叉熵损失</h2>
+<p>不用先记复杂定义。</p>
+<p>在当前场景里，它最重要的作用就是：</p>
+<blockquote>
+<p><strong>看模型给正确 Token 分配了多大概率。</strong></p>
+</blockquote>
+<p>如果正确 Token 概率：</p>
+<pre class="text"><code>0.95</code></pre>
+<p>Loss：</p>
+<blockquote>
+<p>很小。</p>
+</blockquote>
+<p>如果正确 Token 概率：</p>
+<pre class="text"><code>0.14</code></pre>
+<p>Loss：</p>
+<blockquote>
+<p>很大。</p>
+</blockquote>
+<hr />
+<h1 id="十最重要的公式只有这个">十、最重要的公式只有这个</h1>
+<p>对于一个正确 Token：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mi>−</mi><mo>log</mo><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mtext mathvariant="normal">正确 Token</mtext><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+L
+=
+-\log P(\text{正确 Token})
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p>正确答案概率：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo>=</mo><mn>0.9</mn></mrow><annotation encoding="application/x-tex">
+P=0.9
+</annotation></semantics></math></p>
+<p>那么 Loss 比较小。</p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo>=</mo><mn>0.01</mn></mrow><annotation encoding="application/x-tex">
+P=0.01
+</annotation></semantics></math></p>
+<p>Loss：</p>
+<blockquote>
+<p>非常大。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>正</mi><mi>确</mi><mi>答</mi><mi>案</mi><mi>概</mi><mi>率</mi><mi>越</mi><mi>高</mi><mo>⇒</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>越</mi><mi>低</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+正确答案概率越高
+\Rightarrow
+Loss越低
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一这就是-loss-最精准的心智模型">十一、这就是 Loss
+最精准的心智模型</h1>
+<p>Loss 不是：</p>
+<blockquote>
+<p>“模型有没有答对”的 0 / 1 开关。</p>
+</blockquote>
+<p>它表示：</p>
+<blockquote>
+<p><strong>模型对正确答案究竟有多不自信。</strong></p>
+</blockquote>
+<p>例如两个模型都预测错了。</p>
+<p>模型 A：</p>
+<pre class="text"><code>正确Token概率
+=
+40%</code></pre>
+<p>模型 B：</p>
+<pre class="text"><code>正确Token概率
+=
+0.01%</code></pre>
+<p>虽然都错：</p>
+<blockquote>
+<p>B 错得更加坚定。</p>
+</blockquote>
+<p>所以 B：</p>
+<blockquote>
+<p>Loss 更大。</p>
+</blockquote>
+<hr />
+<h1 id="十二完整-response-不是只有一个-token">十二、完整 Response
+不是只有一个 Token</h1>
+<p>假设专家答案经过 Tokenizer 后大致是：</p>
+<pre class="text"><code>存在
+潜在
+供应商
+资格
+风险
+EOS</code></pre>
+<p>模型要分别学习：</p>
+<pre class="text"><code>Prompt
+→ 存在
+
+Prompt + 存在
+→ 潜在
+
+Prompt + 存在 + 潜在
+→ 供应商
+
+...
+
+Prompt + 完整答案
+→ EOS</code></pre>
+<p>每一个位置：</p>
+<blockquote>
+<p>都可能产生一个 Token Loss。</p>
+</blockquote>
+<hr />
+<h1 id="十三然后把这些有效位置的-loss-汇总">十三、然后把这些有效位置的
+Loss 汇总</h1>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><mfrac><mn>1</mn><mi>N</mi></mfrac><munder><mo>∑</mo><mrow><mi>t</mi><mo>∈</mo><mi>A</mi></mrow></munder><msub><mi>L</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">
+L
+=
+\frac{1}{N}
+\sum_{t \in A} L_t
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>A</mi><annotation encoding="application/x-tex">A</annotation></semantics></math>：参与
+Loss 的 Assistant Token；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">N</annotation></semantics></math>：有效目标
+Token 数量。</li>
+</ul>
+<p>不用背。</p>
+<p>真正要记的是：</p>
+<blockquote>
+<p><strong>一次训练样本的 Loss，是很多 Assistant Token
+预测误差的综合。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十四loss-mask-在这里再次出现">十四、Loss Mask
+在这里再次出现</h1>
+<p>第 1 阶段我们已经知道：</p>
+<pre class="text"><code>Prompt Token
+label = -100
+
+Response Token
+label = Token ID</code></pre>
+<p>所以 Loss 计算时：</p>
+<pre class="text"><code>System
+忽略
+
+User
+忽略
+
+Assistant
+参与</code></pre>
+<p>这意味着：</p>
+<blockquote>
+<p>第 2 阶段所有 Cross Entropy，实际上只作用在第 1 阶段挑出来的有效
+Token 上。</p>
+</blockquote>
+<p>所以两阶段关系是：</p>
+<pre class="text"><code>第1阶段
+决定哪里算Loss
+      ↓
+第2阶段
+决定Loss怎样改变参数</code></pre>
+<hr />
+<h1 id="十五到这里-forward-结束了">十五、到这里 Forward 结束了</h1>
+<p>现在我们已经拥有一个数。</p>
+<p>例如：</p>
+<pre class="text"><code>Loss = 2.37</code></pre>
+<p>但注意：</p>
+<blockquote>
+<p><strong>参数现在还一丁点都没变。</strong></p>
+</blockquote>
+<p>这是极其重要的一点。</p>
+<p>当前只是：</p>
+<pre class="text"><code>模型做了一次预测
+      +
+我们算出了它错多少</code></pre>
+<p>还没有学习。</p>
+<hr />
+<h1
+id="十六那模型什么时候真正开始学习">十六、那模型什么时候真正开始“学习”？</h1>
+<p>接下来：</p>
+<h1 id="backward-pass">Backward Pass</h1>
+<h2 id="反向传播">反向传播</h2>
+<hr />
+<h1 id="十七backward-在问什么">十七、Backward 在问什么？</h1>
+<p>Forward 问：</p>
+<blockquote>
+<p>当前参数给出什么结果？</p>
+</blockquote>
+<p>Backward 问：</p>
+<blockquote>
+<p><strong>如果希望 Loss
+下降，每个可训练参数应该往哪个方向动？</strong></p>
+</blockquote>
+<p>这是完全不同的问题。</p>
+<hr />
+<h1 id="十八举一个极简例子">十八、举一个极简例子</h1>
+<p>假设模型只有一个参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>当前：</p>
+<pre class="text"><code>w = 2.0</code></pre>
+<p>Loss：</p>
+<pre class="text"><code>L = 3.0</code></pre>
+<p>我们想知道：</p>
+<blockquote>
+<p>如果把
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+稍微增加一点，Loss 会增加还是下降？</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十九gradient-最简单怎么理解">十九、Gradient
+最简单怎么理解？</h1>
+<h1 id="gradient">Gradient</h1>
+<h2 id="梯度">梯度</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mi>+</mi><mn>0.8</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+=
++0.8
+</annotation></semantics></math></p>
+<p>可以粗略理解：</p>
+<blockquote>
+<p>往正方向增加
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>，Loss
+会升高。</p>
+</blockquote>
+<p>那么为了降低 Loss：</p>
+<blockquote>
+<p>我们应该让
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+往负方向走一点。</p>
+</blockquote>
+<hr />
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mi>−</mi><mn>0.8</mn></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+=
+-0.8
+</annotation></semantics></math></p>
+<p>则意味着：</p>
+<blockquote>
+<p>增加
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+有助于降低 Loss。</p>
+</blockquote>
+<hr />
+<h1 id="二十所以-gradient-同时包含两类信息">二十、所以 Gradient
+同时包含两类信息</h1>
+<h3 id="方向">方向</h3>
+<pre class="text"><code>+
+或
+-</code></pre>
+<p>告诉：</p>
+<blockquote>
+<p>参数往哪边移动。</p>
+</blockquote>
+<h3 id="大小">大小</h3>
+<p>例如：</p>
+<pre class="text"><code>0.001</code></pre>
+<p>和：</p>
+<pre class="text"><code>12.5</code></pre>
+<p>代表：</p>
+<blockquote>
+<p>Loss 对这个参数的敏感程度不同。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>D</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gradient
+=
+Direction
++
+Sensitivity
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十一backward-为什么叫反向">二十一、Backward
+为什么叫“反向”？</h1>
+<p>因为计算方向和 Forward 大致相反。</p>
+<p>Forward：</p>
+<pre class="text"><code>Parameters
+   ↓
+Transformer
+   ↓
+Logits
+   ↓
+Loss</code></pre>
+<p>Backward：</p>
+<pre class="text"><code>Loss
+   ↓
+Logits
+   ↓
+Transformer
+   ↓
+Parameters</code></pre>
+<p>它从最终 Loss 出发：</p>
+<blockquote>
+<p>一层层往回计算责任。</p>
+</blockquote>
+<hr />
+<h1 id="二十二可以把-backpropagation-想成追责系统">二十二、可以把
+Backpropagation 想成“追责系统”</h1>
+<p>假设一个采购审核结果错了。</p>
+<p>管理者不能只说：</p>
+<blockquote>
+<p>“最终答案错了。”</p>
+</blockquote>
+<p>还要往回查：</p>
+<pre class="text"><code>最终判断错
+   ↓
+风险类型判断出了问题
+   ↓
+某个特征权重过高
+   ↓
+某层表示产生偏差
+   ↓
+哪些参数应该调整</code></pre>
+<p>Backpropagation：</p>
+<blockquote>
+<p>就是在数学上做类似的责任传递。</p>
+</blockquote>
+<hr />
+<h1 id="二十三这里真正依赖的是-chain-rule">二十三、这里真正依赖的是
+Chain Rule</h1>
+<h1 id="chain-rule">Chain Rule</h1>
+<h2 id="链式法则">链式法则</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>→</mo><mi>h</mi><mo>→</mo><mi>z</mi><mo>→</mo><mi>L</mi></mrow><annotation encoding="application/x-tex">
+w
+\rightarrow
+h
+\rightarrow
+z
+\rightarrow
+L
+</annotation></semantics></math></p>
+<p>我们想知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">
+w
+</annotation></semantics></math></p>
+<p>对最终：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">
+L
+</annotation></semantics></math></p>
+<p>的影响。</p>
+<p>通过链式法则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>∂</mi><mi>L</mi></mrow><mrow><mi>∂</mi><mi>z</mi></mrow></mfrac><mo>⋅</mo><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow><mrow><mi>∂</mi><mi>h</mi></mrow></mfrac><mo>⋅</mo><mfrac><mrow><mi>∂</mi><mi>h</mi></mrow><mrow><mi>∂</mi><mi>w</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\frac{\partial L}{\partial w}
+=
+\frac{\partial L}{\partial z}
+\cdot
+\frac{\partial z}{\partial h}
+\cdot
+\frac{\partial h}{\partial w}
+</annotation></semantics></math></p>
+<p>不用计算。</p>
+<p>只记：</p>
+<blockquote>
+<p><strong>最终错误可以沿着计算链，一层一层传回早期参数。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十四这就是为什么第二课学-backpropagation-很重要">二十四、这就是为什么第二课学
+Backpropagation 很重要</h1>
+<p>第二课我们是在神经网络角度理解：</p>
+<pre class="text"><code>Forward
+↓
+Loss
+↓
+Backward</code></pre>
+<p>第五课现在把它真正接到：</p>
+<h1 id="llm-sft">LLM SFT</h1>
+<p>整个 Transformer 虽然有几十亿参数，</p>
+<p>本质仍然遵循：</p>
+<pre class="text"><code>Forward
+↓
+Compare
+↓
+Backward
+↓
+Update</code></pre>
+<p>没有神秘的新机制。</p>
+<hr />
+<h1 id="二十五backward-结束以后发生了什么">二十五、Backward
+结束以后发生了什么？</h1>
+<p>现在模型里大量参数拥有：</p>
+<pre class="text"><code>.grad</code></pre>
+<p>概念上：</p>
+<pre class="text"><code>parameter_1.grad
+parameter_2.grad
+parameter_3.grad
+...</code></pre>
+<p>这些 Gradient：</p>
+<blockquote>
+<p>已经算出来。</p>
+</blockquote>
+<p>但是注意第二次：</p>
+<blockquote>
+<p><strong>参数依然还没有真正修改。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十六真正修改参数的是-optimizer">二十六、真正修改参数的是
+Optimizer</h1>
+<h1 id="optimizer">Optimizer</h1>
+<h2 id="优化器">优化器</h2>
+<p>例如常见的：</p>
+<pre class="text"><code>AdamW</code></pre>
+<p>Optimizer 会读取：</p>
+<pre class="text"><code>Current Parameters
++
+Gradients</code></pre>
+<p>然后决定：</p>
+<blockquote>
+<p>实际移动多少。</p>
+</blockquote>
+<hr />
+<h1 id="二十七最简单的-gradient-descent">二十七、最简单的 Gradient
+Descent</h1>
+<p>最基本公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>θ</mi><mtext mathvariant="normal">new</mtext></msub><mo>=</mo><msub><mi>θ</mi><mtext mathvariant="normal">old</mtext></msub><mo>−</mo><mi>η</mi><msub><mi>∇</mi><mi>θ</mi></msub><mi>L</mi></mrow><annotation encoding="application/x-tex">
+\theta_{\text{new}}
+=
+\theta_{\text{old}}
+-
+\eta
+\nabla_\theta L
+</annotation></semantics></math></p>
+<p>这里：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>：参数；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">L</annotation></semantics></math>：Loss；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>∇</mi><mi>θ</mi></msub><mi>L</mi></mrow><annotation encoding="application/x-tex">\nabla_\theta L</annotation></semantics></math>：Gradient；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>η</mi><annotation encoding="application/x-tex">\eta</annotation></semantics></math>：Learning
+Rate。</li>
+</ul>
+<p>真正记住：</p>
+<blockquote>
+<p><strong>参数沿着让 Loss 下降的方向移动一小步。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十八learning-rate-是什么">二十八、Learning Rate 是什么？</h1>
+<h1 id="learning-rate">Learning Rate</h1>
+<h2 id="学习率">学习率</h2>
+<p>就是公式里的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>η</mi><annotation encoding="application/x-tex">
+\eta
+</annotation></semantics></math></p>
+<p>可以理解成：</p>
+<blockquote>
+<p><strong>每次相信 Gradient 多少。</strong></p>
+</blockquote>
+<p>如果 Learning Rate 很小：</p>
+<pre class="text"><code>每次只改一点点</code></pre>
+<p>如果太大：</p>
+<pre class="text"><code>一下跳太远</code></pre>
+<hr />
+<h1 id="二十九生活类比下山">二十九、生活类比：下山</h1>
+<p>你站在山坡上。</p>
+<p>目标：</p>
+<blockquote>
+<p>到最低点。</p>
+</blockquote>
+<p>Gradient 告诉：</p>
+<blockquote>
+<p>哪边是上坡。</p>
+</blockquote>
+<p>于是你往反方向走。</p>
+<p>Learning Rate 决定：</p>
+<blockquote>
+<p>一步迈多大。</p>
+</blockquote>
+<pre class="text"><code>Gradient
+=
+方向
+
+Learning Rate
+=
+步长
+
+Optimizer
+=
+走路策略</code></pre>
+<p>这个类比以后一直能用。</p>
+<hr />
+<h1 id="三十为什么不能-learning-rate-越大越好">三十、为什么不能 Learning
+Rate 越大越好？</h1>
+<p>假设最低点就在前面。</p>
+<p>合理步长：</p>
+<pre class="text"><code>→ → → → 最低点</code></pre>
+<p>太大：</p>
+<pre class="text"><code>左边
+   ↘
+     最低点
+           ↗
+              右边</code></pre>
+<p>不断跨过去。</p>
+<p>训练可能：</p>
+<pre class="text"><code>Loss震荡
+Loss爆炸
+NaN
+模型能力破坏</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>梯度方向正确，不代表步子可以无限大。</p>
+</blockquote>
+<hr />
+<h1 id="三十一adamw-比最简单-gradient-descent-多做了什么">三十一、AdamW
+比最简单 Gradient Descent 多做了什么？</h1>
+<p>今天不展开公式。</p>
+<p>只需要理解：</p>
+<p>AdamW 不只是看：</p>
+<pre class="text"><code>当前一次Gradient</code></pre>
+<p>它还会维护一些历史统计，</p>
+<p>大致帮助它判断：</p>
+<pre class="text"><code>这个方向是不是一直稳定？
+这个参数最近梯度大不大？
+不同参数应该走多大的步？</code></pre>
+<p>所以它是一种：</p>
+<blockquote>
+<p>更聪明的更新规则。</p>
+</blockquote>
+<hr />
+<h1
+id="三十二到这里一次真正的参数更新终于发生了">三十二、到这里一次真正的参数更新终于发生了</h1>
+<p>完整过程：</p>
+<pre class="text"><code>optimizer.zero_grad()
+        ↓
+Forward
+        ↓
+Loss
+        ↓
+loss.backward()
+        ↓
+Gradient
+        ↓
+optimizer.step()
+        ↓
+Parameters Updated</code></pre>
+<p>这是一个极其重要的训练骨架。</p>
+<hr />
+<h1 id="三十三为什么前面还有-zero_grad">三十三、为什么前面还有
+<code>zero_grad()</code>？</h1>
+<p>因为在 PyTorch 中：</p>
+<blockquote>
+<p>Gradient 默认会累加。</p>
+</blockquote>
+<p>如果上一步 Gradient 没清理：</p>
+<pre class="text"><code>Step 1 Gradient
++
+Step 2 Gradient</code></pre>
+<p>可能会继续叠加。</p>
+<p>如果你本来不想做 Gradient Accumulation：</p>
+<blockquote>
+<p>就会训练错。</p>
+</blockquote>
+<p>所以普通训练 Step 通常有：</p>
+<pre class="text"><code>zero_grad
+↓
+forward
+↓
+loss
+↓
+backward
+↓
+step</code></pre>
+<hr />
+<h1
+id="三十四以后我们还会故意不立刻-zero">三十四、以后我们还会故意“不立刻
+zero”</h1>
+<p>那就是：</p>
+<h1 id="gradient-accumulation">Gradient Accumulation</h1>
+<h2 id="梯度累积">梯度累积</h2>
+<p>但这是后面的训练工程内容。</p>
+<p>今天只需要知道：</p>
+<blockquote>
+<p>Gradient 可以故意累积，也可以每一步清空。</p>
+</blockquote>
+<p>关键是：</p>
+<blockquote>
+<p>必须知道自己在做哪一种。</p>
+</blockquote>
+<hr />
+<h1
+id="三十五现在进入一个极其重要的概念teacher-forcing">三十五、现在进入一个极其重要的概念：Teacher
+Forcing</h1>
+<h1 id="teacher-forcing">Teacher Forcing</h1>
+<h2 id="教师强制">教师强制</h2>
+<p>这个名字看起来复杂。</p>
+<p>实际非常简单。</p>
+<p>训练时，模型预测第二个 Response Token 时：</p>
+<blockquote>
+<p>通常看到的是<strong>真实的第一个专家 Token</strong>。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>模型刚才自己预测出来的错误 Token。</p>
+</blockquote>
+<hr />
+<h1 id="三十六举例最容易理解">三十六、举例最容易理解</h1>
+<p>正确答案：</p>
+<pre class="text"><code>存在 潜在 风险</code></pre>
+<p>训练时：</p>
+<h3 id="预测存在">预测“存在”</h3>
+<p>Input：</p>
+<pre class="text"><code>Prompt</code></pre>
+<p>Target：</p>
+<pre class="text"><code>存在</code></pre>
+<hr />
+<p>预测“潜在”：</p>
+<p>Input：</p>
+<pre class="text"><code>Prompt + 正确的“存在”</code></pre>
+<p>Target：</p>
+<pre class="text"><code>潜在</code></pre>
+<hr />
+<p>预测“风险”：</p>
+<p>Input：</p>
+<pre class="text"><code>Prompt + 正确的“存在 潜在”</code></pre>
+<p>Target：</p>
+<pre class="text"><code>风险</code></pre>
+<p>这就是 Teacher Forcing。</p>
+<hr />
+<h1
+id="三十七训练时和推理时有一个关键区别">三十七、训练时和推理时有一个关键区别</h1>
+<p>训练时：</p>
+<pre class="text"><code>Prompt
++
+专家正确历史答案
+→
+预测下一个Token</code></pre>
+<p>推理时：</p>
+<pre class="text"><code>Prompt
++
+模型自己刚生成的Token
+→
+预测下一个Token</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingHistory
+\neq
+InferenceHistory
+}
+</annotation></semantics></math></p>
+<p>这是一个很重要的区别。</p>
+<hr />
+<h1
+id="三十八为什么训练可以一次算很多-token">三十八、为什么训练可以一次算很多
+Token？</h1>
+<p>虽然我们概念上写：</p>
+<pre class="text"><code>预测“存在”
+再预测“潜在”
+再预测“风险”</code></pre>
+<p>但 Transformer 训练时并不是必须：</p>
+<blockquote>
+<p>一个 Token 一个 Token 地串行跑完整模型。</p>
+</blockquote>
+<p>因为有：</p>
+<h1 id="causal-mask">Causal Mask</h1>
+<p>训练可以在一次 Forward 中并行计算多个位置的预测。</p>
+<hr />
+<h1 id="三十九这张图非常重要">三十九、这张图非常重要</h1>
+<p>序列：</p>
+<pre class="text"><code>Prompt | 存在 | 潜在 | 风险</code></pre>
+<p>模型在同一次 Forward 中可以得到：</p>
+<pre class="text"><code>位置 A
+预测：存在
+
+位置 B
+预测：潜在
+
+位置 C
+预测：风险
+
+位置 D
+预测：EOS</code></pre>
+<p>但每个位置：</p>
+<blockquote>
+<p>只能看到自己左边允许看到的 Token。</p>
+</blockquote>
+<p>这就是 Causal Language Model。</p>
+<hr />
+<h1 id="四十teacher-forcing-和-loss-mask-不是一回事">四十、Teacher
+Forcing 和 Loss Mask 不是一回事</h1>
+<p>这两个特别容易混。</p>
+<p>Loss Mask：</p>
+<blockquote>
+<p><strong>哪些位置要评分。</strong></p>
+</blockquote>
+<p>Teacher Forcing：</p>
+<blockquote>
+<p><strong>训练时前文使用真实历史 Token。</strong></p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Loss Mask
+解决：
+“考哪几题？”
+
+Teacher Forcing
+解决：
+“做后面的题时，前面的正确答案是否给你？”</code></pre>
+<p>完全不同。</p>
+<hr />
+<h1 id="四十一现在把第-12-阶段真正合起来">四十一、现在把第 1、2
+阶段真正合起来</h1>
+<pre class="text"><code>Messages
+   ↓
+Chat Template
+   ↓
+Tokenizer
+   ↓
+input_ids
+   ↓
+Loss Mask
+选择Assistant Token
+   ↓
+Forward
+   ↓
+Logits
+   ↓
+Softmax
+   ↓
+Cross Entropy
+   ↓
+Loss
+   ↓
+Backward
+   ↓
+Gradient
+   ↓
+Optimizer
+   ↓
+Parameter Update</code></pre>
+<p>这就是目前为止：</p>
+<h1 id="sft-最核心的一整条链">SFT 最核心的一整条链</h1>
+<hr />
+<h1 id="四十二现在进入-lora-场景">四十二、现在进入 LoRA 场景</h1>
+<p>假设 Base Model：</p>
+<pre class="text"><code>7B Parameters</code></pre>
+<p>如果做 Full Fine-Tuning：</p>
+<blockquote>
+<p>大量模型权重都可以更新。</p>
+</blockquote>
+<p>但是后面我们的 ProcurementLM 很可能采用：</p>
+<h1 id="lora-qlora">LoRA / QLoRA</h1>
+<p>那么情况变成：</p>
+<pre class="text"><code>Base Model Parameters
+requires_grad = False
+被冻结
+
+LoRA Parameters
+requires_grad = True
+可训练</code></pre>
+<hr />
+<h1
+id="四十三这里最容易产生一个误解">四十三、这里最容易产生一个误解</h1>
+<p>有人会想：</p>
+<blockquote>
+<p>Base Model 冻结了，那 Backward 是不是就不经过它？</p>
+</blockquote>
+<p>不是这么理解。</p>
+<p>Forward 仍然要经过：</p>
+<pre class="text"><code>Base Model</code></pre>
+<p>反向信号也需要沿计算图传播到：</p>
+<pre class="text"><code>LoRA Parameters</code></pre>
+<p>只是：</p>
+<blockquote>
+<p>Base Model 自己被冻结的权重不作为可训练参数被 Optimizer 更新。</p>
+</blockquote>
+<hr />
+<h1 id="四十四最精准的图是这样">四十四、最精准的图是这样</h1>
+<pre class="text"><code>Input
+  │
+  ▼
+┌────────────────────────────┐
+│ Base Model Weight          │
+│ Frozen 冻结                │
+│                            │
+│       +                    │
+│                            │
+│ LoRA Adapter               │
+│ Trainable 可训练           │
+└────────────┬───────────────┘
+             │
+             ▼
+           Output
+             │
+             ▼
+            Loss
+             │
+             ▼
+          Backward
+             │
+             ▼
+      LoRA gets Gradient
+             │
+             ▼
+        Optimizer Step
+             │
+             ▼
+        LoRA Updated</code></pre>
+<hr />
+<h1
+id="四十五所以训练-7b-模型不一定意味着更新-70-亿参数">四十五、所以“训练
+7B 模型”不一定意味着更新 70 亿参数</h1>
+<p>这就是后面 LoRA 最重要的价值之一。</p>
+<p>例如：</p>
+<pre class="text"><code>Base Model
+7,000,000,000 parameters
+
+LoRA Trainable
+可能只有几百万或几千万</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>我们依然利用整个 7B 模型做 Forward。</p>
+</blockquote>
+<p>但真正 Optimizer 更新的：</p>
+<blockquote>
+<p>只是小部分参数。</p>
+</blockquote>
+<hr />
+<h1
+id="四十六这也是为什么要区分三种东西">四十六、这也是为什么要区分三种东西</h1>
+<pre class="text"><code>Model Parameters
+模型全部参数
+
+Trainable Parameters
+允许求训练梯度并优化的参数
+
+Updated Parameters
+Optimizer实际更新的参数</code></pre>
+<p>在简单训练里后两者通常对应。</p>
+<p>但理解上：</p>
+<blockquote>
+<p>不应该把“整个模型参数量”等同于“实际训练参数量”。</p>
+</blockquote>
+<hr />
+<h1
+id="四十七政府采购知识究竟写进哪里">四十七、政府采购知识究竟“写进哪里”？</h1>
+<p>这是一个很好的问题。</p>
+<p>不是：</p>
+<blockquote>
+<p>某条专家规则完整存进某一个神经元。</p>
+</blockquote>
+<p>而是大量训练样本不断产生：</p>
+<pre class="text"><code>Gradient</code></pre>
+<p>这些 Gradient：</p>
+<blockquote>
+<p>对大量可训练参数做微小调整。</p>
+</blockquote>
+<p>最终使模型的概率分布发生变化。</p>
+<hr />
+<h1 id="四十八例如训练前">四十八、例如训练前</h1>
+<p>看到：</p>
+<pre class="text"><code>投标人须在本市设立固定机构方可投标</code></pre>
+<p>模型可能：</p>
+<pre class="text"><code>P(存在潜在风险) = 0.25
+P(不存在风险)   = 0.60</code></pre>
+<p>经过很多类似高质量样本训练以后：</p>
+<pre class="text"><code>P(存在潜在风险) = 0.78
+P(不存在风险)   = 0.12</code></pre>
+<p>这才叫：</p>
+<blockquote>
+<p>模型行为改变了。</p>
+</blockquote>
+<hr />
+<h1 id="四十九sft-真正改变的是条件概率分布">四十九、SFT
+真正改变的是“条件概率分布”</h1>
+<p>这是这一阶段最专业、也最值得留下来的理解。</p>
+<p>模型在学的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>p</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>e</mi><mo>∣</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_\theta(
+Response
+\mid
+Prompt
+)
+</annotation></semantics></math></p>
+<p>SFT 通过更新参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">
+\theta
+</annotation></semantics></math></p>
+<p>让高质量专家 Response：</p>
+<blockquote>
+<p>在给定 Prompt 条件下获得更高概率。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>F</mi><mi>T</mi><mo>=</mo><mi>重</mi><mi>塑</mi><mi>条</mi><mi>件</mi><mi>概</mi><mi>率</mi><mi>分</mi><mi>布</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SFT
+=
+重塑条件概率分布
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五十不是简单把知识文本存进去">五十、不是简单把“知识文本存进去”</h1>
+<p>这一点要特别清楚。</p>
+<p>SFT 不等于数据库：</p>
+<pre class="text"><code>条款A
+→
+答案A</code></pre>
+<p>简单存储。</p>
+<p>它试图学习：</p>
+<blockquote>
+<p>许多 Prompt 与专业 Response 之间的统计规律和行为模式。</p>
+</blockquote>
+<p>所以我们真正希望学到的是：</p>
+<pre class="text"><code>看见什么条件
+    ↓
+关注什么差异
+    ↓
+采用什么判断方式
+    ↓
+输出什么结构</code></pre>
+<hr />
+<h1 id="五十一这也是为什么-hard-case-特别重要">五十一、这也是为什么 Hard
+Case 特别重要</h1>
+<p>第四课我们专门建设：</p>
+<pre class="text"><code>Hard Negative
+Hard Positive
+Boundary Case</code></pre>
+<p>这些样本产生的 Gradient：</p>
+<blockquote>
+<p>正是在修模型最容易出错的决策边界。</p>
+</blockquote>
+<p>例如模型错误认为：</p>
+<pre class="text"><code>出现“本地”
+→
+一定Risk</code></pre>
+<p>Hard Negative：</p>
+<blockquote>
+<p>会对这种错误偏好产生反向训练信号。</p>
+</blockquote>
+<hr />
+<h1
+id="五十二所以第四课的-hard-case-到第五课真正变成了什么">五十二、所以第四课的
+Hard Case 到第五课真正变成了什么？</h1>
+<p>变成：</p>
+<h1 id="gradient-signal">Gradient Signal</h1>
+<h2 id="梯度信号">梯度信号</h2>
+<p>第四课时：</p>
+<pre class="text"><code>Hard Negative
+=
+高价值困难数据</code></pre>
+<p>第五课时：</p>
+<pre class="text"><code>Hard Negative
+        ↓
+模型预测错
+        ↓
+较高Loss
+        ↓
+Gradient
+        ↓
+参数调整
+        ↓
+决策边界变化</code></pre>
+<p>现在前后课程真正接上了。</p>
+<hr />
+<h1 id="五十三但-loss-大是不是一定好">五十三、但 Loss
+大是不是一定好？</h1>
+<p>不是。</p>
+<p>这是一个很重要的误区。</p>
+<p>Loss 很大可能意味着：</p>
+<h3 id="情况-a">情况 A</h3>
+<pre class="text"><code>模型真的不会</code></pre>
+<p>这是有价值的学习信号。</p>
+<p>但也可能：</p>
+<h3 id="情况-b">情况 B</h3>
+<pre class="text"><code>Label错了</code></pre>
+<h3 id="情况-c">情况 C</h3>
+<pre class="text"><code>数据格式错了</code></pre>
+<h3 id="情况-d">情况 D</h3>
+<pre class="text"><code>答案被截断</code></pre>
+<h3 id="情况-e">情况 E</h3>
+<pre class="text"><code>Loss Mask错位</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighLoss
+\neq
+AutomaticallyGoodTrainingSignal
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十四反过来loss-很低是不是一定模型很好">五十四、反过来，Loss
+很低是不是一定模型很好？</h1>
+<p>也不是。</p>
+<p>可能：</p>
+<pre class="text"><code>训练样本太容易</code></pre>
+<p>或者：</p>
+<pre class="text"><code>重复数据太多</code></pre>
+<p>甚至：</p>
+<pre class="text"><code>发生了数据泄漏</code></pre>
+<p>所以训练 Loss：</p>
+<blockquote>
+<p>只是训练过程信号。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>最终模型能力证明。</p>
+</blockquote>
+<hr />
+<h1
+id="五十五这就是为什么第四课的-validation-test-必须存在">五十五、这就是为什么第四课的
+Validation / Test 必须存在</h1>
+<p>Training Loss 回答：</p>
+<blockquote>
+<p><strong>模型在训练数据上的预测越来越像 Target 了吗？</strong></p>
+</blockquote>
+<p>Validation 回答：</p>
+<blockquote>
+<p><strong>对没参与参数更新的数据，它是否也在变好？</strong></p>
+</blockquote>
+<p>Test 最终回答：</p>
+<blockquote>
+<p><strong>冻结开发决策后，它对真正独立数据表现怎样？</strong></p>
+</blockquote>
+<p>三个问题完全不同。</p>
+<hr />
+<h1 id="五十六训练-loss-下降到底意味着什么">五十六、训练 Loss
+下降到底意味着什么？</h1>
+<p>更精准地说：</p>
+<blockquote>
+<p>在当前训练数据、当前 Loss 定义、当前 Mask 规则下，模型给目标 Token
+分配的概率整体提高了。</p>
+</blockquote>
+<p>仅此而已。</p>
+<p>它不能直接证明：</p>
+<pre class="text"><code>法律判断更正确
+泛化更好
+可靠性更高
+幻觉更少</code></pre>
+<p>这些需要：</p>
+<blockquote>
+<p>单独评测。</p>
+</blockquote>
+<hr />
+<h1 id="五十七这也是第-5-个核心心智模型的延伸">五十七、这也是第 5
+个核心心智模型的延伸</h1>
+<pre class="text"><code>Loss ↓</code></pre>
+<p>只能说明：</p>
+<blockquote>
+<p>优化目标正在改善。</p>
+</blockquote>
+<p>不能直接推出：</p>
+<pre class="text"><code>Business Quality ↑</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OptimizationMetric
+\neq
+BusinessMetric
+}
+</annotation></semantics></math></p>
+<p>这句话以后非常重要。</p>
+<hr />
+<h1 id="五十八现在看一个完整-sft-step">五十八、现在看一个完整 SFT
+Step</h1>
+<p>我们把所有过程压缩成代码逻辑：</p>
+<div class="sourceCode" id="cb224"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb224-1"><a href="#cb224-1" aria-hidden="true" tabindex="-1"></a>optimizer.zero_grad()</span>
+<span id="cb224-2"><a href="#cb224-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb224-3"><a href="#cb224-3" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> model(</span>
+<span id="cb224-4"><a href="#cb224-4" aria-hidden="true" tabindex="-1"></a>    input_ids<span class="op">=</span>input_ids,</span>
+<span id="cb224-5"><a href="#cb224-5" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span>attention_mask,</span>
+<span id="cb224-6"><a href="#cb224-6" aria-hidden="true" tabindex="-1"></a>    labels<span class="op">=</span>labels</span>
+<span id="cb224-7"><a href="#cb224-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb224-8"><a href="#cb224-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb224-9"><a href="#cb224-9" aria-hidden="true" tabindex="-1"></a>loss <span class="op">=</span> outputs.loss</span>
+<span id="cb224-10"><a href="#cb224-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb224-11"><a href="#cb224-11" aria-hidden="true" tabindex="-1"></a>loss.backward()</span>
+<span id="cb224-12"><a href="#cb224-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb224-13"><a href="#cb224-13" aria-hidden="true" tabindex="-1"></a>optimizer.step()</span></code></pre></div>
+<p>这五步看起来非常短。</p>
+<p>但你现在应该能看到背后发生的一整套东西。</p>
+<hr />
+<h1 id="五十九第一行">五十九、第一行</h1>
+<div class="sourceCode" id="cb225"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb225-1"><a href="#cb225-1" aria-hidden="true" tabindex="-1"></a>optimizer.zero_grad()</span></code></pre></div>
+<p>意思：</p>
+<blockquote>
+<p>清理上一轮 Gradient。</p>
+</blockquote>
+<hr />
+<h1 id="六十第二步-forward">六十、第二步 Forward</h1>
+<div class="sourceCode" id="cb226"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb226-1"><a href="#cb226-1" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> model(...)</span></code></pre></div>
+<p>背后：</p>
+<pre class="text"><code>Token IDs
+   ↓
+Embedding
+   ↓
+Transformer
+   ↓
+Hidden States
+   ↓
+LM Head
+   ↓
+Logits</code></pre>
+<p>如果提供：</p>
+<pre class="text"><code>labels</code></pre>
+<p>很多 Causal LM 实现还会顺便计算 Loss。</p>
+<hr />
+<h1 id="六十一第三步">六十一、第三步</h1>
+<div class="sourceCode" id="cb229"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb229-1"><a href="#cb229-1" aria-hidden="true" tabindex="-1"></a>loss <span class="op">=</span> outputs.loss</span></code></pre></div>
+<p>这是：</p>
+<blockquote>
+<p>当前模型预测和目标 Token 之间的综合误差。</p>
+</blockquote>
+<p>其中：</p>
+<pre class="text"><code>label = -100</code></pre>
+<p>的位置：</p>
+<blockquote>
+<p>不参与。</p>
+</blockquote>
+<hr />
+<h1 id="六十二第四步">六十二、第四步</h1>
+<div class="sourceCode" id="cb231"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb231-1"><a href="#cb231-1" aria-hidden="true" tabindex="-1"></a>loss.backward()</span></code></pre></div>
+<p>发生：</p>
+<pre class="text"><code>Loss
+↓
+Autograd
+↓
+Chain Rule
+↓
+Gradients</code></pre>
+<p>也就是：</p>
+<blockquote>
+<p>算出各可训练参数对 Loss 的责任。</p>
+</blockquote>
+<hr />
+<h1 id="六十三第五步">六十三、第五步</h1>
+<div class="sourceCode" id="cb233"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb233-1"><a href="#cb233-1" aria-hidden="true" tabindex="-1"></a>optimizer.step()</span></code></pre></div>
+<p>Optimizer 根据：</p>
+<pre class="text"><code>Gradient
++
+Learning Rate
++
+Optimizer内部状态</code></pre>
+<p>更新参数。</p>
+<p>到这一刻：</p>
+<blockquote>
+<p><strong>模型才真正学了一步。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六十四然后下一-step-再重复">六十四、然后下一 Step 再重复</h1>
+<pre class="text"><code>Batch 1
+↓
+Forward
+↓
+Loss
+↓
+Backward
+↓
+Update
+
+Batch 2
+↓
+Forward
+↓
+Loss
+↓
+Backward
+↓
+Update
+
+Batch 3
+↓
+...</code></pre>
+<p>重复成千上万次以后：</p>
+<blockquote>
+<p>模型行为逐渐改变。</p>
+</blockquote>
+<hr />
+<h1 id="六十五一个-step一个-batch一个-epoch-不要混">六十五、一个
+Step、一个 Batch、一个 Epoch 不要混</h1>
+<p>先给最简单定义。</p>
+<h1 id="sample">Sample</h1>
+<p>一条训练样本。</p>
+<hr />
+<h1 id="batch">Batch</h1>
+<p>一次一起送进模型的：</p>
+<blockquote>
+<p>多条 Sample。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Batch Size = 8</code></pre>
+<p>就是一次处理：</p>
+<blockquote>
+<p>8 条样本。</p>
+</blockquote>
+<hr />
+<h1 id="step">Step</h1>
+<p>通常一次：</p>
+<pre class="text"><code>Forward
++
+Backward
++
+Optimizer Update</code></pre>
+<p>称为一个训练 Step。</p>
+<p>但以后有 Gradient Accumulation 后：</p>
+<blockquote>
+<p>多个 Micro-batch Forward/Backward 才可能对应一次 Optimizer Step。</p>
+</blockquote>
+<p>后面再细讲。</p>
+<hr />
+<h1 id="epoch">Epoch</h1>
+<p>整个 Train Dataset：</p>
+<blockquote>
+<p>大致完整看一遍。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>100,000 Samples</code></pre>
+<p>跑完一遍：</p>
+<pre class="text"><code>1 Epoch</code></pre>
+<hr />
+<h1 id="六十六暂时只需要这样记">六十六、暂时只需要这样记</h1>
+<pre class="text"><code>Sample
+=
+一道题
+
+Batch
+=
+一次拿几道题一起做
+
+Step
+=
+做完后进行一次学习更新
+
+Epoch
+=
+整本题库学一遍</code></pre>
+<p>这个类比够用了。</p>
+<hr />
+<h1
+id="六十七现在做一个完整采购训练案例">六十七、现在做一个完整采购训练案例</h1>
+<p>Prompt：</p>
+<pre class="text"><code>供应商须在投标截止日前
+已经在本市设立固定售后服务机构。
+
+请判断是否存在潜在风险。</code></pre>
+<p>Target：</p>
+<pre class="text"><code>存在潜在风险。</code></pre>
+<hr />
+<p>假设模型当前预测：</p>
+<pre class="text"><code>不存在风险     65%
+存在潜在风险   20%
+需要复核       15%</code></pre>
+<p>那么：</p>
+<pre class="text"><code>正确答案概率低
+↓
+Cross Entropy较大
+↓
+Loss较高</code></pre>
+<hr />
+<h1 id="六十八backward-开始追责">六十八、Backward 开始追责</h1>
+<p>系统发现：</p>
+<pre class="text"><code>当前参数组合
+过分支持“不存在风险”</code></pre>
+<p>于是产生 Gradient：</p>
+<pre class="text"><code>某些方向
+需要降低
+
+某些方向
+需要提高</code></pre>
+<hr />
+<h1 id="六十九optimizer-更新">六十九、Optimizer 更新</h1>
+<p>更新以后再遇到类似条件：</p>
+<pre class="text"><code>投标前
++
+本地固定机构
++
+作为投标资格</code></pre>
+<p>模型可能变成：</p>
+<pre class="text"><code>不存在风险     45%
+存在潜在风险   40%
+需要复核       15%</code></pre>
+<p>还不完美。</p>
+<p>继续训练。</p>
+<hr />
+<h1 id="七十经过更多高质量案例以后">七十、经过更多高质量案例以后</h1>
+<p>可能逐渐变成：</p>
+<pre class="text"><code>不存在风险     10%
+存在潜在风险   78%
+需要复核       12%</code></pre>
+<p>这就是：</p>
+<h1 id="learning">Learning</h1>
+<p>不是突然“记住一条规则”。</p>
+<p>而是：</p>
+<blockquote>
+<p>参数经过大量小步更新，使正确专业行为的概率逐渐提高。</p>
+</blockquote>
+<hr />
+<h1 id="七十一再加入一个-hard-negative">七十一、再加入一个 Hard
+Negative</h1>
+<p>条款：</p>
+<pre class="text"><code>中标供应商应确保项目所在地
+2小时内现场服务响应，
+不限制服务机构设立方式。</code></pre>
+<p>如果模型错误预测：</p>
+<pre class="text"><code>存在地域资格风险
+=
+80%</code></pre>
+<p>专家 Target：</p>
+<pre class="text"><code>不能仅凭该条件直接判为地域准入风险</code></pre>
+<p>那么这个样本会产生：</p>
+<blockquote>
+<p>与前一个案例不同方向的 Gradient。</p>
+</blockquote>
+<hr />
+<h1
+id="七十二于是两个样本一起塑造决策边界">七十二、于是两个样本一起塑造决策边界</h1>
+<pre class="text"><code>案例 A
+投标前已有本地机构
+        ↓
+风险概率提高
+
+案例 B
+中标后履约响应
+不限制实现方式
+        ↓
+不要轻易报警</code></pre>
+<p>这就是：</p>
+<blockquote>
+<p>Hard Positive / Hard Negative 为什么比大量简单案例更有价值。</p>
+</blockquote>
+<hr />
+<h1 id="七十三模型真正学的不是本地-risk">七十三、模型真正学的不是“本地 =
+Risk”</h1>
+<p>而应该逐渐学：</p>
+<pre class="text"><code>本地
++
+发生阶段
++
+限制对象
++
+是否为准入条件
++
+是否限制实现方式
++
+业务上下文
+        ↓
+综合判断</code></pre>
+<p>这才是我们想要的：</p>
+<h1 id="decision-boundary-learning">Decision Boundary Learning</h1>
+<h2 id="决策边界学习">决策边界学习</h2>
+<hr />
+<h1
+id="七十四一个常见误解一条样本就会把模型改坏吗">七十四、一个常见误解：一条样本就会把模型改坏吗？</h1>
+<p>通常一个正常学习率下的单一样本：</p>
+<blockquote>
+<p>只产生一次相对小的参数更新。</p>
+</blockquote>
+<p>真正模型行为：</p>
+<blockquote>
+<p>是大量样本、多个 Step 累积的结果。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>B</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi><mo>=</mo><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelBehavior
+=
+AccumulatedUpdates
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="七十五但为什么错误数据仍然危险">七十五、但为什么错误数据仍然危险？</h1>
+<p>因为如果有：</p>
+<pre class="text"><code>10万条
+同一种错误Label</code></pre>
+<p>这些 Gradient 会反复往错误方向推动。</p>
+<p>所以：</p>
+<blockquote>
+<p>数据质量直接决定 Gradient 质量。</p>
+</blockquote>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>a</mi><mi>r</mi><mi>b</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>→</mo><mi>G</mi><mi>a</mi><mi>r</mi><mi>b</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GarbageData
+\rightarrow
+GarbageGradient
+}
+</annotation></semantics></math></p>
+<p>这是第五课非常值得记住的一句话。</p>
+<hr />
+<h1
+id="七十六这解释了为什么第四课不能省">七十六、这解释了为什么第四课不能省</h1>
+<p>很多人会问：</p>
+<blockquote>
+<p>为什么不直接下载模型然后 LoRA？</p>
+</blockquote>
+<p>因为 LoRA 不是：</p>
+<blockquote>
+<p>自动把错误数据变成正确能力。</p>
+</blockquote>
+<p>它只是：</p>
+<blockquote>
+<p>更高效地执行参数更新。</p>
+</blockquote>
+<p>如果 Dataset 本身错：</p>
+<blockquote>
+<p>LoRA 只会更高效地学错。</p>
+</blockquote>
+<hr />
+<h1
+id="七十七第五课和第四课真正的接口">七十七、第五课和第四课真正的接口</h1>
+<pre class="text"><code>第四课
+Data Quality
+    ↓
+Target Quality
+    ↓
+Loss Quality
+    ↓
+Gradient Quality
+    ↓
+第五课
+Model Quality</code></pre>
+<p>这是两课之间最重要的一张因果链。</p>
+<hr />
+<h1
+id="七十八现在把本阶段几个最危险的错误挑出来">七十八、现在把本阶段几个最危险的错误挑出来</h1>
+<h2 id="错误-1认为-loss-本身会修改参数">错误 1：认为 Loss
+本身会修改参数</h2>
+<p>不对。</p>
+<pre class="text"><code>Loss
+↓
+Backward
+↓
+Gradient
+↓
+Optimizer
+↓
+Update</code></pre>
+<p>少一步：</p>
+<blockquote>
+<p>都不是完整训练。</p>
+</blockquote>
+<hr />
+<h2 id="错误-2认为-backward-就已经更新参数">错误 2：认为
+<code>backward()</code> 就已经更新参数</h2>
+<p>不对。</p>
+<p><code>backward()</code>：</p>
+<blockquote>
+<p>主要算 Gradient。</p>
+</blockquote>
+<p><code>optimizer.step()</code>：</p>
+<blockquote>
+<p>才更新。</p>
+</blockquote>
+<hr />
+<h2 id="错误-3认为-gradient-等于参数改变量">错误 3：认为 Gradient
+等于参数改变量</h2>
+<p>也不完全对。</p>
+<p>真正参数改多少还取决于：</p>
+<pre class="text"><code>Learning Rate
+Optimizer
+Momentum / Adam状态
+Weight Decay</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>Gradient 是更新依据，不是最终更新量本身。</p>
+</blockquote>
+<hr />
+<h2 id="错误-4认为-base-model-冻结就不参与-forward">错误 4：认为 Base
+Model 冻结就不参与 Forward</h2>
+<p>不对。</p>
+<p>被冻结：</p>
+<blockquote>
+<p>是不更新其权重。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>不使用它。</p>
+</blockquote>
+<hr />
+<h2 id="错误-5认为-training-loss-越低模型业务能力一定越强">错误 5：认为
+Training Loss 越低，模型业务能力一定越强</h2>
+<p>不对。</p>
+<p>训练 Loss 低：</p>
+<blockquote>
+<p>只说明更符合训练目标。</p>
+</blockquote>
+<p>是否真正泛化：</p>
+<blockquote>
+<p>看 Validation / Benchmark。</p>
+</blockquote>
+<hr />
+<h1
+id="七十九再压缩成一个训练五件套">七十九、再压缩成一个“训练五件套”</h1>
+<p>以后你看到任何 SFT 代码，只查五件事：</p>
+<pre class="text"><code>1. Input
+模型看到了什么？
+
+2. Target
+正确答案是什么？
+
+3. Loss
+模型错了多少？
+
+4. Gradient
+哪些参数应该怎么改？
+
+5. Optimizer
+参数实际上改了多少？</code></pre>
+<p>这五件事清楚：</p>
+<blockquote>
+<p>训练代码就不会神秘。</p>
+</blockquote>
+<hr />
+<h1 id="八十本阶段的工程对象">八十、本阶段的工程对象</h1>
+<p>今天我们正式形成：</p>
+<h1 id="sfttrainingstep_v0.1-1"><code>SFTTrainingStep_V0.1</code></h1>
+<p>概念记录可以包括：</p>
+<pre class="text"><code>input_ids
+labels
+loss_mask
+
+forward_logits
+
+loss
+
+trainable_parameters
+
+grad_norm
+
+learning_rate
+
+optimizer
+
+global_step</code></pre>
+<p>以后真正训练时：</p>
+<blockquote>
+<p>这些东西会进入 Training Log。</p>
+</blockquote>
+<hr />
+<h1 id="八十一为什么要记录-grad_norm">八十一、为什么要记录
+<code>grad_norm</code>？</h1>
+<h1 id="gradient-norm">Gradient Norm</h1>
+<h2 id="梯度范数">梯度范数</h2>
+<p>可以粗略理解为：</p>
+<blockquote>
+<p>这一 Step 整体 Gradient 有多大。</p>
+</blockquote>
+<p>如果突然：</p>
+<pre class="text"><code>grad_norm
+极大</code></pre>
+<p>可能意味着：</p>
+<pre class="text"><code>异常Batch
+数值不稳定
+Learning Rate问题
+训练爆炸</code></pre>
+<p>以后第 12 阶段讲训练曲线时会重新回来。</p>
+<p>今天只需要认识：</p>
+<blockquote>
+<p>Gradient 也有需要监控的“强度”。</p>
+</blockquote>
+<hr />
+<h1 id="八十二为什么要记录-learning-rate">八十二、为什么要记录 Learning
+Rate？</h1>
+<p>因为有些训练不是始终固定：</p>
+<pre class="text"><code>Learning Rate = 2e-4</code></pre>
+<p>而会：</p>
+<pre class="text"><code>Warmup
+↑
+达到峰值
+↓
+逐渐衰减</code></pre>
+<p>所以同一个 Step 的参数更新：</p>
+<blockquote>
+<p>还受当前 Learning Rate 影响。</p>
+</blockquote>
+<p>这也是为什么实验必须记录：</p>
+<pre class="text"><code>global_step
+learning_rate
+loss</code></pre>
+<hr />
+<h1
+id="八十三但是这些先不要把脑子塞满">八十三、但是这些先不要把脑子塞满</h1>
+<p>今天真正必须掌握的不是 Scheduler。</p>
+<p>而是主干：</p>
+<pre class="text"><code>Forward
+↓
+Logits
+↓
+Probability
+↓
+Loss
+↓
+Backward
+↓
+Gradient
+↓
+Optimizer
+↓
+Parameter Update</code></pre>
+<p>后面的所有训练技巧：</p>
+<blockquote>
+<p>都是在这条主干周围做工程优化。</p>
+</blockquote>
+<hr />
+<h1
+id="八十四本阶段最值得记住的三个">八十四、本阶段最值得记住的三个“≠”</h1>
+<p>第一：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Loss
+\neq
+Gradient
+}
+</annotation></semantics></math></p>
+<p>第二：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>≠</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>e</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backward
+\neq
+OptimizerStep
+}
+</annotation></semantics></math></p>
+<p>第三：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>D</mi><mi>o</mi><mi>w</mi><mi>n</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>A</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>U</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingLossDown
+\neq
+BusinessAbilityUp
+}
+</annotation></semantics></math></p>
+<p>这三个如果不混：</p>
+<blockquote>
+<p>已经超过很多只会复制 Trainer 参数的人。</p>
+</blockquote>
+<hr />
+<h1 id="八十五再强化一次-5-个核心心智模型">八十五、再强化一次 5
+个核心心智模型</h1>
+<p>如果过一周以后，第 2 阶段只剩五句话，我希望是：</p>
+<blockquote>
+<p><strong>第一，SFT 仍然是在做 Next Token
+Prediction，只是正确答案来自我们的专家数据。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Forward 负责产生预测，Cross Entropy 把预测和正确 Token
+比较后得到 Loss。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Loss 只告诉模型“错多少”，Backward
+才通过链式法则计算每个可训练参数应该往哪个方向调整。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，<code>loss.backward()</code> 负责计算
+Gradient，<code>optimizer.step()</code> 才真正更新参数。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，SFT 的最终效果，是大量小的参数更新不断重塑
+<code>P(Response | Prompt)</code>；训练 Loss
+下降并不等于真实业务能力一定提升。</strong></p>
+</blockquote>
+<p>这就是第 2 阶段真正的骨架。</p>
+<hr />
+<h1 id="八十六本阶段最核心的一张图">八十六、本阶段最核心的一张图</h1>
+<pre class="text"><code>Expert Training Example
+专家训练样本
+        │
+        ▼
+Prompt + Correct Response
+        │
+        ▼
+      Forward
+        │
+        ▼
+      Logits
+每个Token候选分数
+        │
+        ▼
+      Softmax
+        │
+        ▼
+   Probability
+        │
+        ▼
+Cross Entropy
+与正确Token比较
+        │
+        ▼
+       Loss
+模型错了多少
+        │
+        ▼
+     Backward
+数学上往回追责
+        │
+        ▼
+     Gradient
+每个可训练参数
+该往哪边改
+        │
+        ▼
+    Optimizer
+结合学习率执行更新
+        │
+        ▼
+ Parameter Update
+        │
+        ▼
+下一次面对类似Prompt
+更倾向于专家Response</code></pre>
+<p>这张图如果能直接在脑中跑起来：</p>
+<blockquote>
+<p>第五课后面所有训练参数都会开始变得有意义。</p>
+</blockquote>
+<hr />
+<h1 id="八十七本阶段掌握测试">八十七、本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够自己解释：SFT 为什么本质仍然是 Next Token
+Prediction；Logit 和 Probability 有什么区别；Softmax 做什么；Cross
+Entropy 为什么关注正确 Token 的概率；正确 Token 概率越低为什么 Loss
+越高；Loss 和 Gradient 为什么不是一回事；Gradient
+的正负和大小分别代表什么；Backward 为什么需要 Chain Rule；为什么
+<code>loss.backward()</code>
+不等于参数已经更新；<code>optimizer.step()</code> 到底做什么；Learning
+Rate
+控制什么；为什么步长太大会导致训练震荡甚至数值不稳定；<code>zero_grad()</code>
+为什么存在；Teacher Forcing
+是什么；为什么训练时模型通常看到专家正确的历史 Response
+Token，而推理时只能看到自己之前生成的 Token；为什么 Loss Mask 和 Teacher
+Forcing 是两件完全不同的事；为什么 Transformer 训练时可以并行计算多个
+Token 的 Loss；Base Model 被 LoRA 冻结以后为什么仍然参与 Forward；LoRA
+真正更新的是谁；为什么 SFT 本质上是在重塑
+<code>P(Response | Prompt)</code>；为什么 Hard Negative 能通过 Gradient
+修正错误决策边界；为什么错误 Dataset 会产生错误 Gradient；以及为什么
+Training Loss 下降不能直接证明政府采购业务能力提高。</p>
+<p>如果这些可以完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>2</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第2阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-1">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>一次 SFT Step 的本质，就是模型先用当前参数预测下一个
+Token，再用 Cross Entropy 衡量它与专家答案的差距，通过 Backpropagation
+把这份错误沿 Transformer 反向传成 Gradient，最后由 Optimizer 按 Learning
+Rate 对可训练参数做一次小更新；成千上万次这样的微小更新，最终才把
+<code>P(Response \mid Prompt)</code>
+逐渐塑造成我们希望的政府采购专业行为。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-3-阶段">下一阶段：第五课 · 第 3 阶段</h1>
+<h1 id="训练样本长度truncation-与-padding">训练样本长度、Truncation 与
+Padding</h1>
+<h2
+id="为什么一条内容完全正确的政府采购训练数据也可能因为-token-长度处理错误而被训练坏">为什么一条“内容完全正确”的政府采购训练数据，也可能因为
+Token 长度处理错误而被训练坏？</h2>
+<p>第 2 阶段解决的是：</p>
+<blockquote>
+<p><strong>一次训练 Step 怎样改变参数。</strong></p>
+</blockquote>
+<p>第 3 阶段开始解决一个非常现实的问题：</p>
+<pre class="text"><code>采购条款只有 80 Tokens
+
+另一个案例 600 Tokens
+
+另一份复杂上下文 4,000 Tokens
+
+Base Model Context Window
+又有固定上限</code></pre>
+<p>那么我们必须决定：</p>
+<pre class="text"><code>多长才算一个训练样本？
+超过长度怎么办？
+从左边截还是右边截？
+Prompt和Response谁更应该保护？
+Padding为什么浪费GPU？
+attention_mask到底在屏蔽什么？</code></pre>
+<p>第 3 阶段会把整个问题压成一条非常清楚的工程链：</p>
+<pre class="text"><code>Raw SFT Example
+      ↓
+Token Length
+      ↓
+Length Policy
+      ↓
+Truncation
+      ↓
+Padding
+      ↓
+Attention Mask
+      ↓
+Batch Tensor</code></pre>
+<p>核心目标只有一个：</p>
+<blockquote>
+<p><strong>不能为了把数据塞进
+GPU，而把真正应该学习的专家答案和关键业务条件切掉。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

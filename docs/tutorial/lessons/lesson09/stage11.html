@@ -1,0 +1,626 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第11阶段：Benchmark Versioning、Regression Test 与模型版本比较</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第11阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>HigherOverallScore ≠ NoRegression。总分上涨仍可能伴随关键能力退化。</li><li>BenchmarkVersion 决定 Score Meaning，跨 Benchmark 版本不能裸比。</li><li>PairedEvaluation 比单纯比较两个总分更能定位真实变化。</li></ul></div><h1 id="第九课-第-11-阶段">第九课 · 第 11 阶段</h1>
+<h1 id="benchmark-versioningregression-test-与模型版本比较-1">Benchmark
+Versioning、Regression Test 与模型版本比较</h1>
+<h2
+id="模型总分涨了为什么仍然可能不该发布怎样证明新版本不仅更强而且没有把旧版本已经会的东西弄坏">模型总分涨了，为什么仍然可能不该发布？怎样证明新版本不仅更强，而且没有把旧版本已经会的东西弄坏？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-10">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-10">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>HigherOverallScore ≠
+NoRegression。总分上涨仍可能伴随关键能力退化。</strong></li>
+<li><strong>BenchmarkVersion 决定 Score Meaning，跨 Benchmark
+版本不能裸比。</strong></li>
+<li><strong>PairedEvaluation
+比单纯比较两个总分更能定位真实变化。</strong></li>
+<li><strong>RegressionAnalysis =
+StructuredDeltaAnalysis。要按能力、Slice、错误类型和严重度看变化。</strong></li>
+<li><strong>StatisticalSignificance ≠
+BusinessSignificance。统计显著不等于值得发布。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-10">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Regression</code></td>
+<td>回归测试：更新后验证旧能力和关键切片没有退化</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Citation</code></td>
+<td>引用：把生成结论和具体来源建立可追踪链接</td>
+</tr>
+<tr class="odd">
+<td><code>Confidence Interval</code></td>
+<td>置信区间：表示有限样本指标的不确定范围</td>
+</tr>
+<tr class="even">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-10">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>这一阶段解决真正的版本升级问题。</p>
+<p>假设：</p>
+<pre class="text"><code>ProcurementLM_V0.1
+Overall = 82
+
+ProcurementLM_V0.2
+Overall = 85</code></pre>
+<p>是不是 V0.2 一定更好？</p>
+<p>不一定。</p>
+<p>因为：</p>
+<pre class="text"><code>平均 +3</code></pre>
+<p>可能同时伴随：</p>
+<pre class="text"><code>关键高风险Slice -12
+Citation -8
+Abstention -10</code></pre>
+<p>所以第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HigherOverallScore
+\neq
+NoRegression
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementregressionpolicy_v0.1-1"><code>ProcurementRegressionPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一regression-test-到底是什么">一、Regression Test
+到底是什么？</h1>
+<h1 id="regression-test">Regression Test</h1>
+<h2 id="回归测试">回归测试</h2>
+<p>回答：</p>
+<blockquote>
+<p>新版本有没有把旧版本已经做好的能力弄坏？</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>p</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>e</mi><mo>=</mo><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>U</mi><mi>n</mi><mi>a</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Upgrade
+=
+Gain
++
+NoUnacceptableRegression
+}
+</annotation></semantics></math></p>
+<p>和第八课 CPT 的思想完全一致。</p>
+<hr />
+<h1 id="二核心心智模型-①-7">二、核心心智模型 ①</h1>
+<h1
+id="newbest-必须同时证明-notworsewhereitmatters"><code>NewBest</code>
+必须同时证明 <code>NotWorseWhereItMatters</code></h1>
+<p>只看新增能力：</p>
+<blockquote>
+<p>容易产生“升级幻觉”。</p>
+</blockquote>
+<p>所以新模型至少需要：</p>
+<pre class="text"><code>Gain Report
+收益报告
+
+Regression Report
+回归报告</code></pre>
+<hr />
+<h1 id="三benchmark-versioningbenchmark-自己也有版本">三、Benchmark
+Versioning：Benchmark 自己也有版本</h1>
+<p>例如：</p>
+<pre class="text"><code>ProcurementBench_V1.0
+ProcurementBench_V1.0.1
+ProcurementBench_V1.1</code></pre>
+<p>版本变化可能包括：</p>
+<pre class="text"><code>修Gold标签
+新增Slice
+新增任务
+修改Rubric
+替换污染样本</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>决</mi><mi>定</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkVersion
+决定
+ScoreMeaning
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四核心心智模型-②-1">四、核心心智模型 ②</h1>
+<h1 id="不同-benchmark-version-的总分不能直接裸比较">不同 Benchmark
+Version 的总分不能直接裸比较</h1>
+<p>如果 V1.1：</p>
+<blockquote>
+<p>增加了更多 Hard Case，</p>
+</blockquote>
+<p>分数可能下降。</p>
+<p>这不一定说明模型变差。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>需</mi><mi>要</mi><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ScoreComparison
+需要
+SameBenchmarkVersion
+}
+</annotation></semantics></math></p>
+<p>跨版本要做：</p>
+<blockquote>
+<p>Bridge Evaluation。</p>
+</blockquote>
+<hr />
+<h1 id="五bridge-set怎样连接两个-benchmark-版本">五、Bridge
+Set：怎样连接两个 Benchmark 版本？</h1>
+<p>可以保留：</p>
+<h1 id="bridge-set">Bridge Set</h1>
+<h2 id="桥接集">桥接集</h2>
+<p>即：</p>
+<blockquote>
+<p>两个版本都存在的一组稳定样本。</p>
+</blockquote>
+<p>这样可以判断：</p>
+<pre class="text"><code>分数变化来自模型
+还是Benchmark变化</code></pre>
+<hr />
+<h1 id="六paired-comparison为什么同一批-item-上比较更强">六、Paired
+Comparison：为什么同一批 Item 上比较更强？</h1>
+<p>如果模型 A 和 B 都在同一组样本上跑，</p>
+<p>可以做：</p>
+<h1 id="paired-evaluation">Paired Evaluation</h1>
+<h2 id="配对评测">配对评测</h2>
+<p>看每个 Item：</p>
+<pre class="text"><code>A对B错
+A错B对
+都对
+都错</code></pre>
+<p>这比只比较：</p>
+<pre class="text"><code>82 vs 85</code></pre>
+<p>信息丰富得多。</p>
+<hr />
+<h1 id="七核心心智模型-③-1">七、核心心智模型 ③</h1>
+<h1 id="delta-比绝对分更适合版本回归"><code>Delta</code>
+比绝对分更适合版本回归</h1>
+<p>可以定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Δ</mi><mi>i</mi></msub><mo>=</mo><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mrow><mi>n</mi><mi>e</mi><mi>w</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>−</mo><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mrow><mi>o</mi><mi>l</mi><mi>d</mi><mo>,</mo><mi>i</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+\Delta_i
+=
+Score_{new,i}
+-
+Score_{old,i}
+</annotation></semantics></math></p>
+<p>按：</p>
+<pre class="text"><code>总体
+Task
+Slice
+Error Type
+Severity</code></pre>
+<p>分别看 Delta。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>A</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>y</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>=</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>e</mi><mi>l</mi><mi>t</mi><mi>a</mi><mi>A</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>y</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RegressionAnalysis
+=
+StructuredDeltaAnalysis
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八confidence-interval1-分真的有意义吗">八、Confidence
+Interval：+1 分真的有意义吗？</h1>
+<p>如果 Benchmark 有采样误差，</p>
+<pre class="text"><code>82.1
+vs
+82.8</code></pre>
+<p>可能不稳定。</p>
+<p>可以用：</p>
+<h1 id="bootstrap">Bootstrap</h1>
+<h2 id="自助法">自助法</h2>
+<p>对 Item 重采样，</p>
+<p>估计：</p>
+<pre class="text"><code>Delta Confidence Interval</code></pre>
+<p>这样知道：</p>
+<blockquote>
+<p>+0.7 是稳定信号，还是采样波动。</p>
+</blockquote>
+<hr />
+<h1
+id="九statistical-significance-和-practical-significance-不一样">九、Statistical
+Significance 和 Practical Significance 不一样</h1>
+<p>即使统计上显著：</p>
+<blockquote>
+<p>+0.2%</p>
+</blockquote>
+<p>也可能业务价值很小。</p>
+<p>反过来：</p>
+<blockquote>
+<p>某个关键高风险 Slice +5%</p>
+</blockquote>
+<p>即使样本少、区间宽，</p>
+<p>也可能业务非常重要。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+StatisticalSignificance
+\neq
+BusinessSignificance
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十核心心智模型-④-1">十、核心心智模型 ④</h1>
+<h1 id="significant-不等于-worthshipping"><code>Significant</code>
+不等于 <code>WorthShipping</code></h1>
+<p>Release 决策必须结合：</p>
+<pre class="text"><code>效果幅度
+关键Slice
+业务风险
+成本
+延迟</code></pre>
+<hr />
+<h1 id="十一regression-budget允许退多少">十一、Regression
+Budget：允许退多少？</h1>
+<p>应该预先定义：</p>
+<h1 id="regression-budget">Regression Budget</h1>
+<h2 id="回归预算">回归预算</h2>
+<p>例如：</p>
+<pre class="text"><code>General Task
+允许轻微波动
+
+Critical Risk Recall
+不得下降超过阈值
+
+Citation Correctness
+不得下降超过阈值
+
+Safety
+不得出现Critical Regression</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>等</mi><mi>于</mi><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>M</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>I</mi><mi>n</mi><mi>c</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoRegression
+不等于
+EveryMetricMustIncrease
+}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<blockquote>
+<p>关键能力不能超过允许退化范围。</p>
+</blockquote>
+<hr />
+<h1 id="十二champion-challenger">十二、Champion / Challenger</h1>
+<p>生产评测常用：</p>
+<h1 id="champion">Champion</h1>
+<h2 id="当前稳定版本">当前稳定版本</h2>
+<h1 id="challenger">Challenger</h1>
+<h2 id="候选新版本">候选新版本</h2>
+<p>两者在：</p>
+<blockquote>
+<p>同一 Benchmark、同一 Protocol</p>
+</blockquote>
+<p>下比较。</p>
+<p>只有 Challenger 通过：</p>
+<pre class="text"><code>Gain Gate
+Regression Gate
+Cost Gate
+Safety Gate</code></pre>
+<p>才替换 Champion。</p>
+<hr />
+<h1 id="十三核心心智模型-⑤">十三、核心心智模型 ⑤</h1>
+<h1
+id="challenger-必须击败的是发布标准不是只击败某一个总分"><code>Challenger</code>
+必须击败的是“发布标准”，不是只击败某一个总分</h1>
+<p>一个版本：</p>
+<blockquote>
+<p>总分 +2</p>
+</blockquote>
+<p>但成本翻倍，</p>
+<p>或者关键风险 Slice 回归，</p>
+<p>都可能：</p>
+<blockquote>
+<p>不升级。</p>
+</blockquote>
+<hr />
+<h1 id="十四regression-matrix">十四、Regression Matrix</h1>
+<p>可以做：</p>
+<table>
+<thead>
+<tr class="header">
+<th>能力</th>
+<th style="text-align: right;">Old</th>
+<th style="text-align: right;">New</th>
+<th style="text-align: right;">Delta</th>
+<th>Gate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Risk Recall</td>
+<td style="text-align: right;">0.86</td>
+<td style="text-align: right;">0.89</td>
+<td style="text-align: right;">+0.03</td>
+<td>Pass</td>
+</tr>
+<tr class="even">
+<td>Citation</td>
+<td style="text-align: right;">0.92</td>
+<td style="text-align: right;">0.88</td>
+<td style="text-align: right;">-0.04</td>
+<td>Fail</td>
+</tr>
+<tr class="odd">
+<td>Abstention</td>
+<td style="text-align: right;">0.81</td>
+<td style="text-align: right;">0.84</td>
+<td style="text-align: right;">+0.03</td>
+<td>Pass</td>
+</tr>
+<tr class="even">
+<td>Agent Completion</td>
+<td style="text-align: right;">0.76</td>
+<td style="text-align: right;">0.82</td>
+<td style="text-align: right;">+0.06</td>
+<td>Pass</td>
+</tr>
+</tbody>
+</table>
+<p>这比单一：</p>
+<pre class="text"><code>Overall +2.1</code></pre>
+<p>有用得多。</p>
+<hr />
+<h1 id="十五change-attribution为什么分数变了">十五、Change
+Attribution：为什么分数变了？</h1>
+<p>版本之间可能同时改：</p>
+<pre class="text"><code>Model
+Prompt
+RAG
+Threshold
+Rules
+Agent Policy</code></pre>
+<p>如果一起改，</p>
+<p>很难知道：</p>
+<blockquote>
+<p>到底谁带来收益或回归。</p>
+</blockquote>
+<p>所以重要升级要尽量：</p>
+<h1 id="controlled-change">Controlled Change</h1>
+<h2 id="受控变更">受控变更</h2>
+<p>或者做：</p>
+<h1 id="ablation">Ablation</h1>
+<h2 id="消融实验">消融实验</h2>
+<hr />
+<h1 id="十六核心心智模型-⑥-1">十六、核心心智模型 ⑥</h1>
+<h1
+id="manychangesatonce-weakattribution"><code>ManyChangesAtOnce = WeakAttribution</code></h1>
+<p>如果一次 Release 同时改十件事，</p>
+<p>即使结果变好，</p>
+<p>你也不知道：</p>
+<blockquote>
+<p>哪个修改真正有效。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>需</mi><mi>要</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VersionComparison
+需要
+ChangeTrace
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十七regression-failure-应该触发什么">十七、Regression Failure
+应该触发什么？</h1>
+<p>不是所有回归都：</p>
+<blockquote>
+<p>自动否决。</p>
+</blockquote>
+<p>可以根据严重度：</p>
+<pre class="text"><code>Accept
+接受
+
+Investigate
+调查
+
+Mitigate
+修复
+
+Block Release
+阻止发布</code></pre>
+<p>但规则应该：</p>
+<blockquote>
+<p>训练前 / 发布前预定义。</p>
+</blockquote>
+<hr />
+<h1 id="十八historical-baseline只和上一个版本比够吗">十八、Historical
+Baseline：只和上一个版本比够吗？</h1>
+<p>不一定。</p>
+<p>新版本可能：</p>
+<pre class="text"><code>V0.3 比 V0.2 好</code></pre>
+<p>但：</p>
+<pre class="text"><code>V0.2 本身已经比 V0.1 某项退化</code></pre>
+<p>所以长期要保留：</p>
+<h1 id="historical-trend">Historical Trend</h1>
+<h2 id="历史趋势">历史趋势</h2>
+<p>避免：</p>
+<blockquote>
+<p>慢性能力侵蚀。</p>
+</blockquote>
+<hr />
+<h1 id="十九核心心智模型-⑦-2">十九、核心心智模型 ⑦</h1>
+<h1
+id="smallrepeatedregression-会积累成长期退化"><code>SmallRepeatedRegression</code>
+会积累成长期退化</h1>
+<p>每个版本都：</p>
+<pre class="text"><code>-1%</code></pre>
+<p>看似可接受。</p>
+<p>五个版本后：</p>
+<blockquote>
+<p>已经 -5%。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>需</mi><mi>要</mi><mi>T</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>M</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Regression
+需要
+TrendMonitoring
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十release-diff-report">二十、Release Diff Report</h1>
+<p>每次 Release 应生成：</p>
+<pre class="text"><code>What Changed
+改了什么
+
+Where Improved
+哪里提升
+
+Where Regressed
+哪里退化
+
+Critical Slice Impact
+关键切片
+
+Statistical Uncertainty
+统计不确定性
+
+Cost / Latency
+成本延迟
+
+Final Decision
+发布结论</code></pre>
+<p>这叫：</p>
+<h1 id="release-diff">Release Diff</h1>
+<h2 id="发布差异报告">发布差异报告</h2>
+<hr />
+<h1 id="二十一本阶段正式工程产物-2">二十一、本阶段正式工程产物</h1>
+<h1
+id="procurementregressionpolicy_v0.1-2"><code>ProcurementRegressionPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>regression_policy_version
+
+benchmark_version
+
+champion_version
+
+challenger_version
+
+paired_eval_required
+
+delta_metrics
+
+bootstrap_policy
+
+confidence_interval
+
+practical_significance
+
+regression_budget
+
+critical_metric_gates
+
+critical_slice_gates
+
+historical_baseline
+
+trend_monitoring
+
+change_trace
+
+ablation_required
+
+release_diff_report
+
+release_decision</code></pre>
+<hr />
+<h1 id="二十二本阶段最重要的-9-个核心心智模型-1">二十二、本阶段最重要的
+9 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>HigherOverallScore ≠ NoRegression</code>。总分上涨仍可能伴随关键能力退化。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ②：<code>BenchmarkVersion</code> 决定 Score
+Meaning，跨 Benchmark 版本不能裸比。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ③：<code>PairedEvaluation</code>
+比单纯比较两个总分更能定位真实变化。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>RegressionAnalysis = StructuredDeltaAnalysis</code>。要按能力、Slice、错误类型和严重度看变化。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>StatisticalSignificance ≠ BusinessSignificance</code>。统计显著不等于值得发布。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑥：<code>NoRegression</code>
+不代表每个指标都必须上涨，而是关键指标必须在预算内。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>Challenger</code>
+必须通过发布标准，不是只赢一个总分。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>ManyChangesAtOnce = WeakAttribution</code>。一次改太多，版本收益无法归因。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑨：<code>SmallRepeatedRegression</code>
+会累积，必须监控长期趋势。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十三下一阶段第九课-第-12-阶段">二十三、下一阶段：第九课 · 第
+12 阶段</h1>
+<h1 id="真正搭建-procurementbench_v1端到端评测与-release-gate">真正搭建
+<code>ProcurementBench_V1</code>：端到端评测与 Release Gate</h1>
+<p>最关键的总边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>R</mi><mi>u</mi><mi>n</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkRun
+\neq
+ReleaseDecision
+}
+</annotation></semantics></math></p>
+<p>并最终交付：</p>
+<h1 id="procurementbench_v1"><code>ProcurementBench_V1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage10.html">← 第 10 阶段</a><a class="btn" href="stage12.html">第 12 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

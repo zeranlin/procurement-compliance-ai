@@ -1,0 +1,2265 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第2课 · 第2阶段：Activation Function——为什么没有激活函数，再深的神经网络也只是一个线性模型</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第2课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>解释 Transformer/LLM 内部机制，定位 Attention、Token、KV Cache 等架构问题。<ul><li>No Activation ⇒ Deep Linear Model。没有非线性激活函数，多层线性层可以合并成一个线性变换。</li><li>Activation Function 的核心作用是引入非线性，使网络能够表示弯曲、分段和更复杂的决策边界。</li><li>ReLU / GELU / SiLU 的差异主要影响数值形状、梯度流和优化行为，不代表某一种激活函数“更懂政府采购”。</li></ul></div><h1
+id="第二课-第-2-阶段activation-function为什么没有激活函数再深的神经网络也只是一个线性模型-1">第二课
+· 第 2 阶段：Activation
+Function——为什么没有激活函数，再深的神经网络也只是一个线性模型</h1>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>No Activation ⇒ Deep Linear
+Model。没有非线性激活函数，多层线性层可以合并成一个线性变换。</strong></li>
+<li><strong>Activation Function
+的核心作用是引入非线性，使网络能够表示弯曲、分段和更复杂的决策边界。</strong></li>
+<li><strong>ReLU / GELU / SiLU
+的差异主要影响数值形状、梯度流和优化行为，不代表某一种激活函数“更懂政府采购”。</strong></li>
+<li><strong>激活函数会影响梯度是否容易传播，因此它既是表达能力问题，也是训练稳定性问题。</strong></li>
+<li><strong>对预训练模型而言，Activation
+是架构的一部分，不能因为“另一个函数看起来更好”就随意替换。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Activation Function</code></td>
+<td>激活函数：给网络引入非线性表达能力</td>
+</tr>
+<tr class="odd">
+<td><code>Representation</code></td>
+<td>表示：模型内部承载语义或特征的向量结构</td>
+</tr>
+<tr class="even">
+<td><code>Neuron</code></td>
+<td>神经元：加权、偏置和非线性变换的最小计算单元</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="even">
+<td><code>Backpropagation</code></td>
+<td>反向传播：把最终损失沿计算图反向分配到参数</td>
+</tr>
+<tr class="odd">
+<td><code>Threshold</code></td>
+<td>阈值：把连续分数转成业务动作的决策门槛</td>
+</tr>
+<tr class="even">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="odd">
+<td><code>Initialization</code></td>
+<td>初始化：训练开始前设置参数初值</td>
+</tr>
+<tr class="even">
+<td><code>Softmax</code></td>
+<td>Softmax：把一组分数转换成归一化权重</td>
+</tr>
+<tr class="odd">
+<td><code>Normalization</code></td>
+<td>规范化：稳定中间激活与训练过程</td>
+</tr>
+<tr class="even">
+<td><code>Hidden Layer</code></td>
+<td>隐藏层：逐层形成内部表示的中间网络层</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>上一阶段我们把神经网络拆到最小，得到了一个神经元：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>z</mi><mo>=</mo><msup><mi>W</mi><mi>T</mi></msup><mi>X</mi><mo>+</mo><mi>b</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+z=W^TX+b
+}
+</annotation></semantics></math></p>
+<p>现在遇到一个根本问题：</p>
+<blockquote>
+<p>如果每一层都只是
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">WX+b</annotation></semantics></math>，那把
+2 层、20 层、200 层叠起来，真的会变聪明吗？</p>
+</blockquote>
+<p>答案是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>不</mi><mi>会</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+不会
+}
+</annotation></semantics></math></p>
+<p>真正让神经网络能够表达复杂规律的关键组件之一，就是今天的主角：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>F</mi><mi>u</mi><mi>n</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Activation\ Function
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="先把第二阶段放到总路线里">1. 先把第二阶段放到总路线里</h2>
+<p>第二课目前走到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>e</mi><mi>u</mi><mi>r</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mspace width="0.222em"></mspace><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mo>→</mo><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>e</mi><mi>p</mi><mspace width="0.222em"></mspace><mi>N</mi><mi>e</mi><mi>t</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>k</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>a</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Neuron
+\rightarrow
+Linear\ Layer
+\rightarrow
+\boxed{Activation}
+\rightarrow
+Hidden\ Layer
+\rightarrow
+Deep\ Network
+\rightarrow
+Backpropagation
+</annotation></semantics></math></p>
+<p>这一阶段我们重点理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>g</mi><mi>m</mi><mi>o</mi><mi>i</mi><mi>d</mi><mo>→</mo><mi>T</mi><mi>a</mi><mi>n</mi><mi>h</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mo>→</mo><mi>G</mi><mi>E</mi><mi>L</mi><mi>U</mi><mo>→</mo><mi>S</mi><mi>i</mi><mi>L</mi><mi>U</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Sigmoid
+\rightarrow
+Tanh
+\rightarrow
+ReLU
+\rightarrow
+GELU
+\rightarrow
+SiLU
+}
+</annotation></semantics></math></p>
+<p>但真正重要的不是背函数名字。</p>
+<p>而是回答：</p>
+<blockquote>
+<p><strong>为什么神经网络必须有非线性？</strong></p>
+</blockquote>
+<hr />
+<h2 id="先复习上一阶段的核心公式">2. 先复习上一阶段的核心公式</h2>
+<p>一个神经元：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><msub><mi>w</mi><mn>1</mn></msub><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><msub><mi>w</mi><mn>2</mn></msub><msub><mi>x</mi><mn>2</mn></msub><mo>+</mo><mi>⋯</mi><mo>+</mo><msub><mi>w</mi><mi>n</mi></msub><msub><mi>x</mi><mi>n</mi></msub><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=w_1x_1+w_2x_2+\cdots+w_nx_n+b
+</annotation></semantics></math></p>
+<p>向量形式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>z</mi><mo>=</mo><msup><mi>W</mi><mi>T</mi></msup><mi>X</mi><mo>+</mo><mi>b</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+z=W^TX+b
+}
+</annotation></semantics></math></p>
+<p>多个神经元组成 Linear Layer：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Z</mi><mo>=</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Z=WX+b
+}
+</annotation></semantics></math></p>
+<p>这本质上都是：</p>
+<h1 id="linear-affine-transformation">Linear / Affine
+Transformation</h1>
+<p>线性或仿射变换。</p>
+<hr />
+<h2 id="如果连续放两个-linear-layer-会怎样">3. 如果连续放两个 Linear
+Layer 会怎样？</h2>
+<p>第一层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+h=W_1X+b_1
+</annotation></semantics></math></p>
+<p>第二层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><mi>h</mi><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+y=W_2h+b_2
+</annotation></semantics></math></p>
+<p>代入第一层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+y
+=
+W_2(W_1X+b_1)+b_2
+</annotation></semantics></math></p>
+<p>展开：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>b</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+y
+=
+W_2W_1X
++
+W_2b_1
++
+b_2
+</annotation></semantics></math></p>
+<p>重新定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>W</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+W&#39;=W_2W_1
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mi>′</mi><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>b</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+b&#39;=W_2b_1+b_2
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>′</mi><mi>X</mi><mo>+</mo><mi>b</mi><mi>′</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y=W&#39;X+b&#39;
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个非常重要的结论">4. 一个非常重要的结论</h2>
+<p>两个线性层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>→</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Linear
+\rightarrow
+Linear
+</annotation></semantics></math></p>
+<p>等价于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Linear
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>100</mn><annotation encoding="application/x-tex">
+100
+</annotation></semantics></math></p>
+<p>层呢？</p>
+<p>仍然可以不断合并。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>∘</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>∘</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>=</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Linear
+\circ
+Linear
+\circ
+Linear
+=
+Linear
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这意味着什么">5. 这意味着什么？</h2>
+<p>假设你造一个：</p>
+<blockquote>
+<p>1000 层神经网络。</p>
+</blockquote>
+<p>但是每一层只有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+WX+b
+</annotation></semantics></math></p>
+<p>最终它在数学表达能力上：</p>
+<blockquote>
+<p>仍然只是一个大线性模型。</p>
+</blockquote>
+<p>这句话非常重要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>h</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>l</mi><mi>o</mi><mi>n</mi><mi>e</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Depth\ alone
+\neq
+Complexity
+}
+</annotation></semantics></math></p>
+<p>单纯增加深度，并不会自动产生复杂表达能力。</p>
+<hr />
+<h2 id="那么-activation-在哪里加入">6. 那么 Activation 在哪里加入？</h2>
+<p>真正的神经网络通常这样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><msup><mi>W</mi><mi>T</mi></msup><mi>X</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=W^TX+b
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>a</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+a=f(z)
+}
+</annotation></semantics></math></p>
+<p>这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>f</mi><annotation encoding="application/x-tex">
+f
+</annotation></semantics></math></p>
+<p>就是：</p>
+<h1 id="activation-function-1">Activation Function</h1>
+<p>激活函数。</p>
+<p>于是一个神经元变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>a</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><msup><mi>W</mi><mi>T</mi></msup><mi>X</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+a=f(W^TX+b)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么叫-activation">7. 为什么叫 Activation？</h2>
+<p>历史上可以把它理解成：</p>
+<blockquote>
+<p>一个神经元接收到足够刺激以后是否“激活”。</p>
+</blockquote>
+<p>但对于我们学习机器学习，最好先把生物学比喻放一边。</p>
+<p>它最重要的数学职责是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>引</mi><mi>入</mi><mi>非</mi><mi>线</mi><mi>性</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+引入非线性
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第一个核心心智模型-1">8. 第一个核心心智模型</h2>
+<h3 id="心智模型-①activation-的核心不是激活神经元而是打破线性">心智模型
+①：Activation 的核心不是“激活神经元”，而是“打破线性”</h3>
+<p>记住：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>+</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Linear + Activation
+}
+</annotation></semantics></math></p>
+<p>才是真正开始产生复杂表达能力的组合。</p>
+<p>如果没有 Activation：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>e</mi><mi>e</mi><mi>p</mi><mspace width="0.222em"></mspace><mi>N</mi><mi>e</mi><mi>t</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+Deep\ Network
+</annotation></semantics></math></p>
+<p>可以坍缩成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>l</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mspace width="0.222em"></mspace><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Single\ Linear\ Layer
+</annotation></semantics></math></p>
+<hr />
+<h2 id="什么叫非线性">9. 什么叫“非线性”？</h2>
+<p>简单说：</p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>a</mi><mi>x</mi><mo>+</mo><mi>b</mi><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>a</mi><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mi>b</mi><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+f(ax+by)
+=
+af(x)+bf(y)
+</annotation></semantics></math></p>
+<p>总成立，它属于线性关系。</p>
+<p>而像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>x</mi><mn>2</mn></msup><annotation encoding="application/x-tex">
+x^2
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>sin</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">
+\sin x
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>max</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\max(0,x)
+</annotation></semantics></math></p>
+<p>通常都不是线性的。</p>
+<p>例如 ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>max</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+f(x)=\max(0,x)
+</annotation></semantics></math></p>
+<p>就是非常简单的非线性函数。</p>
+<hr />
+<h2 id="一个看起来很简单的函数为什么这么重要">10.
+一个看起来很简单的函数，为什么这么重要？</h2>
+<p>ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>max</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReLU(x)=\max(0,x)
+}
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x&lt;0
+</annotation></semantics></math></p>
+<p>输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x&gt;0
+</annotation></semantics></math></p>
+<p>输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">
+x
+</annotation></semantics></math></p>
+<p>看起来简单得离谱。</p>
+<p>但这个“折一下”：</p>
+<blockquote>
+<p>就已经打破了纯线性关系。</p>
+</blockquote>
+<hr />
+<h2 id="用图形直觉看-relu">11. 用图形直觉看 ReLU</h2>
+<p>它大概是：</p>
+<pre class="text"><code>y
+↑
+│          /
+│         /
+│        /
+│       /
+│______/
+│
+└────────────→ x
+       0</code></pre>
+<p>左边：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+y=0
+</annotation></semantics></math></p>
+<p>右边：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y=x
+</annotation></semantics></math></p>
+<p>在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x=0
+</annotation></semantics></math></p>
+<p>发生折角。</p>
+<p>这个折角就是：</p>
+<blockquote>
+<p>非线性。</p>
+</blockquote>
+<hr />
+<h2 id="为什么折角会增加表达能力">12. 为什么折角会增加表达能力？</h2>
+<p>单个线性函数只能画：</p>
+<blockquote>
+<p>一条直线。</p>
+</blockquote>
+<p>但多个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+Linear + ReLU
+</annotation></semantics></math></p>
+<p>组合以后，可以形成：</p>
+<blockquote>
+<p>很多段不同斜率的折线。</p>
+</blockquote>
+<p>二维空间里：</p>
+<blockquote>
+<p>可以拼出复杂边界。</p>
+</blockquote>
+<p>高维空间里：</p>
+<blockquote>
+<p>可以拼出非常复杂的分区。</p>
+</blockquote>
+<hr />
+<h2 id="一个政府采购例子-1">13. 一个政府采购例子</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mtext mathvariant="normal">竞争限制程度</mtext></mrow><annotation encoding="application/x-tex">
+x=\text{竞争限制程度}
+</annotation></semantics></math></p>
+<p>如果风险不是简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>=</mo><mn>2</mn><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Risk=2x
+</annotation></semantics></math></p>
+<p>而可能是：</p>
+<blockquote>
+<p>限制度很小时影响不明显，超过某个阈值后风险迅速上升。</p>
+</blockquote>
+<p>这更像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>−</mo><mn>0.5</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Risk
+=
+ReLU(x-0.5)
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>&lt;</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">
+x&lt;0.5
+</annotation></semantics></math></p>
+<p>输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>&gt;</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">
+x&gt;0.5
+</annotation></semantics></math></p>
+<p>风险信号开始增长。</p>
+<hr />
+<h2 id="现实业务中大量存在阈值效应">14.
+现实业务中大量存在“阈值效应”</h2>
+<p>例如项目条件：</p>
+<blockquote>
+<p>有一点严格，不一定有问题。</p>
+</blockquote>
+<p>但当多个限制达到某种程度以后：</p>
+<blockquote>
+<p>竞争影响显著增强。</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Threshold\ Effect
+}
+</annotation></semantics></math></p>
+<p>线性模型很难自然表示这种：</p>
+<blockquote>
+<p>“超过某个点以后行为发生变化”。</p>
+</blockquote>
+<p>非线性函数则非常适合。</p>
+<hr />
+<h2 id="再看交互作用">15. 再看“交互作用”</h2>
+<p>假设两个变量：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>1</mn></msub><mo>=</mo><mtext mathvariant="normal">供应商限制程度</mtext></mrow><annotation encoding="application/x-tex">
+x_1=\text{供应商限制程度}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>2</mn></msub><mo>=</mo><mtext mathvariant="normal">业务必要性不足</mtext></mrow><annotation encoding="application/x-tex">
+x_2=\text{业务必要性不足}
+</annotation></semantics></math></p>
+<p>现实风险可能是：</p>
+<blockquote>
+<p>只有当两者都很高时，风险才明显上升。</p>
+</blockquote>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+Risk
+</annotation></semantics></math></p>
+<p>并不是简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mn>1</mn></msub><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><msub><mi>w</mi><mn>2</mn></msub><msub><mi>x</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+w_1x_1+w_2x_2
+</annotation></semantics></math></p>
+<p>而可能具有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>1</mn></msub><mo>×</mo><msub><mi>x</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+x_1\times x_2
+</annotation></semantics></math></p>
+<p>这样的交互。</p>
+<hr />
+<h2 id="为什么深层非线性网络能表示交互">16.
+为什么深层非线性网络能表示交互？</h2>
+<p>第一层可以学习：</p>
+<blockquote>
+<p>某个局部模式。</p>
+</blockquote>
+<p>第二层可以组合第一层模式。</p>
+<p>第三层继续组合。</p>
+<p>例如概念上：</p>
+<pre class="text"><code>本地限制
++
+极短响应
+↓
+本地履约约束模式</code></pre>
+<p>再和：</p>
+<pre class="text"><code>缺少必要性说明</code></pre>
+<p>组合：</p>
+<pre class="text"><code>本地履约约束
++
+缺乏必要性
+↓
+高竞争限制风险</code></pre>
+<p>这就是层级组合。</p>
+<hr />
+<h2 id="这连接到了上一阶段的-representation">17. 这连接到了上一阶段的
+Representation</h2>
+<p>上一阶段说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+RawInput
+\rightarrow
+Representation
+\rightarrow
+Prediction
+</annotation></semantics></math></p>
+<p>现在再具体一点：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>N</mi><mi>e</mi><mi>w</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Linear
+\rightarrow
+Activation
+\rightarrow
+NewRepresentation
+}
+</annotation></semantics></math></p>
+<p>每经过一层：</p>
+<blockquote>
+<p>输入空间被重新变换一次。</p>
+</blockquote>
+<hr />
+<h2 id="第二个核心心智模型-1">18. 第二个核心心智模型</h2>
+<h3 id="心智模型-②activation-让网络能够不断重新切割输入空间">心智模型
+②：Activation 让网络能够不断“重新切割输入空间”</h3>
+<p>一个 Linear Layer：</p>
+<blockquote>
+<p>画一个超平面。</p>
+</blockquote>
+<p>Activation：</p>
+<blockquote>
+<p>把空间折叠、截断或重新映射。</p>
+</blockquote>
+<p>下一层再：</p>
+<blockquote>
+<p>重新组合。</p>
+</blockquote>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>→</mo><mi>F</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>→</mo><mi>F</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Linear
+\rightarrow
+Fold
+\rightarrow
+Linear
+\rightarrow
+Fold
+}
+</annotation></semantics></math></p>
+<p>最终可以形成非常复杂的 Decision Boundary。</p>
+<hr />
+<h2 id="先学最经典的-sigmoid">19. 先学最经典的 Sigmoid</h2>
+<p>第一课已经见过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mn>1</mn><mrow><mn>1</mn><mo>+</mo><msup><mi>e</mi><mrow><mi>−</mi><mi>x</mi></mrow></msup></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\sigma(x)=\frac{1}{1+e^{-x}}
+}
+</annotation></semantics></math></p>
+<p>它把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mi>∞</mi><mo>,</mo><mi>+</mi><mi>∞</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(-\infty,+\infty)
+</annotation></semantics></math></p>
+<p>压缩到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(0,1)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="sigmoid-的几个典型值">20. Sigmoid 的几个典型值</h2>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mi>−</mi><mn>5</mn></mrow><annotation encoding="application/x-tex">
+x=-5
+</annotation></semantics></math></p>
+<p>大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.007</mn><annotation encoding="application/x-tex">
+0.007
+</annotation></semantics></math></p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x=0
+</annotation></semantics></math></p>
+<p>得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.5</mn><annotation encoding="application/x-tex">
+0.5
+</annotation></semantics></math></p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">
+x=5
+</annotation></semantics></math></p>
+<p>大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.993</mn><annotation encoding="application/x-tex">
+0.993
+</annotation></semantics></math></p>
+<p>它是一个：</p>
+<blockquote>
+<p>S 型曲线。</p>
+</blockquote>
+<hr />
+<h2 id="sigmoid-为什么适合二分类输出层">21. Sigmoid
+为什么适合二分类输出层？</h2>
+<p>假设模型最后输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">
+z
+</annotation></semantics></math></p>
+<p>我们需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>∈</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+RiskScore\in(0,1)
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(z)
+</annotation></semantics></math></p>
+<p>就非常自然。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>r</mi><mi>y</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Binary\ Classification
+}
+</annotation></semantics></math></p>
+<p>中 Sigmoid 经常出现在：</p>
+<blockquote>
+<p>最后一层输出。</p>
+</blockquote>
+<hr />
+<h2 id="但-sigmoid-作为隐藏层-activation-有问题">22. 但 Sigmoid
+作为隐藏层 Activation 有问题</h2>
+<p>最主要的问题之一：</p>
+<h1 id="saturation">Saturation</h1>
+<p>饱和。</p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>≫</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x\gg0
+</annotation></semantics></math></p>
+<p>Sigmoid 接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>≪</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x\ll0
+</annotation></semantics></math></p>
+<p>接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>这两个区域曲线几乎变平。</p>
+<hr />
+<h2 id="为什么变平是问题">23. 为什么“变平”是问题？</h2>
+<p>因为训练靠：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Gradient
+</annotation></semantics></math></p>
+<p>梯度。</p>
+<p>如果曲线很平：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>d</mi><mi>σ</mi></mrow><mrow><mi>d</mi><mi>x</mi></mrow></mfrac><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\frac{d\sigma}{dx}
+\approx0
+</annotation></semantics></math></p>
+<p>那么：</p>
+<blockquote>
+<p>梯度很小。</p>
+</blockquote>
+<p>反向传播到前面的参数：</p>
+<blockquote>
+<p>更新非常弱。</p>
+</blockquote>
+<hr />
+<h2 id="sigmoid-的导数">24. Sigmoid 的导数</h2>
+<p>一个非常漂亮的公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>σ</mi><mi>′</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\sigma&#39;(x)
+=
+\sigma(x)(1-\sigma(x))
+}
+</annotation></semantics></math></p>
+<p>最大值发生在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">
+\sigma(x)=0.5
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x=0
+</annotation></semantics></math></p>
+<p>此时最大导数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.25</mn><annotation encoding="application/x-tex">
+0.25
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这意味着什么-1">25. 这意味着什么？</h2>
+<p>即使最理想位置：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Gradient
+</annotation></semantics></math></p>
+<p>最多还要乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.25</mn><annotation encoding="application/x-tex">
+0.25
+</annotation></semantics></math></p>
+<p>如果连续很多层 Sigmoid：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.25</mn><mo>×</mo><mn>0.25</mn><mo>×</mo><mn>0.25</mn><mo>×</mo><mi>⋯</mi></mrow><annotation encoding="application/x-tex">
+0.25
+\times
+0.25
+\times
+0.25
+\times\cdots
+</annotation></semantics></math></p>
+<p>很快变得非常小。</p>
+<p>这就是：</p>
+<h1 id="vanishing-gradient">Vanishing Gradient</h1>
+<p>梯度消失。</p>
+<hr />
+<h2 id="一个简单数字直觉">26. 一个简单数字直觉</h2>
+<p>假设每层梯度大约乘：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.2</mn><annotation encoding="application/x-tex">
+0.2
+</annotation></semantics></math></p>
+<p>连续 10 层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>0.2</mn><mn>10</mn></msup><annotation encoding="application/x-tex">
+0.2^{10}
+</annotation></semantics></math></p>
+<p>约等于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.0000001024</mn><annotation encoding="application/x-tex">
+0.0000001024
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>后层还有明显误差信号，</p>
+</blockquote>
+<p>传到前几层以后：</p>
+<blockquote>
+<p>几乎没了。</p>
+</blockquote>
+<hr />
+<h2 id="这会造成什么">27. 这会造成什么？</h2>
+<p>靠近输出层：</p>
+<blockquote>
+<p>学得比较快。</p>
+</blockquote>
+<p>网络早期层：</p>
+<blockquote>
+<p>几乎不更新。</p>
+</blockquote>
+<p>深度网络就很难训练。</p>
+<p>这也是早期深度神经网络发展中的一个核心难题。</p>
+<hr />
+<h2 id="第三个核心心智模型-1">28. 第三个核心心智模型</h2>
+<h3
+id="心智模型-③activation-不只决定表达能力也决定梯度能不能顺利流动">心智模型
+③：Activation 不只决定表达能力，也决定梯度能不能顺利流动</h3>
+<p>所以选择 Activation 时要看两件事：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>x</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Forward\ Expressiveness
+}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Backward\ GradientFlow
+}
+</annotation></semantics></math></p>
+<p>一个函数前向表达很好，</p>
+<p>但梯度传播极差：</p>
+<blockquote>
+<p>训练仍然可能失败。</p>
+</blockquote>
+<hr />
+<h2 id="第二个经典函数tanh">29. 第二个经典函数：Tanh</h2>
+<p>公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo>tanh</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mrow><msup><mi>e</mi><mi>x</mi></msup><mo>−</mo><msup><mi>e</mi><mrow><mi>−</mi><mi>x</mi></mrow></msup></mrow><mrow><msup><mi>e</mi><mi>x</mi></msup><mo>+</mo><msup><mi>e</mi><mrow><mi>−</mi><mi>x</mi></mrow></msup></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\tanh(x)
+=
+\frac{e^x-e^{-x}}
+{e^x+e^{-x}}
+}
+</annotation></semantics></math></p>
+<p>输出范围：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>1</mn><mo>,</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(-1,1)
+</annotation></semantics></math></p>
+<hr />
+<h2 id="tanh-和-sigmoid-最大区别之一">30. Tanh 和 Sigmoid
+最大区别之一</h2>
+<p>Sigmoid 输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(0,1)
+</annotation></semantics></math></p>
+<p>而 Tanh：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>1</mn><mo>,</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(-1,1)
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p>Tanh 是以 0 为中心的。</p>
+</blockquote>
+<p>这通常比 Sigmoid 作为隐藏层更好一些。</p>
+<hr />
+<h2 id="为什么-zero-centered-有帮助">31. 为什么 Zero-centered
+有帮助？</h2>
+<p>如果激活值全部：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+&gt;0
+</annotation></semantics></math></p>
+<p>梯度方向有时容易产生不理想的偏移。</p>
+<p>而 Tanh 同时有：</p>
+<blockquote>
+<p>正值和负值。</p>
+</blockquote>
+<p>优化过程通常更自然。</p>
+<p>不过这是优化层面的直觉，不需要现在过度展开。</p>
+<hr />
+<h2 id="tanh-仍然有-saturation">32. Tanh 仍然有 Saturation</h2>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>≫</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x\gg0
+</annotation></semantics></math></p>
+<p>Tanh：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>→</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\to1
+</annotation></semantics></math></p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>≪</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x\ll0
+</annotation></semantics></math></p>
+<p>Tanh：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>→</mo><mi>−</mi><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\to-1
+</annotation></semantics></math></p>
+<p>两端一样：</p>
+<blockquote>
+<p>梯度接近 0。</p>
+</blockquote>
+<p>所以它仍然存在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+VanishingGradient
+</annotation></semantics></math></p>
+<p>问题。</p>
+<hr />
+<h2 id="然后-relu-出现了">33. 然后 ReLU 出现了</h2>
+<p>ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>max</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReLU(x)=\max(0,x)
+}
+</annotation></semantics></math></p>
+<p>导数大致：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mi>′</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mrow><mo stretchy="true" form="prefix">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><mn>0</mn><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>x</mi><mo>&lt;</mo><mn>0</mn></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mn>1</mn><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>x</mi><mo>&gt;</mo><mn>0</mn></mtd></mtr></mtable></mrow></mrow><annotation encoding="application/x-tex">
+ReLU&#39;(x)
+=
+\begin{cases}
+0,&amp;x&lt;0\\
+1,&amp;x&gt;0
+\end{cases}
+</annotation></semantics></math></p>
+<p>在
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">0</annotation></semantics></math>
+点严格数学上不可导，但工程中可以选择一个方便的值处理。</p>
+<hr />
+<h2 id="relu-最大优势是什么">34. ReLU 最大优势是什么？</h2>
+<p>正区间：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x&gt;0
+</annotation></semantics></math></p>
+<p>导数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>所以梯度不像 Sigmoid 那样一直被压缩。</p>
+<p>这让深层网络：</p>
+<blockquote>
+<p>更容易训练。</p>
+</blockquote>
+<hr />
+<h2 id="relu-还有计算简单的优点">35. ReLU 还有计算简单的优点</h2>
+<p>Sigmoid 需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>e</mi><mrow><mi>−</mi><mi>x</mi></mrow></msup><annotation encoding="application/x-tex">
+e^{-x}
+</annotation></semantics></math></p>
+<p>Tanh 也涉及指数运算。</p>
+<p>ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>max</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\max(0,x)
+</annotation></semantics></math></p>
+<p>计算非常直接。</p>
+<p>在大规模神经网络中：</p>
+<blockquote>
+<p>简单操作乘以几十亿次，就很有意义。</p>
+</blockquote>
+<hr />
+<h2 id="relu-还会产生稀疏激活">36. ReLU 还会产生稀疏激活</h2>
+<p>对于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x&lt;0
+</annotation></semantics></math></p>
+<p>输出直接：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>意味着某些神经元在某些输入上：</p>
+<blockquote>
+<p>完全关闭。</p>
+</blockquote>
+<p>这种：</p>
+<h1 id="sparse-activation">Sparse Activation</h1>
+<p>有时会形成有用的表示特性。</p>
+<hr />
+<h2 id="政府采购的直觉例子">37. 政府采购的直觉例子</h2>
+<p>假设某个隐藏神经元概念上学习：</p>
+<blockquote>
+<p>“不合理本地限制信号”。</p>
+</blockquote>
+<p>如果当前条款完全没有这种模式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+z&lt;0
+</annotation></semantics></math></p>
+<p>经过 ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>这个特征：</p>
+<blockquote>
+<p>不向下一层继续贡献。</p>
+</blockquote>
+<p>如果相关信号明显：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mn>2.3</mn></mrow><annotation encoding="application/x-tex">
+z=2.3
+</annotation></semantics></math></p>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>2.3</mn></mrow><annotation encoding="application/x-tex">
+ReLU(z)=2.3
+</annotation></semantics></math></p>
+<p>继续传递。</p>
+<hr />
+<h2 id="但是-relu-也有问题">38. 但是 ReLU 也有问题</h2>
+<p>最经典：</p>
+<h1 id="dying-relu">Dying ReLU</h1>
+<p>“死亡 ReLU”。</p>
+<p>如果某个神经元长期：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+z&lt;0
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+ReLU(z)=0
+</annotation></semantics></math></p>
+<p>而梯度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>它可能以后：</p>
+<blockquote>
+<p>很难再被训练回来。</p>
+</blockquote>
+<hr />
+<h2 id="为什么神经元会死">39. 为什么神经元会“死”？</h2>
+<p>假设一次参数更新太激进：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>b</mi><annotation encoding="application/x-tex">
+b
+</annotation></semantics></math></p>
+<p>变得非常负。</p>
+<p>于是无论输入怎样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi><mo>+</mo><mi>b</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Wx+b&lt;0
+</annotation></semantics></math></p>
+<p>那么这个神经元永远：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>梯度也：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>所以它基本停止学习。</p>
+<hr />
+<h2 id="这和-learning-rate-也有关系">40. 这和 Learning Rate
+也有关系</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+LearningRate
+</annotation></semantics></math></p>
+<p>过大，</p>
+<p>参数更新幅度太猛，</p>
+<p>某些 ReLU 神经元更容易跑入：</p>
+<blockquote>
+<p>长期负区间。</p>
+</blockquote>
+<p>这再次说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>和</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>是</mi><mi>完</mi><mi>全</mi><mi>独</mi><mi>立</mi><mi>的</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Activation
+和
+Optimization
+不是完全独立的
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为了解决-dying-relu出现了-leaky-relu">41. 为了解决 Dying
+ReLU，出现了 Leaky ReLU</h2>
+<p>公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mrow><mo stretchy="true" form="prefix">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><mi>x</mi><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>x</mi><mo>&gt;</mo><mn>0</mn></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mi>α</mi><mi>x</mi><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>x</mi><mo>≤</mo><mn>0</mn></mtd></mtr></mtable></mrow></mrow><annotation encoding="application/x-tex">
+LeakyReLU(x)
+=
+\begin{cases}
+x,&amp;x&gt;0\\
+\alpha x,&amp;x\le0
+\end{cases}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>0.01</mn></mrow><annotation encoding="application/x-tex">
+\alpha=0.01
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么有用">42. 为什么有用？</h2>
+<p>负区间不再完全：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0</mn><annotation encoding="application/x-tex">
+0
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.01</mn><mi>x</mi></mrow><annotation encoding="application/x-tex">
+0.01x
+</annotation></semantics></math></p>
+<p>所以梯度仍然有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.01</mn><annotation encoding="application/x-tex">
+0.01
+</annotation></semantics></math></p>
+<p>神经元不容易彻底“死亡”。</p>
+<hr />
+<h2 id="还有-eluselu-等大量变体">43. 还有 ELU、SELU 等大量变体</h2>
+<p>你以后会遇到很多 Activation：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+ELU
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>E</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+SELU
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>o</mi><mi>f</mi><mi>t</mi><mi>p</mi><mi>l</mi><mi>u</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Softplus
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>i</mi><mi>s</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+Mish
+</annotation></semantics></math></p>
+<p>等等。</p>
+<p>现在不要陷入：</p>
+<blockquote>
+<p>“到底哪个最好？”</p>
+</blockquote>
+<p>真正需要掌握的是：</p>
+<blockquote>
+<p>它们都在权衡非线性形状、梯度传播、计算成本和数值稳定性。</p>
+</blockquote>
+<hr />
+<h2 id="进入现代-transformer-常见的-gelu">44. 进入现代 Transformer
+常见的 GELU</h2>
+<p>公式的一种定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>E</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>x</mi><mi>Φ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GELU(x)
+=
+x\Phi(x)
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Φ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\Phi(x)
+</annotation></semantics></math></p>
+<p>是标准正态分布的累积分布函数。</p>
+<hr />
+<h2 id="gelu-的直觉是什么">45. GELU 的直觉是什么？</h2>
+<p>ReLU 是硬切：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>&lt;</mo><mn>0</mn><mo>⇒</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+x&lt;0\Rightarrow0
+</annotation></semantics></math></p>
+<p>GELU 更像：</p>
+<blockquote>
+<p>平滑地决定保留多少输入。</p>
+</blockquote>
+<p>例如略微负的值：</p>
+<blockquote>
+<p>不一定完全砍掉。</p>
+</blockquote>
+<p>较大的正值：</p>
+<blockquote>
+<p>基本保留。</p>
+</blockquote>
+<p>所以它比 ReLU：</p>
+<blockquote>
+<p>更平滑。</p>
+</blockquote>
+<hr />
+<h2 id="gelu-可以粗略理解成软门">46. GELU 可以粗略理解成“软门”</h2>
+<p>ReLU：</p>
+<pre class="text"><code>负值 → 直接关掉
+正值 → 直接通过</code></pre>
+<p>GELU：</p>
+<pre class="text"><code>负很多 → 大多压掉
+接近0 → 部分通过
+正很多 → 大多保留</code></pre>
+<p>它更像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>f</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>G</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Soft\ Gating
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么-transformer-喜欢-gelu">47. 为什么 Transformer 喜欢
+GELU？</h2>
+<p>早期 Transformer 系列大量采用 GELU，因为它：</p>
+<blockquote>
+<p>平滑、可微，并且在深层网络中表现很好。</p>
+</blockquote>
+<p>后来的许多架构也使用其它函数。</p>
+<p>所以不要形成：</p>
+<blockquote>
+<p>“Transformer = GELU”</p>
+</blockquote>
+<p>这种绝对印象。</p>
+<p>架构会变化。</p>
+<hr />
+<h2 id="另一个现代常见函数silu">48. 另一个现代常见函数：SiLU</h2>
+<p>SiLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>x</mi><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SiLU(x)
+=
+x\sigma(x)
+}
+</annotation></semantics></math></p>
+<p>也常叫：</p>
+<h1 id="swish">Swish</h1>
+<hr />
+<h2 id="silu-长什么样">49. SiLU 长什么样？</h2>
+<p>它和 ReLU 类似：</p>
+<blockquote>
+<p>正值大部分保留。</p>
+</blockquote>
+<p>但负值：</p>
+<blockquote>
+<p>不会全部变成 0。</p>
+</blockquote>
+<p>而会留下小的负输出。</p>
+<p>同时整体：</p>
+<blockquote>
+<p>很平滑。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-llm-里经常看到-silu">50. 为什么 LLM 里经常看到
+SiLU？</h2>
+<p>现代很多 Transformer/LLM 架构会使用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>i</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+SiLU
+</annotation></semantics></math></p>
+<p>尤其配合：</p>
+<h1 id="glu">GLU</h1>
+<p>或：</p>
+<h1 id="swiglu">SwiGLU</h1>
+<p>等门控 Feed Forward 结构。</p>
+<p>以后学 Transformer FFN 时，我们会重新碰到它。</p>
+<hr />
+<h2 id="先预告一下-swiglu">51. 先预告一下 SwiGLU</h2>
+<p>以后可能看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>w</mi><mi>i</mi><mi>G</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>S</mi><mi>i</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><msub><mi>W</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>⊙</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><msub><mi>W</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SwiGLU(x)
+=
+SiLU(xW_1)
+\odot
+(xW_2)
+}
+</annotation></semantics></math></p>
+<p>这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>⊙</mi><annotation encoding="application/x-tex">
+\odot
+</annotation></semantics></math></p>
+<p>代表逐元素乘法。</p>
+<p>现在不用记。</p>
+<p>只需要知道：</p>
+<blockquote>
+<p>Activation 后来不仅仅是“一个函数夹在两层 Linear
+中间”，还可以参与更复杂的门控机制。</p>
+</blockquote>
+<hr />
+<h2 id="activation-和开关有什么关系">52. Activation
+和“开关”有什么关系？</h2>
+<p>很多激活函数都可以理解成：</p>
+<blockquote>
+<p>根据当前输入，决定某些表示应该被保留多少。</p>
+</blockquote>
+<p>例如 ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+z&lt;0
+</annotation></semantics></math></p>
+<p>完全关闭。</p>
+<p>GELU / SiLU：</p>
+<blockquote>
+<p>更柔和地调节。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>F</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>G</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mspace width="0.222em"></mspace><mi>M</mi><mi>e</mi><mi>c</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Activation
+=
+Feature\ Gating\ Mechanism
+}
+</annotation></semantics></math></p>
+<p>也是一个很有用的直觉。</p>
+<hr />
+<h2 id="但不要误解成一神经元一个规则">53.
+但不要误解成“一神经元一个规则”</h2>
+<p>例如一个神经元高激活：</p>
+<blockquote>
+<p>不一定就明确等于“本地限制”。</p>
+</blockquote>
+<p>真实深度网络中：</p>
+<blockquote>
+<p>一个概念往往分布在多个神经元和维度之间。</p>
+</blockquote>
+<p>同时一个神经元也可能参与：</p>
+<blockquote>
+<p>多个概念。</p>
+</blockquote>
+<p>这叫：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+DistributedRepresentation
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么多个简单非线性可以产生复杂能力">54.
+为什么多个简单非线性可以产生复杂能力？</h2>
+<p>这是深度学习最迷人的地方之一。</p>
+<p>单个 ReLU：</p>
+<blockquote>
+<p>非常简单。</p>
+</blockquote>
+<p>但成千上万个 ReLU：</p>
+<blockquote>
+<p>在不同方向、不同阈值上切割空间。</p>
+</blockquote>
+<p>再叠很多层：</p>
+<blockquote>
+<p>就可以组合成非常复杂的函数。</p>
+</blockquote>
+<hr />
+<h2 id="可以把它想成折纸">55. 可以把它想成“折纸”</h2>
+<p>原始输入空间：</p>
+<blockquote>
+<p>很难用一条线分开。</p>
+</blockquote>
+<p>第一层：</p>
+<blockquote>
+<p>折一次。</p>
+</blockquote>
+<p>第二层：</p>
+<blockquote>
+<p>再折。</p>
+</blockquote>
+<p>第三层：</p>
+<blockquote>
+<p>再重新组合。</p>
+</blockquote>
+<p>最终：</p>
+<blockquote>
+<p>原本复杂交错的数据，在新表示空间里可能变得容易分开。</p>
+</blockquote>
+<p>这只是直觉比喻，但非常有用。</p>
+<hr />
+<h2 id="第四个核心心智模型-1">56. 第四个核心心智模型</h2>
+<h3
+id="心智模型-④深度网络不是在原始空间硬画一条复杂线而是在不断改变表示空间">心智模型
+④：深度网络不是在原始空间硬画一条复杂线，而是在不断改变“表示空间”</h3>
+<p>我们最终不是简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><mi>Y</mi></mrow><annotation encoding="application/x-tex">
+X\rightarrow Y
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>→</mo><msub><mi>H</mi><mn>1</mn></msub><mo>→</mo><msub><mi>H</mi><mn>2</mn></msub><mo>→</mo><msub><mi>H</mi><mn>3</mn></msub><mo>→</mo><mi>Y</mi></mrow><annotation encoding="application/x-tex">
+X
+\rightarrow
+H_1
+\rightarrow
+H_2
+\rightarrow
+H_3
+\rightarrow
+Y
+</annotation></semantics></math></p>
+<p>每一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>H</mi><mi>i</mi></msub><annotation encoding="application/x-tex">
+H_i
+</annotation></semantics></math></p>
+<p>都是新的 Representation。</p>
+<hr />
+<h2 id="政府采购例子第一层可能学什么">57.
+政府采购例子：第一层可能学什么？</h2>
+<p>假设原始表示包含大量语言特征。</p>
+<p>第一层概念上可能形成：</p>
+<blockquote>
+<p>地域词、金额词、资格词、时间词、资质词等局部表示。</p>
+</blockquote>
+<p>第二层可能组合成：</p>
+<blockquote>
+<p>注册地约束、规模门槛、成立年限、业绩限制。</p>
+</blockquote>
+<p>更深层再组合：</p>
+<blockquote>
+<p>资格限制是否与履约能力存在合理关联。</p>
+</blockquote>
+<p>这是帮助理解的概念模型，不代表真实神经元会严格一一对应这些标签。</p>
+<hr />
+<h2 id="这正是-deep-的含义">58. 这正是 Deep 的含义</h2>
+<p>Deep Learning 的“深”不仅仅表示：</p>
+<blockquote>
+<p>层数很多。</p>
+</blockquote>
+<p>更重要的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>F</mi><mi>u</mi><mi>n</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Hierarchical\ Function\ Composition
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>简单函数不断组合成复杂函数。</p>
+</blockquote>
+<hr />
+<h2 id="一个形式化表达">59. 一个形式化表达</h2>
+<p>假设网络有三层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>=</mo><msub><mi>f</mi><mn>1</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_1=f_1(W_1X+b_1)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>2</mn></msub><mo>=</mo><msub><mi>f</mi><mn>2</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>h</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h_2=f_2(W_2h_1+b_2)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><msub><mi>f</mi><mn>3</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>3</mn></msub><msub><mi>h</mi><mn>2</mn></msub><mo>+</mo><msub><mi>b</mi><mn>3</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+y=f_3(W_3h_2+b_3)
+</annotation></semantics></math></p>
+<p>完整就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><msub><mi>f</mi><mn>3</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>3</mn></msub><msub><mi>f</mi><mn>2</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>2</mn></msub><msub><mi>f</mi><mn>1</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>b</mi><mn>3</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y
+=
+f_3(
+W_3
+f_2(
+W_2
+f_1(W_1X+b_1)
++b_2)
++b_3)
+}
+</annotation></semantics></math></p>
+<p>这已经不可能简单合并成一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+WX+b
+</annotation></semantics></math></p>
+<p>因为中间存在非线性：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mn>1</mn></msub><mo>,</mo><msub><mi>f</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+f_1,f_2
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这就是非线性存在的数学意义">60. 这就是非线性存在的数学意义</h2>
+<p>没有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>f</mi><annotation encoding="application/x-tex">
+f
+</annotation></semantics></math></p>
+<p>整个式子：</p>
+<blockquote>
+<p>可以合并。</p>
+</blockquote>
+<p>有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>f</mi><annotation encoding="application/x-tex">
+f
+</annotation></semantics></math></p>
+<p>就不能简单合并。</p>
+<p>因此网络真正有机会：</p>
+<blockquote>
+<p>表示复杂函数。</p>
+</blockquote>
+<hr />
+<h2 id="一个容易犯的错误activation-越复杂越好吗">61.
+一个容易犯的错误：Activation 越复杂越好吗？</h2>
+<p>不是。</p>
+<p>一个 Activation 的函数式看起来很高级：</p>
+<blockquote>
+<p>不代表模型就更强。</p>
+</blockquote>
+<p>实际性能取决于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>I</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Architecture
++
+Initialization
++
+Normalization
++
+Optimizer
++
+Data
++
+Activation
+</annotation></semantics></math></p>
+<p>共同作用。</p>
+<p>所以专家不会只因为：</p>
+<blockquote>
+<p>某个函数数学更复杂</p>
+</blockquote>
+<p>就认为它更好。</p>
+<hr />
+<h2 id="activation-选择还和任务位置有关">62. Activation
+选择还和任务位置有关</h2>
+<p>例如：</p>
+<h1 id="hidden-layer">Hidden Layer</h1>
+<p>常用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mi>/</mi><mi>G</mi><mi>E</mi><mi>L</mi><mi>U</mi><mi>/</mi><mi>S</mi><mi>i</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+ReLU/GELU/SiLU
+</annotation></semantics></math></p>
+<p>而：</p>
+<h1 id="binary-output">Binary Output</h1>
+<p>可能使用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>i</mi><mi>g</mi><mi>m</mi><mi>o</mi><mi>i</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Sigmoid
+</annotation></semantics></math></p>
+<p>多分类：</p>
+<blockquote>
+<p>通常最终处理会涉及 Softmax。</p>
+</blockquote>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>同</mi><mi>一</mi><mi>个</mi><mi>网</mi><mi>络</mi><mi>不</mi><mi>同</mi><mi>位</mi><mi>置</mi><mi>，</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>的</mi><mi>职</mi><mi>责</mi><mi>可</mi><mi>能</mi><mi>不</mi><mi>同</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+同一个网络不同位置，
+Activation 的职责可能不同
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="hidden-activation-和-output-activation-不要混淆">63. Hidden
+Activation 和 Output Activation 不要混淆</h2>
+<p>Hidden Activation 的主要任务：</p>
+<blockquote>
+<p>引入非线性、塑造表示。</p>
+</blockquote>
+<p>Output Activation 的主要任务：</p>
+<blockquote>
+<p>把最后的模型分数映射成任务需要的输出形式。</p>
+</blockquote>
+<p>例如二分类：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>→</mo><mi>S</mi><mi>i</mi><mi>g</mi><mi>m</mi><mi>o</mi><mi>i</mi><mi>d</mi><mo>→</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">
+z
+\rightarrow
+Sigmoid
+\rightarrow
+p
+</annotation></semantics></math></p>
+<hr />
+<h2 id="softmax-也是-activation-吗">64. Softmax 也是 Activation
+吗？</h2>
+<p>广义上可以把它看作一种输出变换。</p>
+<p>公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>f</mi><mi>t</mi><mi>m</mi><mi>a</mi><mi>x</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><msup><mi>e</mi><msub><mi>z</mi><mi>i</mi></msub></msup><mrow><munder><mo>∑</mo><mi>j</mi></munder><msup><mi>e</mi><msub><mi>z</mi><mi>j</mi></msub></msup></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Softmax(z_i)
+=
+\frac{e^{z_i}}
+{\sum_j e^{z_j}}
+}
+</annotation></semantics></math></p>
+<p>把一组 logits 转成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>∼</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+0\sim1
+</annotation></semantics></math></p>
+<p>并且：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><munder><mo>∑</mo><mi>i</mi></munder><msub><mi>p</mi><mi>i</mi></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\sum_i p_i=1
+</annotation></semantics></math></p>
+<hr />
+<h2 id="政府采购多分类例子">65. 政府采购多分类例子</h2>
+<p>假设输出风险类型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>2.1</mn><mo>,</mo><mn>0.4</mn><mo>,</mo><mi>−</mi><mn>0.2</mn><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+z=
+[
+2.1,
+0.4,
+-0.2
+]
+</annotation></semantics></math></p>
+<p>分别对应：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>资</mi><mi>格</mi><mi>风</mi><mi>险</mi></mrow><annotation encoding="application/x-tex">
+资格风险
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>技</mi><mi>术</mi><mi>参</mi><mi>数</mi><mi>风</mi><mi>险</mi></mrow><annotation encoding="application/x-tex">
+技术参数风险
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>评</mi><mi>分</mi><mi>标</mi><mi>准</mi><mi>风</mi><mi>险</mi></mrow><annotation encoding="application/x-tex">
+评分标准风险
+</annotation></semantics></math></p>
+<p>经过 Softmax 后：</p>
+<blockquote>
+<p>可以得到三个类别的相对概率分布。</p>
+</blockquote>
+<p>后面讲分类输出时会深入。</p>
+<hr />
+<h2 id="activation-对数值范围也有影响">66. Activation
+对数值范围也有影响</h2>
+<p>Sigmoid：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(0,1)
+</annotation></semantics></math></p>
+<p>Tanh：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>1</mn><mo>,</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(-1,1)
+</annotation></semantics></math></p>
+<p>ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">[</mo><mn>0</mn><mo>,</mo><mi>∞</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+[0,\infty)
+</annotation></semantics></math></p>
+<p>不同输出范围：</p>
+<blockquote>
+<p>会影响下一层接收到的数据分布。</p>
+</blockquote>
+<p>这又与：</p>
+<h1 id="initialization">Initialization</h1>
+<p>和：</p>
+<h1 id="normalization">Normalization</h1>
+<p>紧密相关。</p>
+<hr />
+<h2 id="为什么后面要学-normalization">67. 为什么后面要学
+Normalization？</h2>
+<p>假设网络越深：</p>
+<blockquote>
+<p>激活值越来越大或越来越不稳定。</p>
+</blockquote>
+<p>会影响：</p>
+<ul>
+<li>梯度；</li>
+<li>数值稳定性；</li>
+<li>优化速度。</li>
+</ul>
+<p>所以现代深度网络里会使用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+LayerNorm
+</annotation></semantics></math></p>
+<p>等技术。</p>
+<p>Transformer 尤其离不开 LayerNorm / RMSNorm。</p>
+<hr />
+<h2 id="activation-和初始化为什么有关">68. Activation
+和初始化为什么有关？</h2>
+<p>假设 ReLU 前的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">
+z
+</annotation></semantics></math></p>
+<p>全部特别负。</p>
+<p>那么：</p>
+<blockquote>
+<p>大量神经元直接变 0。</p>
+</blockquote>
+<p>如果全部特别正且特别大：</p>
+<blockquote>
+<p>激活分布也可能不理想。</p>
+</blockquote>
+<p>所以参数初始值不能乱来。</p>
+<p>以后会学：</p>
+<h1 id="xavier-initialization">Xavier Initialization</h1>
+<p>和：</p>
+<h1 id="he-initialization">He Initialization</h1>
+<hr />
+<h2 id="he-initialization-为什么和-relu-有关系">69. He Initialization
+为什么和 ReLU 有关系？</h2>
+<p>它的设计目标之一就是：</p>
+<blockquote>
+<p>在经过 ReLU 的深网络中，更好地保持激活与梯度尺度。</p>
+</blockquote>
+<p>这进一步说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>是</mi><mi>孤</mi><mi>立</mi><mi>组</mi><mi>件</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Activation
+不是孤立组件
+}
+</annotation></semantics></math></p>
+<p>它和：</p>
+<blockquote>
+<p>初始化、归一化、梯度、深度</p>
+</blockquote>
+<p>共同形成一个系统。</p>
+<hr />
+<h2 id="第五个核心心智模型-1">70. 第五个核心心智模型</h2>
+<h3
+id="心智模型-⑤现代神经网络不是挑一个最强-activation而是让-activation-与整个架构匹配">心智模型
+⑤：现代神经网络不是“挑一个最强 Activation”，而是让 Activation
+与整个架构匹配</h3>
+<p>真正的问题不是：</p>
+<blockquote>
+<p>ReLU、GELU、SiLU 谁天下第一？</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>这</mi><mi>个</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>是</mi><mi>否</mi><mi>适</mi><mi>合</mi><mi>当</mi><mi>前</mi><mi>网</mi><mi>络</mi><mi>结</mi><mi>构</mi><mi>和</mi><mi>优</mi><mi>化</mi><mi>环</mi><mi>境</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+这个Activation
+是否适合当前网络结构和优化环境？
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="回到最核心问题为什么一个简单-relu-能有巨大作用">71.
+回到最核心问题：为什么一个简单 ReLU 能有巨大作用？</h2>
+<p>因为我们需要的不是：</p>
+<blockquote>
+<p>单个 Activation 自己非常聪明。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>它让许多线性层之间无法再坍缩。</p>
+</blockquote>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mo>+</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mo>+</mo><mi>⋯</mi></mrow><annotation encoding="application/x-tex">
+Linear
++
+ReLU
++
+Linear
++
+ReLU
++\cdots
+</annotation></semantics></math></p>
+<p>拥有越来越丰富的表达空间。</p>
+<hr />
+<h2 id="一个政府采购直觉模型">72. 一个政府采购直觉模型</h2>
+<p>假设第一层有三个神经元。</p>
+<p>Neuron A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+a_1=ReLU(z_1)
+</annotation></semantics></math></p>
+<p>概念上响应：</p>
+<blockquote>
+<p>地域限制信号。</p>
+</blockquote>
+<p>Neuron B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>2</mn></msub><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+a_2=ReLU(z_2)
+</annotation></semantics></math></p>
+<p>响应：</p>
+<blockquote>
+<p>资格门槛信号。</p>
+</blockquote>
+<p>Neuron C：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>3</mn></msub><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>3</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+a_3=ReLU(z_3)
+</annotation></semantics></math></p>
+<p>响应：</p>
+<blockquote>
+<p>必要性说明信号。</p>
+</blockquote>
+<p>下一层再学习：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>w</mi><mn>1</mn></msub><msub><mi>a</mi><mn>1</mn></msub><mo>+</mo><msub><mi>w</mi><mn>2</mn></msub><msub><mi>a</mi><mn>2</mn></msub><mo>−</mo><msub><mi>w</mi><mn>3</mn></msub><msub><mi>a</mi><mn>3</mn></msub><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h
+=
+ReLU(
+w_1a_1
++
+w_2a_2
+-
+w_3a_3
++b)
+</annotation></semantics></math></p>
+<p>于是：</p>
+<blockquote>
+<p>原本几个简单特征开始组合成更复杂概念。</p>
+</blockquote>
+<hr />
+<h2 id="如果必要性说明很强会怎样">73. 如果“必要性说明”很强会怎样？</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mn>2.0</mn></mrow><annotation encoding="application/x-tex">
+a_1=2.0
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>2</mn></msub><mo>=</mo><mn>1.8</mn></mrow><annotation encoding="application/x-tex">
+a_2=1.8
+</annotation></semantics></math></p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>3</mn></msub><mo>=</mo><mn>3.0</mn></mrow><annotation encoding="application/x-tex">
+a_3=3.0
+</annotation></semantics></math></p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>w</mi><mn>3</mn></msub><annotation encoding="application/x-tex">
+w_3
+</annotation></semantics></math></p>
+<p>是较大的负权重，</p>
+<p>下一层可能：</p>
+<blockquote>
+<p>大幅降低风险信号。</p>
+</blockquote>
+<p>这就体现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>−</mo><mi>d</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Context-dependent\ Interaction
+}
+</annotation></semantics></math></p>
+<p>上下文组合关系。</p>
+<hr />
+<h2 id="这比关键词模型高级在哪里">74. 这比关键词模型高级在哪里？</h2>
+<p>关键词模型：</p>
+<pre class="text"><code>看到“本地”
+→ 风险</code></pre>
+<p>深度网络希望学：</p>
+<pre class="text"><code>本地相关语义
++
+约束对象
++
+履约要求
++
+必要性
++
+竞争影响
+↓
+综合表示</code></pre>
+<p>然后再判断。</p>
+<p>这就是：</p>
+<blockquote>
+<p>表示学习 + 非线性组合。</p>
+</blockquote>
+<hr />
+<h2 id="当然神经网络不保证一定学到正确抽象">75.
+当然，神经网络不保证一定学到正确抽象</h2>
+<p>第一课第 12 阶段已经学过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>p</mi><mi>u</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>u</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+SpuriousCorrelation
+</annotation></semantics></math></p>
+<p>神经网络也可能学：</p>
+<blockquote>
+<p>“本市”关键词捷径。</p>
+</blockquote>
+<p>Activation 提高的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>x</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+ExpressiveCapacity
+</annotation></semantics></math></p>
+<p>并不自动保证：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+CorrectReasoning
+</annotation></semantics></math></p>
+<hr />
+<h2 id="能力更强也意味着更容易过拟合">76.
+能力更强，也意味着更容易过拟合</h2>
+<p>一个线性模型表达能力有限。</p>
+<p>深层非线性网络：</p>
+<blockquote>
+<p>可以表示极其复杂的规律。</p>
+</blockquote>
+<p>优点：</p>
+<blockquote>
+<p>能学真实复杂关系。</p>
+</blockquote>
+<p>风险：</p>
+<blockquote>
+<p>也能学训练数据里的噪声和捷径。</p>
+</blockquote>
+<p>这重新连接第一课：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>↔</mo><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>i</mi><mi>t</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+Capacity
+\leftrightarrow
+Overfitting
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以更复杂不是无条件更好">77. 所以“更复杂”不是无条件更好</h2>
+<p>如果数据：</p>
+<blockquote>
+<p>很少、标签很差、覆盖不足，</p>
+</blockquote>
+<p>给一个巨大非线性网络：</p>
+<blockquote>
+<p>可能只是让它更容易拟合错误规律。</p>
+</blockquote>
+<p>因此仍然要回到第一课：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Data
++
+Generalization
++
+Evaluation
+</annotation></semantics></math></p>
+<hr />
+<h2 id="现在理解-universal-approximation-的直觉">78. 现在理解 Universal
+Approximation 的直觉</h2>
+<p>神经网络有一个很著名的理论方向：</p>
+<h1 id="universal-approximation">Universal Approximation</h1>
+<p>粗略来说：</p>
+<blockquote>
+<p>在一定条件下，带非线性激活的神经网络可以逼近非常广泛的一类函数。</p>
+</blockquote>
+<p>现在不用学严格定理。</p>
+<p>核心直觉是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>n</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Linear + Nonlinear
+}
+</annotation></semantics></math></p>
+<p>不断组合，</p>
+<p>具有非常强的函数表示能力。</p>
+<hr />
+<h2 id="但能表示不等于能学到">79. 但“能表示”不等于“能学到”</h2>
+<p>这一点极其重要。</p>
+<p>理论上某个网络：</p>
+<blockquote>
+<p>可以表达目标函数。</p>
+</blockquote>
+<p>不意味着：</p>
+<blockquote>
+<p>梯度下降一定能找到它。</p>
+</blockquote>
+<p>所以有两个问题：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+Representation\ Capacity
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Optimization
+</annotation></semantics></math></p>
+<p>必须分开。</p>
+<hr />
+<h2 id="一个网络可能有能力但不会学">80.
+一个网络可能“有能力但不会学”</h2>
+<p>例如模型结构足够强，</p>
+<p>但：</p>
+<ul>
+<li>Learning Rate 不合适；</li>
+<li>梯度消失；</li>
+<li>初始化差；</li>
+<li>数据不足；</li>
+<li>Loss 不匹配。</li>
+</ul>
+<p>结果仍然很差。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Can\ Represent
+\neq
+Can\ Train
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这就是为什么-activation-设计同时考虑梯度">81. 这就是为什么
+Activation 设计同时考虑梯度</h2>
+<p>如果只关注表达能力：</p>
+<blockquote>
+<p>很多非线性函数都可以。</p>
+</blockquote>
+<p>但真正深度学习里，还要问：</p>
+<blockquote>
+<p>梯度是否容易传播？</p>
+</blockquote>
+<p>于是 ReLU、GELU、SiLU 等函数的工程价值开始体现。</p>
+<hr />
+<h2 id="第二课-第-2-阶段五个核心心智模型">82. 第二课 · 第 2
+阶段五个核心心智模型</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>心智模型</th>
+<th>核心认知</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① Activation 打破线性坍缩</strong></td>
+<td>没有非线性，再多 Linear Layer 仍等价于一个 Linear Layer</td>
+</tr>
+<tr class="even">
+<td><strong>② 非线性让网络重新塑造表示空间</strong></td>
+<td>网络不断切割、折叠、重新组合输入</td>
+</tr>
+<tr class="odd">
+<td><strong>③ Activation 同时影响梯度传播</strong></td>
+<td>表达能力和可训练性必须一起考虑</td>
+</tr>
+<tr class="even">
+<td><strong>④ Deep 的本质是函数的层级组合</strong></td>
+<td>简单非线性反复组合可以形成复杂表示</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ Activation 必须和整个架构匹配</strong></td>
+<td>不存在脱离模型结构的“绝对最佳激活函数”</td>
+</tr>
+</tbody>
+</table>
+<p>如果只记一个公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>h</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+h=f(WX+b)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果只记一个结论">83. 如果只记一个结论</h2>
+<p>请记住：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>没</mi><mi>有</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>，</mi><mn>1000</mn><mi>层</mi><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>和</mi><mn>1</mn><mi>层</mi><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>在</mi><mi>表</mi><mi>达</mi><mi>类</mi><mi>型</mi><mi>上</mi><mi>没</mi><mi>有</mi><mi>本</mi><mi>质</mi><mi>区</mi><mi>别</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+没有Activation，
+1000层Linear
+和
+1层Linear
+在表达类型上没有本质区别。
+}
+</annotation></semantics></math></p>
+<p>而加入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>o</mi><mi>n</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+Nonlinearity
+</annotation></semantics></math></p>
+<p>之后：</p>
+<blockquote>
+<p>网络才真正开始拥有深度带来的表达能力。</p>
+</blockquote>
+<hr />
+<h2 id="sigmoidtanhrelugelusilu-怎么暂时记">84.
+Sigmoid、Tanh、ReLU、GELU、SiLU 怎么暂时记？</h2>
+<p>可以先建立一个简单地图：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Activation</th>
+<th>直觉</th>
+<th>当前最重要认知</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Sigmoid</td>
+<td>压到 0～1</td>
+<td>二分类输出常见，但隐藏层容易饱和</td>
+</tr>
+<tr class="even">
+<td>Tanh</td>
+<td>压到 -1～1</td>
+<td>Zero-centered，但仍有饱和</td>
+</tr>
+<tr class="odd">
+<td>ReLU</td>
+<td>负数砍 0</td>
+<td>简单、梯度友好，但可能 Dying ReLU</td>
+</tr>
+<tr class="even">
+<td>GELU</td>
+<td>平滑筛选</td>
+<td>Transformer 中经典选择</td>
+</tr>
+<tr class="odd">
+<td>SiLU</td>
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">x\sigma(x)</annotation></semantics></math></td>
+<td>现代 LLM/门控 FFN 中常见</td>
+</tr>
+</tbody>
+</table>
+<p>不用死背细节。</p>
+<p>真正需要理解：</p>
+<blockquote>
+<p>它们是在“非线性表达”和“梯度行为”之间做不同设计。</p>
+</blockquote>
+<hr />
+<h2 id="一个数值思维实验">85. 一个数值思维实验</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mi>−</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">
+z=-2
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p>Sigmoid：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mn>0.119</mn></mrow><annotation encoding="application/x-tex">
+\sigma(-2)\approx0.119
+</annotation></semantics></math></p>
+<p>Tanh：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>tanh</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mi>−</mi><mn>0.964</mn></mrow><annotation encoding="application/x-tex">
+\tanh(-2)\approx-0.964
+</annotation></semantics></math></p>
+<p>ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>−</mi><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+ReLU(-2)=0
+</annotation></semantics></math></p>
+<p>三种 Activation：</p>
+<blockquote>
+<p>面对完全相同的输入，</p>
+</blockquote>
+<p>产生完全不同的 Representation。</p>
+<hr />
+<h2 id="再看-z2">86. 再看
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">z=2</annotation></semantics></math></h2>
+<p>Sigmoid：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.881</mn><annotation encoding="application/x-tex">
+0.881
+</annotation></semantics></math></p>
+<p>Tanh：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.964</mn><annotation encoding="application/x-tex">
+0.964
+</annotation></semantics></math></p>
+<p>ReLU：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>2</mn><annotation encoding="application/x-tex">
+2
+</annotation></semantics></math></p>
+<p>这说明：</p>
+<blockquote>
+<p>Activation 不只是“加一个开关”。</p>
+</blockquote>
+<p>它直接决定：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>下</mi><mi>一</mi><mi>层</mi><mi>看</mi><mi>到</mi><mi>什</mi><mi>么</mi><mi>数</mi><mi>字</mi></mrow><annotation encoding="application/x-tex">
+下一层看到什么数字
+</annotation></semantics></math></p>
+<hr />
+<h2 id="下一层为什么在乎这些数字">87. 下一层为什么在乎这些数字？</h2>
+<p>下一层做：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><mi>h</mi><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+z_2=W_2h+b_2
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>h</mi><annotation encoding="application/x-tex">
+h
+</annotation></semantics></math></p>
+<p>就是上一层 Activation 的输出。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Activation
+</annotation></semantics></math></p>
+<p>改变：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>h</mi><annotation encoding="application/x-tex">
+h
+</annotation></semantics></math></p>
+<p>就会改变整个后续网络。</p>
+<hr />
+<h2 id="现在把一个两层网络完整写出来">88.
+现在把一个两层网络完整写出来</h2>
+<p>输入：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">
+X
+</annotation></semantics></math></p>
+<p>第一层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>=</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">
+z_1=W_1X+b_1
+</annotation></semantics></math></p>
+<p>激活：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h=ReLU(z_1)
+</annotation></semantics></math></p>
+<p>第二层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>2</mn></msub><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><mi>h</mi><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+z_2=W_2h+b_2
+</annotation></semantics></math></p>
+<p>二分类输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>z</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(z_2)
+</annotation></semantics></math></p>
+<p>完整：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>2</mn></msub><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+p
+=
+\sigma(
+W_2
+ReLU(W_1X+b_1)
++b_2
+)
+}
+</annotation></semantics></math></p>
+<p>这已经是一个真正的小型神经网络了。</p>
+<hr />
+<h2 id="这已经比-logistic-regression-多了什么">89. 这已经比 Logistic
+Regression 多了什么？</h2>
+<p>Logistic Regression：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p=\sigma(WX+b)
+</annotation></semantics></math></p>
+<p>小型神经网络：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>2</mn></msub><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>X</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+p
+=
+\sigma(
+W_2ReLU(W_1X+b_1)+b_2
+)
+</annotation></semantics></math></p>
+<p>关键多出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Hidden\ Representation
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>h</mi><annotation encoding="application/x-tex">
+h
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这就是下一阶段的主角">90. 这就是下一阶段的主角</h2>
+<p>下一阶段我们要正式进入：</p>
+<h1 id="hidden-layer-1">Hidden Layer</h1>
+<p>隐藏层。</p>
+<p>我们会真正理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+InputLayer
+\rightarrow
+HiddenLayer
+\rightarrow
+OutputLayer
+</annotation></semantics></math></p>
+<p>为什么叫“隐藏”，每一层的维度意味着什么，多个神经元如何一起形成新的
+Representation，以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>i</mi><mi>d</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Width
+}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Depth
+}
+</annotation></semantics></math></p>
+<p>分别意味着什么。</p>
+<hr />
+<h2 id="第二课-第-2-阶段掌握标准">91. 第二课 · 第 2 阶段掌握标准</h2>
+<p>学完这一阶段以后，看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h=ReLU(WX+b)
+</annotation></semantics></math></p>
+<p>你应该马上知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+WX+b
+</annotation></semantics></math></p>
+<p>负责：</p>
+<blockquote>
+<p>线性组合。</p>
+</blockquote>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+ReLU
+</annotation></semantics></math></p>
+<p>负责：</p>
+<blockquote>
+<p>引入非线性。</p>
+</blockquote>
+<p>看到连续：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mo>→</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Linear
+\rightarrow
+Linear
+</annotation></semantics></math></p>
+<p>应该立即警觉：</p>
+<blockquote>
+<p>如果中间没有非线性，它们可以合并。</p>
+</blockquote>
+<p>看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>i</mi><mi>g</mi><mi>m</mi><mi>o</mi><mi>i</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Sigmoid
+</annotation></semantics></math></p>
+<p>应该想到：</p>
+<blockquote>
+<p>0～1、饱和、梯度变小、常用于二分类输出。</p>
+</blockquote>
+<p>看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+ReLU
+</annotation></semantics></math></p>
+<p>应该想到：</p>
+<blockquote>
+<p>简单、正区梯度好、负区为 0、可能 Dying ReLU。</p>
+</blockquote>
+<p>看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>E</mi><mi>L</mi><mi>U</mi><mi>/</mi><mi>S</mi><mi>i</mi><mi>L</mi><mi>U</mi></mrow><annotation encoding="application/x-tex">
+GELU/SiLU
+</annotation></semantics></math></p>
+<p>应该知道：</p>
+<blockquote>
+<p>它们是现代深层模型常见的平滑非线性。</p>
+</blockquote>
+<hr />
+<h2 id="最后用一句话把前两阶段串起来">92.
+最后用一句话把前两阶段串起来</h2>
+<p>第一阶段告诉我们：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>u</mi><mi>r</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>e</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>S</mi><mi>u</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Neuron
+=
+Weighted\ Sum
+}
+</annotation></semantics></math></p>
+<p>第二阶段告诉我们：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>N</mi><mi>e</mi><mi>t</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>真</mi><mi>正</mi><mi>开</mi><mi>始</mi><mi>变</mi><mi>强</mi><mo>=</mo><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>e</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>S</mi><mi>u</mi><mi>m</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>n</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Neural\ Network
+真正开始变强
+=
+Weighted\ Sum
++
+Nonlinearity
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>h</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mi>X</mi><mo>+</mo><mi>b</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+h=f(WX+b)
+}
+</annotation></semantics></math></p>
+<p>这一个公式，从今天开始会一直陪我们走到 Transformer。</p>
+<hr />
+<p>下一阶段就是 <strong>第二课 · 第 3 阶段：Hidden Layer 与
+Representation——为什么一层神经元只能学简单模式，多层网络却能逐层形成“资格限制
+→ 竞争影响 → 合规风险”这样的抽象概念。</strong></p>
+<p>那一阶段我们会第一次完整搭出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><msub><mi>n</mi><mn>1</mn></msub><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><msub><mi>n</mi><mn>2</mn></msub><mo>→</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Input
+\rightarrow
+Hidden_1
+\rightarrow
+Hidden_2
+\rightarrow
+Output
+}
+</annotation></semantics></math></p>
+<p>并开始真正理解 <strong>Width、Depth、Hidden Dimension、Parameter
+Count，以及“模型内部表征”究竟是什么。</strong></p>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

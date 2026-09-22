@@ -1,0 +1,166 @@
+{
+  "course": "第十一课：ProcurementLM V1.0 政府采购合规智能体全流程实战",
+  "revision": "Stage1-16 中文释义增强完整终版",
+  "status": "complete_revised_canonical",
+  "planned_total_stages": 16,
+  "saved_through_stage": 16,
+  "lesson11_progress": "16/16",
+  "course_progress": "130/130",
+  "final_deliverable": "ProcurementLM_V1.0",
+  "latest_stage_artifact": "ProcurementLM_V1.0",
+  "base_snapshot": "/mnt/data/procurement_ml_eleventh_lesson_stage01_stage15_revised_cn_formula_enhanced",
+  "prior_canonical_markdown_preserved_byte_identically": true,
+  "prior_markdown_sha256": {
+    "roadmap.md": "ca81b2cc5778a5fe14dd06240a1601d648e7e5001a88b0fd62187b7a067a26c6",
+    "stage01.md": "694e98ebabf92a9dd9235769af7d67e383240b967409b30ddf774cc694c1053f",
+    "stage02.md": "e6fee08e8b1649278bd8d14da15d1d51b4120f8c3018e57672b9a8a2aea52bb6",
+    "stage03.md": "c99f536d1da0ecc46decd31aec2563c05842a6f98e1527566179bd4a9820f2df",
+    "stage04.md": "a7303d4f65dcaca7f1b6b7604d1115a0a9a426bc37a3a6c1954975e98fd7842e",
+    "stage05.md": "4990fef4cbb673be633f6bb0ef1f43703cfc3e2b117875e790d4e296cf927078",
+    "stage06.md": "4e83bee7c397f6c4772a3071bf14ae3e32495098fe77cb936f242e3369583414",
+    "stage07.md": "5323dce20b998c79e8e23c91271d048ee0ae7fea34758fb9981c4b2c968cf03d",
+    "stage08.md": "ed8f1332c2beb0fb5b7e7eea3fc65005dea693aeaf03d997db43c0f2b96ca2ea",
+    "stage09.md": "9f9513976a6672a31a41dc63e8a36656369a33fd27292dec0165954259a1b696",
+    "stage10.md": "92d0f4a21a347dceceab3d3c2730e650aad41961533899354d3fc0eef2a2ff1a",
+    "stage11.md": "3a85f7e5039f8341c49ede46084e8170329a16f22bf4eb447c144b172608a5ec",
+    "stage12.md": "c536202b9b78720e55a2e46b326ccb089ec4f3465a6329fb81b0ad96a34bb203",
+    "stage13.md": "e4561fb6246f625f0dbf1c1692318171a6757df3650b75c6901f9e78d55dd8e5",
+    "stage14.md": "3bd10700cba63dfe6a008612372481c82f90bee764264836b3ffde42bd418236",
+    "stage15.md": "39eb944c17a5ee6c4ad9ed63bab948693d928c1c7092043034270c58eabe3851"
+  },
+  "stage16_validation": {
+    "english_only_code_lines_without_adjacent_cn": 0,
+    "english_only_math_without_chinese_gloss": 0,
+    "visible_raw_formula_delimiters": 0
+  },
+  "stages": [
+    {
+      "stage": 1,
+      "md_bytes": 37483,
+      "md_sha256": "694e98ebabf92a9dd9235769af7d67e383240b967409b30ddf774cc694c1053f",
+      "html_bytes": 71012,
+      "mathml_nodes": 40,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 2,
+      "md_bytes": 42798,
+      "md_sha256": "e6fee08e8b1649278bd8d14da15d1d51b4120f8c3018e57672b9a8a2aea52bb6",
+      "html_bytes": 76847,
+      "mathml_nodes": 37,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 3,
+      "md_bytes": 49411,
+      "md_sha256": "c99f536d1da0ecc46decd31aec2563c05842a6f98e1527566179bd4a9820f2df",
+      "html_bytes": 87285,
+      "mathml_nodes": 42,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 4,
+      "md_bytes": 57453,
+      "md_sha256": "a7303d4f65dcaca7f1b6b7604d1115a0a9a426bc37a3a6c1954975e98fd7842e",
+      "html_bytes": 107522,
+      "mathml_nodes": 56,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 5,
+      "md_bytes": 48953,
+      "md_sha256": "4990fef4cbb673be633f6bb0ef1f43703cfc3e2b117875e790d4e296cf927078",
+      "html_bytes": 94578,
+      "mathml_nodes": 46,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 6,
+      "md_bytes": 60554,
+      "md_sha256": "4e83bee7c397f6c4772a3071bf14ae3e32495098fe77cb936f242e3369583414",
+      "html_bytes": 109108,
+      "mathml_nodes": 51,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 7,
+      "md_bytes": 50078,
+      "md_sha256": "5323dce20b998c79e8e23c91271d048ee0ae7fea34758fb9981c4b2c968cf03d",
+      "html_bytes": 94697,
+      "mathml_nodes": 47,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 8,
+      "md_bytes": 62650,
+      "md_sha256": "ed8f1332c2beb0fb5b7e7eea3fc65005dea693aeaf03d997db43c0f2b96ca2ea",
+      "html_bytes": 116930,
+      "mathml_nodes": 60,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 9,
+      "md_bytes": 57447,
+      "md_sha256": "9f9513976a6672a31a41dc63e8a36656369a33fd27292dec0165954259a1b696",
+      "html_bytes": 108230,
+      "mathml_nodes": 54,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 10,
+      "md_bytes": 60414,
+      "md_sha256": "92d0f4a21a347dceceab3d3c2730e650aad41961533899354d3fc0eef2a2ff1a",
+      "html_bytes": 107520,
+      "mathml_nodes": 50,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 11,
+      "md_bytes": 66824,
+      "md_sha256": "3a85f7e5039f8341c49ede46084e8170329a16f22bf4eb447c144b172608a5ec",
+      "html_bytes": 123122,
+      "mathml_nodes": 57,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 12,
+      "md_bytes": 66212,
+      "md_sha256": "c536202b9b78720e55a2e46b326ccb089ec4f3465a6329fb81b0ad96a34bb203",
+      "html_bytes": 116833,
+      "mathml_nodes": 51,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 13,
+      "md_bytes": 66578,
+      "md_sha256": "e4561fb6246f625f0dbf1c1692318171a6757df3650b75c6901f9e78d55dd8e5",
+      "html_bytes": 113082,
+      "mathml_nodes": 51,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 14,
+      "md_bytes": 61774,
+      "md_sha256": "3bd10700cba63dfe6a008612372481c82f90bee764264836b3ffde42bd418236",
+      "html_bytes": 105750,
+      "mathml_nodes": 47,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 15,
+      "md_bytes": 58782,
+      "md_sha256": "39eb944c17a5ee6c4ad9ed63bab948693d928c1c7092043034270c58eabe3851",
+      "html_bytes": 108132,
+      "mathml_nodes": 56,
+      "visible_raw_formula_delimiters": 0
+    },
+    {
+      "stage": 16,
+      "md_bytes": 69355,
+      "md_sha256": "81a73ed3ae323e2663f045d596266e999535b6d38c7598b7305ec4416b6548cb",
+      "html_bytes": 122279,
+      "mathml_nodes": 55,
+      "visible_raw_formula_delimiters": 0
+    }
+  ]
+}

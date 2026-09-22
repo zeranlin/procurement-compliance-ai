@@ -1,0 +1,3255 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第7阶段：数据泄漏与 Benchmark 污染</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第7阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>泄漏的本质，是测试问题相关的信息通过某条不被允许的路径参与了模型开发。</li><li>Split不重叠 ≠ 没有泄漏</li><li>Leakage 的本质不是“文件重复”， 而是答案相关信息越过了不该越过的边界</li></ul></div><h1 id="第四课-第-7-阶段数据泄漏与-benchmark-污染">第四课 · 第 7
+阶段：数据泄漏与 Benchmark 污染</h1>
+<h2
+id="为什么-train-和-test-明明已经按-project-完全分开模型仍然可能提前看过答案">为什么
+Train 和 Test 明明已经按 Project
+完全分开，模型仍然可能“提前看过答案”？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-6">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-6">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>泄漏的本质，是测试问题相关的信息通过某条不被允许的路径参与了模型开发。</strong></li>
+<li><strong>Split不重叠 ≠ 没有泄漏</strong></li>
+<li><strong>Leakage 的本质不是“文件重复”，
+而是答案相关信息越过了不该越过的边界</strong></li>
+<li><strong>泄漏既可能发生在数据里，
+也可能发生在Prompt、RAG、规则和人脑里</strong></li>
+<li><strong>时间方向非常重要：
+未来信息不能帮助模型回答过去时点的测试问题</strong></li>
+<li><strong>Test被反复用于改系统， 就会逐渐变成Validation</strong></li>
+<li><strong>防泄漏不能只靠“大家小心一点”， 必须建立Benchmark
+Firewall</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-6">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="odd">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="even">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="odd">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="even">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="odd">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="even">
+<td><code>Threshold</code></td>
+<td>阈值：把连续分数转成业务动作的决策门槛</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-6">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 6 阶段结束以后，我们已经做了一件非常专业的事情：</p>
+<p>没有再用：</p>
+<pre class="text"><code>Clause Row</code></pre>
+<p>作为唯一切分单位。</p>
+<p>而是开始建立：</p>
+<pre class="text"><code>Project
++
+Duplicate Group
++
+Lineage
++
+必要的 Template Relation</code></pre>
+<p>最终得到：</p>
+<h1 id="datasetsplit_v0.1-2"><code>DatasetSplit_V0.1</code></h1>
+<p>也就是说，我们已经尽量确保：</p>
+<pre class="text"><code>同一项目
+不会一半Train、一半Test
+
+完全重复样本
+不会一边Train、一边Test
+
+由同一母样本派生的数据
+不会跨Split乱跑</code></pre>
+<p>看起来似乎已经安全了。</p>
+<p>但现在我要给你一个有点残酷的结论：</p>
+<blockquote>
+<p><strong>Train/Test 完全没有相同 <code>project_id</code>，仍然不能证明
+Benchmark 没有泄漏。</strong></p>
+</blockquote>
+<p>例如 Test 中有这样一条采购条款：</p>
+<blockquote>
+<p>“供应商须在本市设有固定服务机构。”</p>
+</blockquote>
+<p>项目本身：</p>
+<blockquote>
+<p>从没进入 Train。</p>
+</blockquote>
+<p>但是团队以前已经把这条 Test Case 的专家分析写进：</p>
+<pre class="text"><code>内部培训材料
+专家案例Excel
+Prompt示例
+规则库
+RAG知识库
+错误分析报告
+Synthetic Data生成源</code></pre>
+<p>甚至开发人员已经看过它几十遍。</p>
+<p>那么模型虽然没有：</p>
+<blockquote>
+<p>直接训练那一行 Test 数据，</p>
+</blockquote>
+<p>整个系统却可能已经：</p>
+<blockquote>
+<p><strong>提前知道答案。</strong></p>
+</blockquote>
+<p>这就是今天要解决的东西：</p>
+<h1 id="data-leakage-2">Data Leakage</h1>
+<p>以及更加隐蔽的：</p>
+<h1 id="benchmark-contamination">Benchmark Contamination</h1>
+<hr />
+<h1
+id="一本阶段真正要解决的一个核心问题-5">一、本阶段真正要解决的一个核心问题</h1>
+<p>今天只解决：</p>
+<blockquote>
+<p><strong>怎样判断一份 Test Set
+是否真的处于“模型开发流程之外”，并建立一套机制，防止测试答案通过标签、时间、派生数据、RAG、Prompt、规则、人类调参等路径重新流回训练和开发系统？</strong></p>
+</blockquote>
+<p>最终我们要得到：</p>
+<h1 id="leakageaudit_v0.1-1"><code>LeakageAudit_V0.1</code></h1>
+<p>整个过程可以先压成：</p>
+<pre class="text"><code>DatasetSplit_V0.1
+        ↓
+Identify Leakage Paths
+        ↓
+Trace Data Lineage
+        ↓
+Check Train / Val / Test Boundaries
+        ↓
+Check RAG / Prompt / Rules / Synthetic Data
+        ↓
+Check Time Direction
+        ↓
+Check Human Feedback Loop
+        ↓
+Benchmark Firewall
+        ↓
+LeakageAudit_V0.1</code></pre>
+<hr />
+<h1 id="二本阶段先建立-6-个核心心智模型-1">二、本阶段先建立 6
+个核心心智模型</h1>
+<p>先把这六句话钉住：</p>
+<pre class="text"><code>① Split不重叠
+   ≠
+   没有泄漏
+
+② Leakage 的本质不是“文件重复”，
+   而是答案相关信息越过了不该越过的边界
+
+③ 泄漏既可能发生在数据里，
+   也可能发生在Prompt、RAG、规则和人脑里
+
+④ 时间方向非常重要：
+   未来信息不能帮助模型回答过去时点的测试问题
+
+⑤ Test被反复用于改系统，
+   就会逐渐变成Validation
+
+⑥ 防泄漏不能只靠“大家小心一点”，
+   必须建立Benchmark Firewall</code></pre>
+<p>如果今天只能记住一句：</p>
+<blockquote>
+<p><strong>泄漏的本质，是测试问题相关的信息通过某条不被允许的路径参与了模型开发。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三先回答什么才叫泄漏">三、先回答：什么才叫“泄漏”？</h1>
+<p>很多人想到 Data Leakage，会立刻想到：</p>
+<pre class="text"><code>Train里有Test原文</code></pre>
+<p>这当然是最明显的一种。</p>
+<p>但定义应该更宽。</p>
+<p>我们可以先这样理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>=</mo><mi>不</mi><mi>应</mi><mi>该</mi><mi>在</mi><mi>开</mi><mi>发</mi><mi>阶</mi><mi>段</mi><mi>可</mi><mi>用</mi><mi>的</mi><mi>信</mi><mi>息</mi><mi>进</mi><mi>入</mi><mi>了</mi><mi>模</mi><mi>型</mi><mi>开</mi><mi>发</mi><mi>路</mi><mi>径</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Leakage
+=
+不应该在开发阶段可用的信息
+进入了模型开发路径
+}
+</annotation></semantics></math></p>
+<p>这里关键有三个词：</p>
+<pre class="text"><code>不应该
+信息
+开发路径</code></pre>
+<hr />
+<h1 id="四信息不一定是原始文本">四、“信息”不一定是原始文本</h1>
+<p>它可以是：</p>
+<pre class="text"><code>Test原文
+Test标签
+专家解释
+最终裁决
+更正结果
+投诉处理结果
+中标结果
+Test案例摘要
+Test案例改写
+Test答案提炼出的规则</code></pre>
+<p>甚至可以只是：</p>
+<blockquote>
+<p>一个开发人员看完 Test 错误后总结出来的经验。</p>
+</blockquote>
+<hr />
+<h1 id="五开发路径也不只是-sft">五、“开发路径”也不只是 SFT</h1>
+<p>可能包括：</p>
+<pre class="text"><code>CPT
+SFT
+Few-shot Prompt
+System Prompt
+Rule Engine
+RAG Index
+Synthetic Data
+Threshold Tuning
+Model Selection
+Error Analysis
+Human Workflow</code></pre>
+<p>所以如果只检查：</p>
+<pre class="text"><code>train.jsonl</code></pre>
+<p>远远不够。</p>
+<hr />
+<h1 id="六今天第一张总图">六、今天第一张总图</h1>
+<pre class="text"><code>                     TEST CASE
+                         │
+       ┌─────────────────┼──────────────────┐
+       ▼                 ▼                  ▼
+     原文               标签              专家解释
+       │                 │                  │
+       └────────────┬────┴────────────┬─────┘
+                    │                 │
+                    ▼                 ▼
+                 数据集             文档/报告
+                    │                 │
+          ┌─────────┼────────┐        │
+          ▼         ▼        ▼        ▼
+         SFT       CPT    Synthetic   RAG
+          │         │        │        │
+          └─────────┼────────┼────────┘
+                    ▼
+                  MODEL
+                    │
+                    ▼
+                  TEST</code></pre>
+<p>只要 Test Case 的答案相关信息：</p>
+<blockquote>
+<p>绕了一圈又回到模型，</p>
+</blockquote>
+<p>就可能污染 Benchmark。</p>
+<hr />
+<h1 id="七第一类泄漏label-leakage">七、第一类泄漏：Label Leakage</h1>
+<p>这是最直接的一类。</p>
+<p>假设我们的任务是：</p>
+<blockquote>
+<p>输入采购条款，判断有没有潜在风险。</p>
+</blockquote>
+<p>理想输入：</p>
+<pre class="text"><code>供应商须在本市注册满5年。</code></pre>
+<p>Label：</p>
+<pre class="text"><code>potential_risk</code></pre>
+<hr />
+<h1
+id="八结果数据工程师生成训练输入时变成">八、结果数据工程师生成训练输入时变成：</h1>
+<pre class="text"><code>风险条款：
+供应商须在本市注册满5年。</code></pre>
+<p>模型还需要判断吗？</p>
+<p>几乎不需要。</p>
+<hr />
+<h1 id="九因为">九、因为：</h1>
+<pre class="text"><code>风险条款</code></pre>
+<p>已经告诉它：</p>
+<blockquote>
+<p>答案。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="label-leakage-2">Label Leakage</h1>
+<hr />
+<h1 id="十现实中-label-leakage-往往没有这么傻">十、现实中 Label Leakage
+往往没有这么傻</h1>
+<p>它可能藏得很深。</p>
+<p>例如 Excel：</p>
+<table>
+<thead>
+<tr class="header">
+<th>条款</th>
+<th>专家意见</th>
+<th>风险类别</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>供应商须……</td>
+<td>建议删除地域限制</td>
+<td>资格风险</td>
+</tr>
+</tbody>
+</table>
+<p>后来构造模型 Input 时：</p>
+<pre class="text"><code>条款：
+供应商须……
+
+专家意见：
+建议删除地域限制</code></pre>
+<p>Output：</p>
+<pre class="text"><code>是否有风险？</code></pre>
+<hr />
+<h1 id="十一这不是让模型判断风险">十一、这不是让模型判断风险。</h1>
+<p>这是让模型：</p>
+<blockquote>
+<p>从专家意见里抄答案。</p>
+</blockquote>
+<hr />
+<h1 id="十二再例如文件夹结构">十二、再例如文件夹结构</h1>
+<p>数据来自：</p>
+<pre class="text"><code>/risky_cases/</code></pre>
+<p>和：</p>
+<pre class="text"><code>/normal_cases/</code></pre>
+<p>如果你把文件路径也作为 Feature：</p>
+<p>模型可能根本不看正文。</p>
+<hr />
+<h1 id="十三甚至文件名">十三、甚至文件名</h1>
+<pre class="text"><code>违规案例_001.pdf</code></pre>
+<p>如果 OCR Pipeline 把：</p>
+<pre class="text"><code>违规案例</code></pre>
+<p>写进输入 Metadata，</p>
+<p>答案又泄漏了。</p>
+<hr />
+<h1 id="十四所以第一个检查问题">十四、所以第一个检查问题</h1>
+<p>不是：</p>
+<blockquote>
+<p>“Label 列有没有放进 Input？”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>Input 里有没有任何由
+Label、裁决或专家结论派生出来的信息？</strong></p>
+</blockquote>
+<hr />
+<h1 id="十五这叫-target-proxy">十五、这叫 Target Proxy</h1>
+<p>目标代理变量。</p>
+<p>它没有直接写：</p>
+<pre class="text"><code>risk=true</code></pre>
+<p>但实际上高度暗示答案。</p>
+<hr />
+<h1 id="十六例如">十六、例如：</h1>
+<pre class="text"><code>review_status = 已责令整改</code></pre>
+<p>模型看到这个字段，</p>
+<p>再判断：</p>
+<blockquote>
+<p>“有没有风险？”</p>
+</blockquote>
+<p>几乎已经知道答案。</p>
+<hr />
+<h1 id="十七再比如">十七、再比如：</h1>
+<pre class="text"><code>complaint_result = 投诉成立</code></pre>
+<p>如果你的任务是在投诉发生之前判断采购条款风险，</p>
+<p>这个字段：</p>
+<blockquote>
+<p>来自未来。</p>
+</blockquote>
+<p>同时属于：</p>
+<h1 id="label-leakage-3">Label Leakage</h1>
+<p>和：</p>
+<h1 id="temporal-leakage-1">Temporal Leakage</h1>
+<hr />
+<h1 id="十八这就是泄漏的一个特点">十八、这就是泄漏的一个特点</h1>
+<p>一条信息：</p>
+<blockquote>
+<p>可能同时属于多个泄漏类型。</p>
+</blockquote>
+<hr />
+<h1 id="十九第二类project-leakage">十九、第二类：Project Leakage</h1>
+<p>第六阶段已经重点讲过。</p>
+<p>例如：</p>
+<pre class="text"><code>Project A
+├── Clause 1 → Train
+├── Clause 2 → Train
+└── Clause 3 → Test</code></pre>
+<hr />
+<h1 id="二十clause-3-虽然没有进入-train">二十、Clause 3 虽然没有进入
+Train，</h1>
+<p>但模型已经知道：</p>
+<pre class="text"><code>项目背景
+采购类型
+模板
+同章上下文
+大量相关条件</code></pre>
+<p>这叫：</p>
+<h1 id="project-leakage">Project Leakage</h1>
+<hr />
+<h1 id="二十一这类泄漏通常通过">二十一、这类泄漏通常通过：</h1>
+<pre class="text"><code>project_id</code></pre>
+<p>做 Group Split 可以明显降低。</p>
+<p>但注意：</p>
+<blockquote>
+<p>“不同 project_id”仍然不代表完全独立。</p>
+</blockquote>
+<p>因为还可能有：</p>
+<blockquote>
+<p>Template Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="二十二第三类duplicate-leakage">二十二、第三类：Duplicate
+Leakage</h1>
+<p>例如：</p>
+<p>Train：</p>
+<blockquote>
+<p>“投标人须在本市设立固定服务机构。”</p>
+</blockquote>
+<p>Test：</p>
+<blockquote>
+<p>“投标人须在本市设立固定的服务机构。”</p>
+</blockquote>
+<p>只多了一个：</p>
+<pre class="text"><code>的</code></pre>
+<hr />
+<h1 id="二十三exact-hash">二十三、Exact Hash：</h1>
+<blockquote>
+<p>不一样。</p>
+</blockquote>
+<p>但模型实际上：</p>
+<blockquote>
+<p>几乎看过原题。</p>
+</blockquote>
+<hr />
+<h1 id="二十四这就是">二十四、这就是：</h1>
+<h1 id="near-duplicate-leakage">Near Duplicate Leakage</h1>
+<p>第五阶段已经建立：</p>
+<pre class="text"><code>duplicate_group_id</code></pre>
+<p>和相似度审计。</p>
+<p>今天真正要记：</p>
+<blockquote>
+<p><strong>泄漏不要求字符完全一样。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十五甚至可以改写成">二十五、甚至可以改写成：</h1>
+<p>Train：</p>
+<blockquote>
+<p>“供应商必须在本地设置售后机构。”</p>
+</blockquote>
+<p>Test：</p>
+<blockquote>
+<p>“投标人应在项目所在地建立固定服务网点。”</p>
+</blockquote>
+<p>字符串完全不同。</p>
+<p>业务结构：</p>
+<blockquote>
+<p>极其接近。</p>
+</blockquote>
+<hr />
+<h1 id="二十六这时">二十六、这时：</h1>
+<h1 id="embedding-semantic-similarity">Embedding / Semantic
+Similarity</h1>
+<p>就可以成为泄漏审计工具之一。</p>
+<p>但仍然要结合：</p>
+<pre class="text"><code>数字
+否定词
+单位
+上下文</code></pre>
+<p>判断是不是：</p>
+<blockquote>
+<p>真正等价。</p>
+</blockquote>
+<hr />
+<h1 id="二十七第四类template-leakage">二十七、第四类：Template
+Leakage</h1>
+<p>政府采购数据里非常重要。</p>
+<p>假设某代理机构有模板：</p>
+<pre class="text"><code>供应商须：
+1. ……
+2. ……
+3. ……</code></pre>
+<p>Project A、B、C、D：</p>
+<blockquote>
+<p>都使用它。</p>
+</blockquote>
+<hr />
+<h1 id="二十八train-有">二十八、Train 有：</h1>
+<pre class="text"><code>A
+B
+C</code></pre>
+<p>Test 有：</p>
+<pre class="text"><code>D</code></pre>
+<p>虽然项目完全不同，</p>
+<p>模型可能已经：</p>
+<blockquote>
+<p>把模板套路学得滚瓜烂熟。</p>
+</blockquote>
+<hr />
+<h1 id="二十九这不一定代表-benchmark-完全无效">二十九、这不一定代表
+Benchmark 完全无效。</h1>
+<p>关键看：</p>
+<blockquote>
+<p>你想测什么。</p>
+</blockquote>
+<hr />
+<h1
+id="三十如果生产环境本来就会继续出现同模板项目">三十、如果生产环境本来就会继续出现同模板项目，</h1>
+<p>Seen-template Test：</p>
+<blockquote>
+<p>是合理的。</p>
+</blockquote>
+<hr />
+<h1 id="三十一但如果你声称">三十一、但如果你声称：</h1>
+<blockquote>
+<p>“模型对新采购文件结构具有强泛化能力。”</p>
+</blockquote>
+<p>那最好还要有：</p>
+<h1 id="unseen-template-test">Unseen-template Test</h1>
+<hr />
+<h1 id="三十二所以-template-leakage-更准确地说">三十二、所以 Template
+Leakage 更准确地说：</h1>
+<blockquote>
+<p>有时不是“绝对非法泄漏”，而是“需要被明确控制和报告的泛化重叠”。</p>
+</blockquote>
+<hr />
+<h1
+id="三十三这就是为什么上一阶段我们把">三十三、这就是为什么上一阶段我们把：</h1>
+<pre class="text"><code>Project / Exact Duplicate</code></pre>
+<p>更多视为：</p>
+<h1 id="hard-constraint-1">Hard Constraint</h1>
+<p>而：</p>
+<pre class="text"><code>Template
+Agency
+Region</code></pre>
+<p>更多可以作为：</p>
+<h1 id="generalization-slice">Generalization Slice</h1>
+<hr />
+<h1 id="三十四第五类temporal-leakage">三十四、第五类：Temporal
+Leakage</h1>
+<p>这是专业项目最容易忽视的一种。</p>
+<p>先看一个简单例子。</p>
+<p>我们要模拟：</p>
+<blockquote>
+<p>2026 年 1 月 1 日时，模型审查一个采购项目。</p>
+</blockquote>
+<hr />
+<h1 id="三十五理想情况">三十五、理想情况：</h1>
+<p>模型只能使用：</p>
+<blockquote>
+<p>2026 年 1 月 1 日之前已经存在的信息。</p>
+</blockquote>
+<hr />
+<h1 id="三十六但是训练数据中加入了">三十六、但是训练数据中加入了：</h1>
+<blockquote>
+<p>2026 年 3 月发布的更正公告。</p>
+</blockquote>
+<p>这份更正公告说：</p>
+<blockquote>
+<p>删除原资格条件。</p>
+</blockquote>
+<hr />
+<h1
+id="三十七现在模型回头判断-1-月的原始-clause">三十七、现在模型回头判断 1
+月的原始 Clause：</h1>
+<blockquote>
+<p>“这条可能存在问题。”</p>
+</blockquote>
+<p>它为什么这么聪明？</p>
+<p>可能不是它真正推理出来的。</p>
+<p>而是因为：</p>
+<blockquote>
+<p>它已经知道后来被删掉了。</p>
+</blockquote>
+<hr />
+<h1 id="三十八这就是典型的">三十八、这就是典型的：</h1>
+<h1 id="look-ahead-bias">Look-ahead Bias</h1>
+<p>向未来偷看。</p>
+<hr />
+<h1 id="三十九可以写成">三十九、可以写成：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo>≤</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InformationTime
+\le
+PredictionTime
+}
+</annotation></semantics></math></p>
+<p>这应该是很多时序任务的基本约束。</p>
+<hr />
+<h1 id="四十如果">四十、如果：</h1>
+<pre class="text"><code>information_time
+&gt;
+prediction_time</code></pre>
+<p>就要高度警惕：</p>
+<blockquote>
+<p>Temporal Leakage。</p>
+</blockquote>
+<hr />
+<h1
+id="四十一政府采购数据里未来信息非常多">四十一、政府采购数据里“未来信息”非常多</h1>
+<p>例如：</p>
+<pre class="text"><code>更正公告
+投诉处理结果
+质疑答复
+监管处罚
+中标结果
+废标结果
+合同履约结果
+法院裁判
+后续审计报告</code></pre>
+<hr />
+<h1
+id="四十二这些东西当然非常有价值">四十二、这些东西当然非常有价值。</h1>
+<p>但如果任务是：</p>
+<blockquote>
+<p>在采购文件发布时预测风险，</p>
+</blockquote>
+<p>这些未来结果：</p>
+<blockquote>
+<p>不能进入 Input。</p>
+</blockquote>
+<hr />
+<h1 id="四十三但是它们可以干什么">四十三、但是它们可以干什么？</h1>
+<p>可以用于：</p>
+<h1 id="label-construction">Label Construction</h1>
+<hr />
+<h1 id="四十四比如">四十四、比如：</h1>
+<p>原始项目发布时间：</p>
+<pre class="text"><code>T0</code></pre>
+<p>半年后出现监管结论：</p>
+<pre class="text"><code>T1</code></pre>
+<p>我们可以用 T1：</p>
+<blockquote>
+<p>帮助专家构造 Gold Label。</p>
+</blockquote>
+<hr />
+<h1 id="四十五但模型输入必须仍然是">四十五、但模型输入必须仍然是：</h1>
+<blockquote>
+<p>T0 时点可见的信息。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="retrospective-label-prospective-input">Retrospective Label,
+Prospective Input</h1>
+<hr />
+<h1 id="四十六中文可以理解成">四十六、中文可以理解成：</h1>
+<blockquote>
+<p><strong>允许未来帮助我们知道正确答案，但不能让模型在回答时提前看到未来。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十七这和考试很像">四十七、这和考试很像。</h1>
+<p>老师可以：</p>
+<blockquote>
+<p>看标准答案批卷。</p>
+</blockquote>
+<p>学生考试时：</p>
+<blockquote>
+<p>不能拿标准答案。</p>
+</blockquote>
+<hr />
+<h1 id="四十八所以-dataset-里最好区分">四十八、所以 Dataset
+里最好区分：</h1>
+<pre class="text"><code>event_time
+information_available_time
+annotation_time</code></pre>
+<hr />
+<h1 id="四十九例如-1">四十九、例如：</h1>
+<div class="sourceCode" id="cb1456"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1456-1"><a href="#cb1456-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1456-2"><a href="#cb1456-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_publish_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2025-06-01&quot;</span><span class="fu">,</span></span>
+<span id="cb1456-3"><a href="#cb1456-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;correction_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2025-06-08&quot;</span><span class="fu">,</span></span>
+<span id="cb1456-4"><a href="#cb1456-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-01-10&quot;</span></span>
+<span id="cb1456-5"><a href="#cb1456-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="五十训练样本如果模拟">五十、训练样本如果模拟：</h1>
+<pre class="text"><code>2025-06-01</code></pre>
+<p>模型输入：</p>
+<blockquote>
+<p>不应该使用 6 月 8 日更正内容。</p>
+</blockquote>
+<hr />
+<h1 id="五十一但是-label-可以由">五十一、但是 Label 可以由：</h1>
+<blockquote>
+<p>2026 年专家回顾判定。</p>
+</blockquote>
+<p>这完全合理。</p>
+<hr />
+<h1 id="五十二所以-temporal-dataset-最重要的不是">五十二、所以 Temporal
+Dataset 最重要的不是：</h1>
+<blockquote>
+<p>“数据是哪一年爬的”。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>当时模型应该知道什么？</strong></p>
+</blockquote>
+<hr />
+<h1 id="五十三第六类lineage-leakage">五十三、第六类：Lineage
+Leakage</h1>
+<p>这是我们前几阶段反复保存 Data Lineage 的重要原因。</p>
+<p>假设 Test 中有样本：</p>
+<pre class="text"><code>T001</code></pre>
+<p>团队把它交给 LLM：</p>
+<blockquote>
+<p>“帮我生成 20 种改写。”</p>
+</blockquote>
+<p>得到：</p>
+<pre class="text"><code>S001
+S002
+...
+S020</code></pre>
+<hr />
+<h1 id="五十四这些-synthetic-samples">五十四、这些 Synthetic
+Samples：</h1>
+<blockquote>
+<p>文本全都和 T001 不完全一样。</p>
+</blockquote>
+<p>Exact Dedup：</p>
+<blockquote>
+<p>抓不到。</p>
+</blockquote>
+<hr />
+<h1 id="五十五然后-s001s020">五十五、然后 S001～S020：</h1>
+<blockquote>
+<p>进入 Train。</p>
+</blockquote>
+<p>最终测试 T001：</p>
+<p>模型表现特别好。</p>
+<hr />
+<h1 id="五十六这是">五十六、这是：</h1>
+<h1 id="lineage-leakage">Lineage Leakage</h1>
+<p>因为训练数据：</p>
+<blockquote>
+<p>是从 Test 派生出来的。</p>
+</blockquote>
+<hr />
+<h1 id="五十七所以-data-augmentation-的一个铁律">五十七、所以 Data
+Augmentation 的一个铁律：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>i</mi><mi>l</mi><mi>d</mi><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>i</mi><mi>n</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ChildSample
+inherits
+ParentSplit
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十八如果-parent">五十八、如果 Parent：</h1>
+<pre class="text"><code>Test</code></pre>
+<p>Child：</p>
+<blockquote>
+<p>不能去 Train。</p>
+</blockquote>
+<hr />
+<h1 id="五十九同理">五十九、同理：</h1>
+<pre class="text"><code>翻译
+改写
+摘要
+扩写
+格式转换
+问题生成
+答案生成
+Hard Negative生成</code></pre>
+<p>都属于：</p>
+<blockquote>
+<p>Derivation。</p>
+</blockquote>
+<hr />
+<h1
+id="六十所以每一个合成样本最好保存">六十、所以每一个合成样本最好保存：</h1>
+<pre class="text"><code>source_sample_id
+parent_sample_id
+generation_method
+generation_model
+generation_prompt_version</code></pre>
+<hr />
+<h1 id="六十一例如">六十一、例如：</h1>
+<div class="sourceCode" id="cb1463"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1463-1"><a href="#cb1463-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1463-2"><a href="#cb1463-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SYN-001&quot;</span><span class="fu">,</span></span>
+<span id="cb1463-3"><a href="#cb1463-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TEST-991&quot;</span><span class="fu">,</span></span>
+<span id="cb1463-4"><a href="#cb1463-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;generation_method&quot;</span><span class="fu">:</span> <span class="st">&quot;paraphrase&quot;</span><span class="fu">,</span></span>
+<span id="cb1463-5"><a href="#cb1463-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split&quot;</span><span class="fu">:</span> <span class="st">&quot;test&quot;</span></span>
+<span id="cb1463-6"><a href="#cb1463-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>而不是：</p>
+<blockquote>
+<p>重新随机 Split。</p>
+</blockquote>
+<hr />
+<h1 id="六十二这是-data-lineage-真正开始发挥作用的地方">六十二、这是
+Data Lineage 真正开始发挥作用的地方。</h1>
+<hr />
+<h1 id="六十三第七类answer-leakage">六十三、第七类：Answer Leakage</h1>
+<p>这比 Label Leakage 更广。</p>
+<p>假设 Test Case：</p>
+<pre class="text"><code>Clause:
+供应商须在本市设立固定服务机构。</code></pre>
+<p>Gold Rationale：</p>
+<blockquote>
+<p>该条件可能构成与履约无直接必要联系的地域性限制，需要结合项目实际服务要求审查。</p>
+</blockquote>
+<hr />
+<h1 id="六十四团队没有把-test-clause-放进-train">六十四、团队没有把 Test
+Clause 放进 Train。</h1>
+<p>但是把：</p>
+<h1 id="gold-rationale">Gold Rationale</h1>
+<p>放进了一个：</p>
+<pre class="text"><code>专家知识库</code></pre>
+<hr />
+<h1 id="六十五模型测试时通过-rag">六十五、模型测试时通过 RAG：</h1>
+<blockquote>
+<p>检索出了这条专家解释。</p>
+</blockquote>
+<p>然后几乎原样回答。</p>
+<hr />
+<h1 id="六十六项目隔离了吗">六十六、项目隔离了吗？</h1>
+<p>隔离了。</p>
+<p>Train/Test Row 重叠了吗？</p>
+<p>没有。</p>
+<p>但 Benchmark：</p>
+<blockquote>
+<p>仍然污染。</p>
+</blockquote>
+<hr />
+<h1 id="六十七这就是">六十七、这就是：</h1>
+<h1 id="answer-leakage">Answer Leakage</h1>
+<hr />
+<h1 id="六十八它可以通过">六十八、它可以通过：</h1>
+<pre class="text"><code>RAG
+Prompt Examples
+Rule Engine
+FAQ
+Knowledge Base
+Few-shot Cases</code></pre>
+<p>进入系统。</p>
+<hr />
+<h1 id="六十九所以-benchmark-不只是测试">六十九、所以 Benchmark
+不只是测试：</h1>
+<h1 id="model-weights">Model Weights</h1>
+<p>而是测试：</p>
+<h1 id="full-system">Full System</h1>
+<hr />
+<h1 id="七十如果最终产品是">七十、如果最终产品是：</h1>
+<pre class="text"><code>LLM
++
+RAG
++
+Rules</code></pre>
+<p>那么评测隔离必须针对整个：</p>
+<h1 id="system-boundary">System Boundary</h1>
+<hr />
+<h1 id="七十一可以画成">七十一、可以画成：</h1>
+<pre class="text"><code>                 Benchmark Firewall
+        ┌──────────────────────────────┐
+        │                              │
+        │  Model Weights               │
+        │  Prompt                      │
+        │  RAG                         │
+        │  Rules                       │
+        │  Tools                       │
+        │  Synthetic Data              │
+        │                              │
+        └──────────────────────────────┘
+                        │
+                        ▼
+                      TEST</code></pre>
+<p>不是只检查：</p>
+<blockquote>
+<p>Model Weight。</p>
+</blockquote>
+<hr />
+<h1 id="七十二第八类rag-leakage">七十二、第八类：RAG Leakage</h1>
+<p>这一类尤其值得单独拿出来。</p>
+<p>假设我们评测：</p>
+<blockquote>
+<p>模型是否能识别某采购风险。</p>
+</blockquote>
+<p>RAG 数据库里有：</p>
+<pre class="text"><code>法律法规
+财政部门规范
+正式政策</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>合理知识。</p>
+</blockquote>
+<hr />
+<h1 id="七十三但-rag-里还有">七十三、但 RAG 里还有：</h1>
+<pre class="text"><code>该Test项目的专家审查报告
+该项目投诉处理结果
+该项目内部风险结论</code></pre>
+<p>那就：</p>
+<blockquote>
+<p>不合理。</p>
+</blockquote>
+<hr />
+<h1 id="七十四所以要区分">七十四、所以要区分：</h1>
+<h1 id="allowed-knowledge">Allowed Knowledge</h1>
+<p>与：</p>
+<h1 id="test-specific-knowledge">Test-specific Knowledge</h1>
+<hr />
+<h1 id="七十五allowed-knowledge-可以包括">七十五、Allowed Knowledge
+可以包括：</h1>
+<pre class="text"><code>公开法律
+公开法规
+一般业务指南
+截至评测时点有效的政策</code></pre>
+<hr />
+<h1 id="七十六test-specific-knowledge-可能包括">七十六、Test-specific
+Knowledge 可能包括：</h1>
+<pre class="text"><code>测试项目专家答案
+测试项目内部分析
+测试项目最终投诉结果
+专门针对该Test Case编写的解释</code></pre>
+<hr />
+<h1 id="七十七这是非常重要的-benchmark-contract">七十七、这是非常重要的
+Benchmark Contract</h1>
+<p>在评测前要写清楚：</p>
+<blockquote>
+<p><strong>系统允许访问哪些外部知识？</strong></p>
+</blockquote>
+<hr />
+<h1 id="七十八例如-1">七十八、例如：</h1>
+<pre class="text"><code>允许：
+截至项目发布日期已经生效的法规库
+
+禁止：
+该项目后续投诉结论
+该项目人工Gold答案</code></pre>
+<hr />
+<h1 id="七十九如果不定义">七十九、如果不定义，</h1>
+<p>两个系统比较会非常不公平。</p>
+<p>Model A：</p>
+<blockquote>
+<p>只看法律。</p>
+</blockquote>
+<p>Model B：</p>
+<blockquote>
+<p>知识库里藏着答案。</p>
+</blockquote>
+<p>然后 B 得分更高。</p>
+<hr />
+<h1 id="八十你实际上不是比较">八十、你实际上不是比较：</h1>
+<blockquote>
+<p>模型能力。</p>
+</blockquote>
+<p>而是在比较：</p>
+<blockquote>
+<p>谁更接近看过标准答案。</p>
+</blockquote>
+<hr />
+<h1
+id="八十一第九类human-in-the-loop-leakage">八十一、第九类：Human-in-the-loop
+Leakage</h1>
+<p>这是最容易被忽略的一类。</p>
+<p>假设 Final Test：</p>
+<blockquote>
+<p>1000 条。</p>
+</blockquote>
+<hr />
+<h1 id="八十二第一版模型错了">八十二、第一版模型错了：</h1>
+<blockquote>
+<p>300 条。</p>
+</blockquote>
+<p>团队逐条看完这 300 条。</p>
+<hr />
+<h1 id="八十三总结">八十三、总结：</h1>
+<pre class="text"><code>本地服务机构类容易错
+ISO证书类容易错
+评分年限类容易错</code></pre>
+<p>然后修改：</p>
+<pre class="text"><code>Prompt
+Rule
+Training Data</code></pre>
+<hr />
+<h1 id="八十四第二版再跑同一-test">八十四、第二版再跑同一 Test。</h1>
+<p>错：</p>
+<blockquote>
+<p>200 条。</p>
+</blockquote>
+<hr />
+<h1 id="八十五团队再次看完">八十五、团队再次看完。</h1>
+<p>再改。</p>
+<hr />
+<h1 id="八十六跑-30-个版本以后">八十六、跑 30 个版本以后：</h1>
+<p>Test 成绩：</p>
+<blockquote>
+<p>越来越高。</p>
+</blockquote>
+<hr />
+<h1 id="八十七但是-test-还是">八十七、但是 Test 还是：</h1>
+<blockquote>
+<p>真正独立的 Test 吗？</p>
+</blockquote>
+<p>严格意义上：</p>
+<blockquote>
+<p>已经不是了。</p>
+</blockquote>
+<hr />
+<h1 id="八十八因为-test-的信息已经通过">八十八、因为 Test
+的信息已经通过：</h1>
+<h1 id="human-brain">Human Brain</h1>
+<p>进入了系统设计。</p>
+<hr />
+<h1 id="八十九这就是">八十九、这就是：</h1>
+<h1 id="human-in-the-loop-leakage">Human-in-the-loop Leakage</h1>
+<p>或者：</p>
+<h1 id="test-peeking">Test Peeking</h1>
+<hr />
+<h1 id="九十所以-test-污染不需要">九十、所以 Test 污染不需要：</h1>
+<blockquote>
+<p>Copy/Paste。</p>
+</blockquote>
+<p>人类记住错误模式：</p>
+<blockquote>
+<p>就已经形成信息通道。</p>
+</blockquote>
+<hr />
+<h1 id="九十一这可以写成">九十一、这可以写成：</h1>
+<pre class="text"><code>Test
+ ↓
+Developer sees errors
+ ↓
+Prompt / Rules / Data changes
+ ↓
+System
+ ↓
+Same Test</code></pre>
+<p>形成一个反馈环。</p>
+<hr />
+<h1 id="九十二这叫">九十二、这叫：</h1>
+<h1 id="benchmark-feedback-loop">Benchmark Feedback Loop</h1>
+<hr />
+<h1 id="九十三而-validation-的存在">九十三、而 Validation 的存在：</h1>
+<blockquote>
+<p>就是为了让你合法地做这种事情。</p>
+</blockquote>
+<hr />
+<h1 id="九十四所以开发阶段应该">九十四、所以开发阶段应该：</h1>
+<pre class="text"><code>Train
++
+Validation</code></pre>
+<p>不断迭代。</p>
+<p>Final Test：</p>
+<blockquote>
+<p>少碰。</p>
+</blockquote>
+<hr />
+<h1 id="九十五成熟一点可以设计三层">九十五、成熟一点可以设计三层</h1>
+<pre class="text"><code>Development Set
+Validation Set
+Locked Test Set</code></pre>
+<hr />
+<h1 id="九十六甚至">九十六、甚至：</h1>
+<pre class="text"><code>Public Test
+Private Hidden Test</code></pre>
+<p>开发人员：</p>
+<blockquote>
+<p>只看到 Public。</p>
+</blockquote>
+<p>Final Score：</p>
+<blockquote>
+<p>Private。</p>
+</blockquote>
+<hr />
+<h1
+id="九十七这就是很多竞赛为什么会有">九十七、这就是很多竞赛为什么会有：</h1>
+<blockquote>
+<p>私榜。</p>
+</blockquote>
+<p>因为大家如果一直调公开榜：</p>
+<blockquote>
+<p>会对公开榜过拟合。</p>
+</blockquote>
+<hr />
+<h1 id="九十八llm-项目也是一样">九十八、LLM 项目也是一样。</h1>
+<hr />
+<h1 id="九十九第十类benchmark-contamination">九十九、第十类：Benchmark
+Contamination</h1>
+<p>这是比普通 Data Leakage 更大的概念。</p>
+<p>什么意思？</p>
+<p>某个 Benchmark：</p>
+<blockquote>
+<p>已经长期公开。</p>
+</blockquote>
+<hr />
+<h1 id="一百基础模型训练语料中">一百、基础模型训练语料中：</h1>
+<blockquote>
+<p>可能已经包含它。</p>
+</blockquote>
+<p>你下载一个开源模型，</p>
+<p>即使你自己从未：</p>
+<blockquote>
+<p>用 Test 做 SFT，</p>
+</blockquote>
+<p>它的 Pretraining 阶段：</p>
+<blockquote>
+<p>可能已经见过这个 Benchmark。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一那么你的分数">一百零一、那么你的分数：</h1>
+<blockquote>
+<p>可能高估真正泛化能力。</p>
+</blockquote>
+<hr />
+<h1 id="一百零二这就是">一百零二、这就是：</h1>
+<h1 id="pretraining-contamination">Pretraining Contamination</h1>
+<hr />
+<h1
+id="一百零三对于我们的政府采购领域">一百零三、对于我们的政府采购领域，</h1>
+<p>这给出一个很有价值的策略：</p>
+<p>高价值 Gold Test 最好尽可能包含：</p>
+<pre class="text"><code>内部专家新标案例
+近期新增项目
+从未公开发布的衍生Benchmark
+高质量私有Hard Cases</code></pre>
+<hr />
+<h1 id="一百零四不是因为">一百零四、不是因为：</h1>
+<blockquote>
+<p>私有就天然更正确。</p>
+</blockquote>
+<p>而是因为：</p>
+<blockquote>
+<p>更容易控制模型有没有见过。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零五特别是公开互联网题库">一百零五、特别是公开互联网题库，</h1>
+<p>现在越来越需要问：</p>
+<blockquote>
+<p>基础模型预训练是否可能见过？</p>
+</blockquote>
+<hr />
+<h1 id="一百零六但这里要避免走极端">一百零六、但这里要避免走极端。</h1>
+<p>并不是所有公开资料：</p>
+<blockquote>
+<p>都不能测试。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>必须知道公开 Benchmark 的污染风险更高。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百零七所以可以给-benchmark-case-增加">一百零七、所以可以给
+Benchmark Case 增加：</h1>
+<pre class="text"><code>contamination_risk</code></pre>
+<p>例如：</p>
+<pre class="text"><code>low
+medium
+high</code></pre>
+<hr />
+<h1 id="一百零八什么可能是-high">一百零八、什么可能是 High？</h1>
+<p>比如：</p>
+<blockquote>
+<p>公开多年、广泛转载、Github大量镜像的测试题。</p>
+</blockquote>
+<hr />
+<h1 id="一百零九什么可能-low">一百零九、什么可能 Low？</h1>
+<p>比如：</p>
+<blockquote>
+<p>最近内部专家刚构造、未进入公开网络的案例。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十这不是绝对证明">一百一十、这不是绝对证明。</h1>
+<p>只是：</p>
+<blockquote>
+<p>风险评级。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十一现在看一个非常隐蔽的泄漏">一百一十一、现在看一个非常隐蔽的泄漏：</h1>
+<h1 id="post-outcome-feature-leakage">Post-outcome Feature Leakage</h1>
+<p>假设我们训练一个模型判断：</p>
+<blockquote>
+<p>招标文件是否可能引起投诉。</p>
+</blockquote>
+<p>Input 中加入：</p>
+<pre class="text"><code>complaint_count</code></pre>
+<hr />
+<h1 id="一百一十二但是">一百一十二、但是：</h1>
+<p><code>complaint_count</code>：</p>
+<blockquote>
+<p>只有项目结束以后才知道。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十三模型准确率可能非常高">一百一十三、模型准确率可能非常高。</h1>
+<p>为什么？</p>
+<p>因为它不是在预测：</p>
+<blockquote>
+<p>会不会投诉。</p>
+</blockquote>
+<p>它在读取：</p>
+<blockquote>
+<p>已经投诉了几次。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十四这就是">一百一十四、这就是：</h1>
+<h1 id="outcome-leakage">Outcome Leakage</h1>
+<hr />
+<h1 id="一百一十五类似字段还有">一百一十五、类似字段还有：</h1>
+<pre class="text"><code>是否被更正
+最终废标原因
+质疑次数
+监管处理结果
+最终合同是否签署</code></pre>
+<p>如果任务时点早于这些结果：</p>
+<blockquote>
+<p>都不能放进 Input。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十六所以任何-feature-都要问">一百一十六、所以任何 Feature
+都要问：</h1>
+<blockquote>
+<p><strong>在预测时点，它真的可用吗？</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百一十七可以建立">一百一十七、可以建立：</h1>
+<h1 id="availability-test">Availability Test</h1>
+<p>对每个字段问：</p>
+<pre class="text"><code>这个字段什么时候产生？
+模型什么时候做预测？</code></pre>
+<hr />
+<h1 id="一百一十八如果">一百一十八、如果：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>A</mi><mi>v</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo>&gt;</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+FeatureAvailableTime
+&gt;
+PredictionTime
+</annotation></semantics></math></p>
+<p>那么：</p>
+<blockquote>
+<p>高度可疑。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十九这个原则不限政府采购">一百一十九、这个原则不限政府采购。</h1>
+<p>金融、医疗、风控：</p>
+<blockquote>
+<p>都一样。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十现在看一个采购例子">一百二十、现在看一个采购例子</h1>
+<p>我们要判断：</p>
+<blockquote>
+<p>某资格条件发布时是否需要重点复核。</p>
+</blockquote>
+<p>字段：</p>
+<pre class="text"><code>项目预算
+采购方式
+采购品目
+原始资格条款</code></pre>
+<p>在发布时：</p>
+<blockquote>
+<p>都存在。</p>
+</blockquote>
+<p>合理。</p>
+<hr />
+<h1 id="一百二十一另一些字段">一百二十一、另一些字段：</h1>
+<pre class="text"><code>后续更正次数
+质疑是否成立
+投诉结果
+最终中标供应商</code></pre>
+<p>在发布时：</p>
+<blockquote>
+<p>还不存在。</p>
+</blockquote>
+<p>不能作为预测 Input。</p>
+<hr />
+<h1 id="一百二十二但是它们可以帮助">一百二十二、但是它们可以帮助：</h1>
+<blockquote>
+<p>建 Label。</p>
+</blockquote>
+<p>再次强调：</p>
+<pre class="text"><code>Label Construction Data
+≠
+Model Input Data</code></pre>
+<hr />
+<h1 id="一百二十三这一条非常重要">一百二十三、这一条非常重要。</h1>
+<hr />
+<h1 id="一百二十四现在看-annotation-leakage">一百二十四、现在看
+Annotation Leakage</h1>
+<p>假设专家在标注时看到：</p>
+<pre class="text"><code>后续监管认定结果</code></pre>
+<p>然后确定：</p>
+<pre class="text"><code>risk_present = true</code></pre>
+<p>这是允许的吗？</p>
+<hr />
+<h1 id="一百二十五可以">一百二十五、可以。</h1>
+<p>如果我们的目的：</p>
+<blockquote>
+<p>是建立尽量准确的回顾性 Gold Label。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十六但模型-input">一百二十六、但模型 Input：</h1>
+<blockquote>
+<p>不能看到后续监管结果。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十七所以标注系统要区分两个界面">一百二十七、所以标注系统要区分两个界面：</h1>
+<pre class="text"><code>Annotator View</code></pre>
+<p>和：</p>
+<pre class="text"><code>Model View</code></pre>
+<hr />
+<h1 id="一百二十八annotator-view-可以有">一百二十八、Annotator View
+可以有：</h1>
+<pre class="text"><code>原文件
+上下文
+法规
+后续证据
+裁决</code></pre>
+<hr />
+<h1 id="一百二十九model-view-只允许">一百二十九、Model View
+只允许：</h1>
+<blockquote>
+<p>预测时点可得的信息。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十这就是">一百三十、这就是：</h1>
+<h1 id="annotation-privilege">Annotation Privilege</h1>
+<p>标注者可以有更多证据。</p>
+<p>模型：</p>
+<blockquote>
+<p>不可以。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十一如果没有这个区别">一百三十一、如果没有这个区别，</h1>
+<p>很多团队会无意中：</p>
+<blockquote>
+<p>把标注辅助信息一起导出成模型 Feature。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十二现在看-metadata-leakage">一百三十二、现在看 Metadata
+Leakage</h1>
+<p>例如：</p>
+<pre class="text"><code>annotator_comment = “典型地域限制案例”</code></pre>
+<p>你以为训练只用了：</p>
+<pre class="text"><code>clause_text</code></pre>
+<p>但数据加载代码：</p>
+<blockquote>
+<p>把整个 JSON 序列化给模型。</p>
+</blockquote>
+<p>于是 Prompt 里出现：</p>
+<pre class="text"><code>annotator_comment</code></pre>
+<hr />
+<h1 id="一百三十三这类-bug-特别隐蔽">一百三十三、这类 Bug
+特别隐蔽。</h1>
+<p>所以 SFT Input Builder 应该：</p>
+<blockquote>
+<p><strong>白名单字段。</strong></p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>“除了 label 之外全部输入”。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十四也就是">一百三十四、也就是：</h1>
+<pre class="text"><code>allowed_input_fields = [
+    clause_text,
+    section_path,
+    allowed_context
+]</code></pre>
+<hr />
+<h1 id="一百三十五而不是">一百三十五、而不是：</h1>
+<pre class="text"><code>drop(label)
+然后剩下全部喂进去</code></pre>
+<hr />
+<h1 id="一百三十六这叫">一百三十六、这叫：</h1>
+<h1 id="allowlist-blocklist">Allowlist &gt; Blocklist</h1>
+<p>对于高风险数据系统，</p>
+<p>白名单通常：</p>
+<blockquote>
+<p>更安全。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十七为什么">一百三十七、为什么？</h1>
+<p>新加一个字段：</p>
+<pre class="text"><code>expert_final_decision</code></pre>
+<p>如果采用 Blocklist，</p>
+<p>开发者忘了加进删除列表：</p>
+<blockquote>
+<p>它就泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十八如果用-allowlist">一百三十八、如果用 Allowlist：</h1>
+<blockquote>
+<p>新字段默认不会进入模型。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十九非常实用">一百三十九、非常实用。</h1>
+<hr />
+<h1 id="一百四十现在看-prompt-leakage">一百四十、现在看 Prompt
+Leakage</h1>
+<p>假设 Test 中有一类特别难：</p>
+<blockquote>
+<p>本地服务机构。</p>
+</blockquote>
+<p>团队根据 Test 错误改 System Prompt：</p>
+<pre class="text"><code>特别注意：
+涉及要求供应商在项目所在地预先设立机构时，
+重点判断是否与履约存在必要关系。</code></pre>
+<hr />
+<h1 id="一百四十一这条规则本身">一百四十一、这条规则本身：</h1>
+<blockquote>
+<p>没有复制 Test 原文。</p>
+</blockquote>
+<p>但它是根据 Test 错误：</p>
+<blockquote>
+<p>专门总结出来的。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十二如果以后还拿同一-test-报最终成绩">一百四十二、如果以后还拿同一
+Test 报最终成绩，</h1>
+<p>分数：</p>
+<blockquote>
+<p>已经受到 Test 信息影响。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十三这就是">一百四十三、这就是：</h1>
+<h1 id="prompt-overfitting-to-test">Prompt Overfitting to Test</h1>
+<hr />
+<h1 id="一百四十四同理">一百四十四、同理：</h1>
+<p>Rule Engine：</p>
+<pre class="text"><code>if &quot;本市设立固定机构&quot;:
+    increase_risk_score()</code></pre>
+<p>如果这个 Rule：</p>
+<blockquote>
+<p>是看了 Final Test 后写的，</p>
+</blockquote>
+<p>也是 Test 污染。</p>
+<hr />
+<h1
+id="一百四十五所以完整-benchmark-audit-必须记录">一百四十五、所以完整
+Benchmark Audit 必须记录：</h1>
+<pre class="text"><code>prompt_version
+rule_version
+rag_version
+model_version</code></pre>
+<hr />
+<h1 id="一百四十六不然">一百四十六、不然：</h1>
+<blockquote>
+<p>你甚至不知道某次 Test 到底测了什么系统。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十七现在看-threshold-leakage">一百四十七、现在看 Threshold
+Leakage</h1>
+<p>假设模型输出风险概率：</p>
+<pre class="text"><code>0～1</code></pre>
+<p>我们需要选择：</p>
+<pre class="text"><code>threshold</code></pre>
+<hr />
+<h1 id="一百四十八如果在-test-上试">一百四十八、如果在 Test 上试：</h1>
+<pre class="text"><code>0.3
+0.4
+0.5
+0.6</code></pre>
+<p>然后选择 Test F1 最好的：</p>
+<pre class="text"><code>0.42</code></pre>
+<hr />
+<h1 id="一百四十九你已经">一百四十九、你已经：</h1>
+<blockquote>
+<p>用 Test 调参。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十正确做法">一百五十、正确做法：</h1>
+<p>Threshold：</p>
+<blockquote>
+<p>在 Validation 上选。</p>
+</blockquote>
+<p>Test：</p>
+<blockquote>
+<p>只使用已经冻结的 Threshold。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十一所以-test-污染不只是">一百五十一、所以 Test
+污染不只是：</h1>
+<blockquote>
+<p>文本。</p>
+</blockquote>
+<p>一个数字参数：</p>
+<blockquote>
+<p>也可以因为 Test 而过拟合。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十二类似还有">一百五十二、类似还有：</h1>
+<pre class="text"><code>Temperature
+Top-p
+Retrieval k
+Rerank threshold
+Abstention threshold
+Rule weight</code></pre>
+<hr />
+<h1 id="一百五十三所有这些">一百五十三、所有这些：</h1>
+<blockquote>
+<p>都应该主要用 Validation 调。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十四现在建立一个重要分类">一百五十四、现在建立一个重要分类：</h1>
+<h1 id="direct-leakage">Direct Leakage</h1>
+<p>与：</p>
+<h1 id="indirect-leakage">Indirect Leakage</h1>
+<hr />
+<h1 id="一百五十五direct">一百五十五、Direct：</h1>
+<pre class="text"><code>Test原文进入Train
+Test标签进入Input
+Test答案进入RAG</code></pre>
+<p>比较容易理解。</p>
+<hr />
+<h1 id="一百五十六indirect">一百五十六、Indirect：</h1>
+<pre class="text"><code>看Test错误后改Prompt
+根据Test调Threshold
+从Test生成Synthetic Data
+根据Test写Rule</code></pre>
+<hr />
+<h1 id="一百五十七indirect-往往">一百五十七、Indirect 往往：</h1>
+<blockquote>
+<p>更难审计。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十八因此真正专业的-benchmark-governance">一百五十八、因此真正专业的
+Benchmark Governance：</h1>
+<blockquote>
+<p>需要记录开发历史。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十九例如每次实验">一百五十九、例如每次实验：</h1>
+<pre class="text"><code>experiment_id
+model_version
+prompt_version
+rule_version
+rag_snapshot
+dataset_version
+split_version</code></pre>
+<hr />
+<h1 id="一百六十以及">一百六十、以及：</h1>
+<pre class="text"><code>which benchmark was inspected</code></pre>
+<hr />
+<h1
+id="一百六十一这会让我们以后知道">一百六十一、这会让我们以后知道：</h1>
+<blockquote>
+<p>某个 Final Test 是否已经被开发人员多次使用。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十二现在出现一个重要概念">一百六十二、现在出现一个重要概念：</h1>
+<h1 id="benchmark-firewall">Benchmark Firewall</h1>
+<p>Benchmark 防火墙。</p>
+<hr />
+<h1 id="一百六十三什么是-firewall">一百六十三、什么是 Firewall？</h1>
+<p>不是某一个算法。</p>
+<p>而是一套：</p>
+<blockquote>
+<p><strong>让 Final Test 与日常开发流程隔离的制度 + 数据 +
+工程机制。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百六十四第一层-firewall">一百六十四、第一层 Firewall：</h1>
+<h1 id="access-control">Access Control</h1>
+<p>不是所有人：</p>
+<blockquote>
+<p>都能看到 Final Test Label。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十五例如">一百六十五、例如：</h1>
+<pre class="text"><code>Developers
+→ 可以看Train / Validation
+
+Benchmark owner
+→ 管理Hidden Test</code></pre>
+<hr />
+<h1 id="一百六十六开发者提交">一百六十六、开发者提交：</h1>
+<pre class="text"><code>model endpoint</code></pre>
+<p>系统自动：</p>
+<blockquote>
+<p>跑 Hidden Test。</p>
+</blockquote>
+<p>只返回：</p>
+<pre class="text"><code>summary metrics</code></pre>
+<hr />
+<h1 id="一百六十七这样减少">一百六十七、这样减少：</h1>
+<blockquote>
+<p>针对单个 Test Case 调参。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十八第二层-firewall">一百六十八、第二层 Firewall：</h1>
+<h1 id="dataset-isolation">Dataset Isolation</h1>
+<p>Final Test 文件：</p>
+<blockquote>
+<p>放在独立目录 / 权限空间。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十九不要">一百六十九、不要：</h1>
+<pre class="text"><code>dataset/
+  train.jsonl
+  val.jsonl
+  test.jsonl</code></pre>
+<p>然后大家都随便打开。</p>
+<p>对早期课程练习当然可以。</p>
+<p>但成熟项目：</p>
+<blockquote>
+<p>可以更严格。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十第三层-firewall">一百七十、第三层 Firewall：</h1>
+<h1 id="input-allowlist">Input Allowlist</h1>
+<p>测试运行时：</p>
+<p>只给系统允许的字段。</p>
+<p>例如：</p>
+<pre class="text"><code>clause_text
+section_path
+allowed_context</code></pre>
+<hr />
+<h1 id="一百七十一不传">一百七十一、不传：</h1>
+<pre class="text"><code>gold_label
+expert_rationale
+future_outcome
+annotation_note</code></pre>
+<hr />
+<h1 id="一百七十二第四层-firewall">一百七十二、第四层 Firewall：</h1>
+<h1 id="rag-snapshot">RAG Snapshot</h1>
+<p>评测时记录：</p>
+<pre class="text"><code>knowledge_snapshot_version</code></pre>
+<hr />
+<h1 id="一百七十三例如">一百七十三、例如：</h1>
+<pre class="text"><code>rag_knowledge_2026_09_01</code></pre>
+<hr />
+<h1 id="一百七十四这样以后知道">一百七十四、这样以后知道：</h1>
+<blockquote>
+<p>模型当时查的是哪一版知识库。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十五第五层-firewall">一百七十五、第五层 Firewall：</h1>
+<h1 id="time-cutoff">Time Cutoff</h1>
+<p>对于 Temporal Benchmark：</p>
+<p>明确：</p>
+<pre class="text"><code>knowledge_cutoff</code></pre>
+<hr />
+<h1 id="一百七十六例如">一百七十六、例如：</h1>
+<pre class="text"><code>Test项目发布日期：
+2026-06-01
+
+允许知识：
+≤ 2026-06-01</code></pre>
+<hr />
+<h1 id="一百七十七这样未来法规">一百七十七、这样未来法规：</h1>
+<blockquote>
+<p>不会倒灌回去。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十八第六层-firewall">一百七十八、第六层 Firewall：</h1>
+<h1 id="lineage-guard">Lineage Guard</h1>
+<p>任何：</p>
+<pre class="text"><code>Synthetic
+Paraphrase
+Translation
+Derived Sample</code></pre>
+<p>如果祖先属于 Test：</p>
+<blockquote>
+<p>自动禁止进入 Train。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十九第七层-firewall">一百七十九、第七层 Firewall：</h1>
+<h1 id="evaluation-log">Evaluation Log</h1>
+<p>每次运行 Final Test：</p>
+<p>记录：</p>
+<pre class="text"><code>who
+when
+which model
+which prompt
+which rules
+which RAG snapshot</code></pre>
+<hr />
+<h1 id="一百八十这样可以知道">一百八十、这样可以知道：</h1>
+<blockquote>
+<p>Test 被使用了多少次。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十一这七层组合起来">一百八十一、这七层组合起来：</h1>
+<p>才真正接近：</p>
+<h1 id="benchmark-firewall-1">Benchmark Firewall</h1>
+<hr />
+<h1 id="一百八十二现在给它画一张图">一百八十二、现在给它画一张图</h1>
+<pre class="text"><code>                   Final Test
+                       │
+             ┌─────────┴─────────┐
+             │ Benchmark Firewall │
+             └─────────┬─────────┘
+                       │
+       ┌───────────────┼────────────────┐
+       ▼               ▼                ▼
+ Access Control   Input Allowlist    Time Cutoff
+       │               │                │
+       ├───────────────┼────────────────┤
+       ▼               ▼                ▼
+ Lineage Guard    RAG Snapshot      Eval Logging
+       │               │                │
+       └───────────────┼────────────────┘
+                       ▼
+                  Model/System
+                       │
+                       ▼
+                    Metrics</code></pre>
+<hr />
+<h1 id="一百八十三现在建立-leakage-audit-checklist">一百八十三、现在建立
+Leakage Audit Checklist</h1>
+<p>这是第七阶段最实用的产物之一。</p>
+<p>第一组：</p>
+<h1 id="split-integrity">Split Integrity</h1>
+<p>检查：</p>
+<pre class="text"><code>同project_id是否跨Split？
+同duplicate_group_id是否跨Split？
+同source_case_id是否跨Split？
+派生样本是否跨Split？</code></pre>
+<hr />
+<h1 id="一百八十四第二组">一百八十四、第二组：</h1>
+<h1 id="text-similarity">Text Similarity</h1>
+<p>检查：</p>
+<pre class="text"><code>Test vs Train
+Exact match?
+
+Near duplicate?
+
+Template overlap?
+
+High embedding similarity?</code></pre>
+<hr />
+<h1 id="一百八十五第三组">一百八十五、第三组：</h1>
+<h1 id="label-leakage-4">Label Leakage</h1>
+<p>检查：</p>
+<pre class="text"><code>Input中是否存在Gold Label？
+
+是否存在专家结论？
+
+是否存在修改建议？
+
+是否存在裁决结果？
+
+是否存在风险类别名称？</code></pre>
+<hr />
+<h1 id="一百八十六第四组">一百八十六、第四组：</h1>
+<h1 id="temporal-leakage-2">Temporal Leakage</h1>
+<p>检查：</p>
+<pre class="text"><code>Input字段是否在预测时点可用？
+
+法规版本是否符合时间点？
+
+是否使用了后续更正？
+
+是否使用了后续投诉结论？
+
+是否使用了未来统计信息？</code></pre>
+<hr />
+<h1 id="一百八十七第五组">一百八十七、第五组：</h1>
+<h1 id="rag-leakage">RAG Leakage</h1>
+<p>检查：</p>
+<pre class="text"><code>RAG中是否存在Test Case本身？
+
+是否存在Test Gold Rationale？
+
+是否存在该项目后续审查报告？
+
+知识库Snapshot是否被冻结？</code></pre>
+<hr />
+<h1 id="一百八十八第六组">一百八十八、第六组：</h1>
+<h1 id="prompt-rule-leakage">Prompt / Rule Leakage</h1>
+<p>检查：</p>
+<pre class="text"><code>Prompt是否根据Final Test错误专门改过？
+
+Rules是否根据Final Test写过？
+
+Threshold是否在Test上调过？</code></pre>
+<hr />
+<h1 id="一百八十九第七组">一百八十九、第七组：</h1>
+<h1 id="human-leakage">Human Leakage</h1>
+<p>检查：</p>
+<pre class="text"><code>开发人员是否看过Test Label？
+
+是否逐条看过Final Test Error？
+
+Final Test被跑过多少轮？
+
+是否已经实际上变成Validation？</code></pre>
+<hr />
+<h1 id="一百九十第八组">一百九十、第八组：</h1>
+<h1 id="contamination-risk">Contamination Risk</h1>
+<p>检查：</p>
+<pre class="text"><code>Benchmark是否公开多年？
+
+基础模型是否可能见过？
+
+Test是否来自大量互联网转载材料？
+
+是否有低污染的私有/近期补充集？</code></pre>
+<hr />
+<h1 id="一百九十一把这-8-组跑完">一百九十一、把这 8 组跑完，</h1>
+<p>我们才真正可以说：</p>
+<blockquote>
+<p>“做过泄漏审计。”</p>
+</blockquote>
+<hr />
+<h1 id="一百九十二现在谈-leakage-severity">一百九十二、现在谈 Leakage
+Severity</h1>
+<p>不是每个问题都一样严重。</p>
+<p>可以概念分：</p>
+<pre class="text"><code>Critical
+High
+Medium
+Low</code></pre>
+<hr />
+<h1 id="一百九十三critical">一百九十三、Critical</h1>
+<p>例如：</p>
+<pre class="text"><code>Test答案进入SFT Train
+Test Gold Rationale进入RAG
+同一Exact Duplicate跨Train/Test</code></pre>
+<p>这基本：</p>
+<blockquote>
+<p>直接破坏 Benchmark。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十四high">一百九十四、High</h1>
+<p>例如：</p>
+<pre class="text"><code>Test改写样本进入Train
+测试项目后续裁决进入Input
+长期反复用Final Test调Prompt</code></pre>
+<hr />
+<h1 id="一百九十五medium">一百九十五、Medium</h1>
+<p>例如：</p>
+<pre class="text"><code>大量Template overlap
+同代理机构风格高度重合</code></pre>
+<p>是否致命：</p>
+<blockquote>
+<p>取决于评测目标。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十六low">一百九十六、Low</h1>
+<p>可能是：</p>
+<pre class="text"><code>公共法规知识在Train和Test都出现</code></pre>
+<p>如果它本来就是：</p>
+<blockquote>
+<p>Allowed Knowledge。</p>
+</blockquote>
+<p>这通常：</p>
+<blockquote>
+<p>不叫问题。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十七所以不要把-leakage-audit-变成">一百九十七、所以不要把
+Leakage Audit 变成：</h1>
+<blockquote>
+<p>“只要任何信息重复就全部判死刑。”</p>
+</blockquote>
+<hr />
+<h1 id="一百九十八我们还是要问">一百九十八、我们还是要问：</h1>
+<h1 id="does-this-invalidate-the-generalization-claim">Does this
+invalidate the generalization claim?</h1>
+<p>它是否让你的：</p>
+<blockquote>
+<p>泛化结论失真？</p>
+</blockquote>
+<hr />
+<h1 id="一百九十九这是最核心的判断">一百九十九、这是最核心的判断。</h1>
+<hr />
+<h1 id="二百例如同一部政府采购法">二百、例如同一部《政府采购法》</h1>
+<p>Train 和 Test：</p>
+<blockquote>
+<p>都涉及。</p>
+</blockquote>
+<p>并不会使：</p>
+<blockquote>
+<p>“新项目泛化”</p>
+</blockquote>
+<p>这个结论失效。</p>
+<hr />
+<h1
+id="二百零一但同一个项目的专家答案">二百零一、但同一个项目的专家答案：</h1>
+<p>Train/Test 都出现。</p>
+<p>就会直接：</p>
+<blockquote>
+<p>让泛化结论失真。</p>
+</blockquote>
+<hr />
+<h1 id="二百零二所以">二百零二、所以：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>不</mi><mi>是</mi><mi>简</mi><mi>单</mi><mi>的</mi><mo>“</mo><mi>信</mi><mi>息</mi><mi>重</mi><mi>复</mi><mo>”</mo><mi>而</mi><mi>是</mi><mo>“</mo><mi>不</mi><mi>恰</mi><mi>当</mi><mi>的</mi><mi>信</mi><mi>息</mi><mi>可</mi><mi>用</mi><mi>性</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Leakage
+不是简单的“信息重复”
+而是“不恰当的信息可用性”
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二百零三现在设计一个-leakage-record">二百零三、现在设计一个
+Leakage Record</h1>
+<p>发现一个问题时，</p>
+<p>不要只写：</p>
+<pre class="text"><code>有泄漏</code></pre>
+<hr />
+<h1 id="二百零四最好记录">二百零四、最好记录：</h1>
+<div class="sourceCode" id="cb1539"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1539-1"><a href="#cb1539-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1539-2"><a href="#cb1539-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;audit_id&quot;</span><span class="fu">:</span> <span class="st">&quot;LEAK-00017&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-3"><a href="#cb1539-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;test_sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TEST-0091&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-4"><a href="#cb1539-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;related_train_sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TRAIN-2217&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-5"><a href="#cb1539-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1539-6"><a href="#cb1539-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;leakage_type&quot;</span><span class="fu">:</span> <span class="st">&quot;lineage_leakage&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-7"><a href="#cb1539-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;severity&quot;</span><span class="fu">:</span> <span class="st">&quot;critical&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-8"><a href="#cb1539-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1539-9"><a href="#cb1539-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence&quot;</span><span class="fu">:</span> <span class="st">&quot;train sample derived from test sample paraphrase&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-10"><a href="#cb1539-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1539-11"><a href="#cb1539-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;action&quot;</span><span class="fu">:</span> <span class="st">&quot;remove_train_sample&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-12"><a href="#cb1539-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1539-13"><a href="#cb1539-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;resolved&quot;</span><span class="fu">,</span></span>
+<span id="cb1539-14"><a href="#cb1539-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1539-15"><a href="#cb1539-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;audit_version&quot;</span><span class="fu">:</span> <span class="st">&quot;leakage_audit_v0.1&quot;</span></span>
+<span id="cb1539-16"><a href="#cb1539-16" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百零五为什么需要-evidence">二百零五、为什么需要
+<code>evidence</code>？</h1>
+<p>因为：</p>
+<blockquote>
+<p>“疑似泄漏”</p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p>“确认泄漏”</p>
+</blockquote>
+<p>不是一回事。</p>
+<hr />
+<h1 id="二百零六可以有">二百零六、可以有：</h1>
+<pre class="text"><code>suspected
+confirmed
+resolved
+accepted_risk</code></pre>
+<hr />
+<h1 id="二百零七例如-template-overlap">二百零七、例如 Template
+Overlap：</h1>
+<p>可能：</p>
+<pre class="text"><code>accepted_risk</code></pre>
+<p>因为我们主 Benchmark 本来就允许：</p>
+<blockquote>
+<p>Seen Template。</p>
+</blockquote>
+<hr />
+<h1 id="二百零八但是报告里">二百零八、但是报告里：</h1>
+<blockquote>
+<p>必须说清楚。</p>
+</blockquote>
+<hr />
+<h1 id="二百零九这叫">二百零九、这叫：</h1>
+<h1 id="evaluation-transparency">Evaluation Transparency</h1>
+<p>不是所有问题都必须消灭。</p>
+<p>但：</p>
+<blockquote>
+<p>必须让分数的含义清楚。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十现在看一个很真实的案例">二百一十、现在看一个很真实的案例</h1>
+<p>假设我们有：</p>
+<pre class="text"><code>Test Sample T1</code></pre>
+<p>条款：</p>
+<blockquote>
+<p>“供应商注册地须在本市。”</p>
+</blockquote>
+<p>Gold：</p>
+<pre class="text"><code>potential_risk</code></pre>
+<hr />
+<h1 id="二百一十一train-里没有-t1">二百一十一、Train 里没有 T1。</h1>
+<p>项目也不同。</p>
+<p>看起来很干净。</p>
+<hr />
+<h1 id="二百一十二但我们发现-train-中有">二百一十二、但我们发现 Train
+中有：</h1>
+<pre class="text"><code>Synthetic S77:
+投标企业须为本地注册企业。</code></pre>
+<p>它来自专家培训案例 E12。</p>
+<hr />
+<h1 id="二百一十三继续查-lineage">二百一十三、继续查 Lineage：</h1>
+<pre class="text"><code>E12</code></pre>
+<p>原来就是：</p>
+<blockquote>
+<p>T1 的内部专家分析版本。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十四于是链条是">二百一十四、于是链条是：</h1>
+<pre class="text"><code>T1 Test Case
+   ↓
+Expert Case E12
+   ↓
+Synthetic Rewrite S77
+   ↓
+Train</code></pre>
+<hr />
+<h1 id="二百一十五文本-dedup">二百一十五、文本 Dedup：</h1>
+<blockquote>
+<p>很可能发现不了。</p>
+</blockquote>
+<p>Project ID：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十六只有">二百一十六、只有：</h1>
+<h1 id="lineage">Lineage</h1>
+<p>才能发现。</p>
+<hr />
+<h1
+id="二百一十七这就是为什么前六个阶段一直强调">二百一十七、这就是为什么前六个阶段一直强调：</h1>
+<blockquote>
+<p>来源和血缘不能丢。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十八再看另一个案例">二百一十八、再看另一个案例</h1>
+<p>Test：</p>
+<blockquote>
+<p>某评分办法。</p>
+</blockquote>
+<p>RAG 里没有 Gold Answer。</p>
+<p>但 Rule Engine 有：</p>
+<pre class="text"><code>如果“本地服务机构”得分 &gt; 0
+则标记地域风险</code></pre>
+<hr />
+<h1 id="二百一十九这条-rule">二百一十九、这条 Rule：</h1>
+<blockquote>
+<p>是开发人员看 Test 错误后加的。</p>
+</blockquote>
+<hr />
+<h1
+id="二百二十那么最终系统测试成功">二百二十、那么最终系统测试成功，</h1>
+<p>到底是谁成功？</p>
+<pre class="text"><code>LLM？
+Rule？
+Test-specific patch？</code></pre>
+<hr />
+<h1
+id="二百二十一这就是为什么一个成熟的-benchmark">二百二十一、这就是为什么一个成熟的
+Benchmark：</h1>
+<blockquote>
+<p>评的是系统版本。</p>
+</blockquote>
+<p>需要记录：</p>
+<pre class="text"><code>model_version
+prompt_version
+rule_version
+rag_version</code></pre>
+<hr />
+<h1 id="二百二十二否则你没法解释">二百二十二、否则你没法解释：</h1>
+<blockquote>
+<p>分数为什么提高。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十三现在看-validation-的正确角色">二百二十三、现在看
+Validation 的正确角色</h1>
+<p>假设你发现：</p>
+<blockquote>
+<p>“本地服务机构”这种案例总出错。</p>
+</blockquote>
+<p>应该在哪里发现？</p>
+<p>最好：</p>
+<h1 id="validation-1">Validation</h1>
+<hr />
+<h1 id="二百二十四然后">二百二十四、然后：</h1>
+<pre class="text"><code>改Prompt
+改SFT
+改Rule</code></pre>
+<p>继续看 Validation。</p>
+<hr />
+<h1 id="二百二十五等方案冻结以后">二百二十五、等方案冻结以后：</h1>
+<blockquote>
+<p>才去 Final Test。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十六如果-final-test-又暴露新问题怎么办">二百二十六、如果
+Final Test 又暴露新问题怎么办？</h1>
+<p>可以记录。</p>
+<p>但如果你：</p>
+<blockquote>
+<p>根据这些问题继续开发，</p>
+</blockquote>
+<p>那下一轮最好：</p>
+<h1 id="新建-test-version">新建 Test Version</h1>
+<p>或者：</p>
+<blockquote>
+<p>把当前 Test 降级为 Development Benchmark。</p>
+</blockquote>
+<hr />
+<h1
+id="二百二十七这是一种很成熟的-benchmark-生命周期管理">二百二十七、这是一种很成熟的
+Benchmark 生命周期管理。</h1>
+<hr />
+<h1 id="二百二十八比如">二百二十八、比如：</h1>
+<pre class="text"><code>GoldTest_v1</code></pre>
+<p>使用一段时间后：</p>
+<blockquote>
+<p>团队已经熟悉大量案例。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十九此时它仍然很适合">二百二十九、此时它仍然很适合：</h1>
+<h1 id="regression-test-1">Regression Test</h1>
+<hr />
+<h1 id="二百三十也就是说">二百三十、也就是说：</h1>
+<blockquote>
+<p>检查新模型有没有退化。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十一但不再适合声称">二百三十一、但不再适合声称：</h1>
+<blockquote>
+<p>“完全未见过的最终泛化成绩”。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十二然后创建">二百三十二、然后创建：</h1>
+<pre class="text"><code>GoldTest_v2_private</code></pre>
+<p>作为新 Final Test。</p>
+<hr />
+<h1 id="二百三十三所以-benchmark-也有生命周期">二百三十三、所以
+Benchmark 也有生命周期：</h1>
+<pre class="text"><code>Hidden Final Test
+       ↓
+被使用/被分析
+       ↓
+Development Regression Set
+       ↓
+新Hidden Test替代</code></pre>
+<hr />
+<h1 id="二百三十四这叫">二百三十四、这叫：</h1>
+<h1 id="benchmark-rotation">Benchmark Rotation</h1>
+<hr />
+<h1 id="二百三十五尤其长期-ai-产品">二百三十五、尤其长期 AI 产品：</h1>
+<blockquote>
+<p>很有必要。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十六否则一个-test-用三年">二百三十六、否则一个 Test
+用三年，</h1>
+<p>团队每个人都能背答案。</p>
+<p>最后 99%：</p>
+<blockquote>
+<p>不代表任何新能力。</p>
+</blockquote>
+<hr />
+<h1
+id="二百三十七现在看-benchmark-contamination-与-memorization">二百三十七、现在看
+Benchmark Contamination 与 Memorization</h1>
+<p>假设模型真的见过测试题。</p>
+<p>是不是一定：</p>
+<blockquote>
+<p>会背出来？</p>
+</blockquote>
+<p>不一定。</p>
+<hr />
+<h1
+id="二百三十八但我们已经不能确定高分来自">二百三十八、但我们已经不能确定高分来自：</h1>
+<pre class="text"><code>真正推理</code></pre>
+<p>还是：</p>
+<pre class="text"><code>记忆</code></pre>
+<hr />
+<h1
+id="二百三十九这就是污染最大的问题">二百三十九、这就是污染最大的问题：</h1>
+<blockquote>
+<p><strong>它破坏的是分数的可解释性。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二百四十所以-benchmark-的价值不是">二百四十、所以 Benchmark
+的价值不是：</h1>
+<blockquote>
+<p>有 1000 道题。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>这些题能支持一个可信结论。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十一例如-1">二百四十一、例如：</h1>
+<blockquote>
+<p>“模型对未来未见采购项目的高风险条款召回率为 91%。”</p>
+</blockquote>
+<p>要说这句话，</p>
+<p>你必须能证明：</p>
+<pre class="text"><code>未来
+未见
+项目
+高风险</code></pre>
+<p>这些限定：</p>
+<blockquote>
+<p>基本成立。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十二如果-test-已经污染">二百四十二、如果 Test
+已经污染，</h1>
+<p>“91%”只是一个数字。</p>
+<hr />
+<h1
+id="二百四十三这就是第七阶段最深的一层">二百四十三、这就是第七阶段最深的一层：</h1>
+<h1 id="benchmark-claim">Benchmark = Claim</h1>
+<p>一个 Benchmark 本质上是在支持：</p>
+<blockquote>
+<p>一个能力声明。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十四所以每个-benchmark-都应该有">二百四十四、所以每个
+Benchmark 都应该有：</h1>
+<h1 id="evaluation-claim">Evaluation Claim</h1>
+<p>例如：</p>
+<blockquote>
+<p><strong>评估 ProcurementAI
+在没有访问该项目后续裁决和专家答案的情况下，对未参与训练的新采购项目条款进行潜在合规风险筛查的能力。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二百四十五有了这句话">二百四十五、有了这句话，</h1>
+<p>我们就能判断：</p>
+<p>某个信息是否泄漏。</p>
+<hr />
+<h1 id="二百四十六例如-rag-使用有效法规">二百四十六、例如 RAG
+使用有效法规：</h1>
+<blockquote>
+<p>与这个 Claim 不冲突。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十七rag-使用该项目最终投诉结论">二百四十七、RAG
+使用该项目最终投诉结论：</h1>
+<blockquote>
+<p>与这个 Claim 冲突。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十八所以-leakage-不是凭感觉判断">二百四十八、所以 Leakage
+不是凭感觉判断。</h1>
+<p>它应该相对于：</p>
+<h1 id="evaluation-claim-1">Evaluation Claim</h1>
+<p>判断。</p>
+<hr />
+<h1
+id="二百四十九这是一套特别强的思维框架">二百四十九、这是一套特别强的思维框架：</h1>
+<pre class="text"><code>先写能力声明
+      ↓
+定义允许信息
+      ↓
+定义禁止信息
+      ↓
+再做Leakage Audit</code></pre>
+<hr />
+<h1 id="二百五十现在第一次设计">二百五十、现在第一次设计</h1>
+<h1 id="benchmark-contract">Benchmark Contract</h1>
+<p>可以概念包括：</p>
+<pre class="text"><code>task
+prediction_time
+allowed_inputs
+allowed_external_knowledge
+forbidden_information
+split_policy
+test_access_policy</code></pre>
+<hr />
+<h1 id="二百五十一例如-1">二百五十一、例如：</h1>
+<div class="sourceCode" id="cb1559"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1559-1"><a href="#cb1559-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1559-2"><a href="#cb1559-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_compliance_risk_review&quot;</span><span class="fu">,</span></span>
+<span id="cb1559-3"><a href="#cb1559-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1559-4"><a href="#cb1559-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;prediction_time&quot;</span><span class="fu">:</span> <span class="st">&quot;document_publication_time&quot;</span><span class="fu">,</span></span>
+<span id="cb1559-5"><a href="#cb1559-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1559-6"><a href="#cb1559-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;allowed_inputs&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1559-7"><a href="#cb1559-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;target_clause&quot;</span><span class="ot">,</span></span>
+<span id="cb1559-8"><a href="#cb1559-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;same-document prior context&quot;</span><span class="ot">,</span></span>
+<span id="cb1559-9"><a href="#cb1559-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;project_metadata_available_at_publication&quot;</span></span>
+<span id="cb1559-10"><a href="#cb1559-10" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1559-11"><a href="#cb1559-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1559-12"><a href="#cb1559-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;allowed_external_knowledge&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1559-13"><a href="#cb1559-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;regulations effective at prediction_time&quot;</span></span>
+<span id="cb1559-14"><a href="#cb1559-14" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1559-15"><a href="#cb1559-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1559-16"><a href="#cb1559-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;forbidden_information&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1559-17"><a href="#cb1559-17" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;future_correction_notice&quot;</span><span class="ot">,</span></span>
+<span id="cb1559-18"><a href="#cb1559-18" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;complaint_result&quot;</span><span class="ot">,</span></span>
+<span id="cb1559-19"><a href="#cb1559-19" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;gold_rationale&quot;</span><span class="ot">,</span></span>
+<span id="cb1559-20"><a href="#cb1559-20" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;expert_final_decision&quot;</span></span>
+<span id="cb1559-21"><a href="#cb1559-21" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb1559-22"><a href="#cb1559-22" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百五十二注意">二百五十二、注意：</h1>
+<p>这不是最终法律制度。</p>
+<p>只是：</p>
+<blockquote>
+<p>我们的评测工程合同。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十三这个-contract-非常有用">二百五十三、这个 Contract
+非常有用。</h1>
+<p>因为不同人不会：</p>
+<blockquote>
+<p>各自猜什么算泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十四现在看-rag-的时间问题">二百五十四、现在看 RAG
+的时间问题</h1>
+<p>例如法规：</p>
+<p>2025 年版本：</p>
+<pre class="text"><code>Rule V1</code></pre>
+<p>2026 年修订：</p>
+<pre class="text"><code>Rule V2</code></pre>
+<hr />
+<h1 id="二百五十五test-case-发生于">二百五十五、Test Case 发生于：</h1>
+<pre class="text"><code>2025</code></pre>
+<p>如果 RAG 永远只返回：</p>
+<blockquote>
+<p>2026 V2，</p>
+</blockquote>
+<p>可能发生：</p>
+<h1 id="future-law-leakage">Future Law Leakage</h1>
+<hr />
+<h1 id="二百五十六所以法规-rag-最终必须支持">二百五十六、所以法规 RAG
+最终必须支持：</h1>
+<pre class="text"><code>effective_from
+effective_to</code></pre>
+<hr />
+<h1
+id="二百五十七第六课我们会详细处理">二百五十七、第六课我们会详细处理：</h1>
+<blockquote>
+<p>法规时间、层级、地域。</p>
+</blockquote>
+<p>今天只需要知道：</p>
+<blockquote>
+<p>Benchmark Leakage 和 RAG Versioning 是连在一起的。</p>
+</blockquote>
+<hr />
+<h1
+id="二百五十八现在看另一个时间陷阱">二百五十八、现在看另一个时间陷阱</h1>
+<p>某个项目：</p>
+<blockquote>
+<p>2025 年发布。</p>
+</blockquote>
+<p>专家：</p>
+<blockquote>
+<p>2026 年标注。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十九专家可以用-2026-年新法规吗">二百五十九、专家可以用
+2026 年新法规吗？</h1>
+<p>如果我们的 Label 定义是：</p>
+<blockquote>
+<p>“按 2025 年当时有效规则判断”。</p>
+</blockquote>
+<p>那么：</p>
+<blockquote>
+<p>不能直接按 2026 新规则重新定罪。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十所以-annotation-本身也有">二百六十、所以 Annotation
+本身也有：</h1>
+<h1 id="temporal-semantics">Temporal Semantics</h1>
+<hr />
+<h1 id="二百六十一标注说明应该写清">二百六十一、标注说明应该写清：</h1>
+<blockquote>
+<p><strong>按照哪个时点的规范环境判断。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二百六十二否则-test-gold-本身">二百六十二、否则 Test Gold
+本身：</h1>
+<blockquote>
+<p>可能时间穿越。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十三这不是模型泄漏">二百六十三、这不是模型泄漏。</h1>
+<p>这是：</p>
+<h1 id="gold-construction-error">Gold Construction Error</h1>
+<hr />
+<h1 id="二百六十四但最终效果一样">二百六十四、但最终效果一样：</h1>
+<blockquote>
+<p>Benchmark 不可信。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十五所以第七阶段其实在告诉我们">二百六十五、所以第七阶段其实在告诉我们：</h1>
+<h1 id="leakage-audit-不能只查-traintest">Leakage Audit 不能只查
+Train/Test</h1>
+<p>还要查：</p>
+<blockquote>
+<p>Gold 本身是怎么来的。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十六现在我们给整个数据链加时间">二百六十六、现在我们给整个数据链加时间</h1>
+<pre class="text"><code>Raw Document
+    │ event_time
+    ▼
+ParsedDocument
+    ▼
+ClauseUnit
+    ▼
+Annotation
+    │ annotation_time
+    ▼
+Gold Sample
+    ▼
+Split
+    ▼
+Training / Test</code></pre>
+<hr />
+<h1 id="二百六十七再加">二百六十七、再加：</h1>
+<pre class="text"><code>knowledge_snapshot_time</code></pre>
+<p>和：</p>
+<pre class="text"><code>model_training_cutoff</code></pre>
+<p>整个系统就开始真正具有：</p>
+<h1 id="temporal-provenance">Temporal Provenance</h1>
+<hr />
+<h1 id="二百六十八以后如果问">二百六十八、以后如果问：</h1>
+<blockquote>
+<p>“为什么 2025 年这个 Case 这么判断？”</p>
+</blockquote>
+<p>可以回答：</p>
+<pre class="text"><code>依据的是当时有效规则
+Gold由2026专家回顾标注
+模型输入不含2025之后项目结果</code></pre>
+<p>这才是：</p>
+<blockquote>
+<p>专业可解释。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十九现在谈泄漏自动检测">二百六十九、现在谈泄漏自动检测</h1>
+<p>哪些能自动？</p>
+<p>第一类：</p>
+<h1 id="id-overlap">ID overlap</h1>
+<pre class="text"><code>project_id
+document_id
+duplicate_group_id
+source_case_id</code></pre>
+<p>很好自动查。</p>
+<hr />
+<h1 id="二百七十第二类">二百七十、第二类：</h1>
+<h1 id="exact-hash">Exact Hash</h1>
+<pre class="text"><code>normalized_text_hash</code></pre>
+<p>很好查。</p>
+<hr />
+<h1 id="二百七十一第三类">二百七十一、第三类：</h1>
+<h1 id="near-similarity">Near Similarity</h1>
+<p>可以用：</p>
+<pre class="text"><code>MinHash
+Embedding</code></pre>
+<p>找候选。</p>
+<hr />
+<h1 id="二百七十二第四类">二百七十二、第四类：</h1>
+<h1 id="lineage-1">Lineage</h1>
+<p>沿着：</p>
+<pre class="text"><code>parent_sample_id
+source_sample_id</code></pre>
+<p>图搜索。</p>
+<hr />
+<h1 id="二百七十三第五类">二百七十三、第五类：</h1>
+<h1 id="temporal-check">Temporal Check</h1>
+<p>比较：</p>
+<pre class="text"><code>feature_available_time
+prediction_time</code></pre>
+<hr />
+<h1 id="二百七十四第六类">二百七十四、第六类：</h1>
+<h1 id="input-schema-audit">Input Schema Audit</h1>
+<p>检查 Input 中：</p>
+<blockquote>
+<p>是否包含禁用字段。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十五哪些很难全自动">二百七十五、哪些很难全自动？</h1>
+<p>例如：</p>
+<blockquote>
+<p>某条 Prompt 规则是不是因为看 Final Test 才写的？</p>
+</blockquote>
+<p>这需要：</p>
+<h1 id="process-governance">Process Governance</h1>
+<hr />
+<h1 id="二百七十六所以">二百七十六、所以：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mo>=</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LeakageControl
+=
+Automation
++
+Governance
+}
+</annotation></semantics></math></p>
+<p>只靠代码：</p>
+<blockquote>
+<p>不够。</p>
+</blockquote>
+<p>只靠制度：</p>
+<blockquote>
+<p>也不够。</p>
+</blockquote>
+<hr />
+<h1
+id="二百七十七现在给-leakageaudit_v0.1-设计一个总报告">二百七十七、现在给
+<code>LeakageAudit_V0.1</code> 设计一个总报告</h1>
+<p>概念上可以包含：</p>
+<pre class="text"><code>Audit Scope
+Split Version
+Dataset Version
+Benchmark Version
+Model Development Cutoff</code></pre>
+<hr />
+<h1 id="二百七十八然后统计">二百七十八、然后统计：</h1>
+<pre class="text"><code>Project overlap count
+Exact duplicate overlap count
+Near duplicate suspects
+Lineage violations
+Temporal violations
+Forbidden-field violations
+RAG contamination findings
+Human test exposure</code></pre>
+<hr />
+<h1 id="二百七十九例如">二百七十九、例如：</h1>
+<div class="sourceCode" id="cb1575"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1575-1"><a href="#cb1575-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1575-2"><a href="#cb1575-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;audit_version&quot;</span><span class="fu">:</span> <span class="st">&quot;leakage_audit_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb1575-3"><a href="#cb1575-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1575-4"><a href="#cb1575-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dataset_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_dataset_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb1575-5"><a href="#cb1575-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_split_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb1575-6"><a href="#cb1575-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1575-7"><a href="#cb1575-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_overlap&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb1575-8"><a href="#cb1575-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;exact_duplicate_overlap&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb1575-9"><a href="#cb1575-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1575-10"><a href="#cb1575-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;near_duplicate_suspects&quot;</span><span class="fu">:</span> <span class="dv">27</span><span class="fu">,</span></span>
+<span id="cb1575-11"><a href="#cb1575-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;confirmed_near_duplicate_leaks&quot;</span><span class="fu">:</span> <span class="dv">3</span><span class="fu">,</span></span>
+<span id="cb1575-12"><a href="#cb1575-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1575-13"><a href="#cb1575-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;lineage_violations&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb1575-14"><a href="#cb1575-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;temporal_violations&quot;</span><span class="fu">:</span> <span class="dv">2</span><span class="fu">,</span></span>
+<span id="cb1575-15"><a href="#cb1575-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1575-16"><a href="#cb1575-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;forbidden_input_field_violations&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb1575-17"><a href="#cb1575-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1575-18"><a href="#cb1575-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;audit_status&quot;</span><span class="fu">:</span> <span class="st">&quot;needs_remediation&quot;</span></span>
+<span id="cb1575-19"><a href="#cb1575-19" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百八十这时不能说">二百八十、这时不能说：</h1>
+<blockquote>
+<p>Benchmark 已通过。</p>
+</blockquote>
+<p>要先解决：</p>
+<pre class="text"><code>3个Near Duplicate Leak
+2个Temporal Leak</code></pre>
+<hr />
+<h1 id="二百八十一修完再跑">二百八十一、修完再跑：</h1>
+<pre class="text"><code>LeakageAudit_v0.2</code></pre>
+<hr />
+<h1
+id="二百八十二这就是工程化质量门槛">二百八十二、这就是工程化质量门槛：</h1>
+<h1 id="quality-gate">Quality Gate</h1>
+<hr />
+<h1 id="二百八十三比如规定">二百八十三、比如规定：</h1>
+<pre class="text"><code>Critical Leakage = 0</code></pre>
+<p>才能发布 Benchmark。</p>
+<hr />
+<h1 id="二百八十四high-severity">二百八十四、High Severity：</h1>
+<blockquote>
+<p>必须人工审议。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十五medium">二百八十五、Medium：</h1>
+<blockquote>
+<p>可以记录为已知限制。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十六这比">二百八十六、这比：</h1>
+<blockquote>
+<p>“我们觉得没泄漏”</p>
+</blockquote>
+<p>靠谱得多。</p>
+<hr />
+<h1
+id="二百八十七现在看一个常见误区">二百八十七、现在看一个常见误区：</h1>
+<blockquote>
+<p>“我们从来没把 Test 放进 Train，所以肯定没泄漏。”</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<h1 id="二百八十八test-可能通过">二百八十八、Test 可能通过：</h1>
+<pre class="text"><code>Synthetic
+RAG
+Rule
+Prompt
+Threshold
+Human</code></pre>
+<p>六条路回来。</p>
+<hr />
+<h1 id="二百八十九另一个误区">二百八十九、另一个误区：</h1>
+<blockquote>
+<p>“我们已经做了去重，所以不会泄漏。”</p>
+</blockquote>
+<p>错。</p>
+<p>去重：</p>
+<blockquote>
+<p>只能解决部分内容重合。</p>
+</blockquote>
+<p>解决不了：</p>
+<pre class="text"><code>未来信息
+答案知识库
+Test调Prompt</code></pre>
+<hr />
+<h1 id="二百九十另一个误区">二百九十、另一个误区：</h1>
+<blockquote>
+<p>“基础模型冻结，没有训练，所以 RAG 泄漏没关系。”</p>
+</blockquote>
+<p>错。</p>
+<p>Benchmark 测的是最终系统输出。</p>
+<p>RAG 如果：</p>
+<blockquote>
+<p>藏着标准答案，</p>
+</blockquote>
+<p>系统一样作弊。</p>
+<hr />
+<h1 id="二百九十一另一个误区">二百九十一、另一个误区：</h1>
+<blockquote>
+<p>“人看Test不算机器看Test。”</p>
+</blockquote>
+<p>如果人的观察：</p>
+<blockquote>
+<p>改变了系统，</p>
+</blockquote>
+<p>就产生了信息通道。</p>
+<hr />
+<h1 id="二百九十二另一个误区">二百九十二、另一个误区：</h1>
+<blockquote>
+<p>“只要测试样本够新，就一定没污染。”</p>
+</blockquote>
+<p>也不一定。</p>
+<p>如果 Test 是从旧案例：</p>
+<blockquote>
+<p>改写而来，</p>
+</blockquote>
+<p>而旧案例已在 Train，</p>
+<p>仍可能高度相关。</p>
+<hr />
+<h1
+id="二百九十三所以真正核心始终是">二百九十三、所以真正核心始终是：</h1>
+<h1 id="information-lineage">Information Lineage</h1>
+<p>信息从哪里来。</p>
+<hr />
+<h1
+id="二百九十四现在做几个思维实验">二百九十四、现在做几个思维实验</h1>
+<h3 id="思维实验-a-1">思维实验 A</h3>
+<p>Train/Test 没有任何相同 <code>project_id</code>。</p>
+<p>是不是就可以宣布：</p>
+<blockquote>
+<p>无泄漏？</p>
+</blockquote>
+<p>不能。</p>
+<p>还要检查：</p>
+<blockquote>
+<p>Duplicate、Template、Lineage、Time、RAG、Human Feedback。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十五-思维实验-b">二百九十五、### 思维实验 B</h1>
+<p>Test 的原文从未进 Train，</p>
+<p>但 Gold Rationale 在 RAG 中。</p>
+<p>是否泄漏？</p>
+<blockquote>
+<p>是，属于严重 Answer/RAG Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十六-思维实验-c">二百九十六、### 思维实验 C</h1>
+<p>Test Case 的改写版本进入 Train。</p>
+<p>文字不一样。</p>
+<p>是否泄漏？</p>
+<blockquote>
+<p>是，属于 Lineage Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十七-思维实验-d">二百九十七、### 思维实验 D</h1>
+<p>测试 2025 年项目时，</p>
+<p>系统查到了 2026 年才生效的法规。</p>
+<p>是否有问题？</p>
+<blockquote>
+<p>如果评测目标是模拟 2025 年当时决策，这是 Temporal Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十八-思维实验-e">二百九十八、### 思维实验 E</h1>
+<p>专家在 2026 年利用后续证据给 2025 项目标 Gold。</p>
+<p>允许吗？</p>
+<blockquote>
+<p>可以，只要后续证据不进入模型 Input，并且 Gold 定义明确。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十九-思维实验-f">二百九十九、### 思维实验 F</h1>
+<p>同一法律法规同时存在于 Train 和 Test 相关 Context。</p>
+<p>一定泄漏吗？</p>
+<blockquote>
+<p>不一定。公共允许知识不等于测试答案。</p>
+</blockquote>
+<hr />
+<h1 id="三百-思维实验-g">三百、### 思维实验 G</h1>
+<p>Final Test 跑过 50 次，每次团队根据错误改系统。</p>
+<p>它还是完全独立 Final Test 吗？</p>
+<blockquote>
+<p>基本不能再这样理解。</p>
+</blockquote>
+<p>它已经逐渐变成 Development Benchmark。</p>
+<hr />
+<h1 id="三百零一-思维实验-h">三百零一、### 思维实验 H</h1>
+<p>模型 Base Pretraining 可能看过公开 Benchmark。</p>
+<p>我们自己没有训练过它。</p>
+<p>有没有污染风险？</p>
+<blockquote>
+<p>有，属于 Pretraining / Benchmark Contamination 风险。</p>
+</blockquote>
+<hr />
+<h1 id="三百零二-思维实验-i">三百零二、### 思维实验 I</h1>
+<p>Input 里没有 Label，</p>
+<p>但有字段：</p>
+<pre class="text"><code>整改状态 = 已整改</code></pre>
+<p>任务是判断：</p>
+<blockquote>
+<p>是否存在问题。</p>
+</blockquote>
+<p>是否可能泄漏？</p>
+<blockquote>
+<p>很可能，因为这个字段是结果代理。</p>
+</blockquote>
+<hr />
+<h1 id="三百零三-思维实验-j">三百零三、### 思维实验 J</h1>
+<p>Threshold 是在 Test 上挑出来的最佳值。</p>
+<p>训练数据完全干净。</p>
+<p>Test 分数还能作为纯 Final Estimate 吗？</p>
+<blockquote>
+<p>不能，因为 Test 已参与模型选择。</p>
+</blockquote>
+<hr />
+<h1
+id="三百零四现在总结本阶段最容易犯的-12-个错误">三百零四、现在总结本阶段最容易犯的
+12 个错误</h1>
+<p><strong>错误 1：</strong></p>
+<blockquote>
+<p>Project 不重叠 = 没有泄漏。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 2：</strong></p>
+<blockquote>
+<p>只有原文重复才算泄漏。</p>
+</blockquote>
+<p>错。</p>
+<p>答案、派生数据、未来信息都可以泄漏。</p>
+<hr />
+<p><strong>错误 3：</strong></p>
+<blockquote>
+<p>Label 没进 Input，所以不会 Label Leakage。</p>
+</blockquote>
+<p>错。</p>
+<p>可能有 Target Proxy。</p>
+<hr />
+<p><strong>错误 4：</strong></p>
+<blockquote>
+<p>RAG 不改权重，所以 RAG 里的 Test Answer 不算泄漏。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 5：</strong></p>
+<blockquote>
+<p>Synthetic Data 字不一样，所以安全。</p>
+</blockquote>
+<p>错。</p>
+<p>Lineage 才重要。</p>
+<hr />
+<p><strong>错误 6：</strong></p>
+<blockquote>
+<p>未来结果可以作为模型 Feature，因为能提高准确率。</p>
+</blockquote>
+<p>这正是严重 Temporal / Outcome Leakage。</p>
+<hr />
+<p><strong>错误 7：</strong></p>
+<blockquote>
+<p>专家能看到的信息，模型也都能看到。</p>
+</blockquote>
+<p>错。</p>
+<p>Annotator View 和 Model View 应分开。</p>
+<hr />
+<p><strong>错误 8：</strong></p>
+<blockquote>
+<p>Final Test 可以无限次调 Prompt。</p>
+</blockquote>
+<p>会产生 Test Peeking。</p>
+<hr />
+<p><strong>错误 9：</strong></p>
+<blockquote>
+<p>Threshold 调节不算使用 Test。</p>
+</blockquote>
+<p>算。</p>
+<hr />
+<p><strong>错误 10：</strong></p>
+<blockquote>
+<p>公开 Benchmark 一定能代表真实泛化。</p>
+</blockquote>
+<p>不一定，可能存在预训练污染。</p>
+<hr />
+<p><strong>错误 11：</strong></p>
+<blockquote>
+<p>只要技术上做了隔离，流程治理不重要。</p>
+</blockquote>
+<p>错。</p>
+<p>人类反馈也能造成泄漏。</p>
+<hr />
+<p><strong>错误 12：</strong></p>
+<blockquote>
+<p>Leakage Audit 是一次性的。</p>
+</blockquote>
+<p>错。</p>
+<p>Dataset、RAG、Prompt、Rules 每次重要更新后都应该重新检查。</p>
+<hr />
+<h1 id="三百零五本阶段最重要的-7-个">三百零五、本阶段最重要的 7
+个“≠”</h1>
+<pre class="text"><code>Different Project
+≠
+No Leakage</code></pre>
+<pre class="text"><code>No Exact Duplicate
+≠
+No Contamination</code></pre>
+<pre class="text"><code>Label Column Removed
+≠
+No Label Leakage</code></pre>
+<pre class="text"><code>Frozen Model Weights
+≠
+Clean Evaluation</code></pre>
+<pre class="text"><code>Public Knowledge
+≠
+Test-specific Answer</code></pre>
+<pre class="text"><code>Future Evidence for Annotation
+≠
+Future Evidence for Model Input</code></pre>
+<pre class="text"><code>Test Not Used for Gradient
+≠
+Test Not Used for Development</code></pre>
+<p>最后一条尤其重要。</p>
+<hr />
+<h1
+id="三百零六再记住本阶段最重要的">三百零六、再记住本阶段最重要的“=”</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mo>=</mo><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>I</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>T</mi><mi>e</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>I</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CleanBenchmark
+=
+SplitIsolation
++
+TemporalIntegrity
++
+LineageIntegrity
++
+SystemIsolation
++
+HumanProcessControl
+}
+</annotation></semantics></math></p>
+<p>翻译成人话：</p>
+<blockquote>
+<p><strong>真正干净的 Benchmark，不只是 Train 和 Test
+的行不重复，而是测试项目、答案、派生数据、时间信息、RAG、Prompt、规则和人工开发反馈都处在被明确控制的边界之内。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三百零七现在把第四课前-7-个阶段连起来">三百零七、现在把第四课前
+7 个阶段连起来</h1>
+<pre class="text"><code>Stage 1
+Task Schema
+“什么是一条样本？”
+       │
+       ▼
+Stage 2
+ParsedDocument
+“文件里到底有什么？”
+       │
+       ▼
+Stage 3
+ClauseUnit
+“文字属于哪个业务要求？”
+       │
+       ▼
+Stage 4
+CleanClause
+“怎样安全规范文本？”
+       │
+       ▼
+Stage 5
+DedupedClauseSet
+“这些样本到底有多少独立信息？”
+       │
+       ▼
+Stage 6
+DatasetSplit
+“哪些数据用来学，哪些留下考试？”
+       │
+       ▼
+Stage 7
+LeakageAudit
+“考试题真的没有被提前泄露吗？”</code></pre>
+<p>到这里，我们的数据才第一次开始拥有：</p>
+<blockquote>
+<p><strong>可信评测边界。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三百零八但还有一个巨大问题没有解决">三百零八、但还有一个巨大问题没有解决</h1>
+<p>现在我们有：</p>
+<pre class="text"><code>Clause
+Clean Text
+Dedup Group
+Split
+Leakage Audit</code></pre>
+<p>但是：</p>
+<blockquote>
+<p><strong>到底让专家标什么？</strong></p>
+</blockquote>
+<hr />
+<h1 id="三百零九如果专家-a-标">三百零九、如果专家 A 标：</h1>
+<pre class="text"><code>违规</code></pre>
+<p>专家 B 标：</p>
+<pre class="text"><code>有风险</code></pre>
+<p>专家 C 标：</p>
+<pre class="text"><code>建议修改</code></pre>
+<p>专家 D 标：</p>
+<pre class="text"><code>需要进一步核查</code></pre>
+<p>这些到底是不是：</p>
+<blockquote>
+<p>同一个 Label？</p>
+</blockquote>
+<hr />
+<h1 id="三百一十再比如风险类型">三百一十、再比如风险类型</h1>
+<p>有人写：</p>
+<pre class="text"><code>地域限制</code></pre>
+<p>有人写：</p>
+<pre class="text"><code>资格条件不合理</code></pre>
+<p>有人写：</p>
+<pre class="text"><code>差别待遇</code></pre>
+<p>有人写：</p>
+<pre class="text"><code>供应商资格风险</code></pre>
+<hr />
+<h1 id="三百一十一如果没有统一-schema">三百一十一、如果没有统一
+Schema，</h1>
+<p>最后得到的不是：</p>
+<blockquote>
+<p>Gold Dataset。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>一堆专家各自语言风格的 Excel。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十二所以泄漏控制以后">三百一十二、所以泄漏控制以后，</h1>
+<p>第四课的下一步终于进入：</p>
+<h1 id="label-schema">Label Schema</h1>
+<hr />
+<h1 id="三百一十三本阶段掌握测试">三百一十三、本阶段掌握测试</h1>
+<p>如果现在不看前文，你能够完整解释下面这些问题，第 7
+阶段就算真正掌握：</p>
+<blockquote>
+<p>为什么 Project-disjoint 不等于没有数据泄漏？</p>
+</blockquote>
+<blockquote>
+<p>Data Leakage 的本质是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么答案相关信息不一定以 Label 字段出现？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Target Proxy？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Label Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么“专家意见”也可能泄漏答案？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Duplicate Leakage？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Template Leakage？</p>
+</blockquote>
+<blockquote>
+<p>Template overlap 为什么有时不是绝对非法，而是泛化难度问题？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Temporal Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么未来更正公告不能帮助模型模拟过去时点判断？</p>
+</blockquote>
+<blockquote>
+<p>Prediction Time 和 Information Available Time 有什么关系？</p>
+</blockquote>
+<blockquote>
+<p>为什么未来结果可以辅助 Gold Label，却不能进入 Model Input？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Retrospective Label / Prospective Input？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Lineage Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Synthetic Data 必须继承母样本 Split？</p>
+</blockquote>
+<blockquote>
+<p>翻译、改写、摘要为什么都属于派生关系？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Answer Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Gold Rationale 进入 RAG 会污染 Benchmark？</p>
+</blockquote>
+<blockquote>
+<p>Allowed Knowledge 和 Test-specific Knowledge 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Benchmark 必须定义 RAG 允许访问的知识范围？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Human-in-the-loop Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么反复看 Test Error 会让 Test 逐渐变成 Validation？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Benchmark Feedback Loop？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Pretraining Contamination？</p>
+</blockquote>
+<blockquote>
+<p>为什么公开 Benchmark 的污染风险通常更高？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Outcome Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么“后续是否被投诉”不能用于预测发布时的风险？</p>
+</blockquote>
+<blockquote>
+<p>Annotator View 和 Model View 为什么必须分开？</p>
+</blockquote>
+<blockquote>
+<p>为什么模型 Input Builder 最好用字段白名单？</p>
+</blockquote>
+<blockquote>
+<p>Prompt 如何产生 Test Leakage？</p>
+</blockquote>
+<blockquote>
+<p>Rule Engine 如何产生 Test Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Threshold 也不能在 Final Test 上调？</p>
+</blockquote>
+<blockquote>
+<p>Direct Leakage 和 Indirect Leakage 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Benchmark Firewall？</p>
+</blockquote>
+<blockquote>
+<p>Benchmark Firewall 为什么不仅是一个算法？</p>
+</blockquote>
+<blockquote>
+<p>Access Control 在 Benchmark 中有什么作用？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Final Test 可以设置 Hidden Label？</p>
+</blockquote>
+<blockquote>
+<p>为什么 RAG Snapshot 需要版本化？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Temporal Benchmark 需要 Knowledge Cutoff？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Lineage Guard？</p>
+</blockquote>
+<blockquote>
+<p>为什么每次 Final Test Run 都值得记录？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Leakage Audit Checklist？</p>
+</blockquote>
+<blockquote>
+<p>Leakage Severity 为什么需要分级？</p>
+</blockquote>
+<blockquote>
+<p>为什么“任何重复信息都是泄漏”这种理解也是错误的？</p>
+</blockquote>
+<blockquote>
+<p>Evaluation Claim 为什么决定了什么算泄漏？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Benchmark Contract？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Gold Label 本身也可能存在时间错误？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Temporal Provenance？</p>
+</blockquote>
+<blockquote>
+<p>哪些泄漏可以自动检查？</p>
+</blockquote>
+<blockquote>
+<p>哪些泄漏必须依靠流程治理？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>LeakageAudit_V0.1</code> 应该成为 Dataset
+的正式组成部分？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Final Test 用久以后可以降级为 Regression Set？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Benchmark Rotation？</p>
+</blockquote>
+<p>如果这些你都能自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>7</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第7阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三百一十四本阶段最终只记一句话">三百一十四、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>Data Leakage 不只是“Train 里出现了 Test
+原文”，而是任何不应该在开发阶段可用的测试相关信息——标签、专家答案、未来结果、派生样本、RAG
+内容、Prompt 规则、阈值，甚至人类对 Test
+错误的反复观察——越过评测边界并影响了系统；真正可信的 Benchmark
+必须依靠数据血缘、时间约束、系统隔离和 Benchmark Firewall
+共同保护。</strong></p>
+</blockquote>
+<p>最后把这一阶段压成一张图：</p>
+<pre class="text"><code>                    Final Test
+                        │
+                        ▼
+                Evaluation Claim
+                        │
+                        ▼
+                Benchmark Contract
+                        │
+       ┌────────────────┼─────────────────┐
+       ▼                ▼                 ▼
+  Allowed Info      Forbidden Info      Time Cutoff
+       │                │                 │
+       └────────────────┼─────────────────┘
+                        ▼
+                 Leakage Audit
+       ┌────────────────┼──────────────────┐
+       ▼                ▼                  ▼
+    Dataset           System             Human
+       │                │                  │
+ Project/Dup       Prompt/RAG/Rules     Test Peeking
+ Lineage/Time      Threshold/Tools      Error Feedback
+       │                │                  │
+       └────────────────┼──────────────────┘
+                        ▼
+                Benchmark Firewall
+                        │
+                        ▼
+                LeakageAudit_V0.1
+                        │
+                        ▼
+                 Trusted Evaluation</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-8-阶段">下一阶段：第四课 · 第 8 阶段</h1>
+<h2
+id="label-schema专家到底应该标什么为什么有风险-没风险两个标签远远不够构建一个真正的政府采购专业模型">Label
+Schema——专家到底应该标什么？为什么“有风险 /
+没风险”两个标签远远不够构建一个真正的政府采购专业模型？</h2>
+<p>第 8 阶段我们会第一次真正把：</p>
+<pre class="text"><code>专家判断</code></pre>
+<p>变成：</p>
+<h1
+id="可训练可评测可统计的结构化标签">可训练、可评测、可统计的结构化标签。</h1>
+<p>核心会解决：</p>
+<pre class="text"><code>risk_present
+risk_type
+risk_level
+needs_review
+rationale
+evidence
+suggested_action</code></pre>
+<p>这些字段究竟：</p>
+<blockquote>
+<p>哪些应该成为训练 Target？</p>
+</blockquote>
+<p>哪些：</p>
+<blockquote>
+<p>只是 Metadata？</p>
+</blockquote>
+<p>哪些：</p>
+<blockquote>
+<p>应该由专家填写？</p>
+</blockquote>
+<p>哪些：</p>
+<blockquote>
+<p>可以后续派生？</p>
+</blockquote>
+<p>而且会正式建立我们政府采购风险审查的第一版五大类：</p>
+<pre class="text"><code>A 供应商资格
+B 技术参数
+C 商务要求
+D 评分标准
+E 采购需求</code></pre>
+<p>同时处理一个非常关键的问题：</p>
+<blockquote>
+<p><strong>“不知道 / 证据不足 /
+需要人工复核”到底是不是一个合法答案？</strong></p>
+</blockquote>
+<p>最终我们会得到：</p>
+<h1 id="annotationschema_v0.1"><code>AnnotationSchema_V0.1</code></h1>
+<p>从那个阶段开始，我们的数据才真正进入：</p>
+<blockquote>
+<p><strong>专家标注体系。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage06.html">← 第 6 阶段</a><a class="btn" href="stage08.html">第 8 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

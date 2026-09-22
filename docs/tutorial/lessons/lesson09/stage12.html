@@ -1,0 +1,932 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第12阶段：真正搭建 `ProcurementBench_V1`：端到端评测与 Release Gate</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第12阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>Benchmark ≠ DatasetOnly。评测基准是数据、协议、指标和治理的组合。</li><li>ExpertOpinion ≠ GroundTruth。Gold 的权威来自受控流程，不来自单一专家身份。</li><li>CorrectAnswer ≠ CompleteEvaluation。结果、过程、证据和错误严重度都需要评。</li></ul></div><h1 id="第九课-第-12-阶段">第九课 · 第 12 阶段</h1>
+<h1
+id="真正搭建-procurementbench_v1端到端评测与-release-gate-1">真正搭建
+<code>ProcurementBench_V1</code>：端到端评测与 Release Gate</h1>
+<h2
+id="怎样把-goldmetricsragagentslicecalibrationfirewallregression-全部接成一套真正能决定能不能上线的质量系统">怎样把
+Gold、Metrics、RAG、Agent、Slice、Calibration、Firewall、Regression
+全部接成一套真正能决定“能不能上线”的质量系统？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-11">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-11">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Benchmark ≠
+DatasetOnly。评测基准是数据、协议、指标和治理的组合。</strong></li>
+<li><strong>ExpertOpinion ≠ GroundTruth。Gold
+的权威来自受控流程，不来自单一专家身份。</strong></li>
+<li><strong>CorrectAnswer ≠
+CompleteEvaluation。结果、过程、证据和错误严重度都需要评。</strong></li>
+<li><strong>Accuracy ≠
+RiskQuality。分类指标必须和真实业务错误成本绑定。</strong></li>
+<li><strong>FluentAnswer ≠
+CorrectAnswer。生成质量必须拆事实、证据、引用和拒答。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-11">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>Regression</code></td>
+<td>回归测试：更新后验证旧能力和关键切片没有退化</td>
+</tr>
+<tr class="even">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="odd">
+<td><code>Calibration</code></td>
+<td>校准：使模型置信度更接近实际正确率</td>
+</tr>
+<tr class="even">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-11">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前 11 个阶段，我们已经分别建立：</p>
+<pre class="text"><code>Benchmark Boundary
+Gold Set
+Evaluation Schema
+Classification Metrics
+Generation Evaluation
+RAG Evaluation
+Agent Evaluation
+Slice Evaluation
+Calibration / Abstention / OOD
+Benchmark Firewall
+Regression Testing</code></pre>
+<p>第 12 阶段不再增加孤立概念。</p>
+<p>它要把所有东西接成：</p>
+<h1 id="procurementbench_v1-1"><code>ProcurementBench_V1</code></h1>
+<p>也就是：</p>
+<blockquote>
+<p><strong>政府采购 AI 的长期质量裁判系统。</strong></p>
+</blockquote>
+<p>本阶段第一条总边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>R</mi><mi>u</mi><mi>n</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkRun
+\neq
+ReleaseDecision
+}
+</annotation></semantics></math></p>
+<p>跑完一遍 Benchmark，</p>
+<p>只代表：</p>
+<blockquote>
+<p>得到一组评测证据。</p>
+</blockquote>
+<p>真正是否发布，</p>
+<p>还需要：</p>
+<blockquote>
+<p>Release Gate。</p>
+</blockquote>
+<hr />
+<h1
+id="一procurementbench_v1-到底是什么">一、<code>ProcurementBench_V1</code>
+到底是什么？</h1>
+<p>它不是：</p>
+<pre class="text"><code>一个CSV
+一个Excel
+一个F1脚本</code></pre>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>_</mi><mi>V</mi><mn>1</mn><mo>=</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mo>+</mo><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>s</mi><mo>+</mo><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>s</mi><mo>+</mo><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>F</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>w</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementBench\_V1
+=
+GoldData
++
+EvaluationSchema
++
+Metrics
++
+Slices
++
+Calibration
++
+Firewall
++
+Regression
++
+Governance
++
+ReleaseGate
+}
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkSystem
+\neq
+BenchmarkFile
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二核心心智模型-①-8">二、核心心智模型 ①</h1>
+<h1 id="benchmark-是质量基础设施不是一次考试"><code>Benchmark</code>
+是质量基础设施，不是一次考试</h1>
+<p>真正成熟以后，</p>
+<p>每个模型、RAG、Agent 版本都应该经过：</p>
+<pre class="text"><code>统一Benchmark
+统一Protocol
+统一Trace
+统一Regression
+统一ReleaseGate</code></pre>
+<p>所以 ProcurementBench 是：</p>
+<h1 id="quality-infrastructure">Quality Infrastructure</h1>
+<h2 id="质量基础设施">质量基础设施</h2>
+<hr />
+<h1 id="三完整端到端流程">三、完整端到端流程</h1>
+<pre class="text"><code>Define Evaluation Objectives
+↓
+Build Candidate Pool
+↓
+Benchmark Firewall
+↓
+Gold Annotation
+↓
+Adjudication
+↓
+Freeze Gold
+↓
+Evaluation Schema
+↓
+Task-specific Metrics
+↓
+Slice Registry
+↓
+Hidden / OOD Sets
+↓
+Run Model / RAG / Agent Eval
+↓
+Calibration &amp; Risk-Coverage
+↓
+Regression Comparison
+↓
+Release Gate
+↓
+Release Report
+↓
+Versioned Benchmark Maintenance</code></pre>
+<p>这条链必须：</p>
+<blockquote>
+<p>可复现、可审计、可版本化。</p>
+</blockquote>
+<hr />
+<h1 id="四benchmark-artifact-tree">四、Benchmark Artifact Tree</h1>
+<p>第一版可以组织为：</p>
+<pre class="text"><code>ProcurementBench_V1/
+
+├── gold/
+│   ├── items
+│   ├── labels
+│   ├── evidence
+│   └── adjudication
+│
+├── schema/
+│   ├── annotation_schema
+│   ├── evaluation_schema
+│   └── error_taxonomy
+│
+├── metrics/
+│   ├── classification
+│   ├── generation
+│   ├── rag
+│   ├── agent
+│   └── calibration
+│
+├── slices/
+│   ├── registry
+│   ├── critical_slices
+│   └── hard_cases
+│
+├── firewall/
+│   ├── contamination_checks
+│   ├── hidden_test
+│   └── access_policy
+│
+├── regression/
+│   ├── champion
+│   ├── challenger
+│   └── history
+│
+├── runs/
+│   └── benchmark_run_manifest
+│
+└── release/
+    ├── release_gate
+    └── release_report</code></pre>
+<hr />
+<h1 id="五核心心智模型-②-3">五、核心心智模型 ②</h1>
+<h1
+id="benchmarkversion-data-protocol-schema-metrics"><code>BenchmarkVersion = Data + Protocol + Schema + Metrics</code></h1>
+<p>如果只改：</p>
+<pre class="text"><code>Gold Data</code></pre>
+<p>是版本变化。</p>
+<p>如果只改：</p>
+<pre class="text"><code>Judge Prompt
+Metric Definition
+Slice Definition</code></pre>
+<p>同样是版本变化。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkVersion
+\neq
+DatasetVersionOnly
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六benchmark-run-manifest">六、Benchmark Run Manifest</h1>
+<p>每次 Run 至少记录：</p>
+<pre class="text"><code>benchmark_run_id
+
+benchmark_version
+
+model_version
+
+rag_version
+
+agent_version
+
+prompt_version
+
+threshold_version
+
+judge_version
+
+metric_version
+
+slice_registry_version
+
+retrieval_index_version
+
+timestamp
+
+environment
+
+results
+
+release_gate_status</code></pre>
+<p>这样以后看到：</p>
+<pre class="text"><code>Score = 84.7</code></pre>
+<p>才能知道：</p>
+<blockquote>
+<p>它到底是怎么跑出来的。</p>
+</blockquote>
+<hr />
+<h1 id="七核心心智模型-③-2">七、核心心智模型 ③</h1>
+<h1
+id="scorewithoutrunmanifest-weakevidence"><code>ScoreWithoutRunManifest = WeakEvidence</code></h1>
+<p>没有上下文的分数，</p>
+<p>不能成为可靠发布证据。</p>
+<hr />
+<h1 id="八统一-scorecard-应该长什么样">八、统一 Scorecard
+应该长什么样？</h1>
+<p>可以分：</p>
+<h3 id="foundation">Foundation</h3>
+<pre class="text"><code>Domain Understanding
+Long Context
+Terminology</code></pre>
+<h3 id="classification">Classification</h3>
+<pre class="text"><code>Precision
+Recall
+F1
+PR-AUC
+Critical FN</code></pre>
+<h3 id="generation">Generation</h3>
+<pre class="text"><code>Factuality
+Groundedness
+Citation
+Completeness</code></pre>
+<h3 id="rag">RAG</h3>
+<pre class="text"><code>Recall@K
+MRR
+Context Recall
+Groundedness</code></pre>
+<h3 id="agent">Agent</h3>
+<pre class="text"><code>Task Completion
+Tool Correctness
+Recovery
+Safety</code></pre>
+<h3 id="reliability">Reliability</h3>
+<pre class="text"><code>Calibration
+Abstention
+OOD
+Risk-Coverage</code></pre>
+<h3 id="regression">Regression</h3>
+<pre class="text"><code>Critical Delta
+Worst Slice
+Historical Trend</code></pre>
+<hr />
+<h1 id="九核心心智模型-④">九、核心心智模型 ④</h1>
+<h1 id="onescore-只能做导航不能代替多维证据"><code>OneScore</code>
+只能做导航，不能代替多维证据</h1>
+<p>可以有一个：</p>
+<pre class="text"><code>Overall Score</code></pre>
+<p>用于快速导航。</p>
+<p>但真正 Release 决策必须看：</p>
+<pre class="text"><code>Dimension
+Slice
+Critical Gate
+Regression</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>=</mo><mi>D</mi><mi>a</mi><mi>s</mi><mi>h</mi><mi>b</mi><mi>o</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>≠</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OverallScore
+=
+Dashboard
+\neq
+Decision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十release-gate-怎样设计">十、Release Gate 怎样设计？</h1>
+<p>可以概念化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><msub><mi>G</mi><mrow><mi>g</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>c</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>g</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>r</mi><mi>a</mi><mi>g</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>a</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>s</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>c</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>r</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>f</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>w</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+ReleaseGate
+=
+G_{gold}
+\land
+G_{classification}
+\land
+G_{generation}
+\land
+G_{rag}
+\land
+G_{agent}
+\land
+G_{slice}
+\land
+G_{calibration}
+\land
+G_{regression}
+\land
+G_{firewall}
+</annotation></semantics></math></p>
+<p>全部为 True：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseGate=True
+}
+</annotation></semantics></math></p>
+<p>才允许：</p>
+<blockquote>
+<p>发布候选系统晋级。</p>
+</blockquote>
+<hr />
+<h1 id="十一关键门槛必须训练前定义">十一、关键门槛必须训练前定义</h1>
+<p>不能模型跑完后：</p>
+<blockquote>
+<p>看哪个指标好就说哪个重要。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>&gt;</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>H</mi><mi>o</mi><mi>c</mi><mi>N</mi><mi>a</mi><mi>r</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PredefinedGate
+&gt;
+PostHocNarrative
+}
+</annotation></semantics></math></p>
+<p>这里的 <code>&gt;</code> 表示：</p>
+<blockquote>
+<p>决策可信度更高。</p>
+</blockquote>
+<hr />
+<h1 id="十二核心心智模型-⑤-1">十二、核心心智模型 ⑤</h1>
+<h1
+id="benchmark-的价值在阻止错误发布不只是证明模型很强"><code>Benchmark</code>
+的价值在“阻止错误发布”，不只是证明模型很强</h1>
+<p>一个好 Benchmark 不只是：</p>
+<blockquote>
+<p>给好模型发奖状。</p>
+</blockquote>
+<p>更重要的是：</p>
+<blockquote>
+<p>在高风险回归时把 Release 挡住。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>o</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>B</mi><mi>r</mi><mi>a</mi><mi>k</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Benchmark
+=
+PromotionEvidence
++
+ReleaseBrake
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三champion-challenger-工作流">十三、Champion / Challenger
+工作流</h1>
+<pre class="text"><code>Champion
+当前稳定系统
+
+↓
+
+Challenger
+候选新系统
+
+↓
+
+Same Benchmark
+同一基准
+
+↓
+
+Paired Eval
+配对评测
+
+↓
+
+Regression Check
+回归检查
+
+↓
+
+Release Gate
+发布门槛
+
+↓
+
+Promote / Reject
+晋级或否决</code></pre>
+<p>这会成为后面 MLOps 的核心流程。</p>
+<hr />
+<h1 id="十四benchmark-自身也需要-quality-gate">十四、Benchmark
+自身也需要 Quality Gate</h1>
+<p>谁来评 Benchmark？</p>
+<p>至少要检查：</p>
+<pre class="text"><code>Gold Agreement
+Gold Evidence Completeness
+Slice Coverage
+Critical Slice Support
+Contamination Status
+Protocol Completeness
+Metric Reproducibility
+Access Governance</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>也</mi><mi>需</mi><mi>要</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkQuality
+也需要BenchmarkGovernance
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五核心心智模型-⑥">十五、核心心智模型 ⑥</h1>
+<h1
+id="badbenchmark-会让好模型看起来坏也会让坏模型看起来好"><code>BadBenchmark</code>
+会让好模型看起来坏，也会让坏模型看起来好</h1>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mi>也</mi><mi>是</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EvaluationError
+也是
+SystemRisk
+}
+</annotation></semantics></math></p>
+<p>评测本身不能被当作绝对无误。</p>
+<hr />
+<h1
+id="十六人工评测和自动评测怎样组合">十六、人工评测和自动评测怎样组合？</h1>
+<p>自动：</p>
+<pre class="text"><code>快
+便宜
+可重复</code></pre>
+<p>人工：</p>
+<pre class="text"><code>贵
+慢
+但能处理复杂语义</code></pre>
+<p>所以推荐：</p>
+<h1 id="hybrid-evaluation-1">Hybrid Evaluation</h1>
+<h2 id="混合评测-1">混合评测</h2>
+<p>例如：</p>
+<pre class="text"><code>Programmatic Metrics
+↓
+LLM Judge
+↓
+Human Audit
+↓
+Expert Adjudication for Critical Cases</code></pre>
+<p>不同风险层级：</p>
+<blockquote>
+<p>不同评测成本。</p>
+</blockquote>
+<hr />
+<h1 id="十七核心心智模型-⑦">十七、核心心智模型 ⑦</h1>
+<h1 id="evaluationcost-也要按风险分配"><code>EvaluationCost</code>
+也要按风险分配</h1>
+<p>不要所有样本都人工，</p>
+<p>也不要所有样本都自动。</p>
+<p>可以：</p>
+<pre class="text"><code>Low Risk
+自动评
+
+Medium Risk
+LLM Judge + 抽检
+
+High Risk
+专家复核</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi><mo>=</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EvaluationBudget
+=
+RiskWeightedAllocation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十八benchmark-运行以后输出什么">十八、Benchmark
+运行以后输出什么？</h1>
+<p>至少输出：</p>
+<pre class="text"><code>Executive Summary
+总体摘要
+
+Dimension Scorecard
+能力维度
+
+Critical Slice Report
+关键切片
+
+Regression Matrix
+回归矩阵
+
+Calibration / Coverage
+校准与覆盖
+
+Contamination Status
+污染状态
+
+Critical Failures
+严重失败
+
+Release Decision
+发布结论</code></pre>
+<p>这才是完整：</p>
+<h1 id="evaluation-bundle">Evaluation Bundle</h1>
+<h2 id="评测证据包">评测证据包</h2>
+<hr />
+<h1 id="十九release-report-必须能回答哪些问题">十九、Release Report
+必须能回答哪些问题？</h1>
+<p>至少：</p>
+<pre class="text"><code>新版本为什么更好？
+
+哪里没有变？
+
+哪里变差？
+
+关键场景是否安全？
+
+哪些问题仍然未知？
+
+Benchmark是否干净？
+
+是否有统计不确定性？
+
+成本是否变化？
+
+最终为什么Pass / Fail？</code></pre>
+<hr />
+<h1 id="二十核心心智模型-⑧-1">二十、核心心智模型 ⑧</h1>
+<h1 id="unknown-必须被写进评测报告"><code>Unknown</code>
+必须被写进评测报告</h1>
+<p>Benchmark 永远不可能覆盖：</p>
+<blockquote>
+<p>所有未来场景。</p>
+</blockquote>
+<p>所以专业报告要明确：</p>
+<pre class="text"><code>Known Strengths
+Known Weaknesses
+Known Unknowns
+Coverage Gaps</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>“通过 Benchmark = 全面安全。”</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>P</mi><mi>a</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>U</mi><mi>n</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>G</mi><mi>u</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkPass
+\neq
+UniversalGuarantee
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十一procurementbench_v1-的版本规则">二十一、<code>ProcurementBench_V1</code>
+的版本规则</h1>
+<p>建议：</p>
+<pre class="text"><code>V1.0.0
+首个冻结版
+
+V1.0.1
+标签/实现修复，不改变大范围能力定义
+
+V1.1.0
+新增Slice / 任务 / 覆盖
+
+V2.0.0
+评测体系重大改变</code></pre>
+<p>具体版本规则可以根据团队调整。</p>
+<p>关键是：</p>
+<blockquote>
+<p>变化必须显式。</p>
+</blockquote>
+<hr />
+<h1 id="二十二本课-12-个阶段的工程产物怎样接起来">二十二、本课 12
+个阶段的工程产物怎样接起来？</h1>
+<p>第 1 阶段：</p>
+<pre class="text"><code>ProcurementBenchmarkBoundaryPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>Benchmark 和 Validation / Test 的边界是什么？</p>
+</blockquote>
+<p>第 2 阶段：</p>
+<pre class="text"><code>ProcurementGoldSetPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>Gold Label 怎么产生？</p>
+</blockquote>
+<p>第 3 阶段：</p>
+<pre class="text"><code>ProcurementEvaluationSchema_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>到底评哪些维度？</p>
+</blockquote>
+<p>第 4 阶段：</p>
+<pre class="text"><code>ProcurementClassificationMetricPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>分类任务怎样量化？</p>
+</blockquote>
+<p>第 5 阶段：</p>
+<pre class="text"><code>ProcurementGenerationEvalPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>开放式生成怎样评？</p>
+</blockquote>
+<p>第 6 阶段：</p>
+<pre class="text"><code>ProcurementRAGEvalPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>RAG 错在哪一层？</p>
+</blockquote>
+<p>第 7 阶段：</p>
+<pre class="text"><code>ProcurementAgentEvalPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>Agent 是否真正、安全完成任务？</p>
+</blockquote>
+<p>第 8 阶段：</p>
+<pre class="text"><code>ProcurementSliceEvalPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>哪些关键场景被平均分掩盖？</p>
+</blockquote>
+<p>第 9 阶段：</p>
+<pre class="text"><code>ProcurementCalibrationAbstentionPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>模型什么时候应该回答、什么时候应该拒答？</p>
+</blockquote>
+<p>第 10 阶段：</p>
+<pre class="text"><code>ProcurementBenchmarkFirewallPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>如何保护测试独立性？</p>
+</blockquote>
+<p>第 11 阶段：</p>
+<pre class="text"><code>ProcurementRegressionPolicy_V0.1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>新版本哪里进步、哪里退化？</p>
+</blockquote>
+<p>第 12 阶段：</p>
+<pre class="text"><code>ProcurementBench_V1</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>怎样用统一证据决定是否发布？</p>
+</blockquote>
+<hr />
+<h1 id="二十三第九课最终-12-条核心心智模型">二十三、第九课最终 12
+条核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>Benchmark ≠ DatasetOnly</code>。评测基准是数据、协议、指标和治理的组合。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ②：<code>ExpertOpinion ≠ GroundTruth</code>。Gold
+的权威来自受控流程，不来自单一专家身份。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>CorrectAnswer ≠ CompleteEvaluation</code>。结果、过程、证据和错误严重度都需要评。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Accuracy ≠ RiskQuality</code>。分类指标必须和真实业务错误成本绑定。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>FluentAnswer ≠ CorrectAnswer</code>。生成质量必须拆事实、证据、引用和拒答。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑥：<code>RAGFailure ≠ LLMFailure</code>。RAG
+必须分层归因到 Retrieval、Ranking、Context、Generation。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>ToolCallSuccess ≠ TaskCompletion</code>。Agent
+要同时评结果、轨迹、安全和恢复。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>OverallScore ≠ SliceReliability</code>。关键场景不能被平均分掩盖。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>ConfidenceScore ≠ ProbabilityOfBeingCorrect</code>。可靠系统必须评校准、拒答和
+Risk-Coverage。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑩：<code>NoExactDuplicate ≠ NoContamination</code>。测试独立性需要完整
+Firewall 和访问治理。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑪：<code>HigherOverallScore ≠ NoRegression</code>。升级必须同时证明收益和关键能力不退化。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑫：<code>BenchmarkRun ≠ ReleaseDecision</code>。评测产生证据，Release
+Gate 才做最终发布决策。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十四把整门第九课压成一张最终工程图">二十四、把整门第九课压成一张最终工程图</h1>
+<pre class="text"><code>                      Evaluation Objective
+                         定义评测目标
+                               │
+                               ▼
+                         Benchmark Boundary
+                          锁定数据边界
+                               │
+                               ▼
+                         Benchmark Firewall
+                           防训练与开发泄漏
+                               │
+                               ▼
+                            Gold Set
+                    专家标注 + 证据 + 裁决
+                               │
+                               ▼
+                       Evaluation Schema
+                      结果 / 过程 / 证据 / 错误
+                               │
+                ┌──────────────┼──────────────┐
+                ▼              ▼              ▼
+         Classification     Generation      RAG / Agent
+             分类              生成           系统链路
+                │              │              │
+                └──────────────┼──────────────┘
+                               ▼
+                        Slice Evaluation
+                         关键场景切片
+                               │
+                               ▼
+                 Calibration / Abstention / OOD
+                    置信度与拒答可靠性
+                               │
+                               ▼
+                       Regression Compare
+                         新旧版本回归
+                               │
+                               ▼
+                         Release Gate
+                          发布门槛
+                    ┌──────────┴──────────┐
+                    ▼                     ▼
+                  Reject                 Pass
+                   否决                   通过
+                                           │
+                                           ▼
+                               ProcurementBench_V1</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>真正的 Benchmark，不是拿一批题跑一个总分，而是把高可信
+Gold、任务化 Evaluation Schema、分类/生成/RAG/Agent 指标、关键
+Slice、Calibration、Benchmark Firewall 和 Regression
+全部接成一条证据链，最后用预先定义的 Release Gate
+决定新系统是否真的值得上线。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第九课-第-12-阶段掌握测试">第九课 · 第 12 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：ProcurementBench_V1
+为什么不是一个数据文件；Benchmark Version
+为什么同时包含数据、协议、Schema 和 Metric；为什么每次 Run 必须有
+Manifest；为什么 Overall Score 只能做 Dashboard；Release Gate
+应该包含哪些子门槛；为什么 Benchmark
+的价值不仅是证明“更强”，还要阻止错误发布；Champion / Challenger
+工作流怎样运行；为什么 Benchmark 自身也需要 Quality Gate；人工评测、LLM
+Judge、程序指标怎样分层组合；为什么评测预算也要按风险分配；Release
+Report 应该说明什么；为什么 Benchmark Pass 不等于 Universal
+Guarantee；以及为什么评测体系必须长期版本化维护。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>九</mi><mi>课</mi><mi>第</mi><mn>12</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第九课第12阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="第九课正式完成">第九课正式完成</h1>
+<p>到这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>九</mi><mi>课</mi><mo>=</mo><mn>12</mn><mi>/</mi><mn>12</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第九课
+=
+12/12
+}
+</annotation></semantics></math></p>
+<p>最终工程交付：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>_</mi><mi>V</mi><mn>1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementBench\_V1
+}
+</annotation></semantics></math></p>
+<p>课程系统演化到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.2</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>_</mi><mi>V</mi><mn>1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementDataset\_V0.1
+\rightarrow
+ProcurementLM\_V0.1
+\rightarrow
+ProcurementRAG\_V0.1
+\rightarrow
+ProcurementAgent\_V0.1
+\rightarrow
+ProcurementLM\_V0.2
+\rightarrow
+ProcurementBench\_V1
+}
+</annotation></semantics></math></p>
+<p>下一课正式进入：</p>
+<h1 id="第十课推理部署性能优化与-mlops">第十课：推理部署、性能优化与
+MLOps</h1>
+<h2
+id="怎样把已经通过-benchmark-的系统真正部署成低延迟高吞吐可监控可灰度发布的-procurementai">怎样把已经通过
+Benchmark 的系统真正部署成低延迟、高吞吐、可监控、可灰度发布的
+<code>ProcurementAI</code>？</h2>
+<p>第九课解决的是：</p>
+<blockquote>
+<p><strong>我们怎么知道系统真的更好。</strong></p>
+</blockquote>
+<p>第十课开始解决：</p>
+<blockquote>
+<p><strong>怎样让这个已经被证明更好的系统，在真实生产环境里稳定、快速、可控地运行。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage11.html">← 第 11 阶段</a><a class="btn" href="../lesson10/stage01.html">第 10 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

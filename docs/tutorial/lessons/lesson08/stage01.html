@@ -1,0 +1,749 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第8课 · 第1阶段：CPT 到底在学什么？为什么已经有 SFT / RAG / Agent 还要继续预训练？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第8课 · 第1阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>做 CPT、领域语料混合、能力保持、灾难性遗忘和 Synthetic Data。<ul><li>第一，CPT 是在领域语料上继续执行 Next Token Prediction，让模型参数适应新的 Domain Distribution；它不是 SFT，也不是把知识库简单写进 Weight。</li><li>第二，CPT 学的是领域语言与统计结构，SFT 学的是任务行为，RAG 提供当前外部证据，Agent 负责受控执行工作流。</li><li>第三，课程把 CPT 放在第八课，但真实训练顺序通常更接近 Base → CPT → SFT；如果在 SFT 后直接大量 CPT，可能破坏原有对齐行为。</li></ul></div><h1 id="第八课-第-1-阶段">第八课 · 第 1 阶段</h1>
+<h1 id="cpt-到底在学什么为什么已经有-sft-rag-agent-还要继续预训练">CPT
+到底在学什么？为什么已经有 SFT / RAG / Agent 还要继续预训练？</h1>
+<h2
+id="continued-pretraining-的真正边界什么时候应该继续改模型参数什么时候根本不该做-cpt">Continued
+Pretraining 的真正边界：什么时候应该继续改模型参数，什么时候根本不该做
+CPT？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，CPT 是在领域语料上继续执行 Next Token
+Prediction，让模型参数适应新的 Domain Distribution；它不是
+SFT，也不是把知识库简单写进 Weight。</strong></li>
+<li><strong>第二，CPT 学的是领域语言与统计结构，SFT 学的是任务行为，RAG
+提供当前外部证据，Agent 负责受控执行工作流。</strong></li>
+<li><strong>第三，课程把 CPT 放在第八课，但真实训练顺序通常更接近 Base →
+CPT → SFT；如果在 SFT 后直接大量
+CPT，可能破坏原有对齐行为。</strong></li>
+<li><strong>第四，CPT 最适合“大量高质量无标注领域语料 +
+明显领域分布差距”的场景；实时知识、结构化输出和任务格式问题往往应该优先用
+RAG 或 SFT。</strong></li>
+<li><strong>第五，CPT 的核心风险包括 Catastrophic Forgetting、Domain
+Over-specialization 和 Benchmark
+Contamination，所以必须同时评测领域收益、通用能力回归和数据防泄漏。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="even">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="odd">
+<td><code>Continued Pretraining</code></td>
+<td>继续预训练：让基座模型适应特定领域语言和知识分布</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第七课结束，我们已经拥有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.1
++
+ProcurementRAG\_V0.1
++
+ProcurementAgent\_V0.1
+}
+</annotation></semantics></math></p>
+<p>看起来系统已经会：</p>
+<pre class="text"><code>理解任务
+检索法规
+调用工具
+维护状态
+生成报告</code></pre>
+<p>那为什么还需要 CPT？</p>
+<p>因为：</p>
+<blockquote>
+<p><strong>“系统会做采购任务”不等于“模型本体已经真正适应政府采购领域分布”。</strong></p>
+</blockquote>
+<p>CPT 要解决的是另一类问题：</p>
+<h1 id="continued-pretraining">Continued Pretraining</h1>
+<h2 id="继续预训练">继续预训练</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementcptboundarymodel_v0.1"><code>ProcurementCPTBoundaryModel_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话">一、先锁死本阶段最重要的一句话</h1>
+<p>CPT 的本质不是：</p>
+<blockquote>
+<p>“再做一次 SFT。”</p>
+</blockquote>
+<p>也不是：</p>
+<blockquote>
+<p>“把法规全文背进模型。”</p>
+</blockquote>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mo>=</mo><mi>在</mi><mi>领</mi><mi>域</mi><mi>语</mi><mi>料</mi><mi>分</mi><mi>布</mi><mi>上</mi><mi>继</mi><mi>续</mi><mi>执</mi><mi>行</mi><mi>预</mi><mi>训</mi><mi>练</mi><mi>目</mi><mi>标</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPT
+=
+在领域语料分布上继续执行预训练目标
+}
+</annotation></semantics></math></p>
+<p>它仍然学习：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NextTokenPrediction
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>C</mi><mi>P</mi><mi>T</mi></mrow></msub><mo>=</mo><mi>−</mi><munderover><mo>∑</mo><mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow><mi>T</mi></munderover><mo>log</mo><msub><mi>p</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>x</mi><mi>t</mi></msub><mo>∣</mo><msub><mi>x</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathcal{L}_{CPT}
+=
+-\sum_{t=1}^{T}
+\log
+p_{\theta}
+(
+x_t
+\mid
+x_{&lt;t}
+)
+</annotation></semantics></math></p>
+<p>模型仍然在做：</p>
+<blockquote>
+<p><strong>根据前面的 Token，预测下一个 Token。</strong></p>
+</blockquote>
+<p>只是训练数据从通用互联网分布，</p>
+<p>变成了：</p>
+<blockquote>
+<p>政府采购领域分布。</p>
+</blockquote>
+<hr />
+<h1 id="二cpt-真正在改变什么">二、CPT 真正在改变什么？</h1>
+<p>假设 Base Model 大量见过：</p>
+<pre class="text"><code>新闻
+百科
+代码
+社交媒体
+一般法律文本</code></pre>
+<p>但政府采购领域经常出现：</p>
+<pre class="text"><code>资格条件
+评分办法
+采购需求
+履约验收
+中小企业声明函
+采购人代表
+实质性响应
+不合理条件
+评审因素
+采购标的所属行业</code></pre>
+<p>这些词模型也许“认识”。</p>
+<p>但不代表它已经充分学会：</p>
+<pre class="text"><code>这些词怎样共同出现
+哪些概念经常互相约束
+文档结构怎样组织
+采购语言的统计规律
+典型上下文怎样延续</code></pre>
+<p>所以 CPT 改的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>L</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>u</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DomainLanguageDistribution
+}
+</annotation></semantics></math></p>
+<p>以及由此形成的：</p>
+<blockquote>
+<p><strong>模型参数中的领域先验。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三最重要的边界cptsftragagent-分别解决什么">三、最重要的边界：CPT、SFT、RAG、Agent
+分别解决什么？</h1>
+<p>这四个东西必须彻底分开。</p>
+<table>
+<thead>
+<tr class="header">
+<th>技术</th>
+<th>主要解决的问题</th>
+<th>主要改变什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CPT</td>
+<td>模型对领域语言与分布不够熟</td>
+<td>Weights</td>
+</tr>
+<tr class="even">
+<td>SFT</td>
+<td>模型不会按任务要求回答</td>
+<td>Weights / Behavior</td>
+</tr>
+<tr class="odd">
+<td>RAG</td>
+<td>模型缺当前外部知识与证据</td>
+<td>Context</td>
+</tr>
+<tr class="even">
+<td>Agent</td>
+<td>模型不会执行多步骤真实任务</td>
+<td>Control Loop + Tools</td>
+</tr>
+</tbody>
+</table>
+<p>可以压成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mo>=</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPT
+=
+LearnDomainDistribution
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>F</mi><mi>T</mi><mo>=</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>B</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SFT
+=
+LearnTaskBehavior
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAG
+=
+ProvideExternalEvidence
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>f</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Agent
+=
+ExecuteControlledWorkflow
+}
+</annotation></semantics></math></p>
+<p>这四者不是替代关系。</p>
+<hr />
+<h1 id="四为什么已经做过-sft仍然可能需要-cpt">四、为什么已经做过
+SFT，仍然可能需要 CPT？</h1>
+<p>假设 <code>ProcurementLM_V0.1</code> 已经学会：</p>
+<pre class="text"><code>输入：
+采购条款
+
+输出：
+风险判断
+理由
+证据需求</code></pre>
+<p>但模型可能仍然存在：</p>
+<pre class="text"><code>遇到长篇采购文件理解不稳定
+领域术语之间关系不够自然
+少见采购表达容易误解
+生成文本虽然格式正确，但领域语言“味道不对”
+复杂条款续写与结构理解弱</code></pre>
+<p>这说明：</p>
+<blockquote>
+<p>SFT 教会了“任务形式”，但底层领域分布可能仍然不够强。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>B</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mo>⇏</mo><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TaskBehaviorGood
+\not\Rightarrow
+DomainModelingGood
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五一个非常重要的训练顺序问题cpt-通常应该在-sft-之前">五、一个非常重要的训练顺序问题：CPT
+通常应该在 SFT 之前</h1>
+<p>真实工程里，最常见的顺序是：</p>
+<pre class="text"><code>Base Model
+↓
+CPT
+↓
+Domain-adapted Base
+↓
+SFT
+↓
+Task Model</code></pre>
+<p>为什么？</p>
+<p>因为 CPT 的目标仍然是：</p>
+<blockquote>
+<p>无监督 / 自监督语言建模。</p>
+</blockquote>
+<p>而 SFT 已经把模型推向：</p>
+<blockquote>
+<p>指令遵循和任务格式。</p>
+</blockquote>
+<p>如果你在 SFT 以后直接做大量 CPT，</p>
+<p>可能发生：</p>
+<pre class="text"><code>指令遵循变弱
+Chat Template行为退化
+结构化输出能力下降
+原来的任务对齐被冲淡</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>O</mi><mi>r</mi><mi>d</mi><mi>e</mi><mi>r</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>O</mi><mi>r</mi><mi>d</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CourseOrder
+\neq
+TrainingOrder
+}
+</annotation></semantics></math></p>
+<p>我们现在第八课才学 CPT，</p>
+<p>是课程教学顺序。</p>
+<p>真正训练 <code>ProcurementLM_V0.2</code> 时，</p>
+<p>很可能采用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>P</mi><mi>T</mi><mo>→</mo><mi>S</mi><mi>F</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Base
+\rightarrow
+CPT
+\rightarrow
+SFT
+}
+</annotation></semantics></math></p>
+<p>重新形成一个更强版本。</p>
+<hr />
+<h1 id="六什么时候-cpt-是值得做的">六、什么时候 CPT 是值得做的？</h1>
+<p>CPT 最有价值的场景通常满足：</p>
+<pre class="text"><code>有大量高质量领域无标注文本
+
+领域语言分布与通用语料明显不同
+
+模型对领域术语 / 结构 / 语义组合不够稳定
+
+SFT数据有限，无法覆盖整个领域分布
+
+希望增强领域基础能力，而不只是某一个任务</code></pre>
+<p>例如你有：</p>
+<pre class="text"><code>数百万页采购公告
+采购文件
+合同文本
+评审规则
+采购需求
+政策解读
+行业采购语料</code></pre>
+<p>其中真正人工标注的也许只有：</p>
+<pre class="text"><code>几万条</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>无标注领域语料远多于 Gold SFT 数据。</p>
+</blockquote>
+<p>CPT 就可能非常有价值。</p>
+<hr />
+<h1 id="七什么时候不应该优先做-cpt">七、什么时候不应该优先做 CPT？</h1>
+<p>第一种：</p>
+<blockquote>
+<p><strong>问题主要是实时知识缺失。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>今天最新的采购政策是什么？
+某项目当前预算是多少？
+某规则现在是否仍有效？</code></pre>
+<p>这类问题优先：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>/</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAG / Tool
+}
+</annotation></semantics></math></p>
+<p>而不是 CPT。</p>
+<p>因为把动态事实写入 Weight：</p>
+<blockquote>
+<p>更新慢、不可追踪、难以保证新鲜度。</p>
+</blockquote>
+<hr />
+<p>第二种：</p>
+<blockquote>
+<p><strong>问题主要是输出格式和任务行为。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>总是不按JSON输出
+不会按照风险Schema回答
+不会遵守审查模板</code></pre>
+<p>优先应该看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>F</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SFT
+}
+</annotation></semantics></math></p>
+<hr />
+<p>第三种：</p>
+<blockquote>
+<p><strong>领域语料数量太少或质量很差。</strong></p>
+</blockquote>
+<p>如果只有：</p>
+<pre class="text"><code>几百篇文档
+大量重复
+OCR错误严重
+版本混乱</code></pre>
+<p>贸然 CPT 很可能：</p>
+<blockquote>
+<p>收益有限，甚至把模型训坏。</p>
+</blockquote>
+<hr />
+<h1 id="八cpt-不是把知识背进-weight的可靠数据库方案">八、CPT
+不是“把知识背进 Weight”的可靠数据库方案</h1>
+<p>这是最容易误解的地方之一。</p>
+<p>模型经过 CPT 后，</p>
+<p>可能更熟悉：</p>
+<pre class="text"><code>政府采购术语
+采购文件结构
+常见政策表达
+领域推理模式</code></pre>
+<p>但不能因此认为：</p>
+<blockquote>
+<p>“法规已经永久写进参数，所以以后不用 RAG。”</p>
+</blockquote>
+<p>因为 Weight 中的知识：</p>
+<pre class="text"><code>难以精确追踪来源
+更新成本高
+可能记错
+可能混版本
+不能保证逐字准确</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mo>≠</mo><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPT
+\neq
+KnowledgeDatabase
+}
+</annotation></semantics></math></p>
+<p>更合理的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>提</mi><mi>高</mi><mi>领</mi><mi>域</mi><mi>理</mi><mi>解</mi><mi>底</mi><mi>座</mi><mo>+</mo><mi>R</mi><mi>A</mi><mi>G</mi><mi>提</mi><mi>供</mi><mi>当</mi><mi>前</mi><mi>可</mi><mi>追</mi><mi>溯</mi><mi>证</mi><mi>据</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPT
+提高领域理解底座
++
+RAG
+提供当前可追溯证据
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九cpt-最大的风险之一catastrophic-forgetting">九、CPT
+最大的风险之一：Catastrophic Forgetting</h1>
+<p>如果只拿大量采购文本继续训练，</p>
+<p>模型可能越来越像：</p>
+<blockquote>
+<p>一个采购领域专用模型。</p>
+</blockquote>
+<p>但同时：</p>
+<pre class="text"><code>通用语言能力下降
+代码能力下降
+数学能力下降
+一般指令遵循下降
+其他领域理解下降</code></pre>
+<p>这叫：</p>
+<h1 id="catastrophic-forgetting">Catastrophic Forgetting</h1>
+<h2 id="灾难性遗忘">灾难性遗忘</h2>
+<p>可以把它理解为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>可</mi><mi>能</mi><mi>换</mi><mi>来</mi><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DomainGain
+可能换来
+GeneralCapabilityLoss
+}
+</annotation></semantics></math></p>
+<p>所以 CPT 不能只看：</p>
+<blockquote>
+<p>“采购 Benchmark 涨没涨。”</p>
+</blockquote>
+<p>还必须检查：</p>
+<blockquote>
+<p>通用能力有没有退化。</p>
+</blockquote>
+<hr />
+<h1 id="十cpt-的第二个风险domain-over-specialization">十、CPT
+的第二个风险：Domain Over-specialization</h1>
+<p>即使没有严重遗忘，</p>
+<p>也可能发生：</p>
+<blockquote>
+<p>模型对采购语言过度敏感。</p>
+</blockquote>
+<p>例如看到：</p>
+<pre class="text"><code>本市
+注册资本
+业绩
+服务机构</code></pre>
+<p>就过度联想到：</p>
+<blockquote>
+<p>风险。</p>
+</blockquote>
+<p>这和第一课讲过的 Shortcut Learning 很像。</p>
+<p>所以 CPT 数据如果分布偏斜：</p>
+<blockquote>
+<p>模型会把领域偏差一起学进去。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreDomainData
+\neq
+BetterDomainModel
+}
+</annotation></semantics></math></p>
+<p>关键是：</p>
+<blockquote>
+<p><strong>领域语料的质量、覆盖与分布。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十一cpt-的第三个风险benchmark-contamination">十一、CPT
+的第三个风险：Benchmark Contamination</h1>
+<p>假设未来 <code>ProcurementBench_V1</code> 中包含：</p>
+<pre class="text"><code>1000个高质量Gold案例</code></pre>
+<p>如果这些测试样本原文被混进 CPT Corpus，</p>
+<p>模型测试时可能：</p>
+<blockquote>
+<p>见过原题。</p>
+</blockquote>
+<p>此时 Benchmark 分数再高，</p>
+<p>也不能证明泛化能力。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>必</mi><mi>须</mi><mi>和</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>建</mi><mi>立</mi><mi>F</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>w</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPTCorpus
+必须和Benchmark建立Firewall
+}
+</annotation></semantics></math></p>
+<p>至少要检查：</p>
+<pre class="text"><code>exact duplicate
+near duplicate
+same project
+same document lineage
+future benchmark candidate</code></pre>
+<p>这一点会直接连接后面的 Benchmark 课程。</p>
+<hr />
+<h1 id="十二cpt-真正需要建立的是决策门不是训练冲动">十二、CPT
+真正需要建立的是“决策门”，不是“训练冲动”</h1>
+<p>在决定 CPT 前，</p>
+<p>先问五个问题：</p>
+<pre class="text"><code>1. 当前主要错误真的是领域分布不足吗？
+
+2. 有没有足够规模的高质量领域语料？
+
+3. 这些问题能不能更便宜地通过RAG / SFT解决？
+
+4. 我们有没有能力检测灾难性遗忘？
+
+5. 我们有没有干净的Benchmark证明CPT真的带来收益？</code></pre>
+<p>只有这些问题大体成立，</p>
+<p>才进入：</p>
+<blockquote>
+<p>CPT Experiment。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>C</mi><mi>P</mi><mi>T</mi><mi>必</mi><mi>须</mi><mi>是</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DoCPT
+必须是EvidenceBasedDecision
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>“听说领域模型都要继续预训练。”</p>
+</blockquote>
+<hr />
+<h1
+id="十三本阶段工程产物procurementcptboundarymodel_v0.1">十三、本阶段工程产物：<code>ProcurementCPTBoundaryModel_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>cpt_goal
+
+domain_gap_hypothesis
+
+target_capabilities
+
+non_targets
+
+candidate_domain_corpus
+
+expected_domain_gain
+
+general_capability_risk
+
+forgetting_evaluation_plan
+
+benchmark_firewall
+
+rag_alternative
+
+sft_alternative
+
+cpt_go_no_go_criteria
+
+training_order
+
+release_target
+=
+ProcurementLM_V0.2</code></pre>
+<p>我们以后任何 CPT 实验，</p>
+<p>都不能只写：</p>
+<pre class="text"><code>“继续训练100B tokens”</code></pre>
+<p>而必须先回答：</p>
+<blockquote>
+<p><strong>为什么训练、想提升什么、可能损失什么、怎样证明收益。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十四把本阶段压成最精准的-6-句话">十四、把本阶段压成最精准的 6
+句话</h1>
+<blockquote>
+<p><strong>第一，CPT 是在领域语料上继续执行 Next Token
+Prediction，让模型参数适应新的 Domain Distribution；它不是
+SFT，也不是把知识库简单写进 Weight。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，CPT 学的是领域语言与统计结构，SFT 学的是任务行为，RAG
+提供当前外部证据，Agent 负责受控执行工作流。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，课程把 CPT 放在第八课，但真实训练顺序通常更接近
+<code>Base → CPT → SFT</code>；如果在 SFT 后直接大量
+CPT，可能破坏原有对齐行为。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，CPT 最适合“大量高质量无标注领域语料 +
+明显领域分布差距”的场景；实时知识、结构化输出和任务格式问题往往应该优先用
+RAG 或 SFT。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，CPT 的核心风险包括 Catastrophic Forgetting、Domain
+Over-specialization 和 Benchmark
+Contamination，所以必须同时评测领域收益、通用能力回归和数据防泄漏。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，真正专业的 CPT 起点不是启动 GPU，而是先建立
+<code>Go / No-Go</code> 决策门：证明问题确实需要改
+Weight，而且收益能够被干净 Benchmark 验证。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图">本阶段最核心的一张图</h1>
+<pre class="text"><code>                      Current System
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+     Domain Gap?      Task Behavior?   Fresh Knowledge?
+          │                │                │
+          ▼                ▼                ▼
+         CPT              SFT              RAG
+          │
+          ▼
+   Domain Corpus Ready?
+          │
+      ┌───┴───┐
+      ▼       ▼
+     Yes      No
+      │        │
+      ▼        ▼
+ Forgetting   Improve Data
+ Evaluation
+      │
+      ▼
+ Benchmark Firewall
+      │
+      ▼
+   CPT Experiment
+      │
+      ▼
+ Domain Gain + General Regression
+      │
+      ▼
+      SFT
+      │
+      ▼
+ ProcurementLM_V0.2</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>CPT
+的价值不是“让模型多背一些采购文本”，而是当模型的底层语言分布与政府采购领域存在真实差距时，用大量高质量领域语料继续塑造参数，同时用
+Replay、Benchmark
+和回归测试防止模型为了更懂采购而忘掉原本会的东西。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第八课-第-1-阶段掌握测试">第八课 · 第 1 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：CPT 的训练目标为什么仍然是 Next Token
+Prediction；CPT、SFT、RAG、Agent 四者分别解决什么问题；为什么 SFT
+已经成功并不代表领域建模已经充分；为什么真实训练顺序通常是
+<code>Base → CPT → SFT</code>；什么场景值得做 CPT；哪些问题应该优先交给
+RAG 或 SFT；为什么 CPT 不能替代知识库；什么是 Catastrophic
+Forgetting；什么是 Domain Over-specialization；为什么 Benchmark
+Contamination 会让 CPT 评测失真；以及为什么真正开始 CPT 前必须先建立 Go
+/ No-Go 决策标准。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>八</mi><mi>课</mi><mi>第</mi><mn>1</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第八课第1阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第八课-第-2-阶段">下一阶段：第八课 · 第 2 阶段</h1>
+<h1 id="domain-corpus什么样的政府采购领域语料值得用于-cpt">Domain
+Corpus：什么样的政府采购领域语料值得用于 CPT？</h1>
+<h2
+id="采购文本越多越好为什么是错的怎样把原始文档变成真正适合继续预训练的领域语料">“采购文本越多越好”为什么是错的？怎样把原始文档变成真正适合继续预训练的领域语料？</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Source Selection
+Corpus Scope
+Quality Filter
+Deduplication
+Document Mix
+Domain Coverage
+Temporal Coverage
+Document Lineage
+PII / Sensitive Data
+Benchmark Firewall
+Token Budget
+Corpus Versioning</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementcptcorpuspolicy_v0.1"><code>ProcurementCPTCorpusPolicy_V0.1</code></h1>
+<p>核心问题是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>P</mi><mi>T</mi><mi>效</mi><mi>果</mi><mi>的</mi><mi>上</mi><mi>限</mi><mi>首</mi><mi>先</mi><mi>由</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>决</mi><mi>定</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CPT效果的上限
+首先由Corpus决定
+}
+</annotation></semantics></math></p>
+<hr /><div class="nav"><a class="btn" href="../lesson07/stage11.html">← 第 7 课最后阶段</a><a class="btn" href="stage02.html">第 2 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

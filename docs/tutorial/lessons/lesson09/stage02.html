@@ -1,0 +1,1509 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第2阶段：Gold Set：专家标注、Adjudication 与 Ground Truth</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>ExpertOpinion ≠ GroundTruth。专家意见只是输入，Gold Truth 来自受控标注与裁决流程。</li><li>Gold = AuthorityByProcess。Gold 的权威性来自 Schema、证据、独立判断、裁决和版本治理，而不是单一专家身份。</li><li>BadSchema + GoodExperts = UnstableGold。标注结构和边界没定义清楚，再好的专家也会产生不稳定标签。</li></ul></div><h1 id="第九课-第-2-阶段">第九课 · 第 2 阶段</h1>
+<h1 id="gold-set专家标注adjudication-与-ground-truth-1">Gold
+Set：专家标注、Adjudication 与 Ground Truth</h1>
+<h2
+id="标准答案是谁说了算多个采购专家意见不一致时怎样把主观判断变成可审计可复现的-gold-label-1">“标准答案”是谁说了算？多个采购专家意见不一致时，怎样把主观判断变成可审计、可复现的
+Gold Label？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>ExpertOpinion ≠ GroundTruth。专家意见只是输入，Gold Truth
+来自受控标注与裁决流程。</strong></li>
+<li><strong>Gold = AuthorityByProcess。Gold 的权威性来自
+Schema、证据、独立判断、裁决和版本治理，而不是单一专家身份。</strong></li>
+<li><strong>BadSchema + GoodExperts =
+UnstableGold。标注结构和边界没定义清楚，再好的专家也会产生不稳定标签。</strong></li>
+<li><strong>GoodExpert ≠
+GoodAnnotator。领域知识和高一致性标注能力是两种不同能力。</strong></li>
+<li><strong>Agreement Metric ≠ Ground Truth
+Quality。一致性高不代表一定正确，一致性低也不等于谁必须被淘汰。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>Adjudication</code></td>
+<td>专家裁决：对分歧样本形成最终 Gold 结论</td>
+</tr>
+<tr class="odd">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="even">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="odd">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 1 阶段我们已经锁定：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>≠</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>≠</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Training
+\neq
+Validation
+\neq
+Test
+\neq
+GoldBenchmark
+}
+</annotation></semantics></math></p>
+<p>并且进一步建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mo>=</mo><mi>F</mi><mi>r</mi><mi>o</mi><mi>z</mi><mi>e</mi><mi>n</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>t</mi><mi>o</mi><mi>c</mi><mi>o</mi><mi>l</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>s</mi><mo>+</mo><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Benchmark
+=
+FrozenData
++
+StableProtocol
++
+StableMetrics
++
+Governance
+}
+</annotation></semantics></math></p>
+<p>但现在出现了一个更根本的问题：</p>
+<blockquote>
+<p><strong>Gold Benchmark 里面的“Gold”，到底是谁定义的？</strong></p>
+</blockquote>
+<p>假设有一条采购条款：</p>
+<pre class="text"><code>供应商须在项目所在地设立固定服务机构。</code></pre>
+<p>专家 A 认为：</p>
+<blockquote>
+<p>存在不合理地域限制风险。</p>
+</blockquote>
+<p>专家 B 认为：</p>
+<blockquote>
+<p>如果项目确实需要本地即时服务，可能具有合理业务依据。</p>
+</blockquote>
+<p>专家 C 认为：</p>
+<blockquote>
+<p>需要结合采购需求、履约时效、服务半径和替代措施后才能判断。</p>
+</blockquote>
+<p>那么真正的问题是：</p>
+<blockquote>
+<p><strong>谁对？</strong></p>
+</blockquote>
+<p>如果我们只是：</p>
+<pre class="text"><code>找一个资深专家
+↓
+他说是什么
+↓
+就记成Gold Label</code></pre>
+<p>那我们得到的不是严格意义上的 Ground Truth。</p>
+<p>更准确地说：</p>
+<blockquote>
+<p>我们得到的是一个 Expert Opinion。</p>
+</blockquote>
+<p>所以本阶段最重要的第一条边界是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>O</mi><mi>p</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExpertOpinion
+\neq
+GroundTruth
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementgoldsetpolicy_v0.1-1"><code>ProcurementGoldSetPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一gold-label-到底是什么">一、Gold Label 到底是什么？</h1>
+<p>Gold Label 不是：</p>
+<blockquote>
+<p>“专家觉得最合理的答案。”</p>
+</blockquote>
+<p>更专业的定义是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mo>=</mo><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>I</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>A</mi><mi>d</mi><mi>j</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldLabel
+=
+Schema
++
+Evidence
++
+IndependentJudgment
++
+Adjudication
++
+VersionedDecision
+}
+</annotation></semantics></math></p>
+<p>也就是说，一个 Gold Label 至少需要：</p>
+<pre class="text"><code>明确标注结构
+证据依据
+独立判断
+争议裁决
+版本化记录</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>不</mi><mi>是</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>B</mi><mi>y</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gold
+不是
+AuthorityByPerson
+}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>=</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>B</mi><mi>y</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Gold
+=
+AuthorityByProcess
+}
+</annotation></semantics></math></p>
+<p>中文：</p>
+<blockquote>
+<p><strong>Gold
+的可信度来自过程，而不是来自某一个人“资历很高”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二核心心智模型-①">二、核心心智模型 ①</h1>
+<h1
+id="expertopinion-goldlabel"><code>ExpertOpinion ≠ GoldLabel</code></h1>
+<p>一个专家的判断可以：</p>
+<pre class="text"><code>专业
+有经验
+有依据
+高质量</code></pre>
+<p>但它仍然只是：</p>
+<h1 id="expert-opinion">Expert Opinion</h1>
+<h2 id="专家意见">专家意见</h2>
+<p>只有经过：</p>
+<pre class="text"><code>Annotation Guideline
+标注规范
+
+Independent Annotation
+独立标注
+
+Evidence Requirement
+证据要求
+
+Conflict Resolution
+冲突处理
+
+Adjudication
+正式裁决</code></pre>
+<p>以后，</p>
+<p>才有资格升级成：</p>
+<h1 id="gold-label">Gold Label</h1>
+<h2 id="金标准标签">金标准标签</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldLabel
+=
+ProcessControlledExpertJudgment
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三为什么-gold-set-最先要定义-annotation-schema">三、为什么 Gold
+Set 最先要定义 Annotation Schema？</h1>
+<h1 id="annotation-schema">Annotation Schema</h1>
+<h2 id="标注结构">标注结构</h2>
+<p>回答的是：</p>
+<blockquote>
+<p><strong>每个样本到底要标什么字段？</strong></p>
+</blockquote>
+<p>例如一个采购风险样本，如果只标：</p>
+<pre class="text"><code>risk = yes / no</code></pre>
+<p>信息可能远远不够。</p>
+<p>更完整的 Schema 可以是：</p>
+<pre class="text"><code>sample_id
+
+risk_label
+
+risk_type
+
+risk_severity
+
+evidence_span
+
+reason
+
+applicable_context
+
+ambiguity_flag
+
+confidence
+
+source_reference</code></pre>
+<p>其中：</p>
+<h3 id="risk_label"><code>risk_label</code></h3>
+<p>是否存在目标风险。</p>
+<h3 id="risk_type"><code>risk_type</code></h3>
+<p>属于哪一类风险。</p>
+<h3 id="evidence_span"><code>evidence_span</code></h3>
+<p>文本里哪一段支持这个判断。</p>
+<h3 id="reason"><code>reason</code></h3>
+<p>为什么这样判。</p>
+<h3 id="applicable_context"><code>applicable_context</code></h3>
+<p>这个判断成立需要什么上下文。</p>
+<h3 id="ambiguity_flag"><code>ambiguity_flag</code></h3>
+<p>是不是存在合理争议。</p>
+<h3 id="confidence"><code>confidence</code></h3>
+<p>标注者对判断有多大把握。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>决</mi><mi>定</mi><mi>W</mi><mi>h</mi><mi>a</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AnnotationSchema
+决定
+WhatGroundTruthMeans
+}
+</annotation></semantics></math></p>
+<p>如果 Schema 本身含糊，</p>
+<p>后面再专业的专家也很难得到稳定 Gold。</p>
+<hr />
+<h1 id="四核心心智模型-②">四、核心心智模型 ②</h1>
+<h1
+id="badschema-goodexperts-unstablegold"><code>BadSchema + GoodExperts = UnstableGold</code></h1>
+<p>很多团队遇到专家意见不一致，</p>
+<p>第一反应是：</p>
+<blockquote>
+<p>“专家水平不一样。”</p>
+</blockquote>
+<p>但真正问题可能是：</p>
+<pre class="text"><code>标签定义不清
+类别边界重叠
+风险类型互相包含
+证据要求没写
+模糊案例没定义</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>a</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>可</mi><mi>能</mi><mi>来</mi><mi>自</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>A</mi><mi>m</mi><mi>b</mi><mi>i</mi><mi>g</mi><mi>u</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AnnotatorDisagreement
+可能来自
+SchemaAmbiguity
+}
+</annotation></semantics></math></p>
+<p>而不一定来自：</p>
+<blockquote>
+<p>“某个专家错了”。</p>
+</blockquote>
+<p>因此标注一致性差时，</p>
+<p>第一步不应该立刻淘汰标注者，</p>
+<p>而要先检查：</p>
+<h1 id="annotation-guideline">Annotation Guideline</h1>
+<h2 id="标注规范">标注规范</h2>
+<hr />
+<h1 id="五annotation-guideline-应该写到什么程度">五、Annotation
+Guideline 应该写到什么程度？</h1>
+<p>至少需要回答：</p>
+<pre class="text"><code>这个Label的正式定义是什么？
+
+什么情况属于正例？
+
+什么情况属于负例？
+
+有哪些边界案例？
+
+哪些证据是必须的？
+
+什么时候允许标Ambiguous？
+
+什么时候允许Abstain？
+
+多标签能不能同时成立？
+
+冲突时优先看什么证据？</code></pre>
+<p>例如不要只写：</p>
+<pre class="text"><code>标签：
+地域限制</code></pre>
+<p>而应该写成更接近：</p>
+<pre class="text"><code>Label:
+地域限制风险
+
+Definition:
+对供应商注册地、设立地、经营地、服务机构所在地等提出与项目实际需要缺乏充分关联的限制。
+
+Positive Example:
+明确要求供应商必须在某地注册，且没有与履约必要性相对应的合理说明。
+
+Negative Example:
+要求供应商具备能够满足明确时效要求的服务能力，但不限定注册地。
+
+Ambiguous Example:
+要求在本地设置服务点，但采购需求同时存在高频现场响应要求，需要进一步结合上下文判断。</code></pre>
+<p>这才叫：</p>
+<h1 id="operational-definition">Operational Definition</h1>
+<h2 id="可操作定义">可操作定义</h2>
+<p>即：</p>
+<blockquote>
+<p>不是“概念解释”，而是能指导不同标注者做出一致判断的定义。</p>
+</blockquote>
+<hr />
+<h1 id="六annotator-qualification谁有资格做-gold-标注">六、Annotator
+Qualification：谁有资格做 Gold 标注？</h1>
+<h1 id="annotator-qualification">Annotator Qualification</h1>
+<h2 id="标注者资格">标注者资格</h2>
+<p>Gold Set 不适合完全依赖：</p>
+<blockquote>
+<p>无领域背景的普通众包标注。</p>
+</blockquote>
+<p>但也不是说：</p>
+<blockquote>
+<p>只要专家职称高就一定适合。</p>
+</blockquote>
+<p>真正应该看：</p>
+<pre class="text"><code>领域知识
+规则理解
+标注规范理解
+证据意识
+边界案例判断能力
+一致性表现</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>s</mi><mi>e</mi><mo>≠</mo><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>k</mi><mi>i</mi><mi>l</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DomainExpertise
+\neq
+AnnotationSkill
+}
+</annotation></semantics></math></p>
+<p>一个很懂采购的人，</p>
+<p>不一定天然会做：</p>
+<blockquote>
+<p>高一致性的 Benchmark 标注。</p>
+</blockquote>
+<hr />
+<h1 id="七核心心智模型-③">七、核心心智模型 ③</h1>
+<h1
+id="goodexpert-goodannotator"><code>GoodExpert ≠ GoodAnnotator</code></h1>
+<p>标注者必须经过：</p>
+<pre class="text"><code>Guideline Training
+标注规范培训
+
+Calibration Round
+校准轮次
+
+Trial Annotation
+试标
+
+Error Review
+错误复盘
+
+Qualification Test
+资格测试</code></pre>
+<p>然后才进入正式 Gold 标注。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>G</mi><mi>u</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AnnotatorQuality
+=
+Expertise
++
+GuidelineMastery
++
+Calibration
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八为什么必须-independent-annotation">八、为什么必须 Independent
+Annotation？</h1>
+<h1 id="independent-annotation">Independent Annotation</h1>
+<h2 id="独立标注">独立标注</h2>
+<p>意思是：</p>
+<blockquote>
+<p>多个标注者先独立判断，不能提前互相讨论答案。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Sample 001
+
+Annotator A
+→ risk
+
+Annotator B
+→ no_risk
+
+Annotator C
+→ ambiguous</code></pre>
+<p>为什么必须先独立？</p>
+<p>因为如果一开始就一起讨论：</p>
+<pre class="text"><code>资深专家先说答案
+↓
+其他人跟随</code></pre>
+<p>你就无法知道：</p>
+<blockquote>
+<p>他们是真的独立一致，还是发生了从众。</p>
+</blockquote>
+<p>这会产生：</p>
+<h1 id="anchoring-bias">Anchoring Bias</h1>
+<h2 id="锚定偏差">锚定偏差</h2>
+<p>和：</p>
+<h1 id="authority-bias">Authority Bias</h1>
+<h2 id="权威偏差">权威偏差</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>F</mi><mi>i</mi><mi>r</mi><mi>s</mi><mi>t</mi><mo>→</mo><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>u</mi><mi>s</mi><mi>s</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+IndependentFirst
+\rightarrow
+DiscussLater
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="九inter-annotator-agreement专家一致性到底怎么量化">九、Inter-Annotator
+Agreement：专家一致性到底怎么量化？</h1>
+<h1 id="inter-annotator-agreement">Inter-Annotator Agreement</h1>
+<h2 id="标注者间一致性">标注者间一致性</h2>
+<p>最简单可以看：</p>
+<h1 id="percent-agreement">Percent Agreement</h1>
+<h2 id="简单一致率">简单一致率</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mfrac><mrow><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mi>O</mi><mi>f</mi><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>I</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>s</mi></mrow><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>I</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>s</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Agreement
+=
+\frac{NumberOfAgreedItems}
+{TotalItems}
+</annotation></semantics></math></p>
+<p>如果 100 个样本中：</p>
+<pre class="text"><code>85个样本两位专家一致</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mn>85</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+Agreement=85\%
+</annotation></semantics></math></p>
+<p>但简单一致率有一个问题：</p>
+<blockquote>
+<p>没有扣除“随机碰巧一致”。</p>
+</blockquote>
+<hr />
+<h1 id="十cohens-kappa为什么比简单一致率更严格">十、Cohen’s
+Kappa：为什么比简单一致率更严格？</h1>
+<p>如果是两个标注者、类别型标签，</p>
+<p>常见指标之一是：</p>
+<h1 id="cohens-kappa">Cohen’s Kappa</h1>
+<h2 id="cohen-κ-一致性系数">Cohen κ 一致性系数</h2>
+<p>概念公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>κ</mi><mo>=</mo><mfrac><mrow><msub><mi>p</mi><mi>o</mi></msub><mo>−</mo><msub><mi>p</mi><mi>e</mi></msub></mrow><mrow><mn>1</mn><mo>−</mo><msub><mi>p</mi><mi>e</mi></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\kappa
+=
+\frac{p_o-p_e}
+{1-p_e}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>o</mi></msub><mo>=</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+p_o
+=
+ObservedAgreement
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>实际观察到的一致率。</p>
+</blockquote>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>e</mi></msub><mo>=</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>y</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+p_e
+=
+ExpectedAgreementByChance
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>按两位标注者各自标签分布，随机情况下预期会有多少一致。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>a</mi><mi>p</mi><mi>p</mi><mi>a</mi><mo>=</mo><mi>A</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>e</mi><mi>y</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Kappa
+=
+AgreementBeyondChance
+}
+</annotation></semantics></math></p>
+<p>它回答：</p>
+<blockquote>
+<p><strong>两位专家的一致，超过随机巧合多少？</strong></p>
+</blockquote>
+<hr />
+<h1 id="十一核心心智模型-④">十一、核心心智模型 ④</h1>
+<h1
+id="agreement-metric-ground-truth-quality"><code>Agreement Metric ≠ Ground Truth Quality</code></h1>
+<p>这是非常容易误解的一点。</p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>κ</mi><annotation encoding="application/x-tex">
+\kappa
+</annotation></semantics></math></p>
+<p>很高，</p>
+<p>只能说明：</p>
+<blockquote>
+<p>标注者很一致。</p>
+</blockquote>
+<p>不自动说明：</p>
+<blockquote>
+<p>他们判断一定正确。</p>
+</blockquote>
+<p>例如如果：</p>
+<pre class="text"><code>所有人都误解了Guideline</code></pre>
+<p>也可能：</p>
+<blockquote>
+<p>高度一致地标错。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Consistency
+\neq
+Correctness
+}
+</annotation></semantics></math></p>
+<p>Agreement 是：</p>
+<blockquote>
+<p>Gold Quality 的一个指标。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>Gold Quality 的全部。</p>
+</blockquote>
+<hr />
+<h1 id="十二那一致性低意味着什么">十二、那一致性低意味着什么？</h1>
+<p>低一致性可能意味着：</p>
+<pre class="text"><code>Schema有问题
+
+Guideline不清楚
+
+案例本身真的有争议
+
+标注者培训不足
+
+上下文缺失
+
+标签类别设计不合理</code></pre>
+<p>所以低一致性应该触发：</p>
+<h1 id="root-cause-analysis">Root Cause Analysis</h1>
+<h2 id="根因分析">根因分析</h2>
+<p>不能简单：</p>
+<pre class="text"><code>一致性低
+→ 把少数意见删掉</code></pre>
+<p>否则可能正好删掉了：</p>
+<blockquote>
+<p>最有价值的边界信息。</p>
+</blockquote>
+<hr />
+<h1 id="十三adjudication-到底是什么">十三、Adjudication
+到底是什么？</h1>
+<h1 id="adjudication">Adjudication</h1>
+<h2 id="争议裁决">争议裁决</h2>
+<p>指：</p>
+<blockquote>
+<p>当独立标注不一致时，通过一个受控流程产生最终 Gold 决策。</p>
+</blockquote>
+<p>注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>d</mi><mi>j</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>M</mi><mi>a</mi><mi>j</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>V</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Adjudication
+\neq
+MajorityVoteOnly
+}
+</annotation></semantics></math></p>
+<p>简单多数投票：</p>
+<pre class="text"><code>A = risk
+B = risk
+C = no_risk</code></pre>
+<p>可能得到：</p>
+<blockquote>
+<p>risk。</p>
+</blockquote>
+<p>但如果 C 提供了：</p>
+<blockquote>
+<p>更强的权威证据或关键上下文，</p>
+</blockquote>
+<p>那多数票不一定更合理。</p>
+<p>所以真正 Adjudication 应考虑：</p>
+<pre class="text"><code>标注规范
+证据
+上下文
+规则定义
+争议点
+裁决理由</code></pre>
+<hr />
+<h1 id="十四核心心智模型-⑤">十四、核心心智模型 ⑤</h1>
+<h1 id="consensus-truth"><code>Consensus ≠ Truth</code></h1>
+<p>三个人都同意：</p>
+<blockquote>
+<p>不代表一定真。</p>
+</blockquote>
+<p>一个人持少数意见：</p>
+<blockquote>
+<p>也不代表一定错。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>j</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>V</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>是</mi><mi>A</mi><mi>g</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>是</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>G</mi><mi>u</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MajorityVote
+是Aggregation
+不是TruthGuarantee
+}
+</annotation></semantics></math></p>
+<p>Gold Set 的关键不是：</p>
+<blockquote>
+<p>让所有人看起来一致。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>让最终决策有证据、有规则、有记录。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十五adjudication-推荐流程">十五、Adjudication 推荐流程</h1>
+<p>英文流程：</p>
+<pre class="text"><code>Independent Labels
+↓
+Disagreement Detection
+↓
+Evidence Comparison
+↓
+Guideline Check
+↓
+Context Review
+↓
+Adjudicator Decision
+↓
+Decision Rationale
+↓
+Gold Label</code></pre>
+<p>中文解释：</p>
+<pre class="text"><code>先收集独立标注
+↓
+识别哪些样本存在冲突
+↓
+比较每个判断引用的证据
+↓
+检查标注规范
+↓
+补充必要上下文
+↓
+由裁决者作最终决定
+↓
+记录为什么这样裁决
+↓
+形成Gold Label</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>d</mi><mi>j</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>e</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Adjudication
+=
+Decision
++
+Rationale
++
+Evidence
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六ground-truth-真的绝对真实吗">十六、Ground Truth
+真的“绝对真实吗”？</h1>
+<p>在很多机器学习任务里：</p>
+<pre class="text"><code>猫
+狗
+数字
+字符</code></pre>
+<p>Ground Truth 相对明确。</p>
+<p>但政府采购很多任务不是纯客观事实识别。</p>
+<p>例如：</p>
+<pre class="text"><code>条款是否构成不合理限制？
+
+理由是否充分？
+
+风险级别是高还是中？
+
+是否需要进一步人工审核？</code></pre>
+<p>这些可能带有：</p>
+<blockquote>
+<p>规范性判断和上下文依赖。</p>
+</blockquote>
+<p>所以更专业的理解是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mo>=</mo><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>A</mi><mi>v</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GroundTruth
+=
+BestAvailableOperationalTruth
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p><strong>在当前任务定义、证据、规范和版本下，经过治理流程得到的最可信可操作答案。</strong></p>
+</blockquote>
+<p>不是哲学意义上的：</p>
+<blockquote>
+<p>永恒绝对真理。</p>
+</blockquote>
+<hr />
+<h1 id="十七核心心智模型-⑥">十七、核心心智模型 ⑥</h1>
+<h1
+id="groundtruth-在高争议任务中本质上是治理后的可操作真值"><code>GroundTruth</code>
+在高争议任务中，本质上是“治理后的可操作真值”</h1>
+<p>这并不会降低 Gold 的价值。</p>
+<p>相反，</p>
+<p>它要求我们把：</p>
+<pre class="text"><code>任务定义
+证据来源
+裁决原则
+不确定性
+版本</code></pre>
+<p>全部写清楚。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>W</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GroundTruthWithoutProvenance
+=
+WeakGroundTruth
+}
+</annotation></semantics></math></p>
+<p>没有来源和决策记录的 Gold，</p>
+<p>可信度是有限的。</p>
+<hr />
+<h1
+id="十八ambiguous-case有些样本本来就不应该硬标-yes-no">十八、Ambiguous
+Case：有些样本本来就不应该硬标 Yes / No</h1>
+<p>假设一个样本：</p>
+<pre class="text"><code>要求供应商在本地设置服务点</code></pre>
+<p>但上下文只给了这一句话。</p>
+<p>没有：</p>
+<pre class="text"><code>响应时效
+履约场景
+服务范围
+行业特性</code></pre>
+<p>这时强行标：</p>
+<pre class="text"><code>risk = yes</code></pre>
+<p>或者：</p>
+<pre class="text"><code>risk = no</code></pre>
+<p>可能都会制造：</p>
+<h1 id="label-noise">Label Noise</h1>
+<h2 id="标签噪声">标签噪声</h2>
+<p>所以 Gold Schema 应该允许：</p>
+<pre class="text"><code>ambiguous
+
+insufficient_context
+
+needs_review</code></pre>
+<hr />
+<h1 id="十九核心心智模型-⑦">十九、核心心智模型 ⑦</h1>
+<h1
+id="forcedcertainty-labelnoise"><code>ForcedCertainty = LabelNoise</code></h1>
+<p>如果真实世界本来存在不确定性，</p>
+<p>而标注系统只允许：</p>
+<pre class="text"><code>Yes
+No</code></pre>
+<p>那么所有不确定性都会被：</p>
+<blockquote>
+<p>强行压成错误确定性。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>y</mi><mi>应</mi><mi>该</mi><mi>被</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Uncertainty
+应该被
+Represented
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>Erased。</p>
+</blockquote>
+<p>这会直接影响后面第 9 阶段：</p>
+<h1 id="calibration-abstention-ood">Calibration / Abstention / OOD</h1>
+<hr />
+<h1
+id="二十evidence-requirementgold-label-为什么必须绑定证据">二十、Evidence
+Requirement：Gold Label 为什么必须绑定证据？</h1>
+<p>如果专家只给：</p>
+<pre class="text"><code>label = risk</code></pre>
+<p>以后别人很难判断：</p>
+<blockquote>
+<p>为什么？</p>
+</blockquote>
+<p>所以高价值 Gold Sample 最好包含：</p>
+<pre class="text"><code>evidence_span
+
+source_document
+
+source_section
+
+reference_rule
+
+decision_reason</code></pre>
+<p>这样可以支持：</p>
+<pre class="text"><code>专家复核
+错误审计
+模型解释评测
+Citation评测
+未来标签修订</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>&gt;</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldLabel
++
+Evidence
+&gt;
+GoldLabelOnly
+}
+</annotation></semantics></math></p>
+<p>这里的 <code>&gt;</code> 表示：</p>
+<blockquote>
+<p>审计与评测价值更高。</p>
+</blockquote>
+<hr />
+<h1 id="二十一label-confidence专家也应该表达不确定性">二十一、Label
+Confidence：专家也应该表达不确定性</h1>
+<p>可以让标注者记录：</p>
+<h1 id="label-confidence">Label Confidence</h1>
+<h2 id="标签置信度">标签置信度</h2>
+<p>例如：</p>
+<pre class="text"><code>high
+medium
+low</code></pre>
+<p>或者数值：</p>
+<pre class="text"><code>0.95
+0.70
+0.55</code></pre>
+<p>但必须注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>O</mi><mi>f</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AnnotatorConfidence
+\neq
+ProbabilityOfTruth
+}
+</annotation></semantics></math></p>
+<p>它只是：</p>
+<blockquote>
+<p>标注者主观把握程度。</p>
+</blockquote>
+<p>不能直接当作：</p>
+<blockquote>
+<p>客观概率。</p>
+</blockquote>
+<hr />
+<h1 id="二十二核心心智模型-⑧">二十二、核心心智模型 ⑧</h1>
+<h1
+id="confidence-是元数据不是替代-adjudication-的捷径"><code>Confidence</code>
+是元数据，不是替代 Adjudication 的捷径</h1>
+<p>一个专家：</p>
+<pre class="text"><code>confidence = 0.99</code></pre>
+<p>不能自动压过：</p>
+<blockquote>
+<p>另一个专家提供的更强证据。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighConfidence
+\neq
+AutomaticAuthority
+}
+</annotation></semantics></math></p>
+<p>Confidence 可以帮助：</p>
+<pre class="text"><code>筛选复核样本
+识别边界案例
+设计难度Slice</code></pre>
+<p>但不能直接替代：</p>
+<blockquote>
+<p>证据和裁决。</p>
+</blockquote>
+<hr />
+<h1
+id="二十三single-label-和-multi-label-要不要提前定义">二十三、Single-label
+和 Multi-label 要不要提前定义？</h1>
+<p>必须。</p>
+<p>例如一个条款可能同时涉及：</p>
+<pre class="text"><code>地域限制
+资格条件
+履约能力
+中小企业政策</code></pre>
+<p>如果任务天然允许多个风险同时存在，</p>
+<p>却把 Schema 设计成：</p>
+<h1 id="single-label">Single-label</h1>
+<h2 id="单标签">单标签</h2>
+<p>那 Gold 会丢失真实结构。</p>
+<p>如果任务业务上只允许：</p>
+<blockquote>
+<p>一个主风险类型，</p>
+</blockquote>
+<p>那就需要明确：</p>
+<pre class="text"><code>primary_label
+secondary_labels</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>由</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>D</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>决</mi><mi>定</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LabelCardinality
+必须由TaskDefinition决定
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十四gold-set-不只需要-label还需要-provenance">二十四、Gold Set
+不只需要 Label，还需要 Provenance</h1>
+<h1 id="provenance">Provenance</h1>
+<h2 id="来源血缘">来源血缘</h2>
+<p>至少记录：</p>
+<pre class="text"><code>sample_id
+
+source_document_id
+
+source_version
+
+project_id
+
+section_id
+
+annotation_guideline_version
+
+annotator_ids
+
+annotation_timestamp
+
+adjudicator_id
+
+adjudication_reason
+
+gold_version</code></pre>
+<p>为什么？</p>
+<p>因为以后如果：</p>
+<pre class="text"><code>规则更新
+源文件更正
+发现标注错误
+Guideline变化</code></pre>
+<p>你必须知道：</p>
+<blockquote>
+<p>哪些 Gold 样本受影响。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>S</mi><mi>e</mi><mi>t</mi><mo>=</mo><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mi>s</mi><mo>+</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldSet
+=
+Labels
++
+Lineage
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十五gold-label-freeze什么时候一条样本才算正式-gold">二十五、Gold
+Label Freeze：什么时候一条样本才算正式 Gold？</h1>
+<p>可以定义一个：</p>
+<h1 id="gold-promotion-gate">Gold Promotion Gate</h1>
+<h2 id="gold-晋级门槛">Gold 晋级门槛</h2>
+<p>例如：</p>
+<pre class="text"><code>Schema完整
+AND
+
+独立标注完成
+AND
+
+必要证据存在
+AND
+
+冲突已裁决
+AND
+
+Benchmark Firewall通过
+AND
+
+Lineage完整</code></pre>
+<p>只有全部通过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>E</mi><mi>l</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldEligible=True
+}
+</annotation></semantics></math></p>
+<p>才进入正式 Gold Set。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Annotated
+\neq
+Gold
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十六gold-set-versioning标注修正以后怎么办">二十六、Gold Set
+Versioning：标注修正以后怎么办？</h1>
+<p>不能直接覆盖旧标签。</p>
+<p>例如：</p>
+<pre class="text"><code>ProcurementGold_V1.0</code></pre>
+<p>后来发现：</p>
+<pre class="text"><code>17条标签需要修订</code></pre>
+<p>应该形成：</p>
+<pre class="text"><code>ProcurementGold_V1.0.1</code></pre>
+<p>并记录：</p>
+<pre class="text"><code>changed_item_ids
+
+old_label
+
+new_label
+
+change_reason
+
+adjudicator
+
+timestamp</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>必</mi><mi>须</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldCorrection
+必须Versioned
+}
+</annotation></semantics></math></p>
+<p>不能：</p>
+<blockquote>
+<p>悄悄改答案。</p>
+</blockquote>
+<hr />
+<h1 id="二十七核心心智模型-⑨">二十七、核心心智模型 ⑨</h1>
+<h1 id="gold-set-是审计资产不是一次性标注结果"><code>Gold Set</code>
+是审计资产，不是一次性标注结果</h1>
+<p>真正 Gold Set 应该能回答：</p>
+<pre class="text"><code>谁标的？
+
+按哪版Guideline标的？
+
+当时用了什么证据？
+
+谁裁决的？
+
+为什么这样裁决？
+
+后来有没有改过？
+
+哪个Benchmark版本使用了它？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>S</mi><mi>e</mi><mi>t</mi><mo>=</mo><mi>A</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>A</mi><mi>s</mi><mi>s</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldSet
+=
+AuditableDecisionAsset
+}
+</annotation></semantics></math></p>
+<p>这也是为什么：</p>
+<blockquote>
+<p>Benchmark 评测质量的上限，首先受 Gold 质量限制。</p>
+</blockquote>
+<hr />
+<h1 id="二十八gold-quality-的上限决定-benchmark-的上限">二十八、Gold
+Quality 的上限决定 Benchmark 的上限</h1>
+<p>如果 Gold 本身：</p>
+<pre class="text"><code>标签不稳定
+证据缺失
+大量争议
+版本混乱</code></pre>
+<p>那么即使模型评测系统再精密，</p>
+<p>得到的指标也会很可疑。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≤</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkQuality
+\leq
+GoldQuality
+}
+</annotation></semantics></math></p>
+<p>这里不是严格数学不等式。</p>
+<p>它表达：</p>
+<blockquote>
+<p><strong>评测体系不可能长期比自己的标准答案更可信。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十九完整-gold-set-生产流程">二十九、完整 Gold Set
+生产流程</h1>
+<p>英文流程：</p>
+<pre class="text"><code>Task Definition
+↓
+Annotation Schema
+↓
+Guideline Design
+↓
+Annotator Qualification
+↓
+Calibration Round
+↓
+Independent Annotation
+↓
+Agreement Measurement
+↓
+Disagreement Detection
+↓
+Evidence Review
+↓
+Adjudication
+↓
+Confidence / Ambiguity Tagging
+↓
+Gold Promotion Gate
+↓
+Freeze
+↓
+Versioned Maintenance</code></pre>
+<p>中文解释：</p>
+<pre class="text"><code>先定义评测任务
+↓
+设计标注字段
+↓
+写清楚标注规范
+↓
+筛选并培训标注者
+↓
+先做一轮校准标注
+↓
+正式独立标注
+↓
+测量一致性
+↓
+发现冲突样本
+↓
+比较证据
+↓
+做正式争议裁决
+↓
+记录置信度和模糊状态
+↓
+通过Gold晋级门槛
+↓
+冻结成Gold版本
+↓
+以后所有修改都版本化</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>C</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldCreation
+=
+ControlledDecisionPipeline
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十本阶段正式工程产物">三十、本阶段正式工程产物</h1>
+<h1
+id="procurementgoldsetpolicy_v0.1-2"><code>ProcurementGoldSetPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>gold_policy_version
+
+task_definition
+
+annotation_schema_version
+
+annotation_guideline_version
+
+label_definition
+
+positive_examples
+
+negative_examples
+
+ambiguous_examples
+
+annotator_qualification_policy
+
+calibration_round_required
+
+independent_annotation_required
+
+minimum_annotators
+
+agreement_metric
+
+agreement_threshold
+
+disagreement_policy
+
+adjudication_required
+
+adjudicator_role
+
+evidence_required
+
+evidence_schema
+
+ambiguity_policy
+
+insufficient_context_policy
+
+abstain_policy
+
+label_confidence_policy
+
+single_multi_label_policy
+
+provenance_required
+
+gold_promotion_gate
+
+benchmark_firewall_required
+
+gold_freeze_policy
+
+gold_versioning_policy
+
+audit_log
+=
+enabled</code></pre>
+<p>每个 Gold Sample 至少记录：</p>
+<pre class="text"><code>sample_id
+
+source_id
+
+source_version
+
+annotation_schema_version
+
+guideline_version
+
+annotator_labels
+
+annotator_reasons
+
+annotator_evidence
+
+agreement_status
+
+adjudication_status
+
+adjudicated_label
+
+adjudication_reason
+
+ambiguity_flag
+
+label_confidence
+
+gold_eligible
+
+gold_version</code></pre>
+<p>这样以后才能回答：</p>
+<blockquote>
+<p><strong>这个 Gold Label
+为什么是这个答案，而不是另一个答案？</strong></p>
+</blockquote>
+<hr />
+<h1 id="三十一本阶段最重要的-10-个核心心智模型">三十一、本阶段最重要的
+10 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>ExpertOpinion ≠ GroundTruth</code>。专家意见只是输入，Gold
+Truth 来自受控标注与裁决流程。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ②：<code>Gold = AuthorityByProcess</code>。Gold
+的权威性来自
+Schema、证据、独立判断、裁决和版本治理，而不是单一专家身份。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>BadSchema + GoodExperts = UnstableGold</code>。标注结构和边界没定义清楚，再好的专家也会产生不稳定标签。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>GoodExpert ≠ GoodAnnotator</code>。领域知识和高一致性标注能力是两种不同能力。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>Agreement Metric ≠ Ground Truth Quality</code>。一致性高不代表一定正确，一致性低也不等于谁必须被淘汰。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>Consensus ≠ Truth</code>。多数投票只是聚合方法，不是事实保证；最终
+Gold 必须有证据和裁决理由。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>ForcedCertainty = LabelNoise</code>。真实存在模糊性时，强制 Yes
+/ No 会制造错误确定性。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>GoldLabel + Evidence &gt; GoldLabelOnly</code>。有证据的标签才具备更高的复核、审计和生成评测价值。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>Annotated ≠ Gold</code>。完成标注只是中间状态，只有通过 Gold
+Promotion Gate 才能进入正式 Gold Set。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑩：<code>GoldSet = AuditableDecisionAsset</code>。Gold Set
+不是一张标签表，而是一套可以追溯谁、依据什么、如何裁决、何时修改的决策资产。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三十二把完整-gold-set-流程压成一张专业工程图">三十二、把完整
+Gold Set 流程压成一张专业工程图</h1>
+<pre class="text"><code>                         Task Definition
+                           定义评测任务
+                                │
+                                ▼
+                       Annotation Schema
+                         设计标注结构
+                                │
+                                ▼
+                      Annotation Guideline
+                         编写标注规范
+                                │
+                                ▼
+                    Annotator Qualification
+                         标注者资格校准
+                                │
+                                ▼
+                     Independent Annotation
+                           独立标注
+                                │
+                                ▼
+                    Agreement Measurement
+                          一致性评估
+                                │
+                  ┌─────────────┴─────────────┐
+                  ▼                           ▼
+               Agree                      Disagree
+                一致                         冲突
+                  │                           │
+                  │                           ▼
+                  │                    Evidence Review
+                  │                       证据复核
+                  │                           │
+                  │                           ▼
+                  │                      Adjudication
+                  │                       正式裁决
+                  │                           │
+                  └─────────────┬─────────────┘
+                                ▼
+                     Ambiguity / Confidence
+                       模糊性与置信度记录
+                                │
+                                ▼
+                      Gold Promotion Gate
+                         Gold晋级门槛
+                                │
+                  ┌─────────────┴─────────────┐
+                  ▼                           ▼
+                Reject                       Pass
+                 淘汰                         通过
+                                              │
+                                              ▼
+                                         Gold Freeze
+                                          冻结版本
+                                              │
+                                              ▼
+                                    Versioned Maintenance
+                                        版本化维护</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Gold Set
+的本质不是“让专家给每道题一个答案”，而是先定义可操作的标注
+Schema，再通过合格标注者的独立判断、一致性测量、证据要求、争议裁决、不确定性表达和版本治理，把专家判断加工成可审计、可复现、可长期比较的
+Ground Truth。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第九课-第-2-阶段掌握测试">第九课 · 第 2 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Expert Opinion 不等于 Ground
+Truth；Gold Label 的权威为什么来自流程而不是个人；Annotation Schema
+为什么决定 Ground Truth 的含义；为什么 Bad Schema
+即使配上好专家也会产生不稳定标签；Good Expert 和 Good Annotator
+有什么区别；为什么标注者必须先独立判断再讨论；Percent Agreement 和
+Cohen’s Kappa
+分别在测什么；为什么高一致性不自动等于高正确性；低一致性可能暴露哪些系统性问题；Adjudication
+和简单多数投票有什么区别；为什么 Consensus 不等于 Truth；高争议任务里的
+Ground Truth 应该怎样理解；为什么允许 Ambiguous / Insufficient Context
+比强制 Yes / No 更专业；Evidence Requirement 为什么重要；Label
+Confidence 能说明什么、不能说明什么；Single-label 和 Multi-label
+为什么必须在任务定义阶段决定；Gold Set 为什么必须记录 Provenance；为什么
+Annotated 不等于 Gold；Gold Promotion Gate 应该检查什么；为什么 Gold
+修正必须版本化；以及为什么 Benchmark 质量的上限首先受 Gold
+质量限制。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>九</mi><mi>课</mi><mi>第</mi><mn>2</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第九课第2阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第九课-第-3-阶段">下一阶段：第九课 · 第 3 阶段</h1>
+<h1 id="evaluation-schema到底评什么不只是-correct-wrong">Evaluation
+Schema：到底评什么，不只是 Correct / Wrong</h1>
+<h2
+id="一个政府采购-ai-到底应该被拆成哪些能力维度评测为什么只给最终答案打一个对-错无法定位模型rag-和-agent-真正的问题">一个政府采购
+AI 到底应该被拆成哪些能力维度评测？为什么只给最终答案打一个“对 /
+错”，无法定位模型、RAG 和 Agent 真正的问题？</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Evaluation Unit
+评测单元
+
+Task Taxonomy
+任务分类体系
+
+Capability Dimension
+能力维度
+
+Outcome Metric
+结果指标
+
+Process Metric
+过程指标
+
+Evidence Quality
+证据质量
+
+Error Taxonomy
+错误分类
+
+Severity
+错误严重度
+
+Partial Credit
+部分得分
+
+Composite Score
+复合指标</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementevaluationschema_v0.1"><code>ProcurementEvaluationSchema_V0.1</code></h1>
+<p>下一阶段最关键的一条边界会是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorrectAnswer
+\neq
+CompleteEvaluation
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>最终答案看起来正确，只能说明“结果可能对了”；它并不能证明证据正确、过程可靠、风险边界正确，更不能告诉我们错的时候到底错在哪一层。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

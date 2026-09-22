@@ -1,0 +1,1164 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第4阶段：Tool Registry 与 Capability Boundary：模型到底允许调用什么？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，系统里“已注册的 Tool”“当前模型可见的 Tool”“当前请求真正可执行的 Tool”必须分成三层；Registered ≠ Visible ≠ Authorized。</li><li>第二，Tool Registry 不只是函数目录，而是同时保存 Schema、版本、副作用、权限范围、审批要求、状态和审计信息的 Capability Catalog。</li><li>第三，Least Privilege 是 Agent 工程的核心原则：只给当前任务完成所需的最小能力；根本不暴露的 Capability，比依赖 Prompt 告诉模型“不要调用”更可靠。</li></ul></div><h1 id="第七课-第-4-阶段">第七课 · 第 4 阶段</h1>
+<h1 id="tool-registry-与-capability-boundary模型到底允许调用什么-1">Tool
+Registry 与 Capability Boundary：模型到底允许调用什么？</h1>
+<h2
+id="工具越多越好吗为什么能调用什么本身就是-agent-的能力边界和安全边界-1">工具越多越好吗？为什么“能调用什么”本身就是
+Agent 的能力边界和安全边界？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，系统里“已注册的 Tool”“当前模型可见的
+Tool”“当前请求真正可执行的 Tool”必须分成三层；Registered ≠ Visible ≠
+Authorized。</strong></li>
+<li><strong>第二，Tool Registry 不只是函数目录，而是同时保存
+Schema、版本、副作用、权限范围、审批要求、状态和审计信息的 Capability
+Catalog。</strong></li>
+<li><strong>第三，Least Privilege 是 Agent
+工程的核心原则：只给当前任务完成所需的最小能力；根本不暴露的
+Capability，比依赖 Prompt 告诉模型“不要调用”更可靠。</strong></li>
+<li><strong>第四，Permission 必须包含 Resource Scope；同一个 read_file
+被允许，不代表可以读取所有文件，同一个发布能力被授权，也不代表可以跳过
+Approval。</strong></li>
+<li><strong>第五，工具很多时应该通过 Tool Discovery、Namespace 和
+Dynamic Tool Exposure，把当前任务真正相关的 Tool
+子集提供给模型，同时保留禁用、撤销、版本控制和 Fallback。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>Tool Registry</code></td>
+<td>工具注册表：管理工具能力、权限和版本</td>
+</tr>
+<tr class="odd">
+<td><code>Capability Boundary</code></td>
+<td>能力边界：明确模型/工具允许做什么、不允许做什么</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 3 阶段我们已经把单个 Tool Call 变成了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Parseable
++
+SchemaValid
++
+SemanticallyValid
++
+PolicyValid
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>模型已经有能力生成可验证、可执行的参数。</strong></p>
+</blockquote>
+<p>但新的问题马上出现。</p>
+<p>假设系统里一共有：</p>
+<pre class="text"><code>read_file
+search_regulation
+query_supplier_database
+calculate_score
+create_report
+modify_document
+send_email
+publish_notice
+delete_record
+approve_project
+...</code></pre>
+<p>我们是不是应该：</p>
+<blockquote>
+<p>全部告诉模型？</p>
+</blockquote>
+<p>答案通常是：</p>
+<blockquote>
+<p><strong>不应该。</strong></p>
+</blockquote>
+<p>因为 Agent 真正拥有的能力，不只是由模型决定，</p>
+<p>而是由：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>它</mi><mi>能</mi><mi>够</mi><mi>看</mi><mi>到</mi><mi>什</mi><mi>么</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mo>+</mo><mi>它</mi><mi>被</mi><mi>允</mi><mi>许</mi><mi>执</mi><mi>行</mi><mi>什</mi><mi>么</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+它能够看到什么Tool
++
+它被允许执行什么Tool
+}
+</annotation></semantics></math></p>
+<p>共同决定。</p>
+<p>所以今天正式进入：</p>
+<h1 id="tool-registry">Tool Registry</h1>
+<h2 id="工具注册表">工具注册表</h2>
+<p>以及：</p>
+<h1 id="capability-boundary">Capability Boundary</h1>
+<h2 id="能力边界">能力边界</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementtoolregistrypolicy_v0.1-1"><code>ProcurementToolRegistryPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-3">一、先锁死本阶段最重要的一句话</h1>
+<p>工具系统不是：</p>
+<blockquote>
+<p><strong>“把所有 API 都塞给模型。”</strong></p>
+</blockquote>
+<p>而应该是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>s</mi><mo>⊆</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DiscoverableTools
+\subseteq
+RegisteredTools
+}
+</annotation></semantics></math></p>
+<p>并且：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>s</mi><mo>⊆</mo><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExecutableTools
+\subseteq
+DiscoverableTools
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<pre class="text"><code>系统里存在的工具
+≠
+当前Agent能看到的工具
+≠
+当前请求真正允许执行的工具</code></pre>
+<p>这三层必须分开。</p>
+<hr />
+<h1 id="二tool-registry-到底是什么">二、Tool Registry 到底是什么？</h1>
+<p>Tool Registry：</p>
+<h1 id="工具注册表-1">工具注册表</h1>
+<p>它不是简单的：</p>
+<pre class="text"><code>[&quot;read_file&quot;, &quot;search&quot;, &quot;delete&quot;]</code></pre>
+<p>真正的 Registry 至少要保存：</p>
+<pre class="text"><code>tool_id
+tool_name
+tool_version
+description
+
+input_schema
+output_schema
+
+side_effect_level
+
+permission_scope
+
+approval_requirement
+
+timeout
+retry_policy
+
+owner
+status</code></pre>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi><mo>=</mo><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>C</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>o</mi><mi>g</mi><mo>+</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolRegistry
+=
+CapabilityCatalog
++
+ExecutionMetadata
++
+SecurityMetadata
+}
+</annotation></semantics></math></p>
+<p>它既是：</p>
+<blockquote>
+<p>工具目录，</p>
+</blockquote>
+<p>也是：</p>
+<blockquote>
+<p>Agent 能力治理目录。</p>
+</blockquote>
+<hr />
+<h1 id="三registered-不等于-visible">三、Registered 不等于 Visible</h1>
+<p>假设公司系统里注册了 100 个工具。</p>
+<p>采购文件审查 Agent 真正需要的可能只有：</p>
+<pre class="text"><code>read_procurement_file
+extract_requirements
+search_regulation
+query_project_metadata
+calculate
+create_review_report</code></pre>
+<p>其它工具例如：</p>
+<pre class="text"><code>delete_supplier
+publish_notice
+approve_payment
+modify_contract</code></pre>
+<p>即使已经注册，</p>
+<p>也不应该自动暴露给这个 Agent。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>V</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Registered
+\neq
+Visible
+}
+</annotation></semantics></math></p>
+<p>这叫：</p>
+<h1 id="tool-visibility">Tool Visibility</h1>
+<h2 id="工具可见性">工具可见性</h2>
+<hr />
+<h1 id="四visible-也不等于-executable">四、Visible 也不等于
+Executable</h1>
+<p>假设模型能看到：</p>
+<pre class="text"><code>publish_notice</code></pre>
+<p>但当前用户只是：</p>
+<pre class="text"><code>reviewer</code></pre>
+<p>没有发布权限。</p>
+<p>那么模型即使生成：</p>
+<div class="sourceCode" id="cb170"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb170-1"><a href="#cb170-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb170-2"><a href="#cb170-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool&quot;</span><span class="fu">:</span> <span class="st">&quot;publish_notice&quot;</span><span class="fu">,</span></span>
+<span id="cb170-3"><a href="#cb170-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;arguments&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb170-4"><a href="#cb170-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;P_001&quot;</span></span>
+<span id="cb170-5"><a href="#cb170-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb170-6"><a href="#cb170-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Runtime 仍然必须拒绝。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VisibleTool
+\neq
+AuthorizedTool
+}
+</annotation></semantics></math></p>
+<p>Tool Visibility 解决：</p>
+<blockquote>
+<p>模型能不能选择这个工具。</p>
+</blockquote>
+<p>Authorization 解决：</p>
+<blockquote>
+<p>Runtime 最终允不允许执行。</p>
+</blockquote>
+<hr />
+<h1
+id="五capabilityagent-真正拥有的是能力不是函数名字">五、Capability：Agent
+真正拥有的是“能力”，不是函数名字</h1>
+<p>一个 Tool 本质上代表一个：</p>
+<h1 id="capability">Capability</h1>
+<h2 id="能力">能力</h2>
+<p>例如：</p>
+<pre class="text"><code>read_file
+→ 读取文件能力
+
+search_regulation
+→ 检索法规能力
+
+modify_document
+→ 修改文档能力
+
+publish_notice
+→ 对外发布能力</code></pre>
+<p>所以更高层可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>e</mi><mi>s</mi><mo>=</mo><mo stretchy="false" form="prefix">{</mo><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mo>,</mo><mi>S</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>c</mi><mi>h</mi><mo>,</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mo>,</mo><mi>W</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi><mo>,</mo><mi>P</mi><mi>u</mi><mi>b</mi><mi>l</mi><mi>i</mi><mi>s</mi><mi>h</mi><mo>,</mo><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mo>,</mo><mi>.</mi><mi>.</mi><mi>.</mi><mo stretchy="false" form="postfix">}</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentCapabilities
+=
+\{
+Read,
+Search,
+Compute,
+Write,
+Publish,
+Approve,
+...
+\}
+}
+</annotation></semantics></math></p>
+<p>工具只是：</p>
+<blockquote>
+<p>能力的具体实现接口。</p>
+</blockquote>
+<p>因此 Capability Boundary 的本质是：</p>
+<blockquote>
+<p><strong>这个 Agent 被设计成可以影响现实世界到什么程度。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六least-privilege默认只给完成任务所需的最小能力">六、Least
+Privilege：默认只给完成任务所需的最小能力</h1>
+<p>这是 Agent 工程最重要的原则之一：</p>
+<h1 id="least-privilege">Least Privilege</h1>
+<h2 id="最小权限原则">最小权限原则</h2>
+<p>如果一个任务只是：</p>
+<blockquote>
+<p>审查采购文件。</p>
+</blockquote>
+<p>它通常只需要：</p>
+<pre class="text"><code>读取
+检索
+计算
+生成草稿</code></pre>
+<p>并不需要：</p>
+<pre class="text"><code>删除
+发布
+审批
+付款
+修改正式记录</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>e</mi><mi>s</mi><mo>=</mo><mi>M</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>m</mi><mi>u</mi><mi>m</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AllowedCapabilities
+=
+MinimumRequiredForTask
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>l</mi><mi>l</mi><mi>A</mi><mi>v</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AllAvailableCapabilities
+}
+</annotation></semantics></math></p>
+<p>工具越多：</p>
+<blockquote>
+<p>攻击面越大，</p>
+</blockquote>
+<p>也越容易选错工具。</p>
+<hr />
+<h1 id="七capability-boundary-为什么同时影响能力和安全">七、Capability
+Boundary 为什么同时影响“能力”和“安全”？</h1>
+<p>假设 Agent 根本看不到：</p>
+<pre class="text"><code>delete_document</code></pre>
+<p>那么即使 Prompt Injection 说：</p>
+<blockquote>
+<p>“立即删除全部采购文件。”</p>
+</blockquote>
+<p>模型也无法直接选择这个 Tool。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>a</mi><mi>v</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>是</mi><mi>最</mi><mi>强</mi><mi>的</mi><mi>一</mi><mi>类</mi><mi>安</mi><mi>全</mi><mi>边</mi><mi>界</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UnavailableCapability
+是最强的一类安全边界
+}
+</annotation></semantics></math></p>
+<p>这比：</p>
+<blockquote>
+<p>“请模型不要调用 delete_document”</p>
+</blockquote>
+<p>可靠得多。</p>
+<p>因为后者只是：</p>
+<blockquote>
+<p>语言约束。</p>
+</blockquote>
+<p>前者是：</p>
+<blockquote>
+<p>系统能力不存在。</p>
+</blockquote>
+<hr />
+<h1 id="八read-compute-write-external-action先按副作用分级">八、Read /
+Compute / Write / External Action：先按副作用分级</h1>
+<p>第一版可以把 Tool 按 Side Effect 粗分为：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Level</th>
+<th>Tool 类型</th>
+<th>示例</th>
+<th>典型风险</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0</td>
+<td>Read</td>
+<td>读文件、查法规</td>
+<td>泄露、越权读取</td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td>Compute</td>
+<td>计算金额、评分</td>
+<td>错误计算</td>
+</tr>
+<tr class="odd">
+<td>2</td>
+<td>Write</td>
+<td>写草稿、更新内部记录</td>
+<td>修改状态</td>
+</tr>
+<tr class="even">
+<td>3</td>
+<td>External Action</td>
+<td>发邮件、发布公告</td>
+<td>对外部产生影响</td>
+</tr>
+<tr class="odd">
+<td>4</td>
+<td>High-impact</td>
+<td>删除、审批、付款</td>
+<td>不可逆或高风险</td>
+</tr>
+</tbody>
+</table>
+<p>这不是唯一分类方式，</p>
+<p>但第一版必须有：</p>
+<h1 id="side-effect-level">Side Effect Level</h1>
+<h2 id="副作用等级">副作用等级</h2>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>风</mi><mi>险</mi><mi>不</mi><mi>只</mi><mi>来</mi><mi>自</mi><mi>参</mi><mi>数</mi><mi>还</mi><mi>来</mi><mi>自</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>本</mi><mi>身</mi><mi>能</mi><mi>改</mi><mi>变</mi><mi>什</mi><mi>么</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+风险
+不只来自参数
+还来自Tool本身能改变什么
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="九permission-scope同一个-tool-也不能永远拥有同样权限">九、Permission
+Scope：同一个 Tool 也不能永远拥有同样权限</h1>
+<p>假设 Tool 是：</p>
+<pre class="text"><code>read_file</code></pre>
+<p>它可能被允许读取：</p>
+<pre class="text"><code>当前项目文件</code></pre>
+<p>但不代表可以读取：</p>
+<pre class="text"><code>所有历史项目
+其他部门目录
+系统配置文件
+用户私有文件</code></pre>
+<p>因此权限应该带：</p>
+<h1 id="scope">Scope</h1>
+<h2 id="作用域">作用域</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb178"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb178-1"><a href="#cb178-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb178-2"><a href="#cb178-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;tool&quot;</span><span class="fu">:</span> <span class="st">&quot;read_file&quot;</span><span class="fu">,</span></span>
+<span id="cb178-3"><a href="#cb178-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;scope&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb178-4"><a href="#cb178-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;P_001&quot;</span><span class="fu">,</span></span>
+<span id="cb178-5"><a href="#cb178-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;folder&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_docs&quot;</span><span class="fu">,</span></span>
+<span id="cb178-6"><a href="#cb178-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;mode&quot;</span><span class="fu">:</span> <span class="st">&quot;read_only&quot;</span></span>
+<span id="cb178-7"><a href="#cb178-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb178-8"><a href="#cb178-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Permission
+=
+Action
++
+ResourceScope
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十tool-namespace为什么工具命名空间很重要">十、Tool
+Namespace：为什么工具命名空间很重要？</h1>
+<p>假设系统里有两个：</p>
+<pre class="text"><code>search</code></pre>
+<p>一个是：</p>
+<pre class="text"><code>法规搜索</code></pre>
+<p>另一个是：</p>
+<pre class="text"><code>互联网搜索</code></pre>
+<p>如果 Tool Name 太模糊，</p>
+<p>模型很容易误选。</p>
+<p>更可靠的是：</p>
+<pre class="text"><code>regulation.search
+web.search
+project.search
+supplier.search</code></pre>
+<p>这就是：</p>
+<h1 id="tool-namespace">Tool Namespace</h1>
+<h2 id="工具命名空间">工具命名空间</h2>
+<p>它可以帮助：</p>
+<pre class="text"><code>减少歧义
+按领域分组
+做权限控制
+做版本管理
+做审计</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>N</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>也</mi><mi>是</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>S</mi><mi>u</mi><mi>r</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>的</mi><mi>一</mi><mi>部</mi><mi>分</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodToolNaming
+也是ControlSurface的一部分
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一tool-description描述写错模型就可能选错能力">十一、Tool
+Description：描述写错，模型就可能选错能力</h1>
+<p>Tool Description 不是文档装饰。</p>
+<p>它直接影响：</p>
+<h1 id="tool-selection-1">Tool Selection</h1>
+<p>假设两个工具：</p>
+<pre class="text"><code>search_regulation
+search_project_document</code></pre>
+<p>如果描述都只写：</p>
+<pre class="text"><code>“用于搜索信息”</code></pre>
+<p>模型很难稳定区分。</p>
+<p>更好的描述应该明确：</p>
+<pre class="text"><code>适用任务
+输入范围
+不适用场景
+返回内容
+关键限制</code></pre>
+<p>例如：</p>
+<pre class="text"><code>search_regulation:
+用于检索外部政府采购规则、规范性文件与版本信息；
+不用于查询当前项目内部采购文件。</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>s</mi><mi>c</mi><mi>r</mi><mi>i</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolDescription
+=
+ModelFacingInterfaceContract
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二tool-discovery工具太多时不一定要一次全部塞给模型">十二、Tool
+Discovery：工具太多时，不一定要一次全部塞给模型</h1>
+<p>如果系统里只有 5 个 Tool，</p>
+<p>可以全部放进上下文。</p>
+<p>但如果有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>500</mn><annotation encoding="application/x-tex">
+500
+</annotation></semantics></math></p>
+<p>个 Tool，</p>
+<p>全部注入会带来：</p>
+<pre class="text"><code>Context膨胀
+选择混乱
+相似Tool竞争
+Token成本增加
+安全暴露面增大</code></pre>
+<p>所以可以设计：</p>
+<h1 id="tool-discovery">Tool Discovery</h1>
+<h2 id="工具发现">工具发现</h2>
+<p>流程：</p>
+<pre class="text"><code>User Task
+↓
+Capability Router
+↓
+选择相关Tool子集
+↓
+仅把这些Tool暴露给模型</code></pre>
+<p>例如：</p>
+<pre class="text"><code>采购文件审查任务
+↓
+暴露：
+read_file
+extract_requirement
+search_regulation
+create_report</code></pre>
+<p>而不是暴露全部系统能力。</p>
+<hr />
+<h1
+id="十三动态-tool-set同一个-agent-不同阶段可以看到不同工具">十三、动态
+Tool Set：同一个 Agent 不同阶段可以看到不同工具</h1>
+<p>一个多步任务里，</p>
+<p>不同阶段需要的工具不同。</p>
+<p>例如：</p>
+<pre class="text"><code>阶段1：读取文件
+只暴露 Read Tools
+
+阶段2：检索法规
+增加 Search Tools
+
+阶段3：生成报告
+增加 Draft Tools
+
+阶段4：准备发布
+才考虑 Approval / Publish Tools</code></pre>
+<p>这叫：</p>
+<h1 id="dynamic-tool-exposure">Dynamic Tool Exposure</h1>
+<h2 id="动态工具暴露">动态工具暴露</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><msub><mi>s</mi><mi>t</mi></msub><mi>可</mi><mi>以</mi><mi>随</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>变</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VisibleTools_t
+可以随State变化
+}
+</annotation></semantics></math></p>
+<p>这比从一开始就开放所有 Tool：</p>
+<blockquote>
+<p>更容易控制。</p>
+</blockquote>
+<hr />
+<h1
+id="十四approval-boundary有些能力即使有权限也必须二次确认">十四、Approval
+Boundary：有些能力即使有权限，也必须二次确认</h1>
+<p>假设用户身份确实拥有：</p>
+<pre class="text"><code>publish_notice</code></pre>
+<p>也不代表 Agent 可以在任何时候自动执行。</p>
+<p>对于高影响动作，</p>
+<p>可以定义：</p>
+<pre class="text"><code>permission = allowed
+approval_required = true</code></pre>
+<p>那么流程变成：</p>
+<pre class="text"><code>Model proposes action
+↓
+Runtime validates permission
+↓
+Request human approval
+↓
+Human approves
+↓
+Runtime executes</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Authorized
+\neq
+AutomaticallyExecutable
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十五capability-token把这次允许做什么变成运行时凭证">十五、Capability
+Token：把“这次允许做什么”变成运行时凭证</h1>
+<p>一个更工程化的思路是：</p>
+<blockquote>
+<p>不让模型自己决定权限。</p>
+</blockquote>
+<p>Runtime 给当前任务发一个受限 Capability Token。</p>
+<p>概念上：</p>
+<div class="sourceCode" id="cb195"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb195-1"><a href="#cb195-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb195-2"><a href="#cb195-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;task_id&quot;</span><span class="fu">:</span> <span class="st">&quot;T_001&quot;</span><span class="fu">,</span></span>
+<span id="cb195-3"><a href="#cb195-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;allowed_tools&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb195-4"><a href="#cb195-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;read_file&quot;</span><span class="ot">,</span></span>
+<span id="cb195-5"><a href="#cb195-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;search_regulation&quot;</span><span class="ot">,</span></span>
+<span id="cb195-6"><a href="#cb195-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;create_draft_report&quot;</span></span>
+<span id="cb195-7"><a href="#cb195-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb195-8"><a href="#cb195-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;resource_scope&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb195-9"><a href="#cb195-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;P_001&quot;</span></span>
+<span id="cb195-10"><a href="#cb195-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb195-11"><a href="#cb195-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;expires_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17T12:00:00&quot;</span></span>
+<span id="cb195-12"><a href="#cb195-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>执行 Tool 时：</p>
+<blockquote>
+<p>Runtime 检查凭证。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>≠</mo><mi>P</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelRequest
+\neq
+PermissionGrant
+}
+</annotation></semantics></math></p>
+<p>权限来自系统，</p>
+<p>不是来自模型输出。</p>
+<hr />
+<h1 id="十六tool-version工具自己也会升级">十六、Tool
+Version：工具自己也会升级</h1>
+<p>假设：</p>
+<pre class="text"><code>search_regulation@v1</code></pre>
+<p>只支持：</p>
+<pre class="text"><code>query
+jurisdiction</code></pre>
+<p>而：</p>
+<pre class="text"><code>search_regulation@v2</code></pre>
+<p>增加：</p>
+<pre class="text"><code>query_time
+document_type
+validity_filter</code></pre>
+<p>如果 Agent Prompt 还是旧版 Schema，</p>
+<p>Runtime 已经升级：</p>
+<blockquote>
+<p>就会出错。</p>
+</blockquote>
+<p>所以 Registry 必须保存：</p>
+<pre class="text"><code>tool_version
+schema_version
+runtime_version
+status</code></pre>
+<p>并允许：</p>
+<pre class="text"><code>active
+deprecated
+disabled</code></pre>
+<hr />
+<h1 id="十七disabled-tool工具出问题时必须能立刻下线">十七、Disabled
+Tool：工具出问题时必须能立刻下线</h1>
+<p>真实系统里某个工具可能：</p>
+<pre class="text"><code>出现Bug
+数据源异常
+权限配置错误
+第三方API故障
+发现安全问题</code></pre>
+<p>这时不能：</p>
+<blockquote>
+<p>等模型“自己少用”。</p>
+</blockquote>
+<p>Registry 必须支持：</p>
+<h1 id="disable">Disable</h1>
+<h2 id="禁用">禁用</h2>
+<p>例如：</p>
+<pre class="text"><code>tool_status = disabled</code></pre>
+<p>那么：</p>
+<pre class="text"><code>Discovery不再返回
+Runtime拒绝执行
+Audit记录原因</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>可</mi><mi>撤</mi><mi>销</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Capability
+必须可撤销
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十八tool-conflict两个工具都能做同一件事怎么办">十八、Tool
+Conflict：两个工具都能做同一件事怎么办？</h1>
+<p>假设：</p>
+<pre class="text"><code>regulation.search_v1
+regulation.search_v2
+web.search
+knowledge.search</code></pre>
+<p>都可能回答：</p>
+<blockquote>
+<p>“查法规”。</p>
+</blockquote>
+<p>如果全部暴露，</p>
+<p>模型可能随机选。</p>
+<p>所以 Registry 需要定义：</p>
+<pre class="text"><code>preferred_tool
+fallback_tool
+deprecated_tool
+domain_specific_tool</code></pre>
+<p>甚至建立：</p>
+<h1 id="tool-selection-policy">Tool Selection Policy</h1>
+<p>例如：</p>
+<pre class="text"><code>法规问题
+优先 regulation.search
+
+项目内部文件
+优先 project.search
+
+外部网页
+才使用 web.search</code></pre>
+<p>这属于：</p>
+<blockquote>
+<p>工具路由策略。</p>
+</blockquote>
+<hr />
+<h1
+id="十九audit工具能力必须可追踪">十九、Audit：工具能力必须可追踪</h1>
+<p>每一次 Tool Capability 决策最好记录：</p>
+<pre class="text"><code>哪些Tool已注册
+当前哪些Tool可见
+为什么可见
+为什么不可见
+
+模型选择了哪个Tool
+
+Runtime为什么允许
+或
+为什么拒绝
+
+是否要求Approval
+
+实际执行结果</code></pre>
+<p>因为出了问题以后，</p>
+<p>我们要能回答：</p>
+<blockquote>
+<p><strong>模型为什么会拥有这个能力？</strong></p>
+</blockquote>
+<p>而不仅仅是：</p>
+<blockquote>
+<p>“它调用了这个工具。”</p>
+</blockquote>
+<hr />
+<h1
+id="二十本阶段错误分类capability-boundary-会在哪些地方失效">二十、本阶段错误分类：Capability
+Boundary 会在哪些地方失效？</h1>
+<p>至少要拆成：</p>
+<pre class="text"><code>1. Registry Error
+工具登记信息错误
+
+2. Visibility Error
+不该看到的Tool被暴露
+
+3. Discovery Error
+应该看到的Tool没被发现
+
+4. Description Error
+Tool描述导致模型误选
+
+5. Namespace Collision
+工具名称冲突
+
+6. Permission Error
+越权执行
+
+7. Scope Error
+权限范围过宽
+
+8. Approval Bypass
+高风险动作绕过人工确认
+
+9. Version Mismatch
+Schema / Runtime版本不一致
+
+10. Revocation Failure
+已禁用Tool仍可执行</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>“Tool Calling 安全”</p>
+</blockquote>
+<p>绝不能只看 Tool 参数是否正确。</p>
+<hr />
+<h1 id="二十一应该怎样评测-tool-registry">二十一、应该怎样评测 Tool
+Registry？</h1>
+<p>第一版可以记录：</p>
+<pre class="text"><code>tool_discovery_recall
+
+tool_visibility_precision
+
+tool_selection_accuracy
+
+unauthorized_tool_exposure_rate
+
+authorization_block_rate
+
+scope_violation_rate
+
+approval_bypass_rate
+
+disabled_tool_execution_rate
+
+version_mismatch_rate
+
+tool_selection_latency</code></pre>
+<p>其中两个非常重要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>正</mi><mi>确</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>要</mi><mi>找</mi><mi>得</mi><mi>到</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+正确Tool要找得到
+}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>不</mi><mi>该</mi><mi>出</mi><mi>现</mi><mi>的</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>不</mi><mi>能</mi><mi>出</mi><mi>现</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+不该出现的Tool不能出现
+}
+</annotation></semantics></math></p>
+<p>这两个目标必须同时满足。</p>
+<hr />
+<h1
+id="二十二政府采购案例审查-agent-应该看到哪些-tool">二十二、政府采购案例：审查
+Agent 应该看到哪些 Tool？</h1>
+<p>任务：</p>
+<blockquote>
+<p>“审查采购文件资格条件，形成风险报告草稿。”</p>
+</blockquote>
+<p>第一版可以给它：</p>
+<pre class="text"><code>procurement.read_file
+
+procurement.extract_requirements
+
+regulation.search
+
+project.get_metadata
+
+compute.basic
+
+report.create_draft</code></pre>
+<p>不应该默认给：</p>
+<pre class="text"><code>procurement.publish_notice
+
+procurement.delete_document
+
+finance.approve_payment
+
+admin.modify_user
+
+contract.sign</code></pre>
+<p>如果未来用户明确进入：</p>
+<blockquote>
+<p>“发布已经审批通过的公告”</p>
+</blockquote>
+<p>这个 Workflow，</p>
+<p>再动态增加：</p>
+<pre class="text"><code>procurement.publish_notice</code></pre>
+<p>并要求：</p>
+<pre class="text"><code>approval_required = true</code></pre>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TaskScopedCapability
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十三本阶段工程产物procurementtoolregistrypolicy_v0.1">二十三、本阶段工程产物：<code>ProcurementToolRegistryPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>registry_version
+
+tool_id
+tool_name
+tool_namespace
+
+tool_version
+schema_version
+runtime_version
+
+description
+
+input_schema
+output_schema
+
+capability_category
+
+side_effect_level
+
+default_visibility
+
+permission_scope
+
+approval_required
+
+resource_scope_policy
+
+discovery_tags
+
+preferred_for
+
+fallback_tool
+
+status
+=
+active / deprecated / disabled
+
+owner
+
+timeout_policy
+retry_policy
+
+audit_enabled
+=
+true</code></pre>
+<p>同时任务运行时记录：</p>
+<pre class="text"><code>task_id
+
+registered_tools
+
+visible_tools
+
+authorized_tools
+
+capability_token
+
+resource_scope
+
+approval_state
+
+selected_tool
+
+authorization_decision
+
+execution_result</code></pre>
+<p>这就把：</p>
+<blockquote>
+<p>模型看到的工具空间，</p>
+</blockquote>
+<p>真正变成一个：</p>
+<blockquote>
+<p><strong>可治理的能力空间。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四把本阶段压成最精准的-6-句话">二十四、把本阶段压成最精准的
+6 句话</h1>
+<blockquote>
+<p><strong>第一，系统里“已注册的 Tool”“当前模型可见的
+Tool”“当前请求真正可执行的
+Tool”必须分成三层；<code>Registered ≠ Visible ≠ Authorized</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Tool Registry 不只是函数目录，而是同时保存
+Schema、版本、副作用、权限范围、审批要求、状态和审计信息的 Capability
+Catalog。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Least Privilege 是 Agent
+工程的核心原则：只给当前任务完成所需的最小能力；根本不暴露的
+Capability，比依赖 Prompt 告诉模型“不要调用”更可靠。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Permission 必须包含 Resource Scope；同一个
+<code>read_file</code>
+被允许，不代表可以读取所有文件，同一个发布能力被授权，也不代表可以跳过
+Approval。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，工具很多时应该通过 Tool Discovery、Namespace 和 Dynamic
+Tool Exposure，把当前任务真正相关的 Tool
+子集提供给模型，同时保留禁用、撤销、版本控制和 Fallback。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，真正的 Capability Boundary 必须由 Runtime
+强制执行，而不是由模型自我约束；模型可以请求能力，但不能给自己授予权限。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-3">本阶段最核心的一张图</h1>
+<pre class="text"><code>                      All System Tools
+                            │
+                            ▼
+                       Tool Registry
+                            │
+                ┌───────────┴───────────┐
+                │                       │
+                ▼                       ▼
+         Capability Policy         Tool Metadata
+                │                       │
+                └───────────┬───────────┘
+                            ▼
+                       Tool Discovery
+                            │
+                            ▼
+                       Visible Tools
+                            │
+                            ▼
+                       Model Selects
+                            │
+                            ▼
+                    Authorization Check
+                            │
+                 ┌──────────┴──────────┐
+                 ▼                     ▼
+              Reject                Allowed
+                                         │
+                                         ▼
+                               Approval Required?
+                                  │            │
+                                 Yes          No
+                                  │            │
+                                  ▼            │
+                           Human Approval      │
+                                  │            │
+                                  └──────┬─────┘
+                                         ▼
+                                   Tool Runtime</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Agent 的真实能力，不是“模型知道多少 Tool
+名字”，而是系统在当前任务、当前身份、当前资源范围内，真正向它开放并允许执行哪些
+Capability。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-4-阶段掌握测试">第七课 · 第 4 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Tool Registry
+为什么不只是一个工具名称列表；为什么 Registered、Visible、Authorized
+必须分开；什么是 Capability Boundary；为什么 Least Privilege
+比“把所有工具都给模型”更可靠；Side Effect Level 为什么重要；Permission
+为什么必须包含 Resource Scope；Tool Namespace 和 Tool Description
+为什么会影响 Tool Selection；工具很多时为什么需要 Tool Discovery；什么是
+Dynamic Tool Exposure；Authorized 为什么不等于 Automatically
+Executable；Capability Token 在系统里解决什么问题；为什么 Tool
+Version、Disable 和 Revocation 必须进入 Registry；如何处理多个相似 Tool
+的冲突；为什么 Audit 必须记录 Tool
+为什么可见、为什么允许；以及为什么真正的权限边界必须由 Runtime
+而不是模型自己执行。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>4</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第4阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第七课-第-5-阶段">下一阶段：第七课 · 第 5 阶段</h1>
+<h1 id="agent-loopplan-act-observe-continue-stop">Agent Loop：Plan → Act
+→ Observe → Continue / Stop</h1>
+<h2
+id="tool-calling-已经会了为什么还不等于一个真正会完成多步任务的-agent">Tool
+Calling 已经会了，为什么还不等于一个真正会完成多步任务的 Agent？</h2>
+<p>到第 4 阶段，我们已经拥有：</p>
+<pre class="text"><code>Tool Registry
+Tool Discovery
+Structured Arguments
+Runtime Validation
+Authorization
+Approval Boundary</code></pre>
+<p>但现在的 Tool Calling 仍然可能只是：</p>
+<pre class="text"><code>用户问一次
+↓
+模型调一个Tool
+↓
+返回一次结果
+↓
+结束</code></pre>
+<p>第 5 阶段要正式建立：</p>
+<h1 id="agent-loop">Agent Loop</h1>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>e</mi><mi>/</mi><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plan
+\rightarrow
+Act
+\rightarrow
+Observe
+\rightarrow
+UpdateState
+\rightarrow
+Continue/Stop
+}
+</annotation></semantics></math></p>
+<p>我们会重点解决：</p>
+<pre class="text"><code>Step Budget
+Loop State
+Progress Tracking
+Stop Condition
+Repeated Action
+No-progress Detection
+Replanning
+Failure State
+Completion Check</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementagentlooppolicy_v0.1"><code>ProcurementAgentLoopPolicy_V0.1</code></h1>
+<p>这会让系统第一次真正从：</p>
+<blockquote>
+<p>“会调用 Tool”</p>
+</blockquote>
+<p>进入：</p>
+<blockquote>
+<p><strong>“能够连续执行多步任务直到真正完成”。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

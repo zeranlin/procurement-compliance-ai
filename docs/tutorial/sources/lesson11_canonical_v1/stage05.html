@@ -1,0 +1,1894 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第十一课 · 第5阶段：资格条件与市场准入合规</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header strong{margin-right:auto}button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:38px 32px 100px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:48px 54px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+p strong:first-child{color:var(--text)}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:30px}
+.nav{display:flex;justify-content:space-between;gap:10px;margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
+@media(max-width:800px){main{padding:16px}article{padding:24px 18px}}
+@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第十一课 · 第 5 阶段</strong><a class="btn" href="index.html">课程首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note">中文释义增强版：英文工程字段、Schema、代码流程继续保留；所有英文-only数学心智模型与数学流程公式紧邻补充中文业务释义。</div><h1 id="第十一课-第-5-阶段">第十一课 · 第 5 阶段</h1>
+<h1
+id="资格条件与市场准入合规地域行业所有制规模年限财务资质业绩">资格条件与市场准入合规：地域、行业、所有制、规模、年限、财务、资质、业绩</h1>
+<h2
+id="怎样区分真正的履约能力要求与不合理市场准入门槛怎样把供应商必须具备什么拆成可解释可审计可进入-d01-d22-rule-engine-的资格审查对象">怎样区分真正的履约能力要求与不合理市场准入门槛？怎样把“供应商必须具备什么”拆成可解释、可审计、可进入
+D01-D22 Rule Engine 的资格审查对象？</h2>
+<blockquote>
+<p><strong>中文阅读增强说明（本次修订新增）</strong>：为方便中国政府采购业务人员、合规人员和工程人员共同阅读，本阶段所有关键英文工程字段、状态值、流程节点和
+Schema 标识均保留原英文名称，并在同一代码块中增加
+<code># 中文：...</code>
+的业务释义。英文名称用于后续数据库、JSON/YAML、API
+和程序实现保持稳定；中文释义用于说明它在政府采购合规审查中的实际含义。</p>
+</blockquote>
+<p>第 4 阶段我们已经把附件 9 的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>7</mn><mi>类</mi><mi>问</mi><mi>题</mi><mo>→</mo><mi>D</mi><mn>01</mn><mo>∼</mo><mi>D</mi><mn>22</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+7类问题
+\rightarrow
+D01\sim D22
+}
+</annotation></semantics></math></p>
+<p>正式工程化为：</p>
+<h1
+id="procurementdiscrimination22ruleset_v1"><code>ProcurementDiscrimination22RuleSet_V1</code></h1>
+<p>并建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Trigger
+\rightarrow
+Candidate
+\rightarrow
+Context
+\rightarrow
+Necessity
+\rightarrow
+Exception
+\rightarrow
+Evidence
+\rightarrow
+Decision
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 触发条件 → 候选 → 业务上下文 → 必要性
+→ 例外 → 证据 → 判断结论。</p>
+<p>现在进入这些规则最容易集中出现的业务区域之一：</p>
+<h1 id="qualification">Qualification</h1>
+<h2 id="供应商资格条件与市场准入">供应商资格条件与市场准入</h2>
+<p>本阶段最重要的第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>M</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>e</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>B</mi><mi>a</mi><mi>r</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CapabilityRequirement
+\neq
+MarketAccessBarrier
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 履约能力要求 ≠ 市场准入障碍。</p>
+<p>采购人当然需要判断：</p>
+<blockquote>
+<p>供应商有没有履行合同所需要的能力。</p>
+</blockquote>
+<p>但如果把这种能力要求设计成：</p>
+<pre class="text"><code>不必要的地域门槛
+行业门槛
+企业规模门槛
+所有制门槛
+成立年限门槛
+财务指标门槛
+特定金额业绩门槛
+无依据证书门槛
+名录库门槛</code></pre>
+<p>就可能从：</p>
+<h1 id="capability-check">Capability Check</h1>
+<h2 id="履约能力检查">履约能力检查</h2>
+<p>跨越成：</p>
+<h1 id="market-access-barrier">Market Access Barrier</h1>
+<h2 id="市场准入障碍">市场准入障碍</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementqualificationcompliance_v1"><code>ProcurementQualificationCompliance_V1</code></h1>
+<hr />
+<h1
+id="一本阶段的正式业务依据是什么">一、本阶段的正式业务依据是什么？</h1>
+<p>本阶段以：</p>
+<pre class="text"><code>《2025年政府采购领域“四类”违法违规行为专项整治工作指引》
+第二部分 检查规范
+一、关于采购人设置差别歧视条款问题
+及附件9</code></pre>
+<p>作为重要业务基线。</p>
+<p>该工作指引要求重点检查：</p>
+<pre class="text"><code>采购需求
+资格要求
+实质性条款
+评分标准</code></pre>
+<p>并明确列出：</p>
+<pre class="text"><code>地域限制
+行业限制
+企业规模限制
+企业形式限制
+指向特定供应商 / 产品
+与项目无关或不必要的条件
+其他不合理限制</code></pre>
+<p>等问题。</p>
+<p>文件同时列示的处理依据包括：</p>
+<pre class="text"><code>《中华人民共和国政府采购法》
+
+《中华人民共和国政府采购法实施条例》
+
+《中华人民共和国中小企业促进法》
+
+《中华人民共和国外商投资法》
+
+《中华人民共和国外商投资法实施条例》
+
+《政府采购货物和服务招标投标管理办法》
+财政部令第87号
+
+《政府采购促进中小企业发展管理办法》
+财库〔2020〕46号
+
+《财政部关于促进政府采购公平竞争优化营商环境的通知》
+财库〔2019〕38号
+
+《财政部关于在政府采购活动中落实平等对待内外资企业有关政策的通知》
+财库〔2021〕35号</code></pre>
+<p>但是：</p>
+<blockquote>
+<p>本课程中的工程 Rule 不能把 2025
+工作指引永久当成“当前有效性的唯一判断来源”。</p>
+</blockquote>
+<p>生产系统中仍然必须通过：</p>
+<h1
+id="procurementpolicyregistry_v1"><code>ProcurementPolicyRegistry_V1</code></h1>
+<p>确认：</p>
+<pre class="text"><code>当前法规状态
+适用时间
+适用辖区
+适用事项
+后续修订 / 废止 / 替代</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>s</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>≠</mo><mi>F</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>p</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InspectionBaseline
+\neq
+ForeverApplicablePolicy
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 专项检查业务基线 ≠
+永远适用的政策。</p>
+<hr />
+<h1 id="二先把资格条件定义清楚">二、先把“资格条件”定义清楚</h1>
+<h1 id="qualification-1">Qualification</h1>
+<h2 id="资格条件">资格条件</h2>
+<p>它解决的是：</p>
+<blockquote>
+<p><strong>供应商是否具备进入当前采购项目后续竞争程序的基本资格。</strong></p>
+</blockquote>
+<p>所以资格条件是一种：</p>
+<h1 id="gate">Gate</h1>
+<h2 id="准入门">准入门</h2>
+<p>如果供应商不满足：</p>
+<blockquote>
+<p>通常不能继续进入后续评审。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>E</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Qualification
+=
+EntryGate
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格条件 = 准入门槛。</p>
+<p>这和：</p>
+<h1 id="scoring">Scoring</h1>
+<h2 id="评分">评分</h2>
+<p>完全不同。</p>
+<p>评分解决的是：</p>
+<blockquote>
+<p>已经通过资格 / 符合性检查的供应商之间怎样比较。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationGate
+\neq
+ScoringPreference
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格准入门槛 ≠ 评分偏好 /
+评分加分。</p>
+<hr />
+<h1 id="三核心心智模型-①">三、核心心智模型 ①</h1>
+<h1
+id="能不能参加和参加以后得多少分必须分开">“能不能参加”和“参加以后得多少分”必须分开</h1>
+<p>例如：</p>
+<pre class="text"><code>具有三项同类项目业绩</code></pre>
+<p>如果作为：</p>
+<pre class="text"><code>资格条件</code></pre>
+<p>表示：</p>
+<blockquote>
+<p>没有就不能参加。</p>
+</blockquote>
+<p>如果作为：</p>
+<pre class="text"><code>评分因素</code></pre>
+<p>表示：</p>
+<blockquote>
+<p>可以参加，但得分可能不同。</p>
+</blockquote>
+<p>竞争影响完全不同。</p>
+<p>所以任何 Requirement 都必须记录：</p>
+<pre class="text"><code>business_function    # 中文：业务功能
+=
+ENTRY_GATE    # 中文：准入门槛
+or    # 中文：或者
+SCORING_FACTOR    # 中文：评分因素
+or    # 中文：或者
+PERFORMANCE_OBLIGATION    # 中文：履约义务</code></pre>
+<p>而不能只保存文字。</p>
+<hr />
+<h1 id="四法定-通用条件与项目特定条件要分层">四、法定 /
+通用条件与项目特定条件要分层</h1>
+<p>可以把资格条件粗分成：</p>
+<h1 id="baseline-eligibility">Baseline Eligibility</h1>
+<h2 id="基础资格条件">基础资格条件</h2>
+<p>与：</p>
+<h1 id="project-specific-qualification">Project-specific
+Qualification</h1>
+<h2 id="项目特定资格条件">项目特定资格条件</h2>
+<p>基础资格更像：</p>
+<blockquote>
+<p>政府采购制度对供应商参与活动的通用要求。</p>
+</blockquote>
+<p>项目特定条件则是：</p>
+<blockquote>
+<p>因具体项目的特殊要求增加的条件。</p>
+</blockquote>
+<p>真正容易出现合规风险的地方通常是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProjectSpecificCondition
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 项目特定条件。</p>
+<p>因为它必须回答：</p>
+<blockquote>
+<p><strong>为什么这个项目真的需要这项门槛？</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>⇒</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>J</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SpecialRequirement
+\Rightarrow
+ProjectSpecificJustification
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 项目特定要求 ⇒ 项目特定理由。</p>
+<hr />
+<h1 id="五核心心智模型-②">五、核心心智模型 ②</h1>
+<h1
+id="projectspecific-不等于-purchaserpreference"><code>ProjectSpecific</code>
+不等于 <code>PurchaserPreference</code></h1>
+<p>采购人觉得：</p>
+<pre class="text"><code>“大企业更稳”
+“本地企业服务更方便”
+“成立久的公司更靠谱”
+“做过大项目的公司更安全”</code></pre>
+<p>这些偏好：</p>
+<blockquote>
+<p>不能直接成为资格门槛。</p>
+</blockquote>
+<p>必须经过：</p>
+<h1 id="necessity-test">Necessity Test</h1>
+<h2 id="必要性检验">必要性检验</h2>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Preference
+\neq
+NecessaryQualification
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 采购人偏好 ≠ 必要资格条件。</p>
+<hr />
+<h1
+id="六资格条件合规判断的五问模型">六、资格条件合规判断的“五问模型”</h1>
+<p>对任何新增的项目特定资格条件，先问五个问题：</p>
+<h2 id="question-1">Question 1</h2>
+<h1 id="objective">Objective</h1>
+<h2 id="目标是什么">目标是什么？</h2>
+<p>这项条件到底要防什么风险？</p>
+<p>例如：</p>
+<pre class="text"><code>保证技术能力
+保证履约响应
+保证安全资质
+保证法定许可</code></pre>
+<hr />
+<h2 id="question-2">Question 2</h2>
+<h1 id="relevance">Relevance</h1>
+<h2 id="与项目是否直接相关">与项目是否直接相关？</h2>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>↔</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>N</mi><mi>e</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Condition
+\leftrightarrow
+ProcurementNeed
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 条件 ↔︎ 采购需求。</p>
+<p>是否存在直接业务联系。</p>
+<hr />
+<h2 id="question-3">Question 3</h2>
+<h1 id="necessity">Necessity</h1>
+<h2
+id="是否真的需要把它放到准入门槛">是否真的需要把它放到“准入门槛”？</h2>
+<p>即使某条件与项目有关，</p>
+<p>也不一定必须：</p>
+<blockquote>
+<p>在投标前全部满足。</p>
+</blockquote>
+<hr />
+<h2 id="question-4">Question 4</h2>
+<h1 id="proportionality">Proportionality</h1>
+<h2 id="限制强度是否与风险相称">限制强度是否与风险相称？</h2>
+<p>例如：</p>
+<blockquote>
+<p>为了保证售后响应，</p>
+</blockquote>
+<p>是否真的需要：</p>
+<pre class="text"><code>投标前已经在本市有分公司</code></pre>
+<p>还是：</p>
+<pre class="text"><code>中标后建立满足响应时间的服务能力</code></pre>
+<p>就足以达到目的？</p>
+<hr />
+<h2 id="question-5">Question 5</h2>
+<h1 id="alternative">Alternative</h1>
+<h2
+id="有没有更少排斥竞争的实现方式">有没有更少排斥竞争的实现方式？</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>L</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>A</mi><mi>l</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationNecessity
+=
+Objective
++
+Relevance
++
+Necessity
++
+Proportionality
++
+LessRestrictiveAlternative
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格门槛必要性 = 目标 + 相关性 +
+必要性 + 比例性 + 更少限制竞争的替代方案。</p>
+<p>这不是法律公式。</p>
+<p>它是：</p>
+<blockquote>
+<p><strong>工程系统必须收集和组织的判断信息。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七核心心智模型-③">七、核心心智模型 ③</h1>
+<h1 id="relevant-还不等于-necessary-as-entry-gate"><code>Relevant</code>
+还不等于 <code>Necessary as Entry Gate</code></h1>
+<p>一项条件可能：</p>
+<blockquote>
+<p>和项目有关。</p>
+</blockquote>
+<p>但不意味着：</p>
+<blockquote>
+<p>必须在供应商报名 / 投标时就作为淘汰条件。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Relevant
+\neq
+GateNecessary
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 与项目相关 ≠ 必须作为准入门槛。</p>
+<p>这是资格合规系统非常重要的 Decision Boundary。</p>
+<hr />
+<h1 id="八地域条件d01-的资格审查视角">八、地域条件：D01
+的资格审查视角</h1>
+<p>附件 9 第一类重点包括：</p>
+<pre class="text"><code>供应商注册地
+所在地距采购人的距离
+在某行政区域内设立分支机构</code></pre>
+<p>作为不合理资格条件或评审因素的风险。</p>
+<p>在资格层真正要抽：</p>
+<pre class="text"><code>supplier_registration_location    # 中文：供应商注册 / 登记位置 / 地域
+
+required_service_location    # 中文：是否需要服务位置 / 地域
+
+distance_threshold    # 中文：距离阈值
+
+required_local_branch    # 中文：是否需要地方 / 本地分支机构
+
+required_local_office    # 中文：是否需要地方 / 本地办公 / 服务机构
+
+required_before_bid    # 中文：是否需要之前投标
+
+required_after_award    # 中文：是否需要之后中标 / 成交
+
+failure_consequence    # 中文：不满足条件的后果</code></pre>
+<p>然后判断：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>E</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>B</mi><mi>i</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LocationRequirement
++
+EntryGate
++
+PreBid
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 地域要求 + 准入门槛 + 投标前。</p>
+<p>与：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>A</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PerformanceLocation
++
+PostAward
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 履约地点 + 中标后。</p>
+<p>是否被混淆。</p>
+<hr />
+<h1 id="九核心心智模型-④">九、核心心智模型 ④</h1>
+<h1
+id="localserviceneed-不等于-localentityprecondition"><code>LocalServiceNeed</code>
+不等于 <code>LocalEntityPrecondition</code></h1>
+<p>例如采购项目确实需要：</p>
+<pre class="text"><code>2小时现场响应</code></pre>
+<p>这是：</p>
+<h1 id="service-level">Service Level</h1>
+<h2 id="服务水平要求">服务水平要求</h2>
+<p>系统应优先问：</p>
+<blockquote>
+<p>能否直接要求 2 小时响应？</p>
+</blockquote>
+<p>而不是先把它转换成：</p>
+<pre class="text"><code>投标人必须在本市已有分公司</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>u</mi><mi>t</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>优</mi><mi>先</mi><mi>于</mi><mi>E</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>x</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OutcomeRequirement
+优先于
+EntityLocationProxy
+}
+</annotation></semantics></math></p>
+<p>在工程上：</p>
+<blockquote>
+<p>如果业务目标可以用履约结果表达，就不要自动用供应商身份 /
+地域代理变量表达。</p>
+</blockquote>
+<hr />
+<h1 id="十行业条件d03-d04-的资格审查视角">十、行业条件：D03 / D04
+的资格审查视角</h1>
+<p>风险可能表现为：</p>
+<pre class="text"><code>必须属于某行业
+
+必须具有某行业业绩
+
+必须获得某行业奖项
+
+营业执照经营范围必须写明某词</code></pre>
+<p>这里系统需要区分：</p>
+<h1 id="subject-matter-capability">Subject-matter Capability</h1>
+<h2 id="实际业务能力">实际业务能力</h2>
+<p>与：</p>
+<h1 id="industry-identity">Industry Identity</h1>
+<h2 id="行业身份">行业身份</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>T</mi><mi>h</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>l</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>s</mi><mi>T</mi><mi>o</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>I</mi><mi>n</mi><mi>d</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CanPerformTheContract
+\neq
+BelongsToSpecificIndustryLabel
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 是否能够履行合同 ≠
+属于特定行业标签。</p>
+<hr />
+<h1
+id="十一营业执照经营范围为什么不能简单关键词判断">十一、营业执照经营范围为什么不能简单关键词判断？</h1>
+<p>D04 本身带有：</p>
+<pre class="text"><code>除特别规定外</code></pre>
+<p>所以系统至少要检查：</p>
+<pre class="text"><code>是否把经营范围作为资格Gate
+
+是否存在特别规定
+
+该经营范围条件是否有明确依据
+
+是否实际上用于限制其他行业供应商</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>F</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BusinessScopeMention
+\neq
+AutomaticFinding
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 提及营业执照经营范围 ≠
+自动形成风险发现。</p>
+<hr />
+<h1 id="十二企业规模条件d05-的直接风险字段">十二、企业规模条件：D05
+的直接风险字段</h1>
+<p>附件 9 以及工作指引正文明确关注：</p>
+<pre class="text"><code>经营年限
+注册资本
+资产总额
+营业收入
+从业人员
+利润
+纳税额</code></pre>
+<p>这些字段必须在 Document Schema 中被结构化为：</p>
+<pre class="text"><code>company_age_years    # 中文：企业年限年限
+
+registered_capital    # 中文：注册资本
+
+total_assets    # 中文：总额资产
+
+annual_revenue    # 中文：年度营业收入
+
+employee_count    # 中文：从业人员数量
+
+profit    # 中文：利润
+
+tax_amount    # 中文：纳税金额</code></pre>
+<p>并记录：</p>
+<pre class="text"><code>operator    # 中文：运算符 / 运营主体
+threshold    # 中文：阈值
+time_window    # 中文：适用时间窗口
+business_function    # 中文：业务功能</code></pre>
+<p>例如：</p>
+<pre class="text"><code>registered_capital &gt;= 5000万元</code></pre>
+<p>如果它作为：</p>
+<pre class="text"><code>ENTRY_GATE    # 中文：准入门槛</code></pre>
+<p>就进入高优先级规则检查。</p>
+<hr />
+<h1 id="十三核心心智模型-⑤">十三、核心心智模型 ⑤</h1>
+<h1
+id="financialdata-和-financialbarrier-不是一回事"><code>FinancialData</code>
+和 <code>FinancialBarrier</code> 不是一回事</h1>
+<p>采购文件可能需要：</p>
+<blockquote>
+<p>合法的财务会计材料。</p>
+</blockquote>
+<p>这不等于：</p>
+<blockquote>
+<p>可以任意设定某个资产、收入、利润或注册资本数值作为准入门槛。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>O</mi><mi>f</mi><mi>F</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>A</mi><mi>r</mi><mi>b</mi><mi>i</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EvidenceOfFinancialSoundness
+\neq
+ArbitraryScaleThreshold
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 财务状况证明材料 ≠
+任意企业规模数值门槛。</p>
+<p>工程上必须区分：</p>
+<pre class="text"><code>要求提供材料</code></pre>
+<p>和：</p>
+<pre class="text"><code>要求达到某数值</code></pre>
+<hr />
+<h1
+id="十四经营年限为什么特别容易被误用">十四、经营年限为什么特别容易被误用？</h1>
+<p>例如：</p>
+<pre class="text"><code>成立满10年</code></pre>
+<p>表面看起来是：</p>
+<blockquote>
+<p>“经验丰富”。</p>
+</blockquote>
+<p>但公司成立时间：</p>
+<blockquote>
+<p>并不自动等价于当前项目履约能力。</p>
+</blockquote>
+<p>所以系统要问：</p>
+<pre class="text"><code>成立年限与合同履约风险有什么直接关系？
+
+是否可以改用人员能力、技术能力、项目经验等更直接证据？
+
+是否对新设但具备能力的供应商造成不必要排斥？</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>n</mi><mi>y</mi><mi>A</mi><mi>g</mi><mi>e</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CompanyAge
+\neq
+Capability
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 企业成立 / 经营年限 ≠ 履约能力。</p>
+<hr />
+<h1 id="十五企业形式d09-d10">十五、企业形式：D09 / D10</h1>
+<p>附件 9 关注：</p>
+<pre class="text"><code>所有制形式
+
+组织形式
+
+企业股权结构
+
+投资者国别
+
+所在地</code></pre>
+<p>因此 Supplier Profile 要结构化：</p>
+<pre class="text"><code>ownership_type    # 中文：所有制类型
+
+organization_form    # 中文：组织形式
+
+shareholding_structure    # 中文：股权结构
+
+investor_nationality    # 中文：投资者国别
+
+registered_location    # 中文：注册位置 / 地域</code></pre>
+<p>但这些字段存在的目的不是：</p>
+<blockquote>
+<p>让模型更容易筛掉某类企业。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>检查采购文件是否把这些身份属性变成不合理门槛。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>u</mi><mi>p</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>J</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SupplierAttribute
+\neq
+QualificationJustification
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 供应商身份属性 ≠
+资格条件正当理由。</p>
+<hr />
+<h1 id="十六核心心智模型-⑥">十六、核心心智模型 ⑥</h1>
+<h1
+id="是谁与能不能履约必须尽量分开">“是谁”与“能不能履约”必须尽量分开</h1>
+<p>理想资格条件应该更多回答：</p>
+<pre class="text"><code>能不能完成合同？
+有没有必要许可？
+有没有所需技术与设备？
+能否满足安全 / 质量要求？</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>企业属于谁？
+成立多久？
+注册在哪里？
+资本有多大？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>&gt;</mo><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>x</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CapabilityEvidence
+&gt;
+IdentityProxy
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 能力证据 &gt; 身份 /
+规模代理变量。（这里的 <code>&gt;</code> / <code>&lt;</code>
+若用于心智模型，表示工程优先级或信息价值关系，不一定是数学数值大小。）</p>
+<p>这里的 <code>&gt;</code> 表示：</p>
+<blockquote>
+<p>对履约能力判断通常更直接。</p>
+</blockquote>
+<hr />
+<h1
+id="十七业绩要求最容易出现合理需求和不合理门槛的混合区">十七、业绩要求：最容易出现“合理需求”和“不合理门槛”的混合区</h1>
+<p>项目经验是现实采购中常见能力证据。</p>
+<p>但附件 9 同时关注：</p>
+<pre class="text"><code>特定行政区域业绩
+
+特定主体业绩
+
+特定行业业绩
+
+特定金额合同业绩</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExperienceRequirement
+\neq
+AutomaticallyReasonable
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 业绩要求 ≠ 自动视为合理。</p>
+<p>需要进一步拆：</p>
+<pre class="text"><code>experience_subject    # 中文：业绩主体 / 事项
+
+project_similarity    # 中文：项目相似性
+
+industry_constraint    # 中文：行业限制条件
+
+region_constraint    # 中文：地域限制条件
+
+specific_entity_constraint    # 中文：特定实体 / 主体限制条件
+
+minimum_project_count    # 中文：最低项目数量
+
+minimum_contract_amount    # 中文：最低合同金额
+
+time_window    # 中文：适用时间窗口
+
+completion_status    # 中文：完成状态
+
+proof_material    # 中文：证明材料材料</code></pre>
+<hr />
+<h1 id="十八核心心智模型-⑦">十八、核心心智模型 ⑦</h1>
+<h1
+id="similarexperience-的相似必须可解释"><code>SimilarExperience</code>
+的“相似”必须可解释</h1>
+<p>不能只是：</p>
+<pre class="text"><code>与本项目类似</code></pre>
+<p>然后实际规则暗含：</p>
+<pre class="text"><code>同地区
+同采购人
+同一行业
+同金额级别</code></pre>
+<p>系统应该问：</p>
+<blockquote>
+<p>相似到底体现在哪些履约能力？</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>技术复杂度
+服务对象规模
+安全级别
+并发规模
+交付周期
+人员能力</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>应</mi><mi>该</mi><mi>映</mi><mi>射</mi><mi>到</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>D</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Similarity
+应该映射到
+CapabilityDimension
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十九特定金额业绩d06-的资格判断">十九、特定金额业绩：D06
+的资格判断</h1>
+<p>例如：</p>
+<pre class="text"><code>必须有单项合同金额5000万元以上项目</code></pre>
+<p>系统不能只问：</p>
+<blockquote>
+<p>5000 万是不是很大？</p>
+</blockquote>
+<p>而要问：</p>
+<pre class="text"><code>当前项目预算 / 规模是多少？
+
+这个金额阈值在证明什么能力？
+
+是否存在更直接的履约能力指标？
+
+是否显著排除具备能力但过去项目金额不同的供应商？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>A</mi><mi>m</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>D</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>o</mi><mi>f</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HistoricalContractAmount
+\neq
+DirectCapabilityProof
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 历史合同金额 ≠ 直接能力证明。</p>
+<hr />
+<h1 id="二十证书-资质必须先做类型识别">二十、证书 /
+资质必须先做“类型识别”</h1>
+<p>不能把所有：</p>
+<pre class="text"><code>证书
+认证
+资质
+奖项</code></pre>
+<p>当成一类。</p>
+<p>至少分：</p>
+<pre class="text"><code>LEGAL_LICENSE    # 中文：法定许可
+法定许可
+
+MANDATORY_QUALIFICATION    # 中文：法定 / 强制资质
+法定 / 强制资质
+
+VOLUNTARY_CERTIFICATION    # 中文：自愿性认证
+自愿性认证
+
+INDUSTRY_CERTIFICATE    # 中文：行业协会 / 行业类证书
+行业协会证书
+
+AWARD    # 中文：奖项
+奖项
+
+CREDIT_RATING    # 中文：信用评级
+信用评级
+
+TRAINING_CERTIFICATE    # 中文：培训证书
+培训证书
+
+OTHER    # 中文：其他</code></pre>
+<p>因为不同类型：</p>
+<blockquote>
+<p>合规逻辑不同。</p>
+</blockquote>
+<hr />
+<h1 id="二十一核心心智模型-⑧">二十一、核心心智模型 ⑧</h1>
+<h1
+id="certificateexists-不代表-certificatecanbequalificationgate"><code>CertificateExists</code>
+不代表 <code>CertificateCanBeQualificationGate</code></h1>
+<p>真正要问：</p>
+<pre class="text"><code>谁颁发？
+
+法律 / 行政法规 / 有效政策是否要求？
+
+和项目履约有什么关系？
+
+是否已经取消？
+
+是否只是行业组织 / 协会评价？
+
+是否被用作资格门槛还是评分项？</code></pre>
+<p>这直接连接：</p>
+<pre class="text"><code>D14    # 中文：D14 规则编号（附件9工程化规则标识）
+D15    # 中文：D15 规则编号（附件9工程化规则标识）
+D07    # 中文：D07 规则编号（附件9工程化规则标识）</code></pre>
+<hr />
+<h1 id="二十二d14-为什么必须连接-policy-registry">二十二、D14
+为什么必须连接 Policy Registry？</h1>
+<p>D14 涉及：</p>
+<blockquote>
+<p>国务院取消的行政审批事项。</p>
+</blockquote>
+<p>这个判断不能靠模型训练记忆。</p>
+<p>因为：</p>
+<pre class="text"><code>审批事项状态会变化</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>s</mi><mo>⇒</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>L</mi><mi>o</mi><mi>o</mi><mi>k</mi><mi>u</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ApprovalStatus
+\Rightarrow
+PolicyLookup
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 审批事项状态 ⇒ 政策法规查询。</p>
+<p>执行流程：</p>
+<pre class="text"><code>检测到许可 / 审批事项
+↓
+识别事项名称
+↓
+Policy Registry 查当前 / 项目时点状态
+↓
+确认是否属于已取消事项
+↓
+再形成候选Finding</code></pre>
+<hr />
+<h1
+id="二十三d15协会证书-奖项为什么需要-issuer-resolution">二十三、D15：协会证书
+/ 奖项为什么需要 Issuer Resolution？</h1>
+<p>系统必须识别：</p>
+<h1 id="issuer">Issuer</h1>
+<h2 id="颁发主体">颁发主体</h2>
+<p>例如：</p>
+<pre class="text"><code>行政机关
+法定机构
+行业协会
+社会组织
+商业评价机构
+未知主体</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>N</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>不</mi><mi>够</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CertificateName
+不够
+}
+</annotation></semantics></math></p>
+<p>还需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>I</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>L</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>s</mi><mo>+</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>F</mi><mi>u</mi><mi>n</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Certificate
++
+Issuer
++
+LegalStatus
++
+BusinessFunction
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 证书 + 出具机构 + 法律状态 + 业务功能
+/ 条款作用。</p>
+<hr />
+<h1 id="二十四厂家授权d16-的资格视角">二十四、厂家授权：D16
+的资格视角</h1>
+<p>附件 9 对：</p>
+<pre class="text"><code>厂家授权
+承诺
+证明
+背书</code></pre>
+<p>设置了重要检查逻辑，</p>
+<p>同时包含：</p>
+<pre class="text"><code>除采购进口货物外</code></pre>
+<p>这样的例外表达。</p>
+<p>所以系统要抽：</p>
+<pre class="text"><code>manufacturer_authorization_required    # 中文：是否要求厂家授权
+
+manufacturer_commitment_required    # 中文：厂家承诺是否需要
+
+manufacturer_certificate_required    # 中文：厂家证书是否需要
+
+manufacturer_endorsement_required    # 中文：厂家背书是否需要
+
+import_goods_status    # 中文：进口货物状态
+
+used_as_qualification_gate    # 中文：用于AS资格门槛</code></pre>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>I</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AuthorizationTrigger
++
+ImportExceptionCheck
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 授权触发 + 进口例外Check。</p>
+<hr />
+<h1 id="二十五供应商库-名录库-资格库d17">二十五、供应商库 / 名录库 /
+资格库：D17</h1>
+<p>如果采购文件要求：</p>
+<pre class="text"><code>必须进入某备选库
+
+必须属于某名录库
+
+必须已进入某资格库</code></pre>
+<p>并把它作为：</p>
+<pre class="text"><code>ENTRY_GATE    # 中文：准入门槛</code></pre>
+<p>应进入：</p>
+<h1 id="supplier-pool-restriction">Supplier Pool Restriction</h1>
+<h2 id="供应商库限制">供应商库限制</h2>
+<p>重点结构：</p>
+<pre class="text"><code>pool_name    # 中文：供应商库 / 名录名称
+
+pool_operator    # 中文：供应商库 / 名录运算符 / 运营主体
+
+membership_required    # 中文：入库 / 入围资格是否需要
+
+membership_time    # 中文：入库 / 入围资格时间
+
+entry_gate    # 中文：准入门槛
+
+policy_basis    # 中文：政策 / 法规依据</code></pre>
+<hr />
+<h1 id="二十六不必要登记注册d18">二十六、不必要登记注册：D18</h1>
+<p>系统要区分：</p>
+<pre class="text"><code>法定登记</code></pre>
+<p>和：</p>
+<pre class="text"><code>为了参加采购活动额外要求的不必要登记 / 注册</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>U</mi><mi>n</mi><mi>n</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Registration
+\neq
+UnnecessaryRegistration
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 登记 / 注册 ≠ 不必要登记注册。</p>
+<p>仍然需要：</p>
+<pre class="text"><code>LegalBasis    # 中文：法律 / 政策依据
+Necessity    # 中文：必要性
+Timing    # 中文：适用 / 发生时点</code></pre>
+<hr />
+<h1
+id="二十七获取采购文件前置材料d19">二十七、获取采购文件前置材料：D19</h1>
+<p>这一条特别适合用：</p>
+<h1 id="stage-logic">Stage Logic</h1>
+<h2 id="程序阶段逻辑">程序阶段逻辑</h2>
+<p>例如：</p>
+<pre class="text"><code>营业执照
+审计报告
+资质证书</code></pre>
+<p>这些材料可能属于：</p>
+<blockquote>
+<p>后续资格审查材料。</p>
+</blockquote>
+<p>但如果要求：</p>
+<blockquote>
+<p>在获取采购文件之前就必须提交，</p>
+</blockquote>
+<p>就出现：</p>
+<h1 id="document-access-gate">Document Access Gate</h1>
+<h2 id="采购文件获取门槛">采购文件获取门槛</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationEvidence
+\neq
+ProcurementDocumentAccessGate
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格证明材料 ≠ 采购文件获取门槛。</p>
+<hr />
+<h1 id="二十八核心心智模型-⑨">二十八、核心心智模型 ⑨</h1>
+<h1
+id="同一个材料放在不同程序阶段合规意义可能完全不同">同一个材料，放在不同程序阶段，合规意义可能完全不同</h1>
+<p>这和 Stage 3 的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Meaning
+=
+Text
++
+BusinessPosition
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 含义 = 文本 + 业务Position。</p>
+<p>完全一致。</p>
+<p>因此任何资格条件必须带：</p>
+<pre class="text"><code>required_at_stage    # 中文：要求满足 / 提交的程序阶段</code></pre>
+<hr />
+<h1
+id="二十九技术证明材料出具机构d20">二十九、技术证明材料出具机构：D20</h1>
+<p>系统不能只检测：</p>
+<pre class="text"><code>检测报告
+认证报告
+证明材料</code></pre>
+<p>还要抽：</p>
+<pre class="text"><code>issuer_name    # 中文：出具机构名称
+
+issuer_type    # 中文：出具机构类型
+
+issuer_region    # 中文：出具机构地域
+
+issuer_designation    # 中文：出具机构指定
+
+exclusive_issuer_required    # 中文：唯一 / 排他出具机构是否需要
+
+special_provision    # 中文：特别条款 / 规定
+
+justification    # 中文：理由 / 正当性</code></pre>
+<p>因为真正风险可能来自：</p>
+<blockquote>
+<p>无正当理由把“谁能出证明”限定死。</p>
+</blockquote>
+<hr />
+<h1 id="三十定点供应商-入围单位d21">三十、定点供应商 /
+入围单位：D21</h1>
+<p>如果要求：</p>
+<pre class="text"><code>投标人必须是某范围内的定点供应商</code></pre>
+<p>或者：</p>
+<pre class="text"><code>必须是某入围单位</code></pre>
+<p>就要判断：</p>
+<pre class="text"><code>这是不是合法框架 / 定点机制？
+
+当前项目是否允许依赖该范围？
+
+还是额外形成新的市场准入壁垒？</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>h</mi><mi>i</mi><mi>p</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExistingPoolMembership
+\neq
+AutomaticallyValidQualification
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 既有供应商库 / 入围资格 ≠
+当然有效的资格条件。</p>
+<hr />
+<h1 id="三十一黑名单-不良记录-违约名单d22">三十一、黑名单 / 不良记录 /
+违约名单：D22</h1>
+<p>出现：</p>
+<pre class="text"><code>黑名单
+不良记录名单
+违约名单</code></pre>
+<p>不能自动：</p>
+<blockquote>
+<p>判定违规。</p>
+</blockquote>
+<p>真正关键是：</p>
+<h1 id="legal-basis">Legal Basis</h1>
+<h2 id="法律依据">法律依据</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>l</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>l</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>F</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BlacklistMention
+\neq
+Finding
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 提及黑名单 ≠ 合规发现项。</p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>l</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>l</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>N</mi><mi>o</mi><mi>L</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>l</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>=</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BlacklistGate
++
+NoLegalBasis
+=
+CandidateRisk
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 黑名单准入门槛 + 没有法律依据 =
+候选风险。</p>
+<p>必须通过：</p>
+<pre class="text"><code>Policy Registry    # 中文：政策法规登记库</code></pre>
+<p>确认依据。</p>
+<hr />
+<h1
+id="三十二资格条件的身份代理变量问题">三十二、资格条件的“身份代理变量”问题</h1>
+<p>很多不合理门槛不直接写：</p>
+<pre class="text"><code>只要大企业</code></pre>
+<p>而是通过：</p>
+<pre class="text"><code>注册资本
+营业收入
+人员数量
+大型项目金额
+高等级信用
+大量网点
+长期经营年限</code></pre>
+<p>间接筛选。</p>
+<p>这些叫：</p>
+<h1 id="proxy-variables">Proxy Variables</h1>
+<h2 id="代理变量">代理变量</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoExplicitDiscrimination
+\neq
+NoDiscriminatoryEffectCandidate
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 无/未Explicit歧视/不合理排斥 ≠
+无/未歧视性Effect候选。</p>
+<p>但是否真正构成 Finding：</p>
+<blockquote>
+<p>仍需结合来源规则、项目上下文和证据判断。</p>
+</blockquote>
+<hr />
+<h1 id="三十三核心心智模型-⑩">三十三、核心心智模型 ⑩</h1>
+<h1
+id="proxy-不是自动违规而是进一步解释为什么需要的信号"><code>Proxy</code>
+不是自动违规，而是“进一步解释为什么需要”的信号</h1>
+<p>Rule Engine 应该把它升级成：</p>
+<pre class="text"><code>NECESSITY_REVIEW_REQUIRED    # 中文：需要进行必要性复核</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>VIOLATION=true    # 中文：违规状态 = 正确 / 真</code></pre>
+<hr />
+<h1 id="三十四qualification-gate-的风险分层">三十四、Qualification Gate
+的风险分层</h1>
+<p>第一版可以先按：</p>
+<pre class="text"><code>Q0    # 中文：未发现资格门槛风险
+未发现资格门槛风险
+
+Q1    # 中文：存在需要说明的资格条件
+存在需要说明的资格条件
+
+Q2    # 中文：存在明显限制竞争的候选条件，需要复核
+存在明显限制竞争的候选条件，需要复核
+
+Q3    # 中文：与 D01-D22 高度匹配的高风险资格条件候选
+高风险资格条件候选，与D01-D22直接高度匹配
+
+Q4    # 中文：重大高风险，证据与法源充分但仍须人工确认
+重大高风险，证据和法源充分，必须人工确认</code></pre>
+<p>但再次强调：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mo>≠</mo><mi>A</mi><mi>d</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>P</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>t</mi><mi>y</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>c</mi><mi>l</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationRiskLevel
+\neq
+AdministrativePenaltyConclusion
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格风险等级 ≠ 行政处罚结论。</p>
+<hr />
+<h1 id="三十五qualification-finding-的完整结构">三十五、Qualification
+Finding 的完整结构</h1>
+<pre class="text"><code>finding_id    # 中文：发现项标识
+
+review_domain    # 中文：审查业务域
+=
+QUALIFICATION    # 中文：资格条件章节
+
+clause_id    # 中文：条款标识
+requirement_id    # 中文：要求标识
+
+qualification_type    # 中文：资格条件类型
+
+business_function    # 中文：业务功能
+
+required_at_stage    # 中文：要求满足 / 提交的程序阶段
+
+subject    # 中文：主体 / 事项
+
+condition    # 中文：条件
+
+threshold    # 中文：阈值
+
+timing    # 中文：时点
+
+failure_consequence    # 中文：不满足条件的后果
+
+candidate_rule_ids    # 中文：候选规则标识列表
+
+confirmed_rule_id    # 中文：已确认规则标识
+
+capability_objective    # 中文：履约能力目标
+
+relevance_analysis    # 中文：相关性分析
+
+necessity_analysis    # 中文：必要性分析
+
+proportionality_analysis    # 中文：比例性分析
+
+alternative_requirement    # 中文：替代方案要求
+
+competition_impact    # 中文：竞争影响
+
+exception_status    # 中文：例外状态
+
+legal_basis_refs    # 中文：法律 / 政策依据引用标识列表
+
+policy_snapshot_id    # 中文：政策法规快照标识
+
+evidence_span    # 中文：证据片段及原文定位
+
+risk_level    # 中文：风险等级
+
+confidence    # 中文：置信度
+
+human_review_required    # 中文：是否需要人工复核
+
+recommended_revision    # 中文：建议修改方案</code></pre>
+<hr />
+<h1
+id="三十六qualification-rule-engine-的执行流程">三十六、Qualification
+Rule Engine 的执行流程</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>D</mi><mn>01</mn><mo>−</mo><mi>D</mi><mn>22</mn><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>→</mo><mi>A</mi><mi>l</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>F</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>/</mi><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>e</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationClause
+\rightarrow
+RequirementParse
+\rightarrow
+GateDetection
+\rightarrow
+D01-D22Candidate
+\rightarrow
+CapabilityObjective
+\rightarrow
+Relevance
+\rightarrow
+Necessity
+\rightarrow
+Proportionality
+\rightarrow
+Alternative
+\rightarrow
+Exception
+\rightarrow
+PolicyCheck
+\rightarrow
+EvidenceGate
+\rightarrow
+Finding/HumanReview
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格条款 → 要求解析 → 门槛Detection →
+D01规则-D22候选 → 能力目标 → 相关性 → 必要性 → 比例性 → 替代方案 → 例外
+→ 政策Check → 证据门槛 → 合规发现项/人工复核。</p>
+<p>中文：</p>
+<pre class="text"><code>先看它是不是准入门槛
+
+再看命中哪类风险候选
+
+再问它想证明什么能力
+
+再检查是否真的相关
+
+再检查是否必须作为投标前Gate
+
+再检查限制强度是否过大
+
+再找有没有更少排斥的办法
+
+再查例外和政策
+
+最后才形成Finding</code></pre>
+<hr />
+<h1 id="三十七核心心智模型-⑪">三十七、核心心智模型 ⑪</h1>
+<h1
+id="合理资格条件应尽量直接测能力而不是间接测身份">合理资格条件应尽量“直接测能力”，而不是“间接测身份”</h1>
+<p>例如要保证：</p>
+<pre class="text"><code>响应速度</code></pre>
+<p>优先测：</p>
+<pre class="text"><code>响应时间SLA</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>本地注册地</code></pre>
+<p>要保证：</p>
+<pre class="text"><code>技术能力</code></pre>
+<p>优先测：</p>
+<pre class="text"><code>关键人员
+设备
+方法
+实施方案
+法定许可</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>企业成立年限</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mo>&gt;</mo><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>x</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DirectCapabilitySignal
+&gt;
+IdentityProxy
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 直接履约能力信号 &gt; 身份 /
+规模代理变量。（这里的 <code>&gt;</code> / <code>&lt;</code>
+若用于心智模型，表示工程优先级或信息价值关系，不一定是数学数值大小。）</p>
+<hr />
+<h1 id="三十八修改建议怎样生成">三十八、修改建议怎样生成？</h1>
+<p>合规系统不能只说：</p>
+<pre class="text"><code>删除</code></pre>
+<p>而是问：</p>
+<blockquote>
+<p>采购人原本想解决什么业务风险？</p>
+</blockquote>
+<p>例如：</p>
+<h3 id="原要求">原要求</h3>
+<pre class="text"><code>投标人必须在本市设立分公司</code></pre>
+<p>如果真实目的只是：</p>
+<pre class="text"><code>保障现场服务响应</code></pre>
+<p>则修改建议可能倾向：</p>
+<pre class="text"><code>改成中标后 / 履约期间满足明确服务响应时间、
+人员到场时间或服务能力要求</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>U</mi><mi>n</mi><mi>n</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>B</mi><mi>a</mi><mi>r</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Remediation
+=
+PreserveBusinessGoal
++
+RemoveUnnecessaryBarrier
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 修改建议 = 保留业务目标 +
+移除不必要准入障碍。</p>
+<hr />
+<h1 id="三十九核心心智模型-⑫">三十九、核心心智模型 ⑫</h1>
+<h1
+id="好的合规修改不是全部放宽而是把身份门槛改成能力-结果要求">好的合规修改不是“全部放宽”，而是“把身份门槛改成能力
+/ 结果要求”</h1>
+<p>这能同时满足：</p>
+<pre class="text"><code>采购质量
++
+公平竞争</code></pre>
+<p>而不是二选一。</p>
+<hr />
+<h1 id="四十hard-negative-必须重点训练">四十、Hard Negative
+必须重点训练</h1>
+<p>资格领域最容易产生误报。</p>
+<p>例如：</p>
+<pre class="text"><code>项目需要法定许可</code></pre>
+<p>不能因为看到：</p>
+<pre class="text"><code>许可证</code></pre>
+<p>就报不合理限制。</p>
+<p>又例如：</p>
+<pre class="text"><code>履约地点在本地</code></pre>
+<p>不能因为看到：</p>
+<pre class="text"><code>本地</code></pre>
+<p>就报地域限制。</p>
+<p>所以必须建立：</p>
+<pre class="text"><code>HardNegative_LocalPerformance    # 中文：高难负例地方 / 本地履约
+
+HardNegative_StatutoryLicense    # 中文：高难负例：确有法定许可要求
+
+HardNegative_ReasonableExperience    # 中文：高难负例：与履约能力合理相关的业绩要求
+
+HardNegative_PostAwardService    # 中文：高难负例后中标 / 成交服务
+
+HardNegative_ValidPolicyException    # 中文：高难负例有效政策 / 法规例外</code></pre>
+<hr />
+<h1 id="四十一counterfactual-pair">四十一、Counterfactual Pair</h1>
+<h3 id="pair-a">Pair A</h3>
+<pre class="text"><code>投标人必须在投标截止前在本市设立分公司。</code></pre>
+<h3 id="pair-b">Pair B</h3>
+<pre class="text"><code>中标供应商须在合同履约期间满足2小时现场响应要求。</code></pre>
+<p>比较变量：</p>
+<pre class="text"><code>Timing    # 中文：适用 / 发生时点
+Gate    # 中文：门槛
+LocationProxy    # 中文：地域 / 本地身份代理变量
+OutcomeRequirement    # 中文：履约结果要求</code></pre>
+<hr />
+<h3 id="pair-c">Pair C</h3>
+<pre class="text"><code>投标人注册资本不得低于5000万元。</code></pre>
+<h3 id="pair-d">Pair D</h3>
+<pre class="text"><code>供应商应具有履行合同所需要的设备和专业技术能力，并提供相应证明。</code></pre>
+<p>比较：</p>
+<pre class="text"><code>ScaleProxy    # 中文：企业规模代理变量
+vs    # 中文：VS
+DirectCapability    # 中文：直接履约能力指标</code></pre>
+<p>这种训练数据帮助系统学习：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>e</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MarketAccessDecisionBoundary
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 市场准入判断边界。</p>
+<hr />
+<h1 id="四十二qualification-benchmark-应该测什么">四十二、Qualification
+Benchmark 应该测什么？</h1>
+<p>不能只测：</p>
+<pre class="text"><code>违规 / 不违规准确率</code></pre>
+<p>至少需要：</p>
+<pre class="text"><code>Qualification Gate Detection    # 中文：资格准入门槛识别
+
+D01-D10 Recall / Precision    # 中文：D01D10召回率 / 精确率
+
+D15-D22 Qualification Slice    # 中文：D15-D22 中与资格准入相关的评测切片
+
+PreBid / PostAward Accuracy    # 中文：前投标 / 后中标 / 成交准确率
+
+Capability vs Identity Classification    # 中文：履约能力要求 vs 企业身份代理条件分类
+
+Experience Restriction Accuracy    # 中文：业绩限制准确率
+
+Scale Proxy Detection    # 中文：企业规模代理变量识别
+
+Certificate Type Resolution    # 中文：证书类型消解
+
+Exception Accuracy    # 中文：例外准确率
+
+Legal Basis Accuracy    # 中文：法律 / 政策依据准确率
+
+Human Escalation Accuracy    # 中文：转人工复核决策准确率
+
+Evidence Localization Accuracy    # 中文：证据原文定位准确率</code></pre>
+<hr />
+<h1 id="四十三核心心智模型-⑬">四十三、核心心智模型 ⑬</h1>
+<h1
+id="qualificationrecall-要与-humanreviewload-一起看"><code>QualificationRecall</code>
+要与 <code>HumanReviewLoad</code> 一起看</h1>
+<p>如果为了不漏检：</p>
+<blockquote>
+<p>所有资格条件都转人工，</p>
+</blockquote>
+<p>Recall 可能很高，</p>
+<p>但系统没有实际生产价值。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>s</mi><mi>e</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mo>=</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>a</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UsefulQualificationSystem
+=
+RiskRecall
++
+Precision
++
+ReasonableHumanLoad
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 可用的资格合规系统 = 风险召回 +
+精确率 + 合理人工复核负荷。</p>
+<hr />
+<h1
+id="四十四资格条件与评分标准之间要做-cross-check">四十四、资格条件与评分标准之间要做
+Cross-check</h1>
+<p>同一个条件可能：</p>
+<pre class="text"><code>在资格审查中已经作为Gate</code></pre>
+<p>同时又：</p>
+<pre class="text"><code>在评分中再次加分</code></pre>
+<p>这种跨域关系不能只靠 Stage 5 单独判断。</p>
+<p>需要记录：</p>
+<pre class="text"><code>canonical_requirement_id    # 中文：归一化要求标识</code></pre>
+<p>后面 Stage 7 做：</p>
+<h1 id="cross-domain-review">Cross-domain Review</h1>
+<h2 id="跨域检查">跨域检查</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>e</mi><mi>w</mi><mo>≠</mo><mi>I</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>e</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationReview
+\neq
+IsolatedReview
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格条件审查 ≠ 孤立审查。</p>
+<hr />
+<h1
+id="四十五资格条件与合同履约之间也要-cross-check">四十五、资格条件与合同履约之间也要
+Cross-check</h1>
+<p>如果采购人声称：</p>
+<blockquote>
+<p>某资格门槛是履约所必需，</p>
+</blockquote>
+<p>系统应检查：</p>
+<pre class="text"><code>它在合同里有没有对应的履约义务？
+
+验收是否检查它？
+
+不满足会不会影响合同目标？</code></pre>
+<p>如果：</p>
+<pre class="text"><code>投标时要求非常严格
+但合同里根本不要求</code></pre>
+<p>就会增加：</p>
+<h1 id="necessity-doubt">Necessity Doubt</h1>
+<h2 id="必要性疑点">必要性疑点</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>J</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>应</mi><mi>该</mi><mi>能</mi><mi>回</mi><mi>到</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationJustification
+应该能回到
+ContractPerformance
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十六核心心智模型-⑭">四十六、核心心智模型 ⑭</h1>
+<h1
+id="gatewithoutperformancelink-是重要风险信号"><code>GateWithoutPerformanceLink</code>
+是重要风险信号</h1>
+<p>不是自动认定违法，</p>
+<p>但应提高：</p>
+<pre class="text"><code>necessity_review_priority    # 中文：必要性复核优先级</code></pre>
+<hr />
+<h1 id="四十七human-review-什么时候必须触发">四十七、Human Review
+什么时候必须触发？</h1>
+<p>至少包括：</p>
+<pre class="text"><code>项目必要性无法从文件判断
+
+采购人有特殊业务说明但证据不足
+
+法定许可状态不确定
+
+Rule和Policy Registry结论冲突
+
+行业 / 地域经验是否合理存在强裁量
+
+特定金额业绩与项目规模关系不明确
+
+本地服务能力存在重大安全 / 时效要求
+
+证书 / 认证法律属性不明确
+
+D22名单依据无法确认
+
+高风险但模型置信度低</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>⇒</mo><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>e</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Uncertainty
++
+HighImpact
+\Rightarrow
+HumanReview
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 不确定性 + 高影响 ⇒ 人工复核。</p>
+<hr />
+<h1 id="四十八本阶段正式工程产物">四十八、本阶段正式工程产物</h1>
+<h1
+id="procurementqualificationcompliance_v1-1"><code>ProcurementQualificationCompliance_V1</code></h1>
+<p>建议核心结构：</p>
+<pre class="text"><code>ProcurementQualificationCompliance_V1/    # 中文：ProcurementQualificationCompliance_V1：资格与市场准入合规模块根目录
+
+├── schema/    # 中文：工程目录：结构定义
+│   ├── qualification_requirement.json    # 中文：工程文件：资格要求JSON 配置文件
+│   ├── supplier_attribute.json    # 中文：工程文件：供应商attributeJSON 配置文件
+│   ├── capability_objective.json    # 中文：工程文件：履约能力目标JSON 配置文件
+│   └── qualification_finding.json    # 中文：工程文件：资格发现项JSON 配置文件
+│
+├── rules/    # 中文：工程目录：规则
+│   ├── location/    # 中文：工程目录：位置 / 地域
+│   ├── industry/    # 中文：工程目录：行业
+│   ├── scale/    # 中文：工程目录：scale
+│   ├── ownership/    # 中文：工程目录：所有制
+│   ├── experience/    # 中文：工程目录：业绩
+│   ├── certificate/    # 中文：工程目录：证书
+│   ├── authorization/    # 中文：工程目录：授权
+│   ├── supplier_pool/    # 中文：工程目录：供应商供应商库 / 名录
+│   └── blacklist/    # 中文：工程目录：黑名单
+│
+├── decision/    # 中文：工程目录：决策
+│   ├── relevance_test    # 中文：相关性测试
+│   ├── necessity_test    # 中文：必要性测试
+│   ├── proportionality_test    # 中文：比例性测试
+│   ├── alternative_test    # 中文：替代方案测试
+│   └── policy_check    # 中文：政策 / 法规检查
+│
+├── tests/    # 中文：工程目录：测试集
+│   ├── positive/    # 中文：工程目录：正例
+│   ├── hard_negative/    # 中文：工程目录：高难负例
+│   ├── counterfactual/    # 中文：工程目录：counterfactual
+│   ├── exception/    # 中文：工程目录：例外
+│   └── missing_context/    # 中文：工程目录：缺失上下文
+│
+└── manifest.json    # 中文：工程文件：清单 / 元数据JSON 配置文件</code></pre>
+<hr />
+<h1 id="四十九qualification-requirement-schema">四十九、Qualification
+Requirement Schema</h1>
+<pre class="text"><code>qualification_requirement_id    # 中文：资格要求标识
+
+clause_id    # 中文：条款标识
+requirement_id    # 中文：要求标识
+
+qualification_type    # 中文：资格条件类型
+
+business_function    # 中文：业务功能
+required_at_stage    # 中文：要求满足 / 提交的程序阶段
+
+subject    # 中文：主体 / 事项
+action    # 中文：动作
+object    # 中文：对象
+condition    # 中文：条件
+
+threshold    # 中文：阈值
+unit    # 中文：单位
+
+region_constraint    # 中文：地域限制条件
+industry_constraint    # 中文：行业限制条件
+ownership_constraint    # 中文：所有制限制条件
+organization_constraint    # 中文：组织形式限制
+shareholding_constraint    # 中文：股权限制条件
+investor_nationality_constraint    # 中文：投资者国别限制条件
+
+company_age_constraint    # 中文：企业年限限制条件
+registered_capital_constraint    # 中文：注册资本限制条件
+asset_constraint    # 中文：资产限制条件
+revenue_constraint    # 中文：营业收入限制条件
+employee_constraint    # 中文：从业人员限制条件
+profit_constraint    # 中文：利润限制条件
+tax_constraint    # 中文：纳税限制条件
+
+experience_constraint    # 中文：业绩限制条件
+contract_amount_constraint    # 中文：合同金额限制条件
+
+certificate_constraint    # 中文：证书限制条件
+license_constraint    # 中文：许可 / 资质限制条件
+award_constraint    # 中文：中标 / 成交限制条件
+credit_constraint    # 中文：信用限制条件
+
+manufacturer_authorization_constraint    # 中文：厂家授权限制条件
+
+supplier_pool_constraint    # 中文：供应商供应商库 / 名录限制条件
+registration_constraint    # 中文：注册 / 登记限制条件
+document_access_constraint    # 中文：文档获取限制条件
+issuer_constraint    # 中文：出具机构限制条件
+blacklist_constraint    # 中文：黑名单限制条件
+
+failure_consequence    # 中文：不满足条件的后果
+
+candidate_rule_ids    # 中文：候选规则标识列表
+
+parse_confidence    # 中文：解析置信度</code></pre>
+<hr />
+<h1 id="五十capability-analysis-schema">五十、Capability Analysis
+Schema</h1>
+<pre class="text"><code>capability_objective    # 中文：履约能力目标
+
+project_need    # 中文：项目实际需要
+
+direct_relation    # 中文：直接关联性
+
+gate_necessity    # 中文：作为准入门槛的必要性
+
+proportionality    # 中文：比例性
+
+less_restrictive_alternative    # 中文：更少限制竞争的替代方案
+
+contract_performance_link    # 中文：与合同履约目标的关联
+
+supporting_evidence    # 中文：支持性证据
+
+counter_evidence    # 中文：反向 / 反证证据
+
+uncertainty    # 中文：不确定
+
+human_review_required    # 中文：是否需要人工复核</code></pre>
+<hr />
+<h1 id="五十一本阶段最重要的-15-个核心心智模型">五十一、本阶段最重要的
+15 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>CapabilityRequirement ≠ MarketAccessBarrier</code>。保障履约能力和设置不合理准入门槛是两回事。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>QualificationGate ≠ ScoringPreference</code>。能不能参加和参加以后得多少分必须分开。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>ProjectSpecific ≠ PurchaserPreference</code>。项目特定条件必须有项目特定理由。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>Relevant ≠ GateNecessary</code>。与项目有关，不等于必须作为投标前淘汰条件。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>LocalServiceNeed ≠ LocalEntityPrecondition</code>。履约服务目标不应自动转化为本地注册
+/ 分支机构门槛。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>CanPerformContract ≠ BelongsToIndustryLabel</code>。实际履约能力与行业身份标签必须区分。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>FinancialEvidence ≠ ArbitraryScaleThreshold</code>。财务材料与规模数值门槛不是一回事。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>CompanyAge ≠ Capability</code>。成立年限只是身份 /
+历史代理变量，不是直接履约能力。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>SupplierAttribute ≠ QualificationJustification</code>。所有制、组织形式、股权、国别、所在地不能因为“存在”就成为门槛理由。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑩：<code>ExperienceRequirement ≠ AutomaticallyReasonable</code>。业绩需要映射到真实能力维度，而不是地域、行业、主体、金额的任意锁定。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑪：<code>CertificateExists ≠ CertificateCanBeQualificationGate</code>。证书必须看颁发主体、法律状态、项目关系和业务用途。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑫：<code>QualificationEvidence ≠ ProcurementDocumentAccessGate</code>。资格证明材料不能因为属于资格材料，就当然适合作为获取采购文件的前置条件。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑬：<code>DirectCapabilitySignal &gt; IdentityProxy</code>。资格条件应尽量直接测履约能力，而不是用企业身份和规模做代理。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑭：<code>Remediation = PreserveBusinessGoal + RemoveUnnecessaryBarrier</code>。好的修改建议不是简单删条件，而是保留采购目的、去掉不必要排斥。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑮：<code>GateWithoutPerformanceLink</code>
+是必要性疑点。资格门槛如果无法回到合同履约目标，应提高人工复核优先级。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="五十二把整个资格合规判断压成一张工程图">五十二、把整个资格合规判断压成一张工程图</h1>
+<pre class="text"><code>                     Qualification Clause    # 中文：资格条款
+                          资格条款
+                              │
+                              ▼
+                     Requirement Parsing    # 中文：要求结构化解析
+                        结构化要求
+                              │
+                              ▼
+                         Is It a Gate?    # 中文：是否属于准入门槛
+                         是否准入门槛
+                              │
+                              ▼
+                     D01-D22 Candidate    # 中文：D01-D22 候选规则
+                         候选规则
+                              │
+                              ▼
+                     Capability Objective    # 中文：需要证明的履约能力目标
+                      想证明什么能力？
+                              │
+                              ▼
+                         Relevance    # 中文：与项目的直接相关性
+                     与项目是否直接相关
+                              │
+                              ▼
+                       Gate Necessity    # 中文：是否必须作为准入门槛
+                  是否必须作为投标前门槛
+                              │
+                              ▼
+                      Proportionality    # 中文：比例性 / 限制强度是否相称
+                       限制是否相称
+                              │
+                              ▼
+                Less Restrictive Alternative    # 中文：更少排斥竞争的替代方案
+                     是否有更少排斥方案
+                              │
+                              ▼
+                     Contract Performance    # 中文：合同履约目标
+                       能否回到履约目标
+                              │
+                              ▼
+                       Exception Check    # 中文：例外检查
+                          例外检查
+                              │
+                              ▼
+                        Policy Check    # 中文：法规政策适用性检查
+                       法规状态检查
+                              │
+                              ▼
+                       Evidence Gate    # 中文：证据充分性门槛
+                          证据门
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+       Checked No Risk   Candidate Finding   Unresolved    # 中文：已检查无 / 否风险候选发现项未解决
+          已检查无风险       候选风险项          无法确定
+                              │               │
+                              ▼               ▼
+                       Human Review      Human Review    # 中文：人工复核人工复核
+                          人工确认          人工复核
+                              │               │
+                              └───────┬───────┘
+                                      ▼
+                              Remediation    # 中文：修改 / 整改建议
+                                修改建议</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>资格合规的本质，不是“供应商条件越少越好”，而是每一个准入门槛都必须能够证明它直接服务于项目真实履约能力，并且在相关性、必要性、比例性、替代方案、竞争影响、例外和法源上经得起追问；如果采购目标可以用更直接的能力或履约结果表达，就不应轻易用地域、行业身份、企业规模、成立年限、所有制、特定金额业绩等代理变量把供应商挡在竞争入口之外。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第十一课-第-5-阶段掌握测试">第十一课 · 第 5 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：</p>
+<pre class="text"><code>为什么 Capability Requirement 不等于 Market Access Barrier？
+
+Qualification Gate 与 Scoring Preference 有什么根本区别？
+
+什么是 Baseline Eligibility，什么是 Project-specific Qualification？
+
+为什么 Project-specific 条件必须有 Project-specific Justification？
+
+资格条件为什么要做 Objective / Relevance / Necessity / Proportionality / Alternative 五问？
+
+为什么 Relevant 仍然不等于 Gate Necessary？
+
+为什么本地服务需求不应自动变成本地企业 / 本地分支机构前置条件？
+
+为什么行业身份与履约能力必须分开？
+
+为什么经营范围规则必须检查特别规定？
+
+为什么财务材料和财务门槛是两回事？
+
+为什么成立年限不是直接履约能力？
+
+为什么所有制、组织形式、股权结构、投资者国别等是 Supplier Attribute，而不是天然 Qualification Justification？
+
+业绩要求为什么需要拆地域、行业、金额、时间和能力维度？
+
+为什么历史合同金额不是直接能力证明？
+
+证书为什么必须识别 Certificate Type 和 Issuer？
+
+为什么 D14 必须查 Policy Registry？
+
+为什么厂家授权必须同时做进口货物 Exception Check？
+
+为什么资格证明材料与获取采购文件前置门槛必须区分？
+
+为什么 D22 的关键不是“有没有黑名单”，而是“有没有法律依据”？
+
+什么叫 Proxy Variable？
+
+为什么好的修改建议应该把身份门槛改成能力 / 结果要求？
+
+为什么资格条件必须与合同履约目标 Cross-check？</code></pre>
+<p>如果这些能够完整解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>十</mi><mi>一</mi><mi>课</mi><mi>第</mi><mn>5</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第十一课第5阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第十一课-第-6-阶段">下一阶段：第十一课 · 第 6 阶段</h1>
+<h1
+id="技术参数合规品牌专利技术路线检测报告认证授权样品">技术参数合规：品牌、专利、技术路线、检测报告、认证、授权、样品</h1>
+<h2
+id="怎样识别看起来只是技术要求实际上已经把竞争范围锁定到特定供应商或特定产品的隐性限制">怎样识别“看起来只是技术要求、实际上已经把竞争范围锁定到特定供应商或特定产品”的隐性限制？</h2>
+<p>下一阶段将重点连接：</p>
+<pre class="text"><code>D11    # 中文：D11 规则编号（附件9工程化规则标识）
+D12    # 中文：D12 规则编号（附件9工程化规则标识）
+D13    # 中文：D13 规则编号（附件9工程化规则标识）
+D15    # 中文：D15 规则编号（附件9工程化规则标识）
+D16    # 中文：D16 规则编号（附件9工程化规则标识）
+D20    # 中文：D20 规则编号（附件9工程化规则标识）</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementtechnicalcompliance_v1"><code>ProcurementTechnicalCompliance_V1</code></h1>
+<p>最重要的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>c</mi><mi>h</mi><mi>n</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>e</mi><mi>c</mi><mi>h</mi><mi>n</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>D</mi><mi>i</mi><mi>s</mi><mi>c</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TechnicalSpecificity
+\neq
+TechnicalDiscrimination
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 技术参数具体性 ≠ 技术歧视 /
+不合理技术排斥。</p>
+<div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("lesson11-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("lesson11-theme")||"light";</script></body></html>

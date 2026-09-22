@@ -1,0 +1,1716 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第11阶段：Dataset Versioning、Lineage 与数据质量报告</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第11阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>一套冻结的数据状态。</li><li>数据 + 代码版本 + 配置版本。</li><li>final_dataset_v2_really_final/</li></ul></div><h1 id="第四课-第-11-阶段">第四课 · 第 11 阶段</h1>
+<h1 id="dataset-versioninglineage-与数据质量报告-1">Dataset
+Versioning、Lineage 与数据质量报告</h1>
+<h2
+id="数据集已经做完了为什么半年以后却可能没人说得清当时到底用的是哪一批数据">数据集已经做完了，为什么半年以后却可能没人说得清“当时到底用的是哪一批数据”？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-10">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-10">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>一套冻结的数据状态。</strong></li>
+<li><strong>数据 + 代码版本 + 配置版本。</strong></li>
+<li><strong>final_dataset_v2_really_final/</strong></li>
+<li><strong>包含哪些样本？ 样本内容是什么？ 用了什么Schema？
+怎么切的Train/Test？ 标签是哪一版？ 处理程序是哪一版？</strong></li>
+<li><strong>Parser v1</strong></li>
+<li><strong>Parser v2</strong></li>
+<li><strong>Dedup threshold = 0.85</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-10">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="even">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="odd">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="even">
+<td><code>Parser</code></td>
+<td>解析器：把 PDF/Word/HTML 转换为结构化可处理内容</td>
+</tr>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Normalization</code></td>
+<td>规范化：稳定中间激活与训练过程</td>
+</tr>
+<tr class="even">
+<td><code>Label Schema</code></td>
+<td>标签结构：定义风险状态、类型、等级、证据等标注字段</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-10">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 10 阶段结束以后，我们已经拥有了一条相当完整的数据生产链：</p>
+<pre class="text"><code>原始采购文件
+      ↓
+文档解析
+      ↓
+Clause结构恢复
+      ↓
+清洗与规范化
+      ↓
+去重
+      ↓
+Train / Validation / Test切分
+      ↓
+泄漏审计
+      ↓
+专家标注
+      ↓
+双人复核与裁决
+      ↓
+Hard Case建设</code></pre>
+<p>从“内容质量”看，我们已经做得很深了。</p>
+<p>但现在换一个场景。</p>
+<p>半年以后，你看到实验报告：</p>
+<pre class="text"><code>ProcurementModel_V0.3
+Test F1 = 0.87</code></pre>
+<p>你问团队：</p>
+<blockquote>
+<p>这个模型到底是用哪一版数据训练的？</p>
+</blockquote>
+<p>有人回答：</p>
+<blockquote>
+<p>“应该就是去年那批数据。”</p>
+</blockquote>
+<p>再问：</p>
+<blockquote>
+<p>那批数据用了哪一版 PDF 解析器？</p>
+</blockquote>
+<p>不知道。</p>
+<blockquote>
+<p>去重阈值是多少？</p>
+</blockquote>
+<p>不知道。</p>
+<blockquote>
+<p>Test Set 后来有没有改？</p>
+</blockquote>
+<p>好像改过。</p>
+<blockquote>
+<p>专家标签是第一次标注，还是裁决后的 Gold？</p>
+</blockquote>
+<p>不确定。</p>
+<blockquote>
+<p>当时用的是 <code>AnnotationSchema_v0.1</code> 还是
+<code>v0.2</code>？</p>
+</blockquote>
+<p>没人记得。</p>
+<p>这时候即使模型代码、权重全部还在：</p>
+<blockquote>
+<p><strong>这个实验实际上已经无法完整复现。</strong></p>
+</blockquote>
+<p>所以第 11 阶段要解决的不是“怎样让一条数据更正确”。</p>
+<p>而是：</p>
+<h1
+id="怎样让整个-dataset-成为一个可以被准确识别完整追溯重新生成质量可证明的数据产品">怎样让整个
+Dataset
+成为一个可以被准确识别、完整追溯、重新生成、质量可证明的数据产品？</h1>
+<p>最终得到两个正式工程产物：</p>
+<h1 id="datasetmanifest_v0.1-1"><code>DatasetManifest_V0.1</code></h1>
+<p>数据集清单 / 身份档案。</p>
+<p>以及：</p>
+<h1
+id="datasetqualityreport_v0.1-1"><code>DatasetQualityReport_V0.1</code></h1>
+<p>数据质量报告。</p>
+<hr />
+<h2 id="一本阶段只解决一个核心问题-3">一、本阶段只解决一个核心问题</h2>
+<blockquote>
+<p><strong>当别人问“ProcurementDataset_V0.1
+到底是什么？”时，我们能不能不用靠人的记忆，而是用一套机器可读的版本、血缘和质量记录，把它完整回答出来？</strong></p>
+</blockquote>
+<p>先看今天的总图。</p>
+<pre class="text"><code>                 原始文件
+                    │
+                    ▼
+             数据处理流水线
+                    │
+       ┌────────────┼────────────┐
+       ▼            ▼            ▼
+    Parser       Cleaning      Dedup
+   解析版本       清洗版本      去重版本
+       │            │            │
+       └────────────┼────────────┘
+                    ▼
+                 Annotation
+                 标注版本
+                    │
+                    ▼
+                  Split
+                 切分版本
+                    │
+                    ▼
+              Dataset Snapshot
+                数据集快照
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+ Dataset Manifest        Quality Report
+ 数据身份与血缘          数据质量证据
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+          ProcurementDataset_V0.1</code></pre>
+<p>中文只记一句：</p>
+<blockquote>
+<p><strong>数据是谁 → 从哪里来 → 怎么变成现在这样 →
+质量怎么样。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二第-11-阶段最重要的-5-个核心心智模型">二、第 11 阶段最重要的 5
+个核心心智模型</h1>
+<p>这五个请直接当成本阶段骨架。</p>
+<h2
+id="心智模型-1dataset-version-不是一个文件名而是一个不可含糊的数据快照">心智模型
+1：Dataset Version 不是一个文件名，而是一个不可含糊的数据快照</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>F</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>N</mi><mi>a</mi><mi>m</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DatasetVersion
+\neq
+FolderName
+}
+</annotation></semantics></math></p>
+<p>把文件夹改成：</p>
+<pre class="text"><code>final_dataset_v2_really_final/</code></pre>
+<p>不叫版本管理。</p>
+<p>真正的数据版本必须能够回答：</p>
+<pre class="text"><code>包含哪些样本？
+样本内容是什么？
+用了什么Schema？
+怎么切的Train/Test？
+标签是哪一版？
+处理程序是哪一版？</code></pre>
+<p>所以 Dataset Version 本质是：</p>
+<blockquote>
+<p><strong>一套冻结的数据状态。</strong></p>
+</blockquote>
+<hr />
+<h2 id="心智模型-2可复现不等于我还保存着-csv">心智模型
+2：可复现不等于“我还保存着 CSV”</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>d</mi><mi>e</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>g</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Reproducibility
+=
+Data
++
+Code
++
+Configuration
++
+Versions
+}
+</annotation></semantics></math></p>
+<p>数据文件还在，并不代表可以复现。</p>
+<p>同一批 PDF：</p>
+<pre class="text"><code>Parser v1</code></pre>
+<p>和：</p>
+<pre class="text"><code>Parser v2</code></pre>
+<p>可能得到不同 Clause。</p>
+<p>同一批 Clause：</p>
+<pre class="text"><code>Dedup threshold = 0.85</code></pre>
+<p>和：</p>
+<pre class="text"><code>0.93</code></pre>
+<p>也可能产生完全不同的 Dataset。</p>
+<p>因此必须同时保存：</p>
+<blockquote>
+<p>数据 + 代码版本 + 配置版本。</p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-3lineage-的核心不是记录历史而是能够回答这条数据从哪里来的">心智模型
+3：Lineage 的核心不是“记录历史”，而是能够回答“这条数据从哪里来的”</h2>
+<h1 id="lineage-2">Lineage</h1>
+<h2 id="数据血缘-来源链">数据血缘 / 来源链</h2>
+<p>一条 Gold Sample 最理想可以一路追到：</p>
+<pre class="text"><code>Gold Label
+    ↓
+专家裁决
+    ↓
+双人初始标注
+    ↓
+Clean Clause
+    ↓
+原始 Clause
+    ↓
+Page / Block
+    ↓
+原始 PDF</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>S</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>l</mi><mi>d</mi><mi>H</mi><mi>a</mi><mi>v</mi><mi>e</mi><mi>A</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EveryDerivedRecord
+ShouldHaveAParent
+}
+</annotation></semantics></math></p>
+<p>任何派生数据：</p>
+<blockquote>
+<p>最好都知道父对象是谁。</p>
+</blockquote>
+<hr />
+<h2 id="心智模型-4quality-不是一个总分而是一组可解释的质量维度">心智模型
+4：Quality 不是一个“总分”，而是一组可解释的质量维度</h2>
+<p>一个 Dataset 可以：</p>
+<pre class="text"><code>文本解析很好</code></pre>
+<p>但是：</p>
+<pre class="text"><code>专家标签很差</code></pre>
+<p>也可以：</p>
+<pre class="text"><code>标签很好</code></pre>
+<p>但是：</p>
+<pre class="text"><code>Train/Test泄漏严重</code></pre>
+<p>所以不能只写：</p>
+<pre class="text"><code>Dataset Quality = 92</code></pre>
+<p>而应该拆成：</p>
+<pre class="text"><code>Parsing Quality
+Structure Quality
+Dedup Quality
+Annotation Quality
+Split Quality
+Leakage Quality
+Coverage Quality</code></pre>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>D</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Quality
+=
+MultiDimensional
+}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="心智模型-5dataset-发布不是导出文件而是通过一组-release-gate">心智模型
+5：Dataset 发布不是“导出文件”，而是通过一组 Release Gate</h2>
+<h1 id="release-gate">Release Gate</h1>
+<h2 id="发布质量门槛">发布质量门槛</h2>
+<p>真正专业的数据产品不能：</p>
+<blockquote>
+<p>“处理完了就发版。”</p>
+</blockquote>
+<p>而应该先问：</p>
+<pre class="text"><code>有没有Critical Leakage？
+Gold样本有没有未裁决分歧？
+Schema Validation有没有失败？
+Train/Test有没有重复？
+关键Risk Type有没有严重缺失？
+Manifest是否完整？</code></pre>
+<p>全部达到要求后：</p>
+<blockquote>
+<p>才发布新版本。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>=</mo><mi>S</mi><mi>n</mi><mi>a</mi><mi>p</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>t</mi><mo>+</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>+</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DatasetRelease
+=
+Snapshot
++
+Lineage
++
+QualityEvidence
++
+ReleaseDecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三先彻底理解什么叫-dataset-snapshot">三、先彻底理解：什么叫
+Dataset Snapshot？</h1>
+<h1 id="snapshot">Snapshot</h1>
+<h2 id="数据快照">数据快照</h2>
+<p>意思是：</p>
+<blockquote>
+<p>在某个确定时点，把数据的完整状态冻结下来。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>ProcurementDataset_V0.1</code></pre>
+<p>发布以后，它的核心内容不应该今天是：</p>
+<pre class="text"><code>400,213条</code></pre>
+<p>明天偷偷变成：</p>
+<pre class="text"><code>402,718条</code></pre>
+<p>但名字还是：</p>
+<pre class="text"><code>V0.1</code></pre>
+<p>这会直接破坏实验可复现性。</p>
+<hr />
+<h2 id="一个非常重要的规则">一个非常重要的规则</h2>
+<blockquote>
+<p><strong>同一个 Version 的内容，不应该悄悄变化。</strong></p>
+</blockquote>
+<p>如果数据发生实质性改变：</p>
+<pre class="text"><code>新增样本
+删除错误样本
+重新标注
+修改Train/Test
+修复解析
+更新Label Schema</code></pre>
+<p>就应该：</p>
+<blockquote>
+<p>创建新版本。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>V0.1
+↓
+V0.2</code></pre>
+<p>而不是覆盖旧版。</p>
+<p>这叫：</p>
+<h1 id="immutable-snapshot">Immutable Snapshot</h1>
+<h2 id="不可变快照">不可变快照</h2>
+<hr />
+<h1 id="四dataset-version-和其他-version-一定要分开">四、Dataset Version
+和其他 Version 一定要分开</h1>
+<p>这是实际项目里特别容易混乱的地方。</p>
+<p>你可能同时拥有：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Version</th>
+<th>中文</th>
+<th>它控制什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>dataset_version</code></td>
+<td>数据集版本</td>
+<td>整个最终数据快照</td>
+</tr>
+<tr class="even">
+<td><code>parser_version</code></td>
+<td>解析器版本</td>
+<td>PDF/DOCX如何解析</td>
+</tr>
+<tr class="odd">
+<td><code>normalization_version</code></td>
+<td>清洗规则版本</td>
+<td>文本怎样规范化</td>
+</tr>
+<tr class="even">
+<td><code>dedup_version</code></td>
+<td>去重版本</td>
+<td>重复数据如何识别</td>
+</tr>
+<tr class="odd">
+<td><code>schema_version</code></td>
+<td>数据结构版本</td>
+<td>字段定义</td>
+</tr>
+<tr class="even">
+<td><code>annotation_schema_version</code></td>
+<td>标注结构版本</td>
+<td>专家标什么</td>
+</tr>
+<tr class="odd">
+<td><code>guideline_version</code></td>
+<td>标注指南版本</td>
+<td>专家怎么判断</td>
+</tr>
+<tr class="even">
+<td><code>split_version</code></td>
+<td>数据切分版本</td>
+<td>Train/Val/Test怎么分</td>
+</tr>
+<tr class="odd">
+<td><code>leakage_audit_version</code></td>
+<td>泄漏审计版本</td>
+<td>用什么规则检查泄漏</td>
+</tr>
+</tbody>
+</table>
+<p>注意：</p>
+<blockquote>
+<p><strong>它们不是同一个版本号。</strong></p>
+</blockquote>
+<hr />
+<h2 id="为什么不能只保存-dataset_v0.1">为什么不能只保存
+<code>dataset_v0.1</code>？</h2>
+<p>因为当模型出现问题时，我们需要定位：</p>
+<p>到底是：</p>
+<pre class="text"><code>Dataset整体变化？
+Parser变化？
+Label定义变化？
+Split变化？</code></pre>
+<p>如果所有东西只有：</p>
+<pre class="text"><code>version = 1</code></pre>
+<p>基本无法 Debug。</p>
+<hr />
+<h1
+id="五政府采购项目里的一个真实感很强的版本问题">五、政府采购项目里的一个真实感很强的版本问题</h1>
+<p>假设：</p>
+<pre class="text"><code>ProcurementDataset_V0.1</code></pre>
+<p>使用：</p>
+<pre class="text"><code>Parser_v1.3</code></pre>
+<p>后来我们发现 PDF 表格恢复存在问题：</p>
+<p>评分表：</p>
+<pre class="text"><code>项目经验 | 5分
+技术方案 | 20分
+售后服务 | 10分</code></pre>
+<p>被错误解析成：</p>
+<pre class="text"><code>项目经验
+5分技术方案
+20分售后服务
+10分</code></pre>
+<p>于是修复 Parser：</p>
+<pre class="text"><code>Parser_v1.4</code></pre>
+<p>重新解析以后：</p>
+<blockquote>
+<p>Clause 内容发生变化。</p>
+</blockquote>
+<p>那么即使原始 PDF 完全没变：</p>
+<h1 id="dataset-已经变了">Dataset 已经变了。</h1>
+<p>因此应该生成：</p>
+<pre class="text"><code>ProcurementDataset_V0.2</code></pre>
+<p>或者至少：</p>
+<blockquote>
+<p>新的数据快照。</p>
+</blockquote>
+<p>这说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>U</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>U</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawDataUnchanged
+\neq
+DatasetUnchanged
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六现在进入-lineage一条数据到底怎样追到原文">六、现在进入
+Lineage：一条数据到底怎样追到原文？</h1>
+<p>假设模型在 Test 中错了一条：</p>
+<pre class="text"><code>CLAUSE-009817</code></pre>
+<p>内容是：</p>
+<blockquote>
+<p>“供应商须在本市设立固定服务机构。”</p>
+</blockquote>
+<p>我们不应该只能看到这一个字符串。</p>
+<p>理想系统应该能一路追：</p>
+<pre class="text"><code>CLAUSE-009817
+       ↓
+CleanClause-009817
+       ↓
+Parsed Block B-77218
+       ↓
+Page 37
+       ↓
+Document DOC-00152
+       ↓
+Project PROJECT-00152
+       ↓
+raw file hash
+       ↓
+原始采购PDF</code></pre>
+<p>同时 Label 另一条路径：</p>
+<pre class="text"><code>Gold Label
+    ↓
+Adjudication-771
+    ↓
+Expert A Annotation
+Expert B Annotation
+    ↓
+AnnotationGuideline_v0.1</code></pre>
+<p>这两条路径合起来：</p>
+<blockquote>
+<p>才形成真正完整的数据血缘。</p>
+</blockquote>
+<hr />
+<h1 id="七可以把-lineage-想成食品追溯码">七、可以把 Lineage
+想成“食品追溯码”</h1>
+<p>超市里一盒食品出问题。</p>
+<p>真正专业的供应链不是只知道：</p>
+<blockquote>
+<p>“这是牛奶。”</p>
+</blockquote>
+<p>而是知道：</p>
+<pre class="text"><code>哪家牧场
+哪批原料
+哪条生产线
+哪天生产
+哪个包装批次</code></pre>
+<p>Dataset 也是一样。</p>
+<p>如果模型出了问题：</p>
+<blockquote>
+<p>不能只知道“这是训练数据之一”。</p>
+</blockquote>
+<p>最好能追到：</p>
+<blockquote>
+<p><strong>它到底是怎样产生的。</strong></p>
+</blockquote>
+<hr />
+<h1 id="八lineage-为什么不仅仅为了审计">八、Lineage
+为什么不仅仅为了审计？</h1>
+<p>它至少解决三个核心工程问题。</p>
+<p>首先是：</p>
+<h1 id="debug">Debug</h1>
+<h2 id="故障定位">故障定位</h2>
+<p>模型回答错：</p>
+<blockquote>
+<p>是模型错？</p>
+</blockquote>
+<p>还是：</p>
+<pre class="text"><code>OCR错
+Clause切错
+Clean错
+Label错</code></pre>
+<p>没有 Lineage：</p>
+<blockquote>
+<p>很难知道。</p>
+</blockquote>
+<hr />
+<p>其次是：</p>
+<h1 id="impact-analysis">Impact Analysis</h1>
+<h2 id="影响分析">影响分析</h2>
+<p>假设发现：</p>
+<pre class="text"><code>Parser_v1.2</code></pre>
+<p>有 Bug。</p>
+<p>我们应该能够问：</p>
+<blockquote>
+<p>哪些 Dataset Sample 是由 Parser_v1.2 生成的？</p>
+</blockquote>
+<p>然后精准重处理。</p>
+<p>而不是：</p>
+<blockquote>
+<p>整个数据集全部推倒重来。</p>
+</blockquote>
+<hr />
+<p>第三是：</p>
+<h1 id="rebuild">Rebuild</h1>
+<h2 id="重建">重建</h2>
+<p>如果 Dataset 文件损坏，</p>
+<p>只要：</p>
+<pre class="text"><code>Raw Data
+Code
+Configuration
+Lineage</code></pre>
+<p>还在，</p>
+<p>理论上应该能够：</p>
+<blockquote>
+<p>重新构建。</p>
+</blockquote>
+<hr />
+<h1 id="九hash-在这里有什么用">九、Hash 在这里有什么用？</h1>
+<h1 id="hash">Hash</h1>
+<h2 id="内容指纹">内容指纹</h2>
+<p>例如一个 PDF 可以计算：</p>
+<pre class="text"><code>SHA256</code></pre>
+<p>得到类似：</p>
+<pre class="text"><code>8f1c...</code></pre>
+<p>只要文件内容改变一个字节：</p>
+<blockquote>
+<p>Hash 通常也会变化。</p>
+</blockquote>
+<p>所以 Hash 可以回答：</p>
+<blockquote>
+<p><strong>这是不是完全相同的那一个文件？</strong></p>
+</blockquote>
+<hr />
+<h2 id="dataset-也可以有-hash">Dataset 也可以有 Hash</h2>
+<p>例如最终：</p>
+<pre class="text"><code>train.jsonl
+validation.jsonl
+test.jsonl</code></pre>
+<p>都保存：</p>
+<pre class="text"><code>sha256</code></pre>
+<p>这样别人拿到文件以后：</p>
+<blockquote>
+<p>可以验证有没有被改。</p>
+</blockquote>
+<hr />
+<h2 id="但一定记住">但一定记住</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>a</mi><mi>s</mi><mi>h</mi><mi>证</mi><mi>明</mi><mi>内</mi><mi>容</mi><mi>一</mi><mi>致</mi><mo>≠</mo><mi>证</mi><mi>明</mi><mi>数</mi><mi>据</mi><mi>正</mi><mi>确</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Hash
+证明内容一致
+\neq
+证明数据正确
+}
+</annotation></semantics></math></p>
+<p>一份错误 Dataset：</p>
+<blockquote>
+<p>一样可以有非常完美的 SHA256。</p>
+</blockquote>
+<p>Hash 是：</p>
+<blockquote>
+<p>身份和完整性工具。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>质量工具。</p>
+</blockquote>
+<hr />
+<h1 id="十什么是-dataset-manifest">十、什么是 Dataset Manifest？</h1>
+<h1 id="manifest">Manifest</h1>
+<h2 id="数据集清单-数据身份档案">数据集清单 / 数据身份档案</h2>
+<p>可以把它理解成：</p>
+<blockquote>
+<p><strong>Dataset 的身份证 + 配方表。</strong></p>
+</blockquote>
+<p>一个最小版 <code>DatasetManifest_V0.1</code> 可以长这样：</p>
+<div class="sourceCode" id="cb2023"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2023-1"><a href="#cb2023-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2023-2"><a href="#cb2023-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dataset_name&quot;</span><span class="fu">:</span> <span class="st">&quot;ProcurementDataset&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-3"><a href="#cb2023-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dataset_version&quot;</span><span class="fu">:</span> <span class="st">&quot;0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-4"><a href="#cb2023-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2023-5"><a href="#cb2023-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-15&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-6"><a href="#cb2023-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2023-7"><a href="#cb2023-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_snapshot&quot;</span><span class="fu">:</span> <span class="st">&quot;raw_procurement_2026_09&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-8"><a href="#cb2023-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2023-9"><a href="#cb2023-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pipeline&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2023-10"><a href="#cb2023-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;parser_version&quot;</span><span class="fu">:</span> <span class="st">&quot;parser_v0.3&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-11"><a href="#cb2023-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;structure_version&quot;</span><span class="fu">:</span> <span class="st">&quot;structure_v0.2&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-12"><a href="#cb2023-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;normalization_version&quot;</span><span class="fu">:</span> <span class="st">&quot;normalize_v0.2&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-13"><a href="#cb2023-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;dedup_version&quot;</span><span class="fu">:</span> <span class="st">&quot;dedup_v0.1&quot;</span></span>
+<span id="cb2023-14"><a href="#cb2023-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb2023-15"><a href="#cb2023-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2023-16"><a href="#cb2023-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2023-17"><a href="#cb2023-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;schema_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_schema_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2023-18"><a href="#cb2023-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;guideline_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_guideline_v0.1&quot;</span></span>
+<span id="cb2023-19"><a href="#cb2023-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb2023-20"><a href="#cb2023-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2023-21"><a href="#cb2023-21" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2023-22"><a href="#cb2023-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;split_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_split_v0.1&quot;</span></span>
+<span id="cb2023-23"><a href="#cb2023-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb2023-24"><a href="#cb2023-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2023-25"><a href="#cb2023-25" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;audit&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2023-26"><a href="#cb2023-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;leakage_audit_version&quot;</span><span class="fu">:</span> <span class="st">&quot;leakage_audit_v0.1&quot;</span></span>
+<span id="cb2023-27"><a href="#cb2023-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb2023-28"><a href="#cb2023-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2023-29"><a href="#cb2023-29" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;counts&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2023-30"><a href="#cb2023-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;projects&quot;</span><span class="fu">:</span> <span class="dv">10000</span><span class="fu">,</span></span>
+<span id="cb2023-31"><a href="#cb2023-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;documents&quot;</span><span class="fu">:</span> <span class="dv">18214</span><span class="fu">,</span></span>
+<span id="cb2023-32"><a href="#cb2023-32" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;clauses&quot;</span><span class="fu">:</span> <span class="dv">412806</span></span>
+<span id="cb2023-33"><a href="#cb2023-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb2023-34"><a href="#cb2023-34" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>数字只是教学示例。</p>
+<p>重点不是字段名称一模一样。</p>
+<p>重点是：</p>
+<blockquote>
+<p><strong>你必须能够精确描述 Dataset 是怎样生成的。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十一manifest-里最值得保存的不是漂亮描述而是机器可验证的信息">十一、Manifest
+里最值得保存的不是“漂亮描述”，而是机器可验证的信息</h1>
+<p>例如：</p>
+<pre class="text"><code>版本
+Hash
+样本数量
+Split数量
+Schema版本
+Pipeline版本
+来源快照</code></pre>
+<p>这些都是：</p>
+<blockquote>
+<p>机器可以检查的。</p>
+</blockquote>
+<p>相反：</p>
+<pre class="text"><code>“本数据集质量较高”</code></pre>
+<p>这种文字：</p>
+<blockquote>
+<p>几乎没有工程价值。</p>
+</blockquote>
+<hr />
+<h1 id="十二manifest-最好再保存文件清单">十二、Manifest
+最好再保存文件清单</h1>
+<p>例如：</p>
+<div class="sourceCode" id="cb2026"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2026-1"><a href="#cb2026-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2026-2"><a href="#cb2026-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;artifacts&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2026-3"><a href="#cb2026-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb2026-4"><a href="#cb2026-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;train.jsonl&quot;</span><span class="fu">,</span></span>
+<span id="cb2026-5"><a href="#cb2026-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;rows&quot;</span><span class="fu">:</span> <span class="dv">320000</span><span class="fu">,</span></span>
+<span id="cb2026-6"><a href="#cb2026-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;sha256&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb2026-7"><a href="#cb2026-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb2026-8"><a href="#cb2026-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb2026-9"><a href="#cb2026-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;validation.jsonl&quot;</span><span class="fu">,</span></span>
+<span id="cb2026-10"><a href="#cb2026-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;rows&quot;</span><span class="fu">:</span> <span class="dv">41000</span><span class="fu">,</span></span>
+<span id="cb2026-11"><a href="#cb2026-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;sha256&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb2026-12"><a href="#cb2026-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb2026-13"><a href="#cb2026-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb2026-14"><a href="#cb2026-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;test.jsonl&quot;</span><span class="fu">,</span></span>
+<span id="cb2026-15"><a href="#cb2026-15" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;rows&quot;</span><span class="fu">:</span> <span class="dv">51806</span><span class="fu">,</span></span>
+<span id="cb2026-16"><a href="#cb2026-16" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;sha256&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb2026-17"><a href="#cb2026-17" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb2026-18"><a href="#cb2026-18" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb2026-19"><a href="#cb2026-19" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这样能够同时回答：</p>
+<pre class="text"><code>文件是什么？
+有多少条？
+有没有被修改？</code></pre>
+<hr />
+<h1
+id="十三现在进入第二个最终产物dataset-quality-report">十三、现在进入第二个最终产物：Dataset
+Quality Report</h1>
+<h1 id="dataset-quality-report">Dataset Quality Report</h1>
+<h2 id="数据质量报告">数据质量报告</h2>
+<p>Manifest 回答的是：</p>
+<blockquote>
+<p>“这是谁？”</p>
+</blockquote>
+<p>Quality Report 回答的是：</p>
+<blockquote>
+<p><strong>“它到底好不好？”</strong></p>
+</blockquote>
+<p>这两个一定要分开。</p>
+<hr />
+<h1 id="十四数据质量至少看-6-个维度">十四、数据质量至少看 6 个维度</h1>
+<p>为了保持这一阶段精简，我们只保留六个真正核心维度：</p>
+<table>
+<thead>
+<tr class="header">
+<th>质量维度</th>
+<th>核心问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Integrity 完整性</strong></td>
+<td>必填字段是否缺失？文件是否完整？</td>
+</tr>
+<tr class="even">
+<td><strong>Validity 合法性</strong></td>
+<td>数据是否符合 Schema 与业务逻辑？</td>
+</tr>
+<tr class="odd">
+<td><strong>Uniqueness 独立性</strong></td>
+<td>是否还有大量重复/近重复？</td>
+</tr>
+<tr class="even">
+<td><strong>Annotation Quality 标注质量</strong></td>
+<td>专家一致性、Gold比例怎样？</td>
+</tr>
+<tr class="odd">
+<td><strong>Leakage Safety 泄漏安全性</strong></td>
+<td>Train/Test 是否存在信息泄漏？</td>
+</tr>
+<tr class="even">
+<td><strong>Coverage 覆盖性</strong></td>
+<td>关键风险类型、难例、项目类型是否覆盖？</td>
+</tr>
+</tbody>
+</table>
+<p>这六个先够用了。</p>
+<hr />
+<h1 id="十五integrity完整性">十五、Integrity：完整性</h1>
+<p>例如统计：</p>
+<pre class="text"><code>clause_text缺失率
+project_id缺失率
+source_page缺失率
+risk_present缺失率</code></pre>
+<p>可以定义一个简单的字段完整率：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>=</mo><mn>1</mn><mo>−</mo><mfrac><mrow><mi>M</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>i</mi><mi>e</mi><mi>l</mi><mi>d</mi><mi>s</mi></mrow><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>i</mi><mi>e</mi><mi>l</mi><mi>d</mi><mi>s</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Completeness
+=
+1-
+\frac{MissingRequiredFields}
+{TotalRequiredFields}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>Required Cells = 1,000,000
+Missing = 500</code></pre>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>=</mo><mn>99.95</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+Completeness=99.95\%
+</annotation></semantics></math></p>
+<p>但注意：</p>
+<blockquote>
+<p><strong>字段不为空，不代表内容正确。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十六validity业务合法性">十六、Validity：业务合法性</h1>
+<p>例如：</p>
+<pre class="text"><code>risk_present = false
+risk_level = high</code></pre>
+<p>这可能违反 Annotation Contract。</p>
+<p>又比如：</p>
+<pre class="text"><code>annotation_status = gold</code></pre>
+<p>但没有：</p>
+<pre class="text"><code>reviewer_id</code></pre>
+<p>如果我们的 Gold 规则要求双人复核：</p>
+<blockquote>
+<p>这就是 Invalid Record。</p>
+</blockquote>
+<p>所以需要统计：</p>
+<pre class="text"><code>schema_validation_failure_count
+cross_field_validation_failure_count</code></pre>
+<hr />
+<h1 id="十七uniqueness独立性">十七、Uniqueness：独立性</h1>
+<p>这里不是要求：</p>
+<blockquote>
+<p>所有文字必须不同。</p>
+</blockquote>
+<p>而是检查：</p>
+<pre class="text"><code>Exact Duplicate
+Near Duplicate
+Template Concentration</code></pre>
+<p>例如 Dataset 有：</p>
+<pre class="text"><code>400,000条Clause</code></pre>
+<p>但是：</p>
+<pre class="text"><code>180,000条</code></pre>
+<p>来自十个高度重复模板。</p>
+<p>那实际信息多样性：</p>
+<blockquote>
+<p>比 Row Count 看起来低很多。</p>
+</blockquote>
+<p>所以第 5 阶段的 Dedup 结果：</p>
+<blockquote>
+<p>应该进入 Quality Report。</p>
+</blockquote>
+<hr />
+<h1 id="十八annotation-quality标注质量">十八、Annotation
+Quality：标注质量</h1>
+<p>第 9 阶段的成果开始进入正式质量报告。</p>
+<p>例如：</p>
+<pre class="text"><code>double_annotation_rate
+direct_agreement_rate
+Cohen&#39;s Kappa
+adjudication_rate
+gold_sample_rate</code></pre>
+<p>假设：</p>
+<pre class="text"><code>risk_present agreement = 92%
+risk_type agreement = 89%
+risk_level agreement = 63%</code></pre>
+<p>Quality Report 不应该只写：</p>
+<blockquote>
+<p>“总体一致率很好。”</p>
+</blockquote>
+<p>而要明确：</p>
+<blockquote>
+<p><code>risk_level</code> 仍是弱项。</p>
+</blockquote>
+<hr />
+<h1 id="十九leakage-safety泄漏安全性">十九、Leakage
+Safety：泄漏安全性</h1>
+<p>这里直接复用第 7 阶段。</p>
+<p>例如：</p>
+<pre class="text"><code>Project overlap = 0
+Exact duplicate overlap = 0
+Confirmed lineage leakage = 0
+Temporal violation = 0</code></pre>
+<p>以及：</p>
+<pre class="text"><code>Near duplicate suspects = 17</code></pre>
+<p>如果仍然有未解决的 Critical Leakage：</p>
+<blockquote>
+<p>Dataset 不应该进入正式 Benchmark 发布。</p>
+</blockquote>
+<hr />
+<h1 id="二十coverage覆盖性">二十、Coverage：覆盖性</h1>
+<p>这是最容易被“数据量很大”掩盖的问题。</p>
+<p>假设：</p>
+<pre class="text"><code>总样本 = 500,000</code></pre>
+<p>很大。</p>
+<p>但 Risk Type：</p>
+<pre class="text"><code>A 供应商资格 = 420,000
+B 技术参数     = 60,000
+C 商务要求     = 18,000
+D 评分规则     = 1,900
+E 采购需求     = 100</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>E 类模型基本没多少可学。</p>
+</blockquote>
+<hr />
+<h2 id="所以-coverage-要看">所以 Coverage 要看</h2>
+<p>不仅看：</p>
+<pre class="text"><code>Total Rows</code></pre>
+<p>还要看：</p>
+<pre class="text"><code>Risk Type
+Subtype
+Region
+Year
+Project Category
+Difficulty
+Hard Positive
+Hard Negative
+Boundary Case</code></pre>
+<p>这就是：</p>
+<h1 id="slice-coverage">Slice Coverage</h1>
+<h2 id="分切片覆盖率">分切片覆盖率</h2>
+<hr />
+<h1 id="二十一尤其要检查-hard-case-coverage">二十一、尤其要检查 Hard
+Case Coverage</h1>
+<p>第 10 阶段刚刚建立：</p>
+<pre class="text"><code>easy_positive
+easy_negative
+hard_positive
+hard_negative
+boundary_case</code></pre>
+<p>到了 Quality Report 中应该统计：</p>
+<pre class="text"><code>每类有多少？
+Train多少？
+Validation多少？
+Test多少？</code></pre>
+<p>否则可能出现：</p>
+<blockquote>
+<p>Hard Case 全在 Train，Test 几乎没有。</p>
+</blockquote>
+<p>那 Benchmark：</p>
+<blockquote>
+<p>仍然太简单。</p>
+</blockquote>
+<hr />
+<h1
+id="二十二数据质量报告不能只有比例还需要阈值">二十二、数据质量报告不能只有“比例”，还需要阈值</h1>
+<p>比如我们决定第一版发布门槛：</p>
+<pre class="text"><code>Critical Leakage
+=
+0</code></pre>
+<p>这是硬门槛。</p>
+<p>再例如：</p>
+<pre class="text"><code>Required Field Completeness
+&gt;=
+99.9%</code></pre>
+<p>只是教学示例。</p>
+<p>这些阈值：</p>
+<blockquote>
+<p>应根据项目实际确定。</p>
+</blockquote>
+<hr />
+<h1 id="二十三所以-quality-report-最后最好有一个">二十三、所以 Quality
+Report 最后最好有一个：</h1>
+<h1 id="release-decision">Release Decision</h1>
+<h2 id="发布决定">发布决定</h2>
+<p>例如：</p>
+<pre class="text"><code>PASS</code></pre>
+<p>或者：</p>
+<pre class="text"><code>PASS WITH KNOWN LIMITATIONS</code></pre>
+<p>或者：</p>
+<pre class="text"><code>FAIL</code></pre>
+<p>这比：</p>
+<blockquote>
+<p>“总体质量不错”</p>
+</blockquote>
+<p>专业很多。</p>
+<hr />
+<h1 id="二十四什么是-known-limitation">二十四、什么是 Known
+Limitation？</h1>
+<h1 id="known-limitation">Known Limitation</h1>
+<h2 id="已知限制">已知限制</h2>
+<p>真正专业的数据产品：</p>
+<blockquote>
+<p>不会假装自己没有缺陷。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>D类评分规则Hard Positive样本不足
+
+2024年前部分PDF OCR质量较低
+
+部分地区数据覆盖不足
+
+risk_level专家一致性仍偏低</code></pre>
+<p>这些都可以明确写进：</p>
+<h1 id="known-limitations">Known Limitations</h1>
+<p>这不是丢脸。</p>
+<p>恰恰说明：</p>
+<blockquote>
+<p><strong>我们知道 Dataset
+能支持什么结论，也知道不能支持什么结论。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十五可以把-dataset-quality-report-想成体检报告">二十五、可以把
+Dataset Quality Report 想成“体检报告”</h1>
+<p>体检报告不会只写：</p>
+<blockquote>
+<p>“身体质量 87 分。”</p>
+</blockquote>
+<p>而会分别告诉：</p>
+<pre class="text"><code>血压
+血脂
+血糖
+肝功能</code></pre>
+<p>Dataset 也一样。</p>
+<p>你需要知道：</p>
+<blockquote>
+<p>到底哪里健康，哪里需要修。</p>
+</blockquote>
+<hr />
+<h1 id="二十六现在把-manifest-和-quality-report-放在一起">二十六、现在把
+Manifest 和 Quality Report 放在一起</h1>
+<pre class="text"><code>DatasetManifest
+=
+身份
+
+DatasetQualityReport
+=
+体检</code></pre>
+<p>这是今天最简单也最重要的类比。</p>
+<hr />
+<h1
+id="二十七版本变化时最好还保存-change-log">二十七、版本变化时，最好还保存
+Change Log</h1>
+<h1 id="change-log">Change Log</h1>
+<h2 id="版本变更记录">版本变更记录</h2>
+<p>假设：</p>
+<pre class="text"><code>V0.1 → V0.2</code></pre>
+<p>应该明确写：</p>
+<pre class="text"><code>新增12,000个项目
+修复表格解析Bug
+Annotation Guideline升级v0.2
+重新裁决1,217条样本
+新增3,400条Hard Negative
+Test Set保持冻结</code></pre>
+<p>这样大家立刻知道：</p>
+<blockquote>
+<p>为什么 V0.2 和 V0.1 不一样。</p>
+</blockquote>
+<hr />
+<h1 id="二十八尤其要记录-test-有没有变化">二十八、尤其要记录 Test
+有没有变化</h1>
+<p>这是非常重要的。</p>
+<p>如果：</p>
+<pre class="text"><code>Model A
+在Dataset v0.1 Test上
+= 86%</code></pre>
+<p>而：</p>
+<pre class="text"><code>Model B
+在Dataset v0.2 Test上
+= 90%</code></pre>
+<p>如果 Test 已经变化：</p>
+<blockquote>
+<p>两个数字不能直接说 B 提升 4%。</p>
+</blockquote>
+<p>所以 Change Log 必须说明：</p>
+<pre class="text"><code>test_split_changed = true / false</code></pre>
+<hr />
+<h1
+id="二十九这就是-versioning-和-benchmark-公平性的关系">二十九、这就是
+Versioning 和 Benchmark 公平性的关系</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>需</mi><mi>要</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ComparableModelScores
+需要
+ComparableBenchmark
+}
+</annotation></semantics></math></p>
+<p>如果考试卷都变了：</p>
+<blockquote>
+<p>分数变化就不能简单归因于模型。</p>
+</blockquote>
+<hr />
+<h1 id="三十推荐建立两个不同概念">三十、推荐建立两个不同概念</h1>
+<h1 id="dataset-version">Dataset Version</h1>
+<p>整个训练数据产品版本。</p>
+<p>和：</p>
+<h1 id="benchmark-version">Benchmark Version</h1>
+<p>测试基准版本。</p>
+<p>例如：</p>
+<pre class="text"><code>ProcurementDataset_v0.4
+
+ProcurementBench_v1.0</code></pre>
+<p>Dataset 可以持续新增 Train 数据。</p>
+<p>Benchmark：</p>
+<blockquote>
+<p>可以长期冻结。</p>
+</blockquote>
+<p>这样模型迭代才有可比性。</p>
+<hr />
+<h1 id="三十一这为第-8-课埋下了非常重要的基础">三十一、这为第 8
+课埋下了非常重要的基础</h1>
+<p>第 8 课我们会正式建设：</p>
+<h1 id="procurementbench_v1"><code>ProcurementBench_V1</code></h1>
+<p>现在第 11 阶段只需要记住：</p>
+<blockquote>
+<p><strong>Dataset 可以成长，Benchmark 不应该随便漂移。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十二再看一个非常现实的问题发现错误样本怎么办">三十二、再看一个非常现实的问题：发现错误样本怎么办？</h1>
+<p>假设发布：</p>
+<pre class="text"><code>Dataset_V0.1</code></pre>
+<p>以后发现一条 Gold Label 明显标错。</p>
+<p>能不能直接修改 V0.1 文件？</p>
+<p>不建议。</p>
+<hr />
+<h2 id="更稳的处理方式">更稳的处理方式</h2>
+<p>保留：</p>
+<pre class="text"><code>V0.1</code></pre>
+<p>作为历史快照。</p>
+<p>然后：</p>
+<pre class="text"><code>Issue:
+GOLD-00128 label incorrect</code></pre>
+<p>在：</p>
+<pre class="text"><code>V0.2</code></pre>
+<p>中修复。</p>
+<p>这样以前训练的模型：</p>
+<blockquote>
+<p>仍然可以准确知道当时用的是什么数据。</p>
+</blockquote>
+<hr />
+<h1
+id="三十三这和软件版本控制非常像">三十三、这和软件版本控制非常像</h1>
+<p>软件 Bug 修复以后：</p>
+<blockquote>
+<p>不会假装旧版本从来没有 Bug。</p>
+</blockquote>
+<p>会有：</p>
+<pre class="text"><code>v1.0
+v1.1</code></pre>
+<p>Dataset 也应该如此。</p>
+<p>所以：</p>
+<h1 id="dataset-is-software-like">Dataset is Software-like</h1>
+<p>它不是一堆静态文件。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>有版本、有依赖、有测试、有发布、有缺陷修复的数据产品。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十四一个非常重要的专业思想data-contract">三十四、一个非常重要的专业思想：Data
+Contract</h1>
+<h1 id="data-contract-1">Data Contract</h1>
+<h2 id="数据契约">数据契约</h2>
+<p>到第 11 阶段，我们已经有很多规则：</p>
+<pre class="text"><code>Schema
+Label Schema
+Split Policy
+Leakage Policy
+Gold Policy</code></pre>
+<p>这些可以共同形成：</p>
+<blockquote>
+<p>Dataset 必须遵守的数据契约。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Gold Sample必须有source provenance
+
+Test Sample不能与Train共享project_id
+
+uncertain必须配needs_review
+
+Synthetic Sample必须记录parent_sample_id</code></pre>
+<p>如果违反：</p>
+<blockquote>
+<p>Pipeline 应该自动报警。</p>
+</blockquote>
+<hr />
+<h1 id="三十五data-quality-最好尽量自动化">三十五、Data Quality
+最好尽量自动化</h1>
+<p>每次准备发布新 Dataset：</p>
+<p>自动运行：</p>
+<pre class="text"><code>Schema Check
+      ↓
+Missing Value Check
+      ↓
+Duplicate Check
+      ↓
+Split Integrity Check
+      ↓
+Leakage Check
+      ↓
+Label Logic Check
+      ↓
+Distribution Report
+      ↓
+Hard Case Coverage
+      ↓
+Generate Quality Report</code></pre>
+<p>这就像软件里的：</p>
+<h1 id="ci">CI</h1>
+<h2 id="continuous-integration-持续集成">Continuous Integration /
+持续集成</h2>
+<p>但我们这里可以理解成：</p>
+<blockquote>
+<p><strong>每次发数据版本之前自动体检。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十六所以高质量-dataset-pipeline-不应该靠人记得检查">三十六、所以高质量
+Dataset Pipeline 不应该靠“人记得检查”</h1>
+<p>而应该：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mo>→</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ImportantCheck
+\rightarrow
+AutomatedCheck
+}
+</annotation></semantics></math></p>
+<p>能自动化的：</p>
+<blockquote>
+<p>尽量自动化。</p>
+</blockquote>
+<p>不能自动判断的：</p>
+<blockquote>
+<p>明确进入人工 Review。</p>
+</blockquote>
+<hr />
+<h1 id="三十七什么必须人工">三十七、什么必须人工？</h1>
+<p>例如：</p>
+<pre class="text"><code>专家判断是否合理
+Hard Case是否真的成立
+法规证据是否适用
+某个Boundary Case的裁决</code></pre>
+<p>这些：</p>
+<blockquote>
+<p>不能因为追求自动化而假装机器已经解决。</p>
+</blockquote>
+<hr />
+<h1
+id="三十八所以最终质量控制应该是">三十八、所以最终质量控制应该是</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>e</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AutomatedValidation
++
+ExpertReview
+}
+</annotation></semantics></math></p>
+<p>这和第 7 阶段的：</p>
+<pre class="text"><code>Automation + Governance</code></pre>
+<p>其实是一脉相承的。</p>
+<hr />
+<h1
+id="三十九现在设计第一版-datasetqualityreport_v0.1">三十九、现在设计第一版
+<code>DatasetQualityReport_V0.1</code></h1>
+<p>概念上可以有：</p>
+<pre class="text"><code>Dataset Identity
+数据集身份
+
+Volume
+数据规模
+
+Integrity
+完整性
+
+Schema Validity
+结构合法性
+
+Dedup Statistics
+去重统计
+
+Split Statistics
+切分统计
+
+Leakage Audit
+泄漏审计
+
+Annotation Quality
+标注质量
+
+Hard Case Coverage
+难例覆盖
+
+Known Limitations
+已知限制
+
+Release Decision
+发布结论</code></pre>
+<p>不需要写成 100 页。</p>
+<p>核心是：</p>
+<blockquote>
+<p>能支持工程决策。</p>
+</blockquote>
+<hr />
+<h1 id="四十例如一份极简报告可以是">四十、例如一份极简报告可以是</h1>
+<pre class="text"><code>ProcurementDataset_V0.1
+
+Projects:
+10,000
+
+Clauses:
+412,806
+
+Required Field Completeness:
+99.97%
+
+Cross-field Validation Failures:
+0
+
+Train/Test Project Overlap:
+0
+
+Exact Duplicate Cross-split:
+0
+
+risk_present Expert Agreement:
+92%
+
+Hard Negative:
+8,214
+
+Hard Positive:
+3,127
+
+Boundary Cases:
+2,806
+
+Critical Leakage:
+0
+
+Known Limitation:
+Scoring-rule hard positives underrepresented
+
+Release Decision:
+PASS WITH KNOWN LIMITATIONS</code></pre>
+<p>这已经比一句：</p>
+<blockquote>
+<p>“数据质量很好。”</p>
+</blockquote>
+<p>强太多。</p>
+<hr />
+<h1 id="四十一现在看一个典型反例">四十一、现在看一个典型反例</h1>
+<p>团队把 Dataset 发到服务器：</p>
+<pre class="text"><code>dataset_new/</code></pre>
+<p>一个月后：</p>
+<pre class="text"><code>dataset_new2/</code></pre>
+<p>后来：</p>
+<pre class="text"><code>dataset_final/</code></pre>
+<p>再后来：</p>
+<pre class="text"><code>dataset_final_fix/</code></pre>
+<p>最后：</p>
+<pre class="text"><code>dataset_final_fix_0822_new/</code></pre>
+<p>看到这种文件名：</p>
+<blockquote>
+<p>基本可以确定版本治理已经失控。</p>
+</blockquote>
+<hr />
+<h1 id="四十二另一个反例">四十二、另一个反例</h1>
+<p>每次训练前：</p>
+<blockquote>
+<p>临时重新 Random Split。</p>
+</blockquote>
+<p>结果每个模型：</p>
+<blockquote>
+<p>都考不同的 Test。</p>
+</blockquote>
+<p>即使 Dataset 文件相同：</p>
+<blockquote>
+<p>Benchmark 版本也不同。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>split_version</code></pre>
+<p>必须正式进入 Manifest。</p>
+<hr />
+<h1 id="四十三另一个反例">四十三、另一个反例</h1>
+<p>团队记录：</p>
+<pre class="text"><code>Data Version = 3</code></pre>
+<p>却没有说明：</p>
+<blockquote>
+<p>Version 2 到 Version 3 到底改了什么。</p>
+</blockquote>
+<p>那么版本号：</p>
+<blockquote>
+<p>几乎只是装饰。</p>
+</blockquote>
+<p>所以 Version 必须配：</p>
+<h1 id="change-log-1">Change Log</h1>
+<hr />
+<h1 id="四十四再一个反例">四十四、再一个反例</h1>
+<p>Quality Report 只有：</p>
+<pre class="text"><code>Total Samples = 2,000,000</code></pre>
+<p>这不是质量指标。</p>
+<p>它只是：</p>
+<h1 id="quantity-1">Quantity</h1>
+<h2 id="数量">数量</h2>
+<p>千万不要把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Quantity
+}
+</annotation></semantics></math></p>
+<p>误当成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Quality
+}
+</annotation></semantics></math></p>
+<p>200 万条高度重复、标签混乱的数据：</p>
+<blockquote>
+<p>可能远不如 20 万条高质量数据。</p>
+</blockquote>
+<hr />
+<h1 id="四十五第-11-阶段真正的专业化升级">四十五、第 11
+阶段真正的专业化升级</h1>
+<p>前十个阶段主要解决：</p>
+<blockquote>
+<p><strong>怎样把数据做好。</strong></p>
+</blockquote>
+<p>第 11 阶段第一次开始解决：</p>
+<blockquote>
+<p><strong>怎样证明它做得好，并且以后还能知道当时是怎么做的。</strong></p>
+</blockquote>
+<p>这是两个完全不同的成熟度层级。</p>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>≠</mo><mi>M</mi><mi>a</mi><mi>n</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodData
+\neq
+ManagedDataProduct
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="四十六真正的数据产品应该同时具备">四十六、真正的数据产品应该同时具备</h1>
+<pre class="text"><code>Identity
+我是谁
+
+Version
+我是第几版
+
+Provenance
+我从哪里来
+
+Reproducibility
+我能不能重建
+
+Quality Evidence
+我凭什么说自己质量合格
+
+Known Limitations
+我有什么明确缺陷</code></pre>
+<p>这六个词基本就是：</p>
+<blockquote>
+<p>Dataset Governance 的核心。</p>
+</blockquote>
+<hr />
+<h1
+id="四十七把今天所有东西压缩成一个最终公式">四十七、把今天所有东西压缩成一个最终公式</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mo>=</mo><mi>F</mi><mi>r</mi><mi>o</mi><mi>z</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>n</mi><mi>a</mi><mi>p</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>t</mi><mo>+</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>P</mi><mi>i</mi><mi>p</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>+</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>+</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrustedDataset
+=
+FrozenSnapshot
++
+VersionedPipeline
++
+TraceableLineage
++
+QualityReport
++
+ReleaseGate
+}
+</annotation></semantics></math></p>
+<p>中文就是：</p>
+<blockquote>
+<p><strong>可信 Dataset = 冻结的数据快照 + 明确版本的处理流程 +
+可追溯的数据血缘 + 可解释的质量报告 + 发布门槛。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四十八本阶段最后再强化一次-5-个核心心智模型">四十八、本阶段最后再强化一次
+5 个核心心智模型</h1>
+<p>如果过一周以后，第 11 阶段你只记得五句话，我希望是：</p>
+<blockquote>
+<p><strong>Dataset Version
+不是文件夹名字，而是一个不能悄悄变化的数据快照。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>可复现不是保存
+CSV，而是保存数据、代码、配置和所有关键版本。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>任何派生数据最好都能沿着 Lineage
+一路追到原始文件和专家判断。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>Dataset Quality
+不是一个总分，而是完整性、合法性、独立性、标注质量、泄漏安全和覆盖性的组合。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>发布 Dataset 不是导出文件，而是通过一套 Release Gate
+后正式冻结并记录。</strong></p>
+</blockquote>
+<p>这五句，就是第 11 阶段的骨架。</p>
+<hr />
+<h1
+id="四十九本阶段两个最终工程产物">四十九、本阶段两个最终工程产物</h1>
+<p>第一个：</p>
+<h1 id="datasetmanifest_v0.1-2"><code>DatasetManifest_V0.1</code></h1>
+<p>它回答：</p>
+<pre class="text"><code>这是什么数据集？
+哪一版？
+包含什么？
+用了什么处理版本？
+用了什么Annotation Schema？
+用了什么Split？
+文件Hash是什么？</code></pre>
+<p>第二个：</p>
+<h1
+id="datasetqualityreport_v0.1-2"><code>DatasetQualityReport_V0.1</code></h1>
+<p>它回答：</p>
+<pre class="text"><code>数据完整吗？
+Schema合法吗？
+重复控制怎么样？
+专家标注可靠吗？
+Train/Test泄漏了吗？
+Hard Case够不够？
+哪些地方仍然不足？
+是否允许发布？</code></pre>
+<p>两者合起来：</p>
+<pre class="text"><code>Manifest
+=
+“我是谁”
+
+Quality Report
+=
+“我怎么样”</code></pre>
+<p>这就是今天最简单的记忆方式。</p>
+<hr />
+<h1 id="五十本阶段掌握测试">五十、本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Dataset Version
+不能只是一个文件夹名字；什么叫 Immutable Snapshot（不可变快照）；为什么
+Raw File 没变化，Dataset 仍然可能因为 Parser 更新而变化；Dataset
+Version、Parser Version、Schema Version、Split Version
+为什么必须分开；什么叫 Data Lineage（数据血缘）；为什么 Gold Label
+最好能够一路追到原始 PDF；Lineage 为什么同时服务
+Debug、影响分析和重建；Hash 能证明什么、不能证明什么；Dataset Manifest
+的核心作用是什么；Manifest 和 Quality Report 有什么区别；为什么 Dataset
+Quality 必须是多维度的；Integrity、Validity、Uniqueness、Annotation
+Quality、Leakage Safety、Coverage
+分别在检查什么；为什么总样本数不能代表质量；为什么 Hard Case Coverage
+必须进入质量报告；什么叫 Release Gate；为什么 Critical Leakage
+通常应该成为发布阻断条件；什么叫 Known Limitation；为什么 Dataset
+可以持续增长，但 Benchmark
+不应该随便改变；为什么发现旧版错误时不应该悄悄覆盖历史数据；为什么数据工程越来越像软件工程；什么叫
+Data
+Contract；为什么重要的数据质量检查应该尽量自动化；以及为什么最终发布的数据产品必须同时具备版本、血缘、质量证据和发布记录。</p>
+<p>如果这些都能自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>11</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第11阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最终只记一句话-1">本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>真正专业的数据集不是一个 <code>train.jsonl</code>
+文件，而是一个有明确身份、有冻结版本、有完整血缘、有可复现处理流程、有质量证据、有已知限制、并经过正式发布门槛的数据产品；只有做到这一点，模型半年以后取得的每一个分数才仍然能够被解释、复现和审计。</strong></p>
+</blockquote>
+<p>最后只留这张图：</p>
+<pre class="text"><code>              Raw Procurement Files
+                     原始采购文件
+                          │
+                          ▼
+                  Versioned Pipeline
+                  有版本的数据流水线
+                          │
+          ┌───────────────┼───────────────┐
+          ▼               ▼               ▼
+       Parser          Cleaning         Dedup
+        解析              清洗             去重
+          │               │               │
+          └───────────────┼───────────────┘
+                          ▼
+                     Annotation
+                       专家标注
+                          │
+                          ▼
+                    Split / Audit
+                    切分与泄漏审计
+                          │
+                          ▼
+                   Frozen Snapshot
+                     冻结数据快照
+                          │
+            ┌─────────────┴─────────────┐
+            ▼                           ▼
+   DatasetManifest_V0.1       DatasetQualityReport_V0.1
+       身份与血缘                     质量证据
+            │                           │
+            └─────────────┬─────────────┘
+                          ▼
+                 Release Gate
+                   发布质量门槛
+                          │
+                          ▼
+               ProcurementDataset
+                  可信数据产品</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-12-阶段">下一阶段：第四课 · 第 12 阶段</h1>
+<h1 id="正式组装-procurementdataset_v0.1">正式组装
+<code>ProcurementDataset_V0.1</code></h1>
+<p>第 12 阶段是第四课最后一个阶段。</p>
+<p>它不再新增一个孤立的数据概念，而是把前 11
+阶段真正合并成一套<strong>可以交给第五课 SFT + LoRA/QLoRA
+使用的数据产品</strong>：</p>
+<pre class="text"><code>Task Schema
++
+ParsedDocument
++
+ClauseUnit
++
+CleanClause
++
+Dedup
++
+Train/Val/Test
++
+Leakage Audit
++
+Annotation Schema
++
+Adjudicated Gold
++
+Hard Case
++
+Manifest / Quality Report
+        ↓
+ProcurementDataset_V0.1</code></pre>
+<p>第 12 阶段最重要的问题会变成：</p>
+<blockquote>
+<p><strong>一个真正可以交付的政府采购训练数据集，目录到底长什么样？Train、Validation、Test、Gold、Hard
+Case、Manifest、Schema、Quality Report
+应该怎样组织？哪些文件第五课真正拿去训练，哪些绝对不能喂给模型？</strong></p>
+</blockquote>
+<p>最后我们会得到第四课真正的工程交付物：</p>
+<h1
+id="procurementdataset_v0.1-1"><code>ProcurementDataset_V0.1</code></h1>
+<p>到这里，第四课就从“讲数据工程”正式结束为：</p>
+<blockquote>
+<p><strong>做出第一版政府采购 AI 数据资产。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage10.html">← 第 10 阶段</a><a class="btn" href="stage12.html">第 12 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

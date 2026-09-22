@@ -1,0 +1,862 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第2阶段：Knowledge Base：法规、采购文件与知识版本怎样进入 RAG？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，RAG Knowledge Base 不是 PDF 文件夹，而是“正文 + Metadata + Provenance + Version + Validity”组成的可治理知识系统。</li><li>第二，每一份知识都必须能够从 Chunk 追溯到 Document，再追溯到原始 Source；否则 Citation 只是表面上有链接，并不是真正可审计。</li><li>第三，政府采购知识天然带时间和辖区条件，所以 effective_from / effective_to / jurisdiction / validity_status 必须成为一等字段。</li></ul></div><h1 id="第六课-第-2-阶段">第六课 · 第 2 阶段</h1>
+<h1 id="knowledge-base法规采购文件与知识版本怎样进入-rag-1">Knowledge
+Base：法规、采购文件与知识版本怎样进入 RAG？</h1>
+<h2
+id="在研究怎么检索以前先保证我们检索的东西是真的有效的能追溯的">在研究“怎么检索”以前，先保证我们检索的东西是真的、有效的、能追溯的</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，RAG Knowledge Base 不是 PDF 文件夹，而是“正文 +
+Metadata + Provenance + Version +
+Validity”组成的可治理知识系统。</strong></li>
+<li><strong>第二，每一份知识都必须能够从 Chunk 追溯到
+Document，再追溯到原始 Source；否则 Citation
+只是表面上有链接，并不是真正可审计。</strong></li>
+<li><strong>第三，政府采购知识天然带时间和辖区条件，所以 effective_from
+/ effective_to / jurisdiction / validity_status
+必须成为一等字段。</strong></li>
+<li><strong>第四，新版本不能简单覆盖旧版本；真正的版本管理要保留
+supersedes / superseded_by
+等关系，因为最新版本不一定是历史问题的正确版本。</strong></li>
+<li><strong>第五，Metadata、去重、有效性审查和来源验证不是 Embedding
+之前的杂活，它们直接决定未来 Retriever
+有没有机会找到正确证据。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="odd">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="even">
+<td><code>Reranker</code></td>
+<td>重排器：对初筛候选做更精细相关性排序</td>
+</tr>
+<tr class="odd">
+<td><code>Chunking</code></td>
+<td>分块：把长文档切成适合检索和上下文组装的片段</td>
+</tr>
+<tr class="even">
+<td><code>Deduplication</code></td>
+<td>去重：识别并处理完全重复或近似重复的数据</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 1 阶段我们已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>A</mi><mi>d</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>o</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAG
+=
+Retrieve\ Evidence
++
+Add\ Evidence\ to\ Context
++
+Generate
+}
+</annotation></semantics></math></p>
+<p>这里有一个特别容易被忽略的前提：</p>
+<blockquote>
+<p><strong>Evidence 本身必须可信。</strong></p>
+</blockquote>
+<p>如果知识库里装的是：</p>
+<pre class="text"><code>过期法规
++
+来源不明转载
++
+同一文件的三个版本
++
+已经废止但没有标记的条款
++
+解析错位的PDF文本</code></pre>
+<p>那么后面即使：</p>
+<pre class="text"><code>Embedding 很强
+Retriever 很准
+Reranker 很聪明</code></pre>
+<p>也只是在：</p>
+<blockquote>
+<p><strong>更高效地找到错误证据。</strong></p>
+</blockquote>
+<p>所以这一阶段先不碰 Embedding。</p>
+<p>我们真正要建立的是：</p>
+<h1
+id="procurementknowledgebase_v0.1"><code>ProcurementKnowledgeBase_V0.1</code></h1>
+<hr />
+<h2 id="一知识库不是一个放-pdf-的文件夹">一、知识库不是“一个放 PDF
+的文件夹”</h2>
+<p>这是本阶段第一条必须锁死的心智模型。</p>
+<p>最原始的做法可能是：</p>
+<pre class="text"><code>knowledge/
+├── 法规A.pdf
+├── 法规B.pdf
+├── 政策C.docx
+└── 案例D.html</code></pre>
+<p>这叫：</p>
+<blockquote>
+<p>文档集合。</p>
+</blockquote>
+<p>但它还不能称为一个成熟的 RAG Knowledge Base。</p>
+<p>真正的知识库至少要知道：</p>
+<pre class="text"><code>这是什么文件？
+谁发布的？
+什么时候发布？
+什么时候生效？
+适用于哪里？
+当前是否仍有效？
+它是哪一个版本？
+原始来源在哪里？
+解析后的文本来自哪一页？
+有没有后续文件替代它？</code></pre>
+<p>所以更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>M</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KnowledgeBase
+=
+Content
++
+Metadata
++
+Provenance
++
+Version
++
+Validity
+}
+</annotation></semantics></math></p>
+<p>中文就是：</p>
+<blockquote>
+<p><strong>正文 + 元数据 + 来源链 + 版本关系 + 有效性信息。</strong></p>
+</blockquote>
+<hr />
+<h2 id="二先把-source-of-truth-建起来">二、先把 Source of Truth
+建起来</h2>
+<p>对于政府采购 RAG，最危险的一件事就是：</p>
+<blockquote>
+<p>搜到一篇内容看起来很像法规的网页，就直接入库。</p>
+</blockquote>
+<p>我们必须先建立：</p>
+<h1 id="source-of-truth">Source of Truth</h1>
+<h2 id="权威来源原则">权威来源原则</h2>
+<p>一个文档进入正式知识库前，至少应该保留：</p>
+<table>
+<thead>
+<tr class="header">
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>source_id</code></td>
+<td>我们系统内部的唯一来源 ID</td>
+</tr>
+<tr class="even">
+<td><code>source_url</code> / <code>document_id</code></td>
+<td>原始来源位置</td>
+</tr>
+<tr class="odd">
+<td><code>issuer</code></td>
+<td>发布主体</td>
+</tr>
+<tr class="even">
+<td><code>title</code></td>
+<td>文件正式标题</td>
+</tr>
+<tr class="odd">
+<td><code>document_number</code></td>
+<td>文号，如果存在</td>
+</tr>
+<tr class="even">
+<td><code>publication_date</code></td>
+<td>发布日期</td>
+</tr>
+<tr class="odd">
+<td><code>retrieved_at</code></td>
+<td>我们抓取 / 入库时间</td>
+</tr>
+<tr class="even">
+<td><code>source_hash</code></td>
+<td>原始文件内容哈希</td>
+</tr>
+<tr class="odd">
+<td><code>source_type</code></td>
+<td>法律、规章、政策、采购文件、案例等</td>
+</tr>
+</tbody>
+</table>
+<p>其中最重要的一条不是标题。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>我们能不能从当前知识条目一路追溯回原始来源。</strong></p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="provenance">Provenance</h1>
+<h2 id="数据来源链-证据溯源">数据来源链 / 证据溯源</h2>
+<p>以后模型引用某一条内容时，我们最终要能够回答：</p>
+<blockquote>
+<p>这段文字到底是从哪份原始文件来的？</p>
+</blockquote>
+<hr />
+<h2 id="三document-identity同名文件不一定是同一份知识">三、Document
+Identity：同名文件不一定是同一份知识</h2>
+<p>假设我们看到：</p>
+<pre class="text"><code>《某某政府采购管理办法》</code></pre>
+<p>不能只拿标题当主键。</p>
+<p>因为可能存在：</p>
+<pre class="text"><code>2019版
+2022修订版
+2025修订版</code></pre>
+<p>甚至可能：</p>
+<pre class="text"><code>不同地区
+标题非常相似</code></pre>
+<p>所以真正的文档身份更接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>I</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>e</mi><mi>r</mi><mo>,</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mo>,</mo><mi>T</mi><mi>i</mi><mi>t</mi><mi>l</mi><mi>e</mi><mo>,</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>,</mo><mi>J</mi><mi>u</mi><mi>r</mi><mi>i</mi><mi>s</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+DocumentIdentity
+=
+(
+Issuer,
+DocumentNumber,
+Title,
+Version,
+Jurisdiction
+)
+</annotation></semantics></math></p>
+<p>工程上不一定真的用这个 Tuple 当数据库主键，</p>
+<p>但心智模型必须如此。</p>
+<p>否则最危险的情况是：</p>
+<blockquote>
+<p>新版本入库时直接覆盖旧版本。</p>
+</blockquote>
+<p>然后以后有人问：</p>
+<blockquote>
+<p>“2022 年当时适用什么规定？”</p>
+</blockquote>
+<p>知识库已经无法回答。</p>
+<hr />
+<h2
+id="四时间是政府采购知识库的一等公民">四、时间是政府采购知识库的一等公民</h2>
+<p>RAG 中很多知识库只保存：</p>
+<pre class="text"><code>title
+text</code></pre>
+<p>政府采购场景远远不够。</p>
+<p>我们至少需要区分：</p>
+<pre class="text"><code>publication_date
+effective_from
+effective_to
+repeal_date
+retrieved_at</code></pre>
+<p>因为这些时间不是一回事。</p>
+<p>例如：</p>
+<pre class="text"><code>2026-01-01
+发布
+
+2026-03-01
+正式生效</code></pre>
+<p>那么在：</p>
+<pre class="text"><code>2026-02-15</code></pre>
+<p>做历史判断时，</p>
+<p>不能因为文件已经发布：</p>
+<blockquote>
+<p>就默认它已经生效。</p>
+</blockquote>
+<p>所以知识查询实际上经常包含一个隐含条件：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>必</mi><mi>须</mi><mi>满</mi><mi>足</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>A</mi><mi>t</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Evidence
+必须满足
+ValidAt(QueryTime)
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>证据在用户所问的那个时间点是否有效。</strong></p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="temporal-retrieval">Temporal Retrieval</h1>
+<h2 id="时间有效性检索">时间有效性检索</h2>
+<p>它会在后面 Metadata Filter 阶段变得非常重要。</p>
+<hr />
+<h2
+id="五jurisdiction正确法规放错地区一样是错误证据">五、Jurisdiction：正确法规放错地区，一样是错误证据</h2>
+<p>政府采购知识还天然带有：</p>
+<h1 id="jurisdiction">Jurisdiction</h1>
+<h2 id="适用辖区">适用辖区</h2>
+<p>例如：</p>
+<pre class="text"><code>全国
+某省
+某市
+某区县
+特定系统
+特定采购主体</code></pre>
+<p>所以文档至少应该有类似：</p>
+<pre class="text"><code>jurisdiction_level
+jurisdiction_code
+jurisdiction_name</code></pre>
+<p>但这里有一个重要原则：</p>
+<blockquote>
+<p><strong>不要仅根据标题猜适用范围。</strong></p>
+</blockquote>
+<p>真正的适用范围应该来自：</p>
+<pre class="text"><code>原文件内容
+发布主体
+正式元数据
+人工审核</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>“某省发布”</p>
+</blockquote>
+<p>并不自动等于：</p>
+<blockquote>
+<p>文件所有条款只适用于某省所有主体。</p>
+</blockquote>
+<p>所以 Metadata 应该记录：</p>
+<blockquote>
+<p>已验证的信息，</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>系统自己脑补的信息。</p>
+</blockquote>
+<hr />
+<h2
+id="六authority-document-type来源层级必须记录但不要让模型只按名字大小判断效力">六、Authority
+/ Document
+Type：来源层级必须记录，但不要让模型只按“名字大小”判断效力</h2>
+<p>知识库里可能同时存在：</p>
+<pre class="text"><code>法律
+行政法规
+部门规章
+规范性文件
+政策解释
+地方文件
+采购文件
+投诉处理案例
+专家文章
+内部审查规则</code></pre>
+<p>这些内容：</p>
+<blockquote>
+<p>不能全部当成同一种证据。</p>
+</blockquote>
+<p>所以应该记录：</p>
+<pre class="text"><code>document_type
+issuer
+authority_level
+official_status</code></pre>
+<p>但不要做一个危险的简化：</p>
+<pre class="text"><code>document_type = 法律
+→ 永远直接覆盖其他所有内容</code></pre>
+<p>真实规范适用可能还涉及：</p>
+<pre class="text"><code>特别法 / 一般法
+新旧规则
+适用对象
+适用区域
+授权关系
+具体条款</code></pre>
+<p>RAG 系统应该做的是：</p>
+<blockquote>
+<p><strong>保留足够元数据，让后续检索、排序和业务规则有判断材料。</strong></p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>在入库阶段擅自做完所有法律解释。</p>
+</blockquote>
+<hr />
+<h2
+id="七versioning新版不是把旧版删掉而是建立版本关系">七、Versioning：新版不是把旧版删掉，而是建立“版本关系”</h2>
+<p>这是本阶段最重要的工程点之一。</p>
+<p>假设：</p>
+<pre class="text"><code>Document V1
+2019版</code></pre>
+<p>后来出现：</p>
+<pre class="text"><code>Document V2
+2023修订版</code></pre>
+<p>再后来：</p>
+<pre class="text"><code>Document V3
+2026修订版</code></pre>
+<p>一个成熟知识库更应该保存：</p>
+<pre class="text"><code>V1
+│
+└── superseded_by → V2
+                       │
+                       └── superseded_by → V3</code></pre>
+<p>并记录：</p>
+<pre class="text"><code>version_id
+effective_from
+effective_to
+status
+supersedes
+superseded_by</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>V1
+删除
+
+V2
+删除
+
+只剩V3</code></pre>
+<p>为什么？</p>
+<p>因为用户可能问：</p>
+<blockquote>
+<p>“2021 年某项目当时依据什么规则？”</p>
+</blockquote>
+<p>这时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+LatestVersion
+</annotation></semantics></math></p>
+<p>不一定等于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+CorrectVersionForQuestion
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>≠</mo><mi>H</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>A</mi><mi>p</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Latest
+\neq
+HistoricallyApplicable
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="八知识状态不要只设计成-validtruefalse">八、知识状态不要只设计成
+<code>valid=true/false</code></h2>
+<p>真实世界没有那么干净。</p>
+<p>有些文档我们可能确认：</p>
+<pre class="text"><code>current</code></pre>
+<p>有些明确：</p>
+<pre class="text"><code>repealed</code></pre>
+<p>有些可能：</p>
+<pre class="text"><code>superseded</code></pre>
+<p>还有些来源状态不清楚：</p>
+<pre class="text"><code>unknown</code></pre>
+<p>所以工程上更稳妥的是使用状态机，而不是一个布尔值。</p>
+<p>例如概念上：</p>
+<pre class="text"><code>current
+superseded
+repealed
+expired
+draft
+unknown</code></pre>
+<p>特别重要的是：</p>
+<blockquote>
+<p><strong>Unknown 不是 False。</strong></p>
+</blockquote>
+<p>如果系统无法确认一份文件当前是否有效，</p>
+<p>正确做法应该是：</p>
+<pre class="text"><code>validity_status = unknown</code></pre>
+<p>而不是系统偷偷猜：</p>
+<pre class="text"><code>valid = true</code></pre>
+<p>这和第五课里的 <code>needs_review</code> 是同一种思想：</p>
+<blockquote>
+<p><strong>不知道，就是不知道。</strong></p>
+</blockquote>
+<hr />
+<h2 id="九document-不等于未来的-retrieval-unit">九、Document
+不等于未来的 Retrieval Unit</h2>
+<p>现在我们有一份 80 页法规。</p>
+<p>它在 Knowledge Base 中是一个：</p>
+<h1 id="document">Document</h1>
+<p>但后面真正检索时，</p>
+<p>我们不太可能每次把 80 页全部塞给模型。</p>
+<p>后面第 3 阶段会把它拆成：</p>
+<h1 id="chunk">Chunk</h1>
+<p>也就是检索单元。</p>
+<p>所以现在就要把层级设计清楚：</p>
+<pre class="text"><code>Source
+  ↓
+Document
+  ↓
+Section / Article / Paragraph
+  ↓
+Chunk</code></pre>
+<p>例如：</p>
+<pre class="text"><code>document_id = DOC_001
+
+第十二条
+article_id = DOC_001_A12
+
+Chunk 1
+chunk_id = DOC_001_A12_C01</code></pre>
+<p>于是一个 Chunk 后面即使被单独检索出来，</p>
+<p>仍然能够一路追溯：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mo>→</mo><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>l</mi><mi>e</mi><mo>→</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Chunk
+\rightarrow
+Article
+\rightarrow
+Document
+\rightarrow
+Source
+</annotation></semantics></math></p>
+<p>这就是：</p>
+<h1 id="traceability-chain">Traceability Chain</h1>
+<h2 id="可追溯链">可追溯链</h2>
+<hr />
+<h2 id="十metadata-不是附加信息而是未来检索系统的一部分">十、Metadata
+不是“附加信息”，而是未来检索系统的一部分</h2>
+<p>很多人会认为：</p>
+<blockquote>
+<p>Embedding 才是真正的检索技术。</p>
+</blockquote>
+<p>Metadata 只是：</p>
+<blockquote>
+<p>顺手存一下。</p>
+</blockquote>
+<p>这是错的。</p>
+<p>以后用户问：</p>
+<blockquote>
+<p>“按照 2025 年以后广东省现行的政府采购规定……”</p>
+</blockquote>
+<p>我们完全可以先做：</p>
+<pre class="text"><code>jurisdiction = 广东省
+effective_time &lt;= query_time
+validity_status = current</code></pre>
+<p>再在剩下的知识里做语义检索。</p>
+<p>这比：</p>
+<blockquote>
+<p>让 Embedding 在全国所有年代所有版本中瞎找</p>
+</blockquote>
+<p>可靠得多。</p>
+<p>因此未来 Retriever 实际上可能是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>t</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>L</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>D</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MetadataFilter
++
+LexicalRetrieval
++
+DenseRetrieval
++
+Reranking
+}
+</annotation></semantics></math></p>
+<p>所以今天设计 Metadata：</p>
+<blockquote>
+<p>实际是在给后面的 Retrieval 打地基。</p>
+</blockquote>
+<hr />
+<h2
+id="十一去重不能只看文件名一样不一样">十一、去重不能只看“文件名一样不一样”</h2>
+<p>知识库很容易出现：</p>
+<pre class="text"><code>官方网站 HTML
+官方 PDF
+转载网页
+本地下载 PDF
+OCR 文本</code></pre>
+<p>内容可能：</p>
+<blockquote>
+<p>实际上是同一份文件。</p>
+</blockquote>
+<p>如果全部当成独立知识：</p>
+<pre class="text"><code>Retriever Top-5</code></pre>
+<p>可能返回：</p>
+<pre class="text"><code>同一法规
+同一法规
+同一法规
+同一法规
+另一个法规</code></pre>
+<p>这叫：</p>
+<h1 id="retrieval-diversity-collapse">Retrieval Diversity Collapse</h1>
+<h2 id="检索多样性塌缩">检索多样性塌缩</h2>
+<p>第一版去重至少要考虑两类。</p>
+<p>精确重复：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>a</mi><mi>s</mi><mi>h</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>A</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>H</mi><mi>a</mi><mi>s</mi><mi>h</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Hash(A)=Hash(B)
+</annotation></semantics></math></p>
+<p>可以直接识别。</p>
+<p>近重复：</p>
+<blockquote>
+<p>文本略有排版差异、页眉页脚差异、HTML/PDF 转换差异。</p>
+</blockquote>
+<p>则需要：</p>
+<pre class="text"><code>Normalized Text
++
+Near-Duplicate Detection</code></pre>
+<p>但要特别小心：</p>
+<blockquote>
+<p><strong>两个版本高度相似，不代表它们应该被去重。</strong></p>
+</blockquote>
+<p>例如新版只修改了第 12 条一个词，</p>
+<p>这一个词可能就是最关键的法律变化。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>D</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Deduplication
+\neq
+VersionDeletion
+}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="十二最终的入库流水线应该是什么">十二、最终的入库流水线应该是什么？</h2>
+<p>现在把这一阶段压成一条真正可执行的链：</p>
+<pre class="text"><code>Raw Source
+    │
+    ▼
+Source Verification
+确认来源
+    │
+    ▼
+Acquire Original
+保存原文件
+    │
+    ▼
+Hash / Identity
+建立唯一身份
+    │
+    ▼
+Parse
+提取正文和结构
+    │
+    ▼
+Metadata Extraction
+标题 / 文号 / 发布机关 / 日期 / 辖区
+    │
+    ▼
+Validity &amp; Version Review
+有效性 / 版本关系
+    │
+    ▼
+Deduplication
+精确重复 / 近重复
+    │
+    ▼
+Structure Preservation
+章 / 节 / 条 / 款 / 页
+    │
+    ▼
+Knowledge Document
+    │
+    ▼
+Ready for Chunking</code></pre>
+<p>注意最后一步只是：</p>
+<h1 id="ready-for-chunking">Ready for Chunking</h1>
+<p>还没有：</p>
+<pre class="text"><code>Embedding
+Vector Database</code></pre>
+<p>因为这些是后面的阶段。</p>
+<p>这一步做好以后，我们得到的是：</p>
+<blockquote>
+<p><strong>干净、可追溯、版本明确的知识资产。</strong></p>
+</blockquote>
+<hr />
+<h2
+id="十三本阶段工程产物procurementknowledgebase_v0.1">十三、本阶段工程产物：<code>ProcurementKnowledgeBase_V0.1</code></h2>
+<p>第一版 Document Record 可以抽象成：</p>
+<div class="sourceCode" id="cb64"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb64-2"><a href="#cb64-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC_000001&quot;</span><span class="fu">,</span></span>
+<span id="cb64-3"><a href="#cb64-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;某政府采购规范性文件&quot;</span><span class="fu">,</span></span>
+<span id="cb64-4"><a href="#cb64-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_number&quot;</span><span class="fu">:</span> <span class="st">&quot;示例文号&quot;</span><span class="fu">,</span></span>
+<span id="cb64-5"><a href="#cb64-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;issuer&quot;</span><span class="fu">:</span> <span class="st">&quot;示例发布机关&quot;</span><span class="fu">,</span></span>
+<span id="cb64-6"><a href="#cb64-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_type&quot;</span><span class="fu">:</span> <span class="st">&quot;normative_document&quot;</span><span class="fu">,</span></span>
+<span id="cb64-7"><a href="#cb64-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-8"><a href="#cb64-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb64-9"><a href="#cb64-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;level&quot;</span><span class="fu">:</span> <span class="st">&quot;province&quot;</span><span class="fu">,</span></span>
+<span id="cb64-10"><a href="#cb64-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;code&quot;</span><span class="fu">:</span> <span class="st">&quot;example&quot;</span><span class="fu">,</span></span>
+<span id="cb64-11"><a href="#cb64-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;示例地区&quot;</span></span>
+<span id="cb64-12"><a href="#cb64-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb64-13"><a href="#cb64-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-14"><a href="#cb64-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;publication_date&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-01-01&quot;</span><span class="fu">,</span></span>
+<span id="cb64-15"><a href="#cb64-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;effective_from&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-03-01&quot;</span><span class="fu">,</span></span>
+<span id="cb64-16"><a href="#cb64-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;effective_to&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">,</span></span>
+<span id="cb64-17"><a href="#cb64-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-18"><a href="#cb64-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;validity_status&quot;</span><span class="fu">:</span> <span class="st">&quot;current&quot;</span><span class="fu">,</span></span>
+<span id="cb64-19"><a href="#cb64-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-20"><a href="#cb64-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version_id&quot;</span><span class="fu">:</span> <span class="st">&quot;V3&quot;</span><span class="fu">,</span></span>
+<span id="cb64-21"><a href="#cb64-21" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;supersedes&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC_000001_V2&quot;</span><span class="fu">,</span></span>
+<span id="cb64-22"><a href="#cb64-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;superseded_by&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">,</span></span>
+<span id="cb64-23"><a href="#cb64-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-24"><a href="#cb64-24" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_url&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb64-25"><a href="#cb64-25" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;retrieved_at&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb64-26"><a href="#cb64-26" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_hash&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb64-27"><a href="#cb64-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-28"><a href="#cb64-28" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;raw_file_path&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb64-29"><a href="#cb64-29" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parsed_text_path&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb64-30"><a href="#cb64-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-31"><a href="#cb64-31" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;review_status&quot;</span><span class="fu">:</span> <span class="st">&quot;verified&quot;</span></span>
+<span id="cb64-32"><a href="#cb64-32" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这里真正重要的不是 JSON 长什么样。</p>
+<p>而是四个问题都有答案：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>o</mi><mo>+</mo><mi>W</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mo>+</mo><mi>W</mi><mi>h</mi><mi>i</mi><mi>c</mi><mi>h</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Who
++
+Where
++
+When
++
+WhichVersion
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>谁发布、适用哪里、什么时候有效、到底哪个版本。</strong></p>
+</blockquote>
+<hr />
+<h2 id="十四把本阶段压成最精准的-5-句话-1">十四、把本阶段压成最精准的 5
+句话</h2>
+<blockquote>
+<p><strong>第一，RAG Knowledge Base 不是 PDF 文件夹，而是“正文 +
+Metadata + Provenance + Version +
+Validity”组成的可治理知识系统。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，每一份知识都必须能够从 Chunk 追溯到
+Document，再追溯到原始 Source；否则 Citation
+只是表面上有链接，并不是真正可审计。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，政府采购知识天然带时间和辖区条件，所以
+<code>effective_from / effective_to / jurisdiction / validity_status</code>
+必须成为一等字段。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，新版本不能简单覆盖旧版本；真正的版本管理要保留
+<code>supersedes / superseded_by</code>
+等关系，因为最新版本不一定是历史问题的正确版本。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Metadata、去重、有效性审查和来源验证不是 Embedding
+之前的杂活，它们直接决定未来 Retriever
+有没有机会找到正确证据。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-1">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         Raw Documents
+                              │
+                              ▼
+                      Source Verification
+                              │
+                              ▼
+                    Identity + Provenance
+                              │
+                              ▼
+             ┌────────────────┼────────────────┐
+             ▼                ▼                ▼
+          Version           Time          Jurisdiction
+             │                │                │
+             └────────────────┼────────────────┘
+                              ▼
+                        Validity State
+                              │
+                              ▼
+                         Parsed Text
+                              │
+                              ▼
+                    Document Structure
+                              │
+                              ▼
+                       Metadata Record
+                              │
+                              ▼
+                ProcurementKnowledgeBase_V0.1
+                              │
+                              ▼
+                     Ready for Chunking</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>检索系统真正的第一步不是向量化，而是先让每一条知识都有身份证、时间线、适用范围和来源链。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-2-阶段掌握测试">第六课 · 第 2 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么一个 PDF 文件夹还不能称为成熟
+Knowledge Base；什么是 Provenance；为什么标题不能单独作为 Document
+Identity；<code>publication_date</code>、<code>effective_from</code>、<code>effective_to</code>
+和 <code>retrieved_at</code> 为什么不是同一个时间；为什么 Jurisdiction
+必须作为 Metadata；为什么新版不能直接覆盖旧版；为什么
+<code>latest</code> 不等于 <code>historically applicable</code>；为什么
+<code>validity_status</code> 不应该只有
+true/false；Document、Article、Chunk 为什么要分层；为什么 Metadata
+Filter 会直接影响后面的
+Retrieval；为什么精确重复和版本更新不能混为一谈；以及为什么今天还没有进入
+Embedding，但其实已经决定了未来 RAG 的大量上限。</p>
+<p>如果这些能够自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>2</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第2阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第六课-第-3-阶段">下一阶段：第六课 · 第 3 阶段</h1>
+<h1
+id="chunking长文档到底应该怎样切">Chunking：长文档到底应该怎样切？</h1>
+<p>下一阶段我们终于开始碰真正的“检索单元”。</p>
+<p>核心问题会从：</p>
+<blockquote>
+<p><strong>这份文档是谁、什么时候有效？</strong></p>
+</blockquote>
+<p>转向：</p>
+<blockquote>
+<p><strong>80 页法规到底应该切成什么粒度，Retriever
+才既找得准，又不会把完整法律语义切碎？</strong></p>
+</blockquote>
+<p>我们会正式比较：</p>
+<pre class="text"><code>Fixed-size Chunking
+Paragraph Chunking
+Article-aware Chunking
+Structure-aware Chunking
+Overlap
+Parent-Child Retrieval</code></pre>
+<p>并建立下一件工程产物：</p>
+<h1
+id="procurementchunkingpolicy_v0.1"><code>ProcurementChunkingPolicy_V0.1</code></h1>
+<p>因为到了第 3 阶段，我们才真正开始把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Document
+</annotation></semantics></math></p>
+<p>变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+RetrievableKnowledgeUnit
+</annotation></semantics></math></p>
+<p>也就是后面 Embedding 和 Vector Search 真正要处理的对象。</p>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

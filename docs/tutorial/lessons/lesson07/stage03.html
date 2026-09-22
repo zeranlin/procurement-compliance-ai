@@ -1,0 +1,1025 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第3阶段：Structured Output：JSON Schema、Validation 与可靠参数生成</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第3阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，Structured Output 的目标不是让模型输出“像 JSON 的文本”，而是得到 Parseable + SchemaValid + SemanticallyValid + PolicyValid 的可执行参数。</li><li>第二，合法 JSON 只解决语法层；JSON Schema 继续约束 Required、Type、Enum、Nested Object、Array 和是否允许额外字段，但 Schema 正确仍不代表业务语义正确。</li><li>第三，Semantic Validation 必须检查日期先后、金额范围、字段依赖、互斥条件和标识符一致性；Policy Validation 再决定这个结构化动作是否被授权。</li></ul></div><h1 id="第七课-第-3-阶段">第七课 · 第 3 阶段</h1>
+<h1
+id="structured-outputjson-schemavalidation-与可靠参数生成-1">Structured
+Output：JSON Schema、Validation 与可靠参数生成</h1>
+<h2
+id="模型输出看起来像-json为什么还不够怎样让-tool-arguments-真正可执行-1">模型输出“看起来像
+JSON”为什么还不够？怎样让 Tool Arguments 真正可执行？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-2">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-2">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Structured Output 的目标不是让模型输出“像 JSON
+的文本”，而是得到 Parseable + SchemaValid + SemanticallyValid +
+PolicyValid 的可执行参数。</strong></li>
+<li><strong>第二，合法 JSON 只解决语法层；JSON Schema 继续约束
+Required、Type、Enum、Nested Object、Array 和是否允许额外字段，但 Schema
+正确仍不代表业务语义正确。</strong></li>
+<li><strong>第三，Semantic Validation
+必须检查日期先后、金额范围、字段依赖、互斥条件和标识符一致性；Policy
+Validation 再决定这个结构化动作是否被授权。</strong></li>
+<li><strong>第四，Constrained Generation
+可以减少格式错误，但不能保证模型选对业务值；ConstrainedSyntax ≠
+CorrectSemantics。</strong></li>
+<li><strong>第五，Validation 失败后可以 Repair、Retry 或 Reject，但
+Repair 只能用于确定性、无歧义的格式修复，绝不能为了让 Schema
+通过而偷偷猜测缺失业务信息。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-2">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="odd">
+<td><code>Structured Output</code></td>
+<td>结构化输出：按照固定字段和枚举生成可校验结果</td>
+</tr>
+<tr class="even">
+<td><code>JSON Schema</code></td>
+<td>JSON Schema：约束工具输入输出字段和类型</td>
+</tr>
+<tr class="odd">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-2">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 2 阶段我们已经得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>→</mo><mi>R</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Model
+\rightarrow
+ToolCall
+\rightarrow
+Runtime
+\rightarrow
+ToolResult
+</annotation></semantics></math></p>
+<p>其中最脆弱的一段就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>A</mi><mi>r</mi><mi>g</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Model
+\rightarrow
+ToolArguments
+}
+</annotation></semantics></math></p>
+<p>因为 LLM 天生擅长的是：</p>
+<blockquote>
+<p><strong>生成自然语言 Token。</strong></p>
+</blockquote>
+<p>而 Runtime 真正需要的是：</p>
+<blockquote>
+<p><strong>稳定、可解析、可验证、可执行的数据结构。</strong></p>
+</blockquote>
+<p>例如模型生成：</p>
+<pre class="text"><code>{
+  query: 查一下本地机构,
+  jurisdiction: 广东,
+}</code></pre>
+<p>人一眼能看懂。</p>
+<p>但它可能同时存在：</p>
+<pre class="text"><code>不是合法JSON
+字段名不符合Schema
+地区值不符合系统枚举
+缺少必填字段
+日期格式不合法
+语义条件互相冲突</code></pre>
+<p>所以本阶段正式解决：</p>
+<h1 id="structured-output">Structured Output</h1>
+<h2 id="结构化输出">结构化输出</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementstructuredoutputpolicy_v0.1-1"><code>ProcurementStructuredOutputPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-2">一、先锁死本阶段最重要的一句话</h1>
+<p>“能被人看懂”不是系统要求。</p>
+<p>真正要求是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Parseable
++
+SchemaValid
++
+SemanticallyValid
++
+PolicyValid
+}
+</annotation></semantics></math></p>
+<p>也就是四层：</p>
+<pre class="text"><code>1. 能不能解析？
+2. 结构对不对？
+3. 值在业务上合理吗？
+4. 这个动作是否允许？</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>o</mi><mi>k</mi><mi>s</mi><mi>L</mi><mi>i</mi><mi>k</mi><mi>e</mi><mi>J</mi><mi>S</mi><mi>O</mi><mi>N</mi><mo>≠</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>r</mi><mi>g</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LooksLikeJSON
+\neq
+ExecutableArguments
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二第一层syntax-validity它首先必须真的是合法-json">二、第一层：Syntax
+Validity——它首先必须真的是合法 JSON</h1>
+<p>合法 JSON 至少要求：</p>
+<pre class="text"><code>字符串使用双引号
+没有多余尾逗号
+对象和数组括号正确
+布尔值是 true / false
+null 使用标准写法
+键名和字符串正确转义</code></pre>
+<p>例如：</p>
+<div class="sourceCode" id="cb99"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb99-1"><a href="#cb99-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb99-2"><a href="#cb99-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;投标前本地机构限制&quot;</span><span class="fu">,</span></span>
+<span id="cb99-3"><a href="#cb99-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;广东省&quot;</span></span>
+<span id="cb99-4"><a href="#cb99-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这是合法 JSON。</p>
+<p>而：</p>
+<pre class="text"><code>{
+  query: &#39;投标前本地机构限制&#39;,
+  jurisdiction: 广东省,
+}</code></pre>
+<p>看起来像 JSON，</p>
+<p>但严格来说：</p>
+<blockquote>
+<p><strong>不是合法 JSON。</strong></p>
+</blockquote>
+<p>因此第一道门是：</p>
+<h1 id="parser">Parser</h1>
+<h2 id="语法解析器">语法解析器</h2>
+<hr />
+<h1
+id="三第二层schema-validity合法-json-也可能完全不能用">三、第二层：Schema
+Validity——合法 JSON 也可能完全不能用</h1>
+<p>假设工具定义要求：</p>
+<div class="sourceCode" id="cb101"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb101-3"><a href="#cb101-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb101-4"><a href="#cb101-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;YYYY-MM-DD&quot;</span></span>
+<span id="cb101-5"><a href="#cb101-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>模型输出：</p>
+<div class="sourceCode" id="cb102"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb102-1"><a href="#cb102-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb102-2"><a href="#cb102-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;本地机构限制&quot;</span></span>
+<span id="cb102-3"><a href="#cb102-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>它是合法 JSON。</p>
+<p>但缺少：</p>
+<pre class="text"><code>jurisdiction
+query_time</code></pre>
+<p>如果这两个字段是必填，</p>
+<p>它仍然不能执行。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>J</mi><mi>S</mi><mi>O</mi><mi>N</mi><mo>≠</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ValidJSON
+\neq
+ValidSchema
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四json-schema-到底解决什么">四、JSON Schema 到底解决什么？</h1>
+<p>JSON Schema 可以把“参数应该长什么样”写成机器可验证规则。</p>
+<p>概念上：</p>
+<div class="sourceCode" id="cb104"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb104-1"><a href="#cb104-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb104-2"><a href="#cb104-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;object&quot;</span><span class="fu">,</span></span>
+<span id="cb104-3"><a href="#cb104-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;properties&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb104-4"><a href="#cb104-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb104-5"><a href="#cb104-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span></span>
+<span id="cb104-6"><a href="#cb104-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">},</span></span>
+<span id="cb104-7"><a href="#cb104-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb104-8"><a href="#cb104-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span></span>
+<span id="cb104-9"><a href="#cb104-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">},</span></span>
+<span id="cb104-10"><a href="#cb104-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb104-11"><a href="#cb104-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span></span>
+<span id="cb104-12"><a href="#cb104-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb104-13"><a href="#cb104-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb104-14"><a href="#cb104-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;required&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb104-15"><a href="#cb104-15" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;query&quot;</span><span class="ot">,</span></span>
+<span id="cb104-16"><a href="#cb104-16" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;jurisdiction&quot;</span><span class="ot">,</span></span>
+<span id="cb104-17"><a href="#cb104-17" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;query_time&quot;</span></span>
+<span id="cb104-18"><a href="#cb104-18" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb104-19"><a href="#cb104-19" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>它告诉 Runtime：</p>
+<pre class="text"><code>顶层必须是object
+query必须是string
+jurisdiction必须是string
+query_time必须是string
+三个字段都必须存在</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mo>=</mo><mi>M</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Schema
+=
+MachineCheckableContract
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五required-field缺字段和字段为空不是一回事">五、Required
+Field：缺字段和字段为空不是一回事</h1>
+<p>假设：</p>
+<pre class="text"><code>jurisdiction</code></pre>
+<p>是必填字段。</p>
+<p>这两个情况不一样：</p>
+<h3 id="情况-a字段不存在">情况 A：字段不存在</h3>
+<div class="sourceCode" id="cb107"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb107-2"><a href="#cb107-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;本地机构限制&quot;</span></span>
+<span id="cb107-3"><a href="#cb107-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="情况-b字段存在但值为空">情况 B：字段存在，但值为空</h3>
+<div class="sourceCode" id="cb108"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb108-1"><a href="#cb108-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb108-2"><a href="#cb108-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;本地机构限制&quot;</span><span class="fu">,</span></span>
+<span id="cb108-3"><a href="#cb108-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="kw">null</span></span>
+<span id="cb108-4"><a href="#cb108-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>系统必须提前定义：</p>
+<blockquote>
+<p><code>null</code> 是否允许。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>n</mi><mi>N</mi><mi>u</mi><mi>l</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Required
+\neq
+NonNull
+}
+</annotation></semantics></math></p>
+<p>很多 Agent Bug 就出在这里。</p>
+<hr />
+<h1 id="六type-constraint类型不能靠猜">六、Type
+Constraint：类型不能靠猜</h1>
+<p>工具需要：</p>
+<pre class="text"><code>max_results = integer</code></pre>
+<p>模型却可能输出：</p>
+<div class="sourceCode" id="cb110"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb110-1"><a href="#cb110-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb110-2"><a href="#cb110-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;max_results&quot;</span><span class="fu">:</span> <span class="st">&quot;10&quot;</span></span>
+<span id="cb110-3"><a href="#cb110-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这里 <code>"10"</code> 是字符串，</p>
+<p>不是整数。</p>
+<p>有些 Runtime 会自动转成：</p>
+<pre class="text"><code>10</code></pre>
+<p>但这种自动类型转换必须非常谨慎。</p>
+<p>因为：</p>
+<pre class="text"><code>&quot;00123&quot;</code></pre>
+<p>可能是：</p>
+<blockquote>
+<p>项目编号的一部分，</p>
+</blockquote>
+<p>而不是数字 123。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>T</mi><mi>y</mi><mi>p</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>e</mi><mi>r</mi><mi>c</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>可</mi><mi>能</mi><mi>破</mi><mi>坏</mi><mi>业</mi><mi>务</mi><mi>语</mi><mi>义</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SilentTypeCoercion
+可能破坏业务语义
+}
+</annotation></semantics></math></p>
+<p>高风险字段最好严格校验。</p>
+<hr />
+<h1
+id="七enum为什么受控字段不要让模型自由发挥">七、Enum：为什么受控字段不要让模型自由发挥？</h1>
+<p>假设采购阶段只能是：</p>
+<pre class="text"><code>pre_bid
+evaluation
+award
+contract
+acceptance</code></pre>
+<p>如果让模型自由生成，</p>
+<p>它可能输出：</p>
+<pre class="text"><code>投标前阶段
+招标前
+前置阶段
+before_bid</code></pre>
+<p>人能理解，</p>
+<p>程序却很难稳定路由。</p>
+<p>所以应使用：</p>
+<h1 id="enum">Enum</h1>
+<h2 id="枚举">枚举</h2>
+<p>概念上：</p>
+<div class="sourceCode" id="cb115"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb115-2"><a href="#cb115-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;procurement_stage&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb115-3"><a href="#cb115-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb115-4"><a href="#cb115-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;enum&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb115-5"><a href="#cb115-5" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;pre_bid&quot;</span><span class="ot">,</span></span>
+<span id="cb115-6"><a href="#cb115-6" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;evaluation&quot;</span><span class="ot">,</span></span>
+<span id="cb115-7"><a href="#cb115-7" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;award&quot;</span><span class="ot">,</span></span>
+<span id="cb115-8"><a href="#cb115-8" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;contract&quot;</span><span class="ot">,</span></span>
+<span id="cb115-9"><a href="#cb115-9" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;acceptance&quot;</span></span>
+<span id="cb115-10"><a href="#cb115-10" aria-hidden="true" tabindex="-1"></a>    <span class="ot">]</span></span>
+<span id="cb115-11"><a href="#cb115-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb115-12"><a href="#cb115-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这样输出空间从：</p>
+<blockquote>
+<p>无限自然语言</p>
+</blockquote>
+<p>收缩为：</p>
+<blockquote>
+<p><strong>有限合法状态集合。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="八additionalproperties为什么多生成几个字段也可能是问题">八、additionalProperties：为什么“多生成几个字段”也可能是问题？</h1>
+<p>假设 Schema 只允许：</p>
+<pre class="text"><code>query
+jurisdiction
+query_time</code></pre>
+<p>模型却生成：</p>
+<div class="sourceCode" id="cb117"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb117-2"><a href="#cb117-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;本地机构限制&quot;</span><span class="fu">,</span></span>
+<span id="cb117-3"><a href="#cb117-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;广东省&quot;</span><span class="fu">,</span></span>
+<span id="cb117-4"><a href="#cb117-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17&quot;</span><span class="fu">,</span></span>
+<span id="cb117-5"><a href="#cb117-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;legal_conclusion&quot;</span><span class="fu">:</span> <span class="st">&quot;违法&quot;</span></span>
+<span id="cb117-6"><a href="#cb117-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这里：</p>
+<pre class="text"><code>legal_conclusion</code></pre>
+<p>可能根本不应该出现在 Tool Arguments。</p>
+<p>更危险的是：</p>
+<blockquote>
+<p>模型提前把结论注入检索请求。</p>
+</blockquote>
+<p>所以很多高可靠场景应该考虑：</p>
+<pre class="text"><code>additionalProperties = false</code></pre>
+<p>核心思想：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>只</mi><mi>允</mi><mi>许</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>定</mi><mi>义</mi><mi>过</mi><mi>的</mi><mi>字</mi><mi>段</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+只允许Contract定义过的字段
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九nested-object-和-array真实参数往往不是扁平字典">九、Nested
+Object 和 Array：真实参数往往不是扁平字典</h1>
+<p>政府采购工具可能需要：</p>
+<div class="sourceCode" id="cb120"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb120-1"><a href="#cb120-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb120-2"><a href="#cb120-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;资格条件审查&quot;</span><span class="fu">,</span></span>
+<span id="cb120-3"><a href="#cb120-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;filters&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb120-4"><a href="#cb120-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;广东省&quot;</span><span class="fu">,</span></span>
+<span id="cb120-5"><a href="#cb120-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;valid_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17&quot;</span></span>
+<span id="cb120-6"><a href="#cb120-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb120-7"><a href="#cb120-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_types&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb120-8"><a href="#cb120-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;law&quot;</span><span class="ot">,</span></span>
+<span id="cb120-9"><a href="#cb120-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;regulation&quot;</span><span class="ot">,</span></span>
+<span id="cb120-10"><a href="#cb120-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;policy&quot;</span></span>
+<span id="cb120-11"><a href="#cb120-11" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb120-12"><a href="#cb120-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这里包含：</p>
+<pre class="text"><code>Nested Object
+嵌套对象
+
+Array
+数组</code></pre>
+<p>复杂 Schema 的问题是：</p>
+<blockquote>
+<p>约束更精确，</p>
+</blockquote>
+<p>但模型生成难度也会上升。</p>
+<p>所以设计原则不是：</p>
+<blockquote>
+<p>Schema 越复杂越专业。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>最</mi><mi>小</mi><mi>必</mi><mi>要</mi><mi>结</mi><mi>构</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+最小必要结构
+}
+</annotation></semantics></math></p>
+<p>只保留真正影响执行的字段。</p>
+<hr />
+<h1
+id="十第三层semantic-validationschema-对了业务含义仍然可能错">十、第三层：Semantic
+Validation——Schema 对了，业务含义仍然可能错</h1>
+<p>这是 Structured Output 最容易被低估的一层。</p>
+<p>例如：</p>
+<div class="sourceCode" id="cb122"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb122-1"><a href="#cb122-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb122-2"><a href="#cb122-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;effective_from&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-12-31&quot;</span><span class="fu">,</span></span>
+<span id="cb122-3"><a href="#cb122-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;effective_to&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-01-01&quot;</span></span>
+<span id="cb122-4"><a href="#cb122-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>两个字段都是合法日期字符串。</p>
+<p>Schema 也完全通过。</p>
+<p>但业务上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>e</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>_</mi><mi>f</mi><mi>r</mi><mi>o</mi><mi>m</mi><mo>&gt;</mo><mi>e</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>_</mi><mi>t</mi><mi>o</mi></mrow><annotation encoding="application/x-tex">
+effective\_from
+&gt;
+effective\_to
+</annotation></semantics></math></p>
+<p>显然矛盾。</p>
+<p>再比如：</p>
+<div class="sourceCode" id="cb123"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb123-2"><a href="#cb123-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;min_amount&quot;</span><span class="fu">:</span> <span class="dv">1000000</span><span class="fu">,</span></span>
+<span id="cb123-3"><a href="#cb123-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;max_amount&quot;</span><span class="fu">:</span> <span class="dv">100000</span></span>
+<span id="cb123-4"><a href="#cb123-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>类型都正确。</p>
+<p>但范围不合理。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SchemaValid
+\neq
+SemanticallyValid
+}
+</annotation></semantics></math></p>
+<p>这就需要：</p>
+<h1 id="business-validator">Business Validator</h1>
+<h2 id="业务语义校验器">业务语义校验器</h2>
+<hr />
+<h1 id="十一semantic-validation-应该校验哪些东西">十一、Semantic
+Validation 应该校验哪些东西？</h1>
+<p>政府采购 Tool Arguments 至少可能需要检查：</p>
+<pre class="text"><code>时间先后关系
+金额上下限
+辖区层级关系
+文号格式
+项目编号格式
+采购阶段是否冲突
+版本状态是否冲突
+字段之间的依赖关系
+互斥字段是否同时出现</code></pre>
+<p>例如：</p>
+<pre class="text"><code>如果 historical_query = true
+那么 query_time 必须存在</code></pre>
+<p>或者：</p>
+<pre class="text"><code>如果 action = publish_notice
+那么 approval_id 必须存在</code></pre>
+<p>这类规则：</p>
+<blockquote>
+<p>不是 JSON Schema 的简单类型检查就能完全解决的。</p>
+</blockquote>
+<hr />
+<h1
+id="十二第四层policy-validation结构和语义都正确也不代表允许执行">十二、第四层：Policy
+Validation——结构和语义都正确，也不代表允许执行</h1>
+<p>假设模型输出：</p>
+<div class="sourceCode" id="cb127"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb127-2"><a href="#cb127-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;action&quot;</span><span class="fu">:</span> <span class="st">&quot;publish_notice&quot;</span><span class="fu">,</span></span>
+<span id="cb127-3"><a href="#cb127-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;P_001&quot;</span><span class="fu">,</span></span>
+<span id="cb127-4"><a href="#cb127-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;content&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb127-5"><a href="#cb127-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>它可能：</p>
+<pre class="text"><code>语法正确
+Schema正确
+业务字段正确</code></pre>
+<p>但用户当前权限只是：</p>
+<pre class="text"><code>read_only</code></pre>
+<p>那仍然必须拒绝。</p>
+<p>所以完整校验链应该是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>y</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>x</mi><mo>→</mo><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>s</mi><mo>→</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Syntax
+\rightarrow
+Schema
+\rightarrow
+Semantics
+\rightarrow
+Policy
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>JSON 能 parse 就直接执行。</p>
+</blockquote>
+<hr />
+<h1
+id="十三constrained-generation能不能让模型一开始就少犯格式错误">十三、Constrained
+Generation：能不能让模型一开始就少犯格式错误？</h1>
+<p>可以。</p>
+<p>一个重要思路是：</p>
+<h1 id="constrained-generation">Constrained Generation</h1>
+<h2 id="受约束生成">受约束生成</h2>
+<p>也就是：</p>
+<blockquote>
+<p>在模型生成过程中，限制它只能生成符合某种结构的输出。</p>
+</blockquote>
+<p>概念上：</p>
+<pre class="text"><code>普通生成：
+任意Token都可能出现
+
+受约束生成：
+只允许当前Schema状态下合法的Token</code></pre>
+<p>这样可以大幅减少：</p>
+<pre class="text"><code>括号不闭合
+字段名乱写
+非法枚举值
+多余自然语言</code></pre>
+<p>但必须注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>S</mi><mi>y</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>x</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ConstrainedSyntax
+\neq
+CorrectSemantics
+}
+</annotation></semantics></math></p>
+<p>模型即使只能输出合法 JSON，</p>
+<p>仍然可能选错：</p>
+<pre class="text"><code>jurisdiction
+date
+project_id
+tool</code></pre>
+<hr />
+<h1
+id="十四validation-失败以后repairretryreject-三种策略">十四、Validation
+失败以后：Repair、Retry、Reject 三种策略</h1>
+<p>假设第一次输出：</p>
+<div class="sourceCode" id="cb133"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb133-1"><a href="#cb133-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb133-2"><a href="#cb133-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;本地机构限制&quot;</span><span class="fu">,</span></span>
+<span id="cb133-3"><a href="#cb133-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;明年&quot;</span></span>
+<span id="cb133-4"><a href="#cb133-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Schema 要求：</p>
+<pre class="text"><code>YYYY-MM-DD</code></pre>
+<p>系统有三种典型处理方式。</p>
+<h2 id="repair">1. Repair</h2>
+<h3 id="修复">修复</h3>
+<p>对于非常确定的格式问题，</p>
+<p>Runtime 可以做安全修复。</p>
+<p>例如：</p>
+<pre class="text"><code>去除多余空格
+标准化大小写</code></pre>
+<p>但不能擅自把：</p>
+<pre class="text"><code>明年</code></pre>
+<p>猜成：</p>
+<pre class="text"><code>2027-01-01</code></pre>
+<p>因为这已经是：</p>
+<blockquote>
+<p>语义推断。</p>
+</blockquote>
+<hr />
+<h2 id="retry">2. Retry</h2>
+<h3 id="重试生成">重试生成</h3>
+<p>把 Validation Error 返回模型：</p>
+<pre class="text"><code>query_time必须为YYYY-MM-DD</code></pre>
+<p>让模型重新生成。</p>
+<hr />
+<h2 id="reject">3. Reject</h2>
+<h3 id="拒绝执行">拒绝执行</h3>
+<p>如果问题高风险或无法安全修复：</p>
+<blockquote>
+<p>不执行 Tool。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>a</mi><mi>i</mi><mi>r</mi><mi>只</mi><mi>适</mi><mi>合</mi><mi>确</mi><mi>定</mi><mi>性</mi><mi>、</mi><mi>无</mi><mi>歧</mi><mi>义</mi><mi>修</mi><mi>复</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Repair
+只适合确定性、无歧义修复
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十五不要自动补全模型没有依据的信息">十五、不要“自动补全”模型没有依据的信息</h1>
+<p>这是政府采购 Agent 非常重要的规则。</p>
+<p>用户没有提供：</p>
+<pre class="text"><code>jurisdiction</code></pre>
+<p>模型却输出：</p>
+<div class="sourceCode" id="cb140"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb140-1"><a href="#cb140-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb140-2"><a href="#cb140-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;广东省&quot;</span></span>
+<span id="cb140-3"><a href="#cb140-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>如果上下文根本没有广东省，</p>
+<p>即使 Schema 完全合法，</p>
+<p>这仍然是：</p>
+<h1 id="hallucinated-argument">Hallucinated Argument</h1>
+<h2 id="幻觉参数">幻觉参数</h2>
+<p>所以参数来源最好区分：</p>
+<pre class="text"><code>user_provided
+context_derived
+tool_derived
+system_default
+model_inferred
+unknown</code></pre>
+<p>对于高风险字段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>n</mi><mi>k</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>n</mi><mi>优</mi><mi>于</mi><mi>I</mi><mi>n</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Unknown
+优于
+InventedValue
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十六canonicalization为什么同一个值最好只有一种标准表示">十六、Canonicalization：为什么同一个值最好只有一种标准表示？</h1>
+<p>例如地区可能出现：</p>
+<pre class="text"><code>广东
+广东省
+Guangdong
+CN-GD</code></pre>
+<p>如果下游数据库使用：</p>
+<pre class="text"><code>CN-GD</code></pre>
+<p>就需要：</p>
+<h1 id="canonicalization">Canonicalization</h1>
+<h2 id="标准化表示">标准化表示</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb144"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb144-1"><a href="#cb144-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb144-2"><a href="#cb144-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction_raw&quot;</span><span class="fu">:</span> <span class="st">&quot;广东省&quot;</span><span class="fu">,</span></span>
+<span id="cb144-3"><a href="#cb144-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction_code&quot;</span><span class="fu">:</span> <span class="st">&quot;CN-GD&quot;</span></span>
+<span id="cb144-4"><a href="#cb144-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>同理：</p>
+<pre class="text"><code>日期
+金额
+文号
+机构名称
+项目编号</code></pre>
+<p>也可以分别设计标准格式。</p>
+<p>这样下游 Tool 才不会每个模块各自猜。</p>
+<hr />
+<h1 id="十七schema-version参数协议本身也必须版本化">十七、Schema
+Version：参数协议本身也必须版本化</h1>
+<p>今天工具参数可能是：</p>
+<div class="sourceCode" id="cb146"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb146-1"><a href="#cb146-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb146-2"><a href="#cb146-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb146-3"><a href="#cb146-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb146-4"><a href="#cb146-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>未来可能改成：</p>
+<div class="sourceCode" id="cb147"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb147-1"><a href="#cb147-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb147-2"><a href="#cb147-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb147-3"><a href="#cb147-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction_code&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb147-4"><a href="#cb147-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb147-5"><a href="#cb147-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_types&quot;</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb147-6"><a href="#cb147-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这意味着：</p>
+<blockquote>
+<p>Tool Contract 变了。</p>
+</blockquote>
+<p>所以应该记录：</p>
+<pre class="text"><code>schema_version</code></pre>
+<p>例如：</p>
+<pre class="text"><code>search_regulation@v1
+search_regulation@v2</code></pre>
+<p>否则旧 Agent 和新 Runtime 混用时：</p>
+<blockquote>
+<p>很难定位兼容性问题。</p>
+</blockquote>
+<hr />
+<h1 id="十八structured-output-的错误分类">十八、Structured Output
+的错误分类</h1>
+<p>至少要拆成：</p>
+<pre class="text"><code>1. Syntax Error
+不是合法JSON
+
+2. Missing Field Error
+缺少必填字段
+
+3. Type Error
+字段类型错误
+
+4. Enum Error
+输出非法枚举值
+
+5. Extra Field Error
+生成Schema外字段
+
+6. Semantic Conflict
+字段之间业务矛盾
+
+7. Hallucinated Argument
+生成上下文中不存在的关键值
+
+8. Canonicalization Error
+标准编码映射错误
+
+9. Policy Violation
+结构正确但动作不允许
+
+10. Repair Error
+自动修复反而改变原意</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>Structured Output Accuracy</p>
+</blockquote>
+<p>不能只统计：</p>
+<pre class="text"><code>JSON parse成功率</code></pre>
+<hr />
+<h1 id="十九应该怎样评测-structured-output">十九、应该怎样评测
+Structured Output？</h1>
+<p>第一版至少可以记录：</p>
+<pre class="text"><code>json_parse_rate
+
+schema_valid_rate
+
+required_field_accuracy
+
+type_accuracy
+
+enum_accuracy
+
+semantic_valid_rate
+
+identifier_preservation_rate
+
+hallucinated_argument_rate
+
+policy_violation_rate
+
+retry_success_rate
+
+repair_success_rate
+
+tool_execution_success_rate</code></pre>
+<p>其中最关键的一点是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>比</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>y</mi><mi>J</mi><mi>S</mi><mi>O</mi><mi>N</mi><mi>更</mi><mi>重</mi><mi>要</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExecutionSuccess
+比
+PrettyJSON
+更重要
+}
+</annotation></semantics></math></p>
+<p>最终目的是：</p>
+<blockquote>
+<p>Tool 真能正确执行。</p>
+</blockquote>
+<hr />
+<h1
+id="二十政府采购案例资格条件审查-tool">二十、政府采购案例：资格条件审查
+Tool</h1>
+<p>假设 Tool：</p>
+<pre class="text"><code>analyze_qualification_requirement</code></pre>
+<p>Schema：</p>
+<div class="sourceCode" id="cb154"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb154-1"><a href="#cb154-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb154-2"><a href="#cb154-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;requirement_text&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb154-3"><a href="#cb154-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;procurement_stage&quot;</span><span class="fu">:</span> <span class="st">&quot;pre_bid | evaluation | award | contract&quot;</span><span class="fu">,</span></span>
+<span id="cb154-4"><a href="#cb154-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction_code&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb154-5"><a href="#cb154-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;YYYY-MM-DD&quot;</span><span class="fu">,</span></span>
+<span id="cb154-6"><a href="#cb154-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;string&quot;</span><span class="ot">]</span></span>
+<span id="cb154-7"><a href="#cb154-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>模型输出：</p>
+<div class="sourceCode" id="cb155"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb155-1"><a href="#cb155-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb155-2"><a href="#cb155-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;requirement_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商投标前须在本市设立办事机构&quot;</span><span class="fu">,</span></span>
+<span id="cb155-3"><a href="#cb155-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;procurement_stage&quot;</span><span class="fu">:</span> <span class="st">&quot;pre_bid&quot;</span><span class="fu">,</span></span>
+<span id="cb155-4"><a href="#cb155-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction_code&quot;</span><span class="fu">:</span> <span class="st">&quot;CN-GD&quot;</span><span class="fu">,</span></span>
+<span id="cb155-5"><a href="#cb155-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17&quot;</span><span class="fu">,</span></span>
+<span id="cb155-6"><a href="#cb155-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;E1&quot;</span><span class="ot">,</span> <span class="st">&quot;E3&quot;</span><span class="ot">]</span></span>
+<span id="cb155-7"><a href="#cb155-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Runtime 应依次检查：</p>
+<pre class="text"><code>JSON Parse
+↓
+Schema Validation
+↓
+Evidence ID存在性
+↓
+Jurisdiction Code合法性
+↓
+Date合法性
+↓
+Policy Check
+↓
+Execute</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>一 parse 成功就直接跑。</p>
+</blockquote>
+<hr />
+<h1
+id="二十一本阶段工程产物procurementstructuredoutputpolicy_v0.1">二十一、本阶段工程产物：<code>ProcurementStructuredOutputPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>output_format
+=
+json
+
+schema_id
+schema_version
+
+required_fields
+
+field_types
+
+enum_constraints
+
+nullable_fields
+
+additional_properties_policy
+
+nested_object_policy
+
+array_policy
+
+identifier_preservation_policy
+
+canonicalization_policy
+
+semantic_validation_rules
+
+policy_validation_enabled
+=
+true
+
+repair_policy
+
+retry_policy
+
+max_retry_count
+
+reject_policy
+
+validation_error_schema
+
+trace_logging
+=
+enabled</code></pre>
+<p>同时每次调用最好记录：</p>
+<pre class="text"><code>raw_model_output
+
+parsed_object
+
+schema_validation_result
+
+semantic_validation_result
+
+policy_validation_result
+
+repair_applied
+
+retry_count
+
+final_arguments
+
+execution_result</code></pre>
+<p>这样 Structured Output 出错时才能完整重放。</p>
+<hr />
+<h1 id="二十二把本阶段压成最精准的-6-句话">二十二、把本阶段压成最精准的
+6 句话</h1>
+<blockquote>
+<p><strong>第一，Structured Output 的目标不是让模型输出“像 JSON
+的文本”，而是得到
+<code>Parseable + SchemaValid + SemanticallyValid + PolicyValid</code>
+的可执行参数。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，合法 JSON 只解决语法层；JSON Schema 继续约束
+Required、Type、Enum、Nested Object、Array 和是否允许额外字段，但 Schema
+正确仍不代表业务语义正确。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Semantic Validation
+必须检查日期先后、金额范围、字段依赖、互斥条件和标识符一致性；Policy
+Validation 再决定这个结构化动作是否被授权。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Constrained Generation
+可以减少格式错误，但不能保证模型选对业务值；<code>ConstrainedSyntax ≠ CorrectSemantics</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Validation 失败后可以 Repair、Retry 或 Reject，但
+Repair 只能用于确定性、无歧义的格式修复，绝不能为了让 Schema
+通过而偷偷猜测缺失业务信息。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，Structured Output 最终要看 Tool Execution
+Success，而不是 JSON
+看起来多漂亮；参数协议本身还必须版本化、可追踪、可重放。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-2">本阶段最核心的一张图</h1>
+<pre class="text"><code>                       Model Output
+                            │
+                            ▼
+                       JSON Parser
+                            │
+                      Parseable?
+                            │
+                            ▼
+                    Schema Validation
+                            │
+                Required / Type / Enum
+                            │
+                            ▼
+                  Semantic Validation
+                            │
+          Date / Amount / Dependency / ID
+                            │
+                            ▼
+                    Policy Validation
+                            │
+                  Allowed to Execute?
+                            │
+                ┌───────────┴───────────┐
+                ▼                       ▼
+              Reject                 Execute
+                                        │
+                                        ▼
+                                   Tool Runtime</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>结构化输出真正解决的不是“让模型会写
+JSON”，而是建立一条从模型生成到程序执行之间可验证、可拒绝、可重试、不会偷偷猜值的数据契约。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-3-阶段掌握测试">第七课 · 第 3 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么合法 JSON 不等于合法 Tool
+Arguments；JSON Schema 解决什么问题；Required 和 NonNull
+为什么不是一回事；为什么类型自动转换可能破坏项目编号等业务语义；Enum
+为什么能提高稳定性；为什么要限制额外字段；复杂 Nested Schema
+为什么不能无限堆；Schema Valid 为什么仍不等于 Semantically
+Valid；Semantic Validation 需要检查哪些业务关系；为什么 Policy
+Validation 必须独立存在；Constrained Generation
+能解决什么、不能解决什么；Repair、Retry、Reject 应该怎样选择；什么是
+Hallucinated Argument；为什么 Canonicalization 和 Schema Version
+都很重要；以及为什么最终指标应该落到 Tool Execution Success。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>3</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第3阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第七课-第-4-阶段">下一阶段：第七课 · 第 4 阶段</h1>
+<h1 id="tool-registry-与-capability-boundary模型到底允许调用什么">Tool
+Registry 与 Capability Boundary：模型到底允许调用什么？</h1>
+<h2
+id="工具越多越好吗为什么能调用什么本身就是-agent-的能力边界和安全边界">工具越多越好吗？为什么“能调用什么”本身就是
+Agent 的能力边界和安全边界？</h2>
+<p>第 3 阶段我们已经把单个 Tool Call 的参数变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>可</mi><mi>解</mi><mi>析</mi><mo>+</mo><mi>可</mi><mi>验</mi><mi>证</mi><mo>+</mo><mi>可</mi><mi>执</mi><mi>行</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+可解析
++
+可验证
++
+可执行
+}
+</annotation></semantics></math></p>
+<p>下一阶段要解决的是：</p>
+<blockquote>
+<p><strong>系统里如果有几十、几百个工具，模型到底应该看到哪些？谁能调用？什么条件下能调用？哪些
+Tool 根本不应该暴露给当前 Agent？</strong></p>
+</blockquote>
+<p>我们会正式进入：</p>
+<pre class="text"><code>Tool Registry
+Capability
+Tool Discovery
+Tool Namespace
+Least Privilege
+Read / Write Boundary
+Permission Scope
+Approval Boundary
+Tool Visibility
+Capability Token
+Audit</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementtoolregistrypolicy_v0.1"><code>ProcurementToolRegistryPolicy_V0.1</code></h1>
+<p>这会把 Agent 从：</p>
+<blockquote>
+<p>“会调用一个函数”</p>
+</blockquote>
+<p>推进到：</p>
+<blockquote>
+<p><strong>拥有清楚、受控、最小权限的工具能力空间。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage02.html">← 第 2 阶段</a><a class="btn" href="stage04.html">第 4 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

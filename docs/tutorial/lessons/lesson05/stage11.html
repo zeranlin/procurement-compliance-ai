@@ -1,0 +1,1292 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第11阶段：真正跑一次 SFT 训练</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第11阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>第一，真正的 SFT 不是 trainer.train()，而是一份由 Dataset、Template、Mask、Length、Model、LoRA、Optimizer 和 Evaluation 共同构成的训练协议。</li><li>第二，在正式花 GPU 时间以前，必须人工 Decode Chat Template、检查 Assistant Loss Mask、检查长度和 Trainable Parameters，并先跑 5～20 Step Smoke Test。</li><li>第三，loss.backward() 只是计算和累积 Gradient，真正改变 LoRA A/B 的时刻是 optimizer.step()；Gradient Accumulation 决定多少个 Micro-batch 合成一次参数更新。</li></ul></div><h1 id="第五课-第-11-阶段">第五课 · 第 11 阶段</h1>
+<h1 id="真正跑一次-sft-训练-1">真正跑一次 SFT 训练</h1>
+<h2
+id="从-procurementdataset_v0.1-到第一个真正会更新参数的-procurementlm_v0.1">从
+<code>ProcurementDataset_V0.1</code> 到第一个真正会更新参数的
+<code>ProcurementLM_V0.1</code></h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-10">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-10">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，真正的 SFT 不是 trainer.train()，而是一份由
+Dataset、Template、Mask、Length、Model、LoRA、Optimizer 和 Evaluation
+共同构成的训练协议。</strong></li>
+<li><strong>第二，在正式花 GPU 时间以前，必须人工 Decode Chat
+Template、检查 Assistant Loss Mask、检查长度和 Trainable
+Parameters，并先跑 5～20 Step Smoke Test。</strong></li>
+<li><strong>第三，loss.backward() 只是计算和累积 Gradient，真正改变 LoRA
+A/B 的时刻是 optimizer.step()；Gradient Accumulation 决定多少个
+Micro-batch 合成一次参数更新。</strong></li>
+<li><strong>第四，Learning Rate、Warmup、Epoch、Batch、Gradient Clipping
+各自解决不同问题，不能把一个异常全部归因于“LoRA
+参数不够”。</strong></li>
+<li><strong>第五，Training Loss 下降只说明训练目标的 Token
+概率在改善；是否真的成为更好的政府采购模型，必须交给独立
+Validation、Hard Case 和最终 Benchmark。</strong></li>
+<li><strong>真正可靠的 SFT
+训练，不是“代码终于跑起来了”，而是我们能够证明：模型看到了正确的
+Prompt，只有正确的 Response Token 在产生 Loss，正确的 LoRA 参数在获得
+Gradient，每次 Optimizer Step 都在按可复现配置更新它们，而且整个过程能被
+Validation 和 Benchmark 独立检验。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-10">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="even">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="odd">
+<td><code>Step</code></td>
+<td>训练步：通常指一次优化器更新</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="even">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-10">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前 10 个阶段，我们一直在制造零件。</p>
+<p>现在终于装机器。</p>
+<p>到目前为止，我们已经有：</p>
+<pre class="text"><code>训练数据
+    ↓
+Chat Template
+    ↓
+Assistant-only Loss
+    ↓
+Length Policy
+    ↓
+Packing Policy
+    ↓
+QLoRA 4-bit Base
+    ↓
+LoRA Rank / Alpha / Dropout
+    ↓
+Target Modules
+    ↓
+Training Memory Budget</code></pre>
+<p>今天只做一件事：</p>
+<blockquote>
+<p><strong>把这些东西接成一条真正能够执行的训练流水线，并知道
+<code>trainer.train()</code> 背后每一步究竟发生了什么。</strong></p>
+</blockquote>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementsfttrainingrun_v0.1"><code>ProcurementSFTTrainingRun_V0.1</code></h1>
+<hr />
+<h2
+id="一先锁死这一阶段最重要的心智模型">一、先锁死这一阶段最重要的心智模型</h2>
+<p>真正的 SFT 训练不是：</p>
+<div class="sourceCode" id="cb822"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb822-1"><a href="#cb822-1" aria-hidden="true" tabindex="-1"></a>trainer.train()</span></code></pre></div>
+<p>这一行代码。</p>
+<p>它其实代表整条链：</p>
+<pre class="text"><code>Dataset
+   ↓
+Semantic Validation
+   ↓
+Chat Template
+   ↓
+Tokenization
+   ↓
+Loss Mask
+   ↓
+Length / Packing
+   ↓
+Batch
+   ↓
+Forward
+   ↓
+Logits
+   ↓
+Causal LM Loss
+   ↓
+Backward
+   ↓
+Gradients on LoRA A/B
+   ↓
+Gradient Accumulation
+   ↓
+Optimizer Step
+   ↓
+Learning-rate Scheduler
+   ↓
+下一 Batch</code></pre>
+<p>所以今天最重要的一句话是：</p>
+<blockquote>
+<p><strong>Trainer
+只是替我们执行训练协议，它不能替我们保证协议本身是正确的。</strong></p>
+</blockquote>
+<p>代码能够跑通：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>≠</mo><annotation encoding="application/x-tex">
+\neq
+</annotation></semantics></math></p>
+<p>训练正确。</p>
+<hr />
+<h1
+id="二正式训练前先建立一个不可越过的闸门">二、正式训练前，先建立一个“不可越过的闸门”</h1>
+<p>第一版训练不要直接上：</p>
+<pre class="text"><code>全量数据
++
+3 epochs
++
+packing
++
+几个小时训练</code></pre>
+<p>我们分成两次。</p>
+<h3 id="第一次smoke-test">第一次：Smoke Test</h3>
+<p>只跑：</p>
+<pre class="text"><code>少量样本
+5～20 Steps
+Packing = OFF</code></pre>
+<p>目标不是效果。</p>
+<p>而是确认：</p>
+<pre class="text"><code>Template 对
+Loss Mask 对
+Trainable Parameters 对
+显存正常
+Loss 有限
+Gradient 正常
+Checkpoint 能保存</code></pre>
+<p>然后才进入：</p>
+<h3 id="第二次formal-run">第二次：Formal Run</h3>
+<pre class="text"><code>完整训练集
+Packing = ON（通过审计后）
+正式 Epoch
+Validation
+Checkpoint</code></pre>
+<p>这是很重要的工程原则：</p>
+<blockquote>
+<p><strong>先证明训练系统是对的，再花 GPU 钱。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三我们最终需要的项目目录">三、我们最终需要的项目目录</h1>
+<p>第一版可以非常简单：</p>
+<pre class="text"><code>ProcurementLM/
+│
+├── data/
+│   ├── train.jsonl
+│   └── validation.jsonl
+│
+├── train_sft.py
+│
+├── outputs/
+│
+└── configs/
+    └── run_v0.1.json</code></pre>
+<p>数据继续保留第 4 课确定的语义结构，而不是预先拼成一大坨文本：</p>
+<div class="sourceCode" id="cb829"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb829-1"><a href="#cb829-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb829-2"><a href="#cb829-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;messages&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb829-3"><a href="#cb829-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb829-4"><a href="#cb829-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;role&quot;</span><span class="fu">:</span> <span class="st">&quot;system&quot;</span><span class="fu">,</span></span>
+<span id="cb829-5"><a href="#cb829-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;content&quot;</span><span class="fu">:</span> <span class="st">&quot;你是政府采购文件审查助手。&quot;</span></span>
+<span id="cb829-6"><a href="#cb829-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb829-7"><a href="#cb829-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb829-8"><a href="#cb829-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;role&quot;</span><span class="fu">:</span> <span class="st">&quot;user&quot;</span><span class="fu">,</span></span>
+<span id="cb829-9"><a href="#cb829-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;content&quot;</span><span class="fu">:</span> <span class="st">&quot;审查以下条款：投标人须在投标截止日前在本市设立固定办公场所。&quot;</span></span>
+<span id="cb829-10"><a href="#cb829-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb829-11"><a href="#cb829-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb829-12"><a href="#cb829-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;role&quot;</span><span class="fu">:</span> <span class="st">&quot;assistant&quot;</span><span class="fu">,</span></span>
+<span id="cb829-13"><a href="#cb829-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;content&quot;</span><span class="fu">:</span> <span class="st">&quot;存在潜在风险。该要求将投标前已具备本地固定场所作为参与条件，可能形成地域性准入限制。&quot;</span></span>
+<span id="cb829-14"><a href="#cb829-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb829-15"><a href="#cb829-15" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb829-16"><a href="#cb829-16" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>当前 TRL 的 <code>SFTTrainer</code> 可以直接处理这种 conversational
+<code>messages</code> 数据，也支持预先准备好的
+<code>input_ids / labels</code>；如果已经提供 <code>labels</code>，其中
+<code>-100</code> 的位置会被排除在 Loss 之外。(<a
+href="https://huggingface.co/docs/trl/sft_trainer">huggingface.co</a>)</p>
+<p>这正好把第 1 阶段和今天接起来：</p>
+<blockquote>
+<p><strong><code>messages</code>
+是语义源，<code>input_ids / labels</code> 是训练表示。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四先把完整训练脚本的大骨架摆出来">四、先把完整训练脚本的大骨架摆出来</h1>
+<p>下面这份不是“背代码”。</p>
+<p>你只需要先看结构：</p>
+<div class="sourceCode" id="cb830"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb830-1"><a href="#cb830-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb830-2"><a href="#cb830-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-3"><a href="#cb830-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_dataset</span>
+<span id="cb830-4"><a href="#cb830-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> (</span>
+<span id="cb830-5"><a href="#cb830-5" aria-hidden="true" tabindex="-1"></a>    AutoTokenizer,</span>
+<span id="cb830-6"><a href="#cb830-6" aria-hidden="true" tabindex="-1"></a>    AutoModelForCausalLM,</span>
+<span id="cb830-7"><a href="#cb830-7" aria-hidden="true" tabindex="-1"></a>    BitsAndBytesConfig,</span>
+<span id="cb830-8"><a href="#cb830-8" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-9"><a href="#cb830-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-10"><a href="#cb830-10" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> peft <span class="im">import</span> (</span>
+<span id="cb830-11"><a href="#cb830-11" aria-hidden="true" tabindex="-1"></a>    LoraConfig,</span>
+<span id="cb830-12"><a href="#cb830-12" aria-hidden="true" tabindex="-1"></a>    get_peft_model,</span>
+<span id="cb830-13"><a href="#cb830-13" aria-hidden="true" tabindex="-1"></a>    prepare_model_for_kbit_training,</span>
+<span id="cb830-14"><a href="#cb830-14" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-15"><a href="#cb830-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-16"><a href="#cb830-16" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> trl <span class="im">import</span> SFTConfig, SFTTrainer</span>
+<span id="cb830-17"><a href="#cb830-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-18"><a href="#cb830-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-19"><a href="#cb830-19" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. 实验身份</span></span>
+<span id="cb830-20"><a href="#cb830-20" aria-hidden="true" tabindex="-1"></a>BASE_MODEL_ID <span class="op">=</span> <span class="st">&quot;你的-base-model-id&quot;</span></span>
+<span id="cb830-21"><a href="#cb830-21" aria-hidden="true" tabindex="-1"></a>OUTPUT_DIR <span class="op">=</span> <span class="st">&quot;./outputs/procurement_sft_v0.1&quot;</span></span>
+<span id="cb830-22"><a href="#cb830-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-23"><a href="#cb830-23" aria-hidden="true" tabindex="-1"></a><span class="co"># 来自第 3 阶段的 Sequence Policy</span></span>
+<span id="cb830-24"><a href="#cb830-24" aria-hidden="true" tabindex="-1"></a>MAX_LENGTH <span class="op">=</span> <span class="dv">2048</span></span>
+<span id="cb830-25"><a href="#cb830-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-26"><a href="#cb830-26" aria-hidden="true" tabindex="-1"></a><span class="co"># 来自第 8 阶段的 Target Module Policy</span></span>
+<span id="cb830-27"><a href="#cb830-27" aria-hidden="true" tabindex="-1"></a>TARGET_MODULES <span class="op">=</span> [</span>
+<span id="cb830-28"><a href="#cb830-28" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;q_proj&quot;</span>,</span>
+<span id="cb830-29"><a href="#cb830-29" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;v_proj&quot;</span>,</span>
+<span id="cb830-30"><a href="#cb830-30" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb830-31"><a href="#cb830-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-32"><a href="#cb830-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-33"><a href="#cb830-33" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. 加载 Dataset</span></span>
+<span id="cb830-34"><a href="#cb830-34" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> load_dataset(</span>
+<span id="cb830-35"><a href="#cb830-35" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;json&quot;</span>,</span>
+<span id="cb830-36"><a href="#cb830-36" aria-hidden="true" tabindex="-1"></a>    data_files<span class="op">=</span>{</span>
+<span id="cb830-37"><a href="#cb830-37" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;train&quot;</span>: <span class="st">&quot;./data/train.jsonl&quot;</span>,</span>
+<span id="cb830-38"><a href="#cb830-38" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;validation&quot;</span>: <span class="st">&quot;./data/validation.jsonl&quot;</span>,</span>
+<span id="cb830-39"><a href="#cb830-39" aria-hidden="true" tabindex="-1"></a>    },</span>
+<span id="cb830-40"><a href="#cb830-40" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-41"><a href="#cb830-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-42"><a href="#cb830-42" aria-hidden="true" tabindex="-1"></a>train_dataset <span class="op">=</span> dataset[<span class="st">&quot;train&quot;</span>]</span>
+<span id="cb830-43"><a href="#cb830-43" aria-hidden="true" tabindex="-1"></a>eval_dataset <span class="op">=</span> dataset[<span class="st">&quot;validation&quot;</span>]</span>
+<span id="cb830-44"><a href="#cb830-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-45"><a href="#cb830-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-46"><a href="#cb830-46" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. Tokenizer</span></span>
+<span id="cb830-47"><a href="#cb830-47" aria-hidden="true" tabindex="-1"></a>tokenizer <span class="op">=</span> AutoTokenizer.from_pretrained(BASE_MODEL_ID)</span>
+<span id="cb830-48"><a href="#cb830-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-49"><a href="#cb830-49" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> tokenizer.pad_token <span class="kw">is</span> <span class="va">None</span>:</span>
+<span id="cb830-50"><a href="#cb830-50" aria-hidden="true" tabindex="-1"></a>    tokenizer.pad_token <span class="op">=</span> tokenizer.eos_token</span>
+<span id="cb830-51"><a href="#cb830-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-52"><a href="#cb830-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-53"><a href="#cb830-53" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. QLoRA 量化配置</span></span>
+<span id="cb830-54"><a href="#cb830-54" aria-hidden="true" tabindex="-1"></a>use_bf16 <span class="op">=</span> torch.cuda.is_bf16_supported()</span>
+<span id="cb830-55"><a href="#cb830-55" aria-hidden="true" tabindex="-1"></a>compute_dtype <span class="op">=</span> torch.bfloat16 <span class="cf">if</span> use_bf16 <span class="cf">else</span> torch.float16</span>
+<span id="cb830-56"><a href="#cb830-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-57"><a href="#cb830-57" aria-hidden="true" tabindex="-1"></a>quant_config <span class="op">=</span> BitsAndBytesConfig(</span>
+<span id="cb830-58"><a href="#cb830-58" aria-hidden="true" tabindex="-1"></a>    load_in_4bit<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb830-59"><a href="#cb830-59" aria-hidden="true" tabindex="-1"></a>    bnb_4bit_quant_type<span class="op">=</span><span class="st">&quot;nf4&quot;</span>,</span>
+<span id="cb830-60"><a href="#cb830-60" aria-hidden="true" tabindex="-1"></a>    bnb_4bit_use_double_quant<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb830-61"><a href="#cb830-61" aria-hidden="true" tabindex="-1"></a>    bnb_4bit_compute_dtype<span class="op">=</span>compute_dtype,</span>
+<span id="cb830-62"><a href="#cb830-62" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-63"><a href="#cb830-63" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-64"><a href="#cb830-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-65"><a href="#cb830-65" aria-hidden="true" tabindex="-1"></a><span class="co"># 5. 加载 Frozen Base Model</span></span>
+<span id="cb830-66"><a href="#cb830-66" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> AutoModelForCausalLM.from_pretrained(</span>
+<span id="cb830-67"><a href="#cb830-67" aria-hidden="true" tabindex="-1"></a>    BASE_MODEL_ID,</span>
+<span id="cb830-68"><a href="#cb830-68" aria-hidden="true" tabindex="-1"></a>    quantization_config<span class="op">=</span>quant_config,</span>
+<span id="cb830-69"><a href="#cb830-69" aria-hidden="true" tabindex="-1"></a>    dtype<span class="op">=</span><span class="st">&quot;auto&quot;</span>,</span>
+<span id="cb830-70"><a href="#cb830-70" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-71"><a href="#cb830-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-72"><a href="#cb830-72" aria-hidden="true" tabindex="-1"></a>model.config.use_cache <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb830-73"><a href="#cb830-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-74"><a href="#cb830-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-75"><a href="#cb830-75" aria-hidden="true" tabindex="-1"></a><span class="co"># 6. 为 k-bit 训练准备模型</span></span>
+<span id="cb830-76"><a href="#cb830-76" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> prepare_model_for_kbit_training(</span>
+<span id="cb830-77"><a href="#cb830-77" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb830-78"><a href="#cb830-78" aria-hidden="true" tabindex="-1"></a>    use_gradient_checkpointing<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb830-79"><a href="#cb830-79" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-80"><a href="#cb830-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-81"><a href="#cb830-81" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-82"><a href="#cb830-82" aria-hidden="true" tabindex="-1"></a><span class="co"># 7. LoRA</span></span>
+<span id="cb830-83"><a href="#cb830-83" aria-hidden="true" tabindex="-1"></a>lora_config <span class="op">=</span> LoraConfig(</span>
+<span id="cb830-84"><a href="#cb830-84" aria-hidden="true" tabindex="-1"></a>    task_type<span class="op">=</span><span class="st">&quot;CAUSAL_LM&quot;</span>,</span>
+<span id="cb830-85"><a href="#cb830-85" aria-hidden="true" tabindex="-1"></a>    r<span class="op">=</span><span class="dv">16</span>,</span>
+<span id="cb830-86"><a href="#cb830-86" aria-hidden="true" tabindex="-1"></a>    lora_alpha<span class="op">=</span><span class="dv">32</span>,</span>
+<span id="cb830-87"><a href="#cb830-87" aria-hidden="true" tabindex="-1"></a>    lora_dropout<span class="op">=</span><span class="fl">0.05</span>,</span>
+<span id="cb830-88"><a href="#cb830-88" aria-hidden="true" tabindex="-1"></a>    target_modules<span class="op">=</span>TARGET_MODULES,</span>
+<span id="cb830-89"><a href="#cb830-89" aria-hidden="true" tabindex="-1"></a>    bias<span class="op">=</span><span class="st">&quot;none&quot;</span>,</span>
+<span id="cb830-90"><a href="#cb830-90" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-91"><a href="#cb830-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-92"><a href="#cb830-92" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> get_peft_model(model, lora_config)</span>
+<span id="cb830-93"><a href="#cb830-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-94"><a href="#cb830-94" aria-hidden="true" tabindex="-1"></a>model.print_trainable_parameters()</span>
+<span id="cb830-95"><a href="#cb830-95" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-96"><a href="#cb830-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-97"><a href="#cb830-97" aria-hidden="true" tabindex="-1"></a><span class="co"># 8. Training Config</span></span>
+<span id="cb830-98"><a href="#cb830-98" aria-hidden="true" tabindex="-1"></a>training_args <span class="op">=</span> SFTConfig(</span>
+<span id="cb830-99"><a href="#cb830-99" aria-hidden="true" tabindex="-1"></a>    output_dir<span class="op">=</span>OUTPUT_DIR,</span>
+<span id="cb830-100"><a href="#cb830-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-101"><a href="#cb830-101" aria-hidden="true" tabindex="-1"></a>    max_length<span class="op">=</span>MAX_LENGTH,</span>
+<span id="cb830-102"><a href="#cb830-102" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-103"><a href="#cb830-103" aria-hidden="true" tabindex="-1"></a>    per_device_train_batch_size<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb830-104"><a href="#cb830-104" aria-hidden="true" tabindex="-1"></a>    per_device_eval_batch_size<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb830-105"><a href="#cb830-105" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps<span class="op">=</span><span class="dv">8</span>,</span>
+<span id="cb830-106"><a href="#cb830-106" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-107"><a href="#cb830-107" aria-hidden="true" tabindex="-1"></a>    learning_rate<span class="op">=</span><span class="fl">1e-4</span>,</span>
+<span id="cb830-108"><a href="#cb830-108" aria-hidden="true" tabindex="-1"></a>    num_train_epochs<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb830-109"><a href="#cb830-109" aria-hidden="true" tabindex="-1"></a>    warmup_ratio<span class="op">=</span><span class="fl">0.03</span>,</span>
+<span id="cb830-110"><a href="#cb830-110" aria-hidden="true" tabindex="-1"></a>    lr_scheduler_type<span class="op">=</span><span class="st">&quot;cosine&quot;</span>,</span>
+<span id="cb830-111"><a href="#cb830-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-112"><a href="#cb830-112" aria-hidden="true" tabindex="-1"></a>    gradient_checkpointing<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb830-113"><a href="#cb830-113" aria-hidden="true" tabindex="-1"></a>    max_grad_norm<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb830-114"><a href="#cb830-114" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-115"><a href="#cb830-115" aria-hidden="true" tabindex="-1"></a>    bf16<span class="op">=</span>use_bf16,</span>
+<span id="cb830-116"><a href="#cb830-116" aria-hidden="true" tabindex="-1"></a>    fp16<span class="op">=</span><span class="kw">not</span> use_bf16,</span>
+<span id="cb830-117"><a href="#cb830-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-118"><a href="#cb830-118" aria-hidden="true" tabindex="-1"></a>    assistant_only_loss<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb830-119"><a href="#cb830-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-120"><a href="#cb830-120" aria-hidden="true" tabindex="-1"></a>    packing<span class="op">=</span><span class="va">False</span>,          <span class="co"># Smoke Test 先关闭</span></span>
+<span id="cb830-121"><a href="#cb830-121" aria-hidden="true" tabindex="-1"></a>    eval_packing<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb830-122"><a href="#cb830-122" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-123"><a href="#cb830-123" aria-hidden="true" tabindex="-1"></a>    logging_steps<span class="op">=</span><span class="dv">10</span>,</span>
+<span id="cb830-124"><a href="#cb830-124" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-125"><a href="#cb830-125" aria-hidden="true" tabindex="-1"></a>    eval_strategy<span class="op">=</span><span class="st">&quot;steps&quot;</span>,</span>
+<span id="cb830-126"><a href="#cb830-126" aria-hidden="true" tabindex="-1"></a>    eval_steps<span class="op">=</span><span class="dv">100</span>,</span>
+<span id="cb830-127"><a href="#cb830-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-128"><a href="#cb830-128" aria-hidden="true" tabindex="-1"></a>    save_strategy<span class="op">=</span><span class="st">&quot;steps&quot;</span>,</span>
+<span id="cb830-129"><a href="#cb830-129" aria-hidden="true" tabindex="-1"></a>    save_steps<span class="op">=</span><span class="dv">100</span>,</span>
+<span id="cb830-130"><a href="#cb830-130" aria-hidden="true" tabindex="-1"></a>    save_total_limit<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb830-131"><a href="#cb830-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-132"><a href="#cb830-132" aria-hidden="true" tabindex="-1"></a>    report_to<span class="op">=</span><span class="st">&quot;none&quot;</span>,</span>
+<span id="cb830-133"><a href="#cb830-133" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-134"><a href="#cb830-134" aria-hidden="true" tabindex="-1"></a>    seed<span class="op">=</span><span class="dv">42</span>,</span>
+<span id="cb830-135"><a href="#cb830-135" aria-hidden="true" tabindex="-1"></a>    data_seed<span class="op">=</span><span class="dv">42</span>,</span>
+<span id="cb830-136"><a href="#cb830-136" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-137"><a href="#cb830-137" aria-hidden="true" tabindex="-1"></a>    use_cache<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb830-138"><a href="#cb830-138" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-139"><a href="#cb830-139" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-140"><a href="#cb830-140" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-141"><a href="#cb830-141" aria-hidden="true" tabindex="-1"></a><span class="co"># 9. Trainer</span></span>
+<span id="cb830-142"><a href="#cb830-142" aria-hidden="true" tabindex="-1"></a>trainer <span class="op">=</span> SFTTrainer(</span>
+<span id="cb830-143"><a href="#cb830-143" aria-hidden="true" tabindex="-1"></a>    model<span class="op">=</span>model,</span>
+<span id="cb830-144"><a href="#cb830-144" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span>training_args,</span>
+<span id="cb830-145"><a href="#cb830-145" aria-hidden="true" tabindex="-1"></a>    train_dataset<span class="op">=</span>train_dataset,</span>
+<span id="cb830-146"><a href="#cb830-146" aria-hidden="true" tabindex="-1"></a>    eval_dataset<span class="op">=</span>eval_dataset,</span>
+<span id="cb830-147"><a href="#cb830-147" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span>tokenizer,</span>
+<span id="cb830-148"><a href="#cb830-148" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb830-149"><a href="#cb830-149" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-150"><a href="#cb830-150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-151"><a href="#cb830-151" aria-hidden="true" tabindex="-1"></a><span class="co"># 10. 真正开始训练</span></span>
+<span id="cb830-152"><a href="#cb830-152" aria-hidden="true" tabindex="-1"></a>trainer.train()</span>
+<span id="cb830-153"><a href="#cb830-153" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-154"><a href="#cb830-154" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-155"><a href="#cb830-155" aria-hidden="true" tabindex="-1"></a><span class="co"># 11. 保存 LoRA Adapter + Tokenizer</span></span>
+<span id="cb830-156"><a href="#cb830-156" aria-hidden="true" tabindex="-1"></a>FINAL_ADAPTER_DIR <span class="op">=</span> <span class="ss">f&quot;</span><span class="sc">{</span>OUTPUT_DIR<span class="sc">}</span><span class="ss">/final_adapter&quot;</span></span>
+<span id="cb830-157"><a href="#cb830-157" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb830-158"><a href="#cb830-158" aria-hidden="true" tabindex="-1"></a>trainer.model.save_pretrained(FINAL_ADAPTER_DIR)</span>
+<span id="cb830-159"><a href="#cb830-159" aria-hidden="true" tabindex="-1"></a>tokenizer.save_pretrained(FINAL_ADAPTER_DIR)</span></code></pre></div>
+<p>这一套技术组合与当前 Hugging Face
+官方接口是一致的：<code>BitsAndBytesConfig</code> 支持 4-bit、NF4、BF16
+compute dtype；PEFT 提供
+<code>prepare_model_for_kbit_training()</code>、<code>LoraConfig</code>
+和 <code>get_peft_model()</code>；TRL 的 <code>SFTTrainer</code>
+原生支持 PEFT/LoRA 训练。(<a
+href="https://huggingface.co/docs/transformers/main/quantization/bitsandbytes?utm_source=chatgpt.com">huggingface.co</a>)</p>
+<p>不过这份代码里：</p>
+<pre class="text"><code>BASE_MODEL_ID
+MAX_LENGTH
+TARGET_MODULES
+r / alpha / dropout
+Epoch
+Learning Rate</code></pre>
+<p>都不是“宇宙最优参数”。</p>
+<p>它们必须回到我们前面定义的各个 Policy 和 Benchmark。</p>
+<hr />
+<h1
+id="五现在从上往下拆第一个关键点不是-model而是-dataset">五、现在从上往下拆：第一个关键点不是
+Model，而是 Dataset</h1>
+<p>训练第一步：</p>
+<div class="sourceCode" id="cb832"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb832-1"><a href="#cb832-1" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> load_dataset(...)</span></code></pre></div>
+<p>看起来平平无奇。</p>
+<p>但真正应该先检查的是：</p>
+<pre class="text"><code>Train / Validation
+是否已经隔离？
+
+有没有 near duplicate？
+
+有没有未来信息泄漏？
+
+messages role 顺序是否正常？
+
+assistant 是否为空？
+
+审计字段有没有误塞进 Prompt？</code></pre>
+<p>训练前最少应该做：</p>
+<div class="sourceCode" id="cb834"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb834-1"><a href="#cb834-1" aria-hidden="true" tabindex="-1"></a>sample <span class="op">=</span> train_dataset[<span class="dv">0</span>]</span>
+<span id="cb834-2"><a href="#cb834-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb834-3"><a href="#cb834-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(sample[<span class="st">&quot;messages&quot;</span>])</span></code></pre></div>
+<p>然后确认角色：</p>
+<pre class="text"><code>system
+↓
+user
+↓
+assistant</code></pre>
+<p>如果这一关错了：</p>
+<blockquote>
+<p>后面所有 GPU 计算都是在把错误变得更牢固。</p>
+</blockquote>
+<hr />
+<h1
+id="六第二个关键闸门训练前必须把-chat-template-真正打印出来">六、第二个关键闸门：训练前必须把
+Chat Template 真正打印出来</h1>
+<p>不要只看：</p>
+<div class="sourceCode" id="cb836"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb836-1"><a href="#cb836-1" aria-hidden="true" tabindex="-1"></a>sample[<span class="st">&quot;messages&quot;</span>]</span></code></pre></div>
+<p>还必须看模型实际吃到的东西：</p>
+<div class="sourceCode" id="cb837"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb837-1"><a href="#cb837-1" aria-hidden="true" tabindex="-1"></a>rendered <span class="op">=</span> tokenizer.apply_chat_template(</span>
+<span id="cb837-2"><a href="#cb837-2" aria-hidden="true" tabindex="-1"></a>    sample[<span class="st">&quot;messages&quot;</span>],</span>
+<span id="cb837-3"><a href="#cb837-3" aria-hidden="true" tabindex="-1"></a>    tokenize<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb837-4"><a href="#cb837-4" aria-hidden="true" tabindex="-1"></a>    add_generation_prompt<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb837-5"><a href="#cb837-5" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb837-6"><a href="#cb837-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb837-7"><a href="#cb837-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(rendered)</span></code></pre></div>
+<p>你要亲眼检查：</p>
+<pre class="text"><code>System 在哪里？
+
+User 边界在哪里？
+
+Assistant 边界在哪里？
+
+EOS / end-of-turn 在哪里？
+
+有没有重复 BOS / EOS？
+
+有没有把 answer 截掉？</code></pre>
+<p>训练数据中已经包含 Assistant Gold Answer，因此训练格式通常使用
+<code>add_generation_prompt=False</code>；推理时才通常给未完成的对话增加
+assistant generation prompt。Chat Template
+本质上负责把结构化角色消息编译成模型真正看到的 Token 协议。(<a
+href="https://huggingface.co/docs/transformers/v5.9.0/en/chat_templating?utm_source=chatgpt.com">huggingface.co</a>)</p>
+<hr />
+<h1
+id="七第三个闸门assistant-only-loss-必须真的验证而不是相信配置名">七、第三个闸门：Assistant-only
+Loss 必须真的验证，而不是相信配置名</h1>
+<p>我们现在写了：</p>
+<div class="sourceCode" id="cb839"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb839-1"><a href="#cb839-1" aria-hidden="true" tabindex="-1"></a>assistant_only_loss<span class="op">=</span><span class="va">True</span></span></code></pre></div>
+<p>但这背后有一个非常重要的前提：</p>
+<blockquote>
+<p><strong>Chat Template 必须能够标出哪些 Token 属于
+Assistant。</strong></p>
+</blockquote>
+<p>当前 TRL 的 <code>assistant_only_loss=True</code> 依赖模板支持
+assistant token mask；模板通常需要用
+<code>{% generation %}...{% endgeneration %}</code> 标记生成区域，TRL
+对若干已知模型家族会提供相应支持。(<a
+href="https://huggingface.co/docs/trl/sft_trainer">huggingface.co</a>)</p>
+<p>训练之前直接做审计：</p>
+<div class="sourceCode" id="cb840"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb840-1"><a href="#cb840-1" aria-hidden="true" tabindex="-1"></a>audit <span class="op">=</span> tokenizer.apply_chat_template(</span>
+<span id="cb840-2"><a href="#cb840-2" aria-hidden="true" tabindex="-1"></a>    sample[<span class="st">&quot;messages&quot;</span>],</span>
+<span id="cb840-3"><a href="#cb840-3" aria-hidden="true" tabindex="-1"></a>    tokenize<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb840-4"><a href="#cb840-4" aria-hidden="true" tabindex="-1"></a>    add_generation_prompt<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb840-5"><a href="#cb840-5" aria-hidden="true" tabindex="-1"></a>    return_dict<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb840-6"><a href="#cb840-6" aria-hidden="true" tabindex="-1"></a>    return_assistant_tokens_mask<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb840-7"><a href="#cb840-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb840-8"><a href="#cb840-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb840-9"><a href="#cb840-9" aria-hidden="true" tabindex="-1"></a>input_ids <span class="op">=</span> audit[<span class="st">&quot;input_ids&quot;</span>]</span>
+<span id="cb840-10"><a href="#cb840-10" aria-hidden="true" tabindex="-1"></a>assistant_mask <span class="op">=</span> audit[<span class="st">&quot;assistant_masks&quot;</span>]</span>
+<span id="cb840-11"><a href="#cb840-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb840-12"><a href="#cb840-12" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(input_ids) <span class="op">==</span> <span class="bu">len</span>(assistant_mask)</span>
+<span id="cb840-13"><a href="#cb840-13" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">sum</span>(assistant_mask) <span class="op">&gt;</span> <span class="dv">0</span></span>
+<span id="cb840-14"><a href="#cb840-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb840-15"><a href="#cb840-15" aria-hidden="true" tabindex="-1"></a>assistant_ids <span class="op">=</span> [</span>
+<span id="cb840-16"><a href="#cb840-16" aria-hidden="true" tabindex="-1"></a>    token_id</span>
+<span id="cb840-17"><a href="#cb840-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> token_id, is_assistant</span>
+<span id="cb840-18"><a href="#cb840-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">in</span> <span class="bu">zip</span>(input_ids, assistant_mask)</span>
+<span id="cb840-19"><a href="#cb840-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> is_assistant</span>
+<span id="cb840-20"><a href="#cb840-20" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb840-21"><a href="#cb840-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb840-22"><a href="#cb840-22" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;监督 Token 数:&quot;</span>, <span class="bu">sum</span>(assistant_mask))</span>
+<span id="cb840-23"><a href="#cb840-23" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(</span>
+<span id="cb840-24"><a href="#cb840-24" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;监督区域:&quot;</span>,</span>
+<span id="cb840-25"><a href="#cb840-25" aria-hidden="true" tabindex="-1"></a>    tokenizer.decode(assistant_ids)</span>
+<span id="cb840-26"><a href="#cb840-26" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p><code>return_assistant_tokens_mask=True</code> 的当前 tokenizer
+接口就是用于返回 Assistant Token Mask；它只有在模板支持 generation
+区域标记时才可用。(<a
+href="https://huggingface.co/docs/transformers/main_classes/tokenizer?utm_source=chatgpt.com">huggingface.co</a>)</p>
+<h3 id="这里有一个非常重要的工程分叉">这里有一个非常重要的工程分叉</h3>
+<p>如果这一步不能可靠返回 Assistant Mask：</p>
+<blockquote>
+<p><strong>不要硬跑。</strong></p>
+</blockquote>
+<p>有两条路：</p>
+<pre class="text"><code>路线 A
+修正 / 使用支持 assistant mask 的 Chat Template</code></pre>
+<p>或者：</p>
+<pre class="text"><code>路线 B
+按照第1阶段的 Formatting Contract
+自己构造 input_ids + labels
+
+Prompt位置:
+labels = -100
+
+Assistant位置:
+labels = token_id</code></pre>
+<p>而当前 <code>SFTTrainer</code> 对已经 pre tokenized 且包含
+<code>labels</code> 的 Dataset 会直接使用这些 labels。(<a
+href="https://huggingface.co/docs/trl/sft_trainer">huggingface.co</a>)</p>
+<p>所以我们第 1 阶段学的 Loss Mask：</p>
+<blockquote>
+<p>到今天不是理论知识，而是训练前的生死检查。</p>
+</blockquote>
+<hr />
+<h1
+id="八第四个闸门长度检查必须发生在-trainer.train-之前">八、第四个闸门：长度检查必须发生在
+<code>trainer.train()</code> 之前</h1>
+<p>假设：</p>
+<div class="sourceCode" id="cb843"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb843-1"><a href="#cb843-1" aria-hidden="true" tabindex="-1"></a>MAX_LENGTH <span class="op">=</span> <span class="dv">2048</span></span></code></pre></div>
+<p>不能直接相信所有数据都合规。</p>
+<p>可以先检查：</p>
+<div class="sourceCode" id="cb844"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb844-1"><a href="#cb844-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> count_tokens(example):</span>
+<span id="cb844-2"><a href="#cb844-2" aria-hidden="true" tabindex="-1"></a>    ids <span class="op">=</span> tokenizer.apply_chat_template(</span>
+<span id="cb844-3"><a href="#cb844-3" aria-hidden="true" tabindex="-1"></a>        example[<span class="st">&quot;messages&quot;</span>],</span>
+<span id="cb844-4"><a href="#cb844-4" aria-hidden="true" tabindex="-1"></a>        tokenize<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb844-5"><a href="#cb844-5" aria-hidden="true" tabindex="-1"></a>        add_generation_prompt<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb844-6"><a href="#cb844-6" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb844-7"><a href="#cb844-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">len</span>(ids)</span>
+<span id="cb844-8"><a href="#cb844-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb844-9"><a href="#cb844-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb844-10"><a href="#cb844-10" aria-hidden="true" tabindex="-1"></a>lengths <span class="op">=</span> [</span>
+<span id="cb844-11"><a href="#cb844-11" aria-hidden="true" tabindex="-1"></a>    count_tokens(train_dataset[i])</span>
+<span id="cb844-12"><a href="#cb844-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="bu">len</span>(train_dataset))</span>
+<span id="cb844-13"><a href="#cb844-13" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb844-14"><a href="#cb844-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb844-15"><a href="#cb844-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;max =&quot;</span>, <span class="bu">max</span>(lengths))</span>
+<span id="cb844-16"><a href="#cb844-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot;avg =&quot;</span>, <span class="bu">sum</span>(lengths) <span class="op">/</span> <span class="bu">len</span>(lengths))</span></code></pre></div>
+<p>如果出现：</p>
+<pre class="text"><code>MAX_LENGTH = 2048
+
+某条样本 = 4267</code></pre>
+<p>此时不要期待：</p>
+<blockquote>
+<p>Trainer 替我们聪明地决定业务上该删哪一段。</p>
+</blockquote>
+<p>应该回到：</p>
+<h1
+id="sftsequencepolicy_v0.1-2"><code>SFTSequencePolicy_V0.1</code></h1>
+<p>决定：</p>
+<pre class="text"><code>Reject
+Context Selection
+Structured Truncation
+Long-sample Route</code></pre>
+<p>而不是静默：</p>
+<blockquote>
+<p>把 Gold Answer 截掉。</p>
+</blockquote>
+<hr />
+<h1 id="九第五步qlora-base-和-lora-adapter-真正组起来">九、第五步：QLoRA
+Base 和 LoRA Adapter 真正组起来</h1>
+<p>这一部分就是前 5～10 阶段第一次全部落地。</p>
+<p>首先：</p>
+<div class="sourceCode" id="cb847"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb847-1"><a href="#cb847-1" aria-hidden="true" tabindex="-1"></a>quant_config <span class="op">=</span> BitsAndBytesConfig(</span>
+<span id="cb847-2"><a href="#cb847-2" aria-hidden="true" tabindex="-1"></a>    load_in_4bit<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb847-3"><a href="#cb847-3" aria-hidden="true" tabindex="-1"></a>    bnb_4bit_quant_type<span class="op">=</span><span class="st">&quot;nf4&quot;</span>,</span>
+<span id="cb847-4"><a href="#cb847-4" aria-hidden="true" tabindex="-1"></a>    bnb_4bit_use_double_quant<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb847-5"><a href="#cb847-5" aria-hidden="true" tabindex="-1"></a>    bnb_4bit_compute_dtype<span class="op">=</span>compute_dtype,</span>
+<span id="cb847-6"><a href="#cb847-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>对应第 9 阶段：</p>
+<pre class="text"><code>Frozen Base
+↓
+NF4 4-bit Storage
+↓
+更高精度 Compute</code></pre>
+<p>然后：</p>
+<div class="sourceCode" id="cb849"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb849-1"><a href="#cb849-1" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> prepare_model_for_kbit_training(model)</span></code></pre></div>
+<p>再给指定模块注入：</p>
+<div class="sourceCode" id="cb850"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb850-1"><a href="#cb850-1" aria-hidden="true" tabindex="-1"></a>LoraConfig(...)</span></code></pre></div>
+<p>和：</p>
+<div class="sourceCode" id="cb851"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb851-1"><a href="#cb851-1" aria-hidden="true" tabindex="-1"></a>get_peft_model(...)</span></code></pre></div>
+<p>当前 PEFT 官方流程就是先建立 LoRA 配置、将其应用到 Base
+Model，并可以通过 <code>print_trainable_parameters()</code>
+检查真正训练了多少参数。(<a
+href="https://huggingface.co/docs/peft/main/package_reference/lora?utm_source=chatgpt.com">huggingface.co</a>)</p>
+<p>因此：</p>
+<div class="sourceCode" id="cb852"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb852-1"><a href="#cb852-1" aria-hidden="true" tabindex="-1"></a>model.print_trainable_parameters()</span></code></pre></div>
+<p>不是装饰。</p>
+<p>它是：</p>
+<h1 id="adapter-injection-audit-1">Adapter Injection Audit</h1>
+<p>如果你期望：</p>
+<pre class="text"><code>0.3%</code></pre>
+<p>结果打印：</p>
+<pre class="text"><code>100%</code></pre>
+<p>不要开始训练。</p>
+<p>如果你期望：</p>
+<pre class="text"><code>20M trainable</code></pre>
+<p>结果只有：</p>
+<pre class="text"><code>100K</code></pre>
+<p>也不要开始训练。</p>
+<hr />
+<h1 id="十training-arguments-到底在控制什么">十、Training Arguments
+到底在控制什么？</h1>
+<p>这几个参数必须从“配置项”变成因果关系。</p>
+<div class="sourceCode" id="cb857"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb857-1"><a href="#cb857-1" aria-hidden="true" tabindex="-1"></a>per_device_train_batch_size<span class="op">=</span><span class="dv">1</span></span>
+<span id="cb857-2"><a href="#cb857-2" aria-hidden="true" tabindex="-1"></a>gradient_accumulation_steps<span class="op">=</span><span class="dv">8</span></span></code></pre></div>
+<p>在单卡简化情况下：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>B</mi><mtext mathvariant="normal">effective</mtext></msub><mo>=</mo><mn>1</mn><mo>×</mo><mn>8</mn><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">
+B_{\text{effective}}
+=
+1\times8
+=
+8
+</annotation></semantics></math></p>
+<p>多卡则更完整地是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>B</mi><mtext mathvariant="normal">effective</mtext></msub><mo>=</mo><msub><mi>B</mi><mtext mathvariant="normal">micro</mtext></msub><mo>×</mo><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>l</mi><mi>d</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+B_{\text{effective}}
+=
+B_{\text{micro}}
+\times
+Accumulation
+\times
+WorldSize
+</annotation></semantics></math></p>
+<p>但如果使用 Packing：</p>
+<blockquote>
+<p>“原始 Sample 数 / Step”就不再是很干净的规模指标，最好同时记录
+<code>Tokens per Step</code> 与
+<code>Supervised Tokens per Step</code>。</p>
+</blockquote>
+<hr />
+<p><code>learning_rate=1e-4</code>：</p>
+<blockquote>
+<p>控制 Optimizer 每次更新 LoRA 参数的步长尺度。</p>
+</blockquote>
+<p>当前 TRL 文档也指出，训练 Adapter 时通常会采用比 Full Fine-Tuning
+更高的学习率，并以大约 <code>1e-4</code> 作为常见量级示例。(<a
+href="https://huggingface.co/docs/trl/sft_trainer">huggingface.co</a>)</p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup><annotation encoding="application/x-tex">
+10^{-4}
+</annotation></semantics></math></p>
+<p>只是 Baseline，</p>
+<p>不是政府采购模型的“正确答案”。</p>
+<hr />
+<p><code>warmup_ratio=0.03</code>：</p>
+<p>意味着训练最开始的一小段 Step：</p>
+<blockquote>
+<p>不立刻让 Learning Rate 跳到目标峰值，而是逐渐升高。</p>
+</blockquote>
+<p>可以把它理解成：</p>
+<blockquote>
+<p><strong>让刚开始训练的 Adapter 先慢慢接管。</strong></p>
+</blockquote>
+<hr />
+<p><code>num_train_epochs=2</code>：</p>
+<p>意味着：</p>
+<blockquote>
+<p>整套训练 Dataset 大约被遍历两次。</p>
+</blockquote>
+<p>注意：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>E</mi><mi>p</mi><mi>o</mi><mi>c</mi><mi>h</mi><mi>s</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+MoreEpochs
+\neq
+Better
+</annotation></semantics></math></p>
+<p>数据不大时：</p>
+<blockquote>
+<p>多跑 Epoch 很容易从“学习模式”变成“背训练集”。</p>
+</blockquote>
+<hr />
+<p><code>max_grad_norm=1.0</code>：</p>
+<p>对应：</p>
+<h1 id="gradient-clipping">Gradient Clipping</h1>
+<h2 id="梯度裁剪">梯度裁剪</h2>
+<p>当 Gradient Norm 异常大时：</p>
+<blockquote>
+<p>限制整体梯度规模，降低一次异常更新把训练冲坏的风险。</p>
+</blockquote>
+<p>它不是：</p>
+<blockquote>
+<p>Loss 修复器。</p>
+</blockquote>
+<p>如果 Grad Norm 经常爆炸：</p>
+<blockquote>
+<p>应继续找 Learning Rate、数值稳定性、数据异常等根因。</p>
+</blockquote>
+<hr />
+<h1
+id="十一现在终于看-trainer.train-背后真正发生了什么">十一、现在终于看
+<code>trainer.train()</code> 背后真正发生了什么</h1>
+<p>这行：</p>
+<div class="sourceCode" id="cb858"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb858-1"><a href="#cb858-1" aria-hidden="true" tabindex="-1"></a>trainer.train()</span></code></pre></div>
+<p>概念上等价于：</p>
+<div class="sourceCode" id="cb859"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb859-1"><a href="#cb859-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> batch <span class="kw">in</span> dataloader:</span>
+<span id="cb859-2"><a href="#cb859-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb859-3"><a href="#cb859-3" aria-hidden="true" tabindex="-1"></a>    outputs <span class="op">=</span> model(</span>
+<span id="cb859-4"><a href="#cb859-4" aria-hidden="true" tabindex="-1"></a>        input_ids<span class="op">=</span>batch[<span class="st">&quot;input_ids&quot;</span>],</span>
+<span id="cb859-5"><a href="#cb859-5" aria-hidden="true" tabindex="-1"></a>        attention_mask<span class="op">=</span>batch[<span class="st">&quot;attention_mask&quot;</span>],</span>
+<span id="cb859-6"><a href="#cb859-6" aria-hidden="true" tabindex="-1"></a>        labels<span class="op">=</span>batch[<span class="st">&quot;labels&quot;</span>],</span>
+<span id="cb859-7"><a href="#cb859-7" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb859-8"><a href="#cb859-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb859-9"><a href="#cb859-9" aria-hidden="true" tabindex="-1"></a>    loss <span class="op">=</span> outputs.loss</span>
+<span id="cb859-10"><a href="#cb859-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb859-11"><a href="#cb859-11" aria-hidden="true" tabindex="-1"></a>    loss.backward()</span>
+<span id="cb859-12"><a href="#cb859-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb859-13"><a href="#cb859-13" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 如果还没累计够 gradient_accumulation_steps：</span></span>
+<span id="cb859-14"><a href="#cb859-14" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 暂时不 optimizer.step()</span></span>
+<span id="cb859-15"><a href="#cb859-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb859-16"><a href="#cb859-16" aria-hidden="true" tabindex="-1"></a>    optimizer.step()</span>
+<span id="cb859-17"><a href="#cb859-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb859-18"><a href="#cb859-18" aria-hidden="true" tabindex="-1"></a>    scheduler.step()</span>
+<span id="cb859-19"><a href="#cb859-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb859-20"><a href="#cb859-20" aria-hidden="true" tabindex="-1"></a>    optimizer.zero_grad()</span></code></pre></div>
+<p>真实 Trainer 会处理：</p>
+<pre class="text"><code>Mixed Precision
+Distributed Training
+Gradient Accumulation
+Logging
+Evaluation
+Checkpoint
+Scheduler</code></pre>
+<p>但底层逻辑没有魔法。</p>
+<p>仍然是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>o</mi><mi>r</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>d</mi><mo>→</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Forward
+\rightarrow
+Loss
+\rightarrow
+Backward
+\rightarrow
+Gradient
+\rightarrow
+Optimizer
+\rightarrow
+ParameterUpdate
+</annotation></semantics></math></p>
+<p>在我们的 QLoRA 场景：</p>
+<pre class="text"><code>Base W
+Frozen
+
+LoRA A
+Updated
+
+LoRA B
+Updated</code></pre>
+<p>所以：</p>
+<blockquote>
+<p><strong>每一个 Optimizer Step，都是 <code>ProcurementLM_V0.1</code>
+真正发生一点变化的时刻。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十二gradient-accumulation-的精确时间轴">十二、Gradient
+Accumulation 的精确时间轴</h1>
+<p>假设：</p>
+<pre class="text"><code>gradient_accumulation_steps = 4</code></pre>
+<p>那么不是：</p>
+<pre class="text"><code>Batch1 → update
+Batch2 → update
+Batch3 → update
+Batch4 → update</code></pre>
+<p>而是：</p>
+<pre class="text"><code>Micro Batch 1
+Forward
+Backward
+Gradient 累积
+        │
+Micro Batch 2
+Forward
+Backward
+Gradient 累积
+        │
+Micro Batch 3
+Forward
+Backward
+Gradient 累积
+        │
+Micro Batch 4
+Forward
+Backward
+Gradient 累积
+        │
+        ▼
+Optimizer Step
+        │
+Scheduler Step
+        │
+Zero Grad</code></pre>
+<p>这也纠正一个很常见的误解：</p>
+<blockquote>
+<p><strong>Backward 不等于模型参数已经更新。</strong></p>
+</blockquote>
+<p>真正更新发生在：</p>
+<div class="sourceCode" id="cb865"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb865-1"><a href="#cb865-1" aria-hidden="true" tabindex="-1"></a>optimizer.step()</span></code></pre></div>
+<p>而：</p>
+<div class="sourceCode" id="cb866"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb866-1"><a href="#cb866-1" aria-hidden="true" tabindex="-1"></a>loss.backward()</span></code></pre></div>
+<p>只是：</p>
+<blockquote>
+<p>算出 / 累积 Gradient。</p>
+</blockquote>
+<p>这一点一定要锁死。</p>
+<hr />
+<h1
+id="十三第一次训练应该采用5-step-smoke-test">十三、第一次训练应该采用“5-Step
+Smoke Test”</h1>
+<p>正式大跑之前，把配置临时改成：</p>
+<div class="sourceCode" id="cb867"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb867-1"><a href="#cb867-1" aria-hidden="true" tabindex="-1"></a>training_args <span class="op">=</span> SFTConfig(</span>
+<span id="cb867-2"><a href="#cb867-2" aria-hidden="true" tabindex="-1"></a>    ...</span>
+<span id="cb867-3"><a href="#cb867-3" aria-hidden="true" tabindex="-1"></a>    max_steps<span class="op">=</span><span class="dv">5</span>,</span>
+<span id="cb867-4"><a href="#cb867-4" aria-hidden="true" tabindex="-1"></a>    packing<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb867-5"><a href="#cb867-5" aria-hidden="true" tabindex="-1"></a>    eval_strategy<span class="op">=</span><span class="st">&quot;no&quot;</span>,</span>
+<span id="cb867-6"><a href="#cb867-6" aria-hidden="true" tabindex="-1"></a>    save_strategy<span class="op">=</span><span class="st">&quot;no&quot;</span>,</span>
+<span id="cb867-7"><a href="#cb867-7" aria-hidden="true" tabindex="-1"></a>    logging_steps<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb867-8"><a href="#cb867-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>然后观察：</p>
+<pre class="text"><code>Step 1
+Loss 是否 finite？
+
+Step 2
+Loss 是否仍正常？
+
+有没有 NaN？
+
+有没有 OOM？
+
+Grad Norm 是否异常？
+
+GPU Peak VRAM 是否在预算内？
+
+Trainable Parameters 是否符合预期？</code></pre>
+<p>这 5 个 Step 的目标：</p>
+<blockquote>
+<p><strong>不是让模型变强。</strong></p>
+</blockquote>
+<p>而是证明：</p>
+<h1 id="training-contract-works">Training Contract Works</h1>
+<p>Smoke Test 通过以后，再恢复：</p>
+<pre class="text"><code>完整Dataset
+正式Epoch
+Evaluation
+Checkpoint
+Packing</code></pre>
+<p>这一步通常能省掉大量“训练两小时以后才发现 Mask 错了”的惨剧。</p>
+<hr />
+<h1 id="十四packing-不要在第一秒就打开">十四、Packing
+不要在第一秒就打开</h1>
+<p>我们已经学过 Packing 的价值。</p>
+<p>但第一次真正训练时，我建议：</p>
+<pre class="text"><code>Smoke Test
+packing=False</code></pre>
+<p>原因不是 Packing 不好。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>先把最简单路径验证正确。</strong></p>
+</blockquote>
+<p>然后再打开：</p>
+<div class="sourceCode" id="cb871"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb871-1"><a href="#cb871-1" aria-hidden="true" tabindex="-1"></a>packing<span class="op">=</span><span class="va">True</span></span>
+<span id="cb871-2"><a href="#cb871-2" aria-hidden="true" tabindex="-1"></a>packing_strategy<span class="op">=</span><span class="st">&quot;bfd&quot;</span></span></code></pre></div>
+<p>当前 TRL 的 <code>SFTConfig</code> 原生支持
+<code>packing=True</code>，并以 <code>max_length</code> 作为 Packed
+Sequence 长度；当前接口也提供 <code>packing_strategy</code> 与独立的
+<code>eval_packing</code>。(<a
+href="https://huggingface.co/docs/trl/sft_trainer?utm_source=chatgpt.com">huggingface.co</a>)</p>
+<p>我们的第一版正式策略可以是：</p>
+<pre class="text"><code>Train
+Packing = ON
+
+Validation
+Packing = OFF</code></pre>
+<p>但有一个前提：</p>
+<blockquote>
+<p>训练前已经保证 Semantic Samples 自身满足 Length Contract。</p>
+</blockquote>
+<p>这样 Packing 才是在：</p>
+<blockquote>
+<p>优化 GPU 利用率，</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>替我们偷偷解决长样本业务问题。</p>
+</blockquote>
+<hr />
+<h1
+id="十五真正开跑前我要你检查这-10-件事">十五、真正开跑前，我要你检查这
+10 件事</h1>
+<p>这次这 10 项值得直接当 Checklist：</p>
+<pre class="text"><code>□ 1. Base Model ID / Revision 正确
+
+□ 2. Tokenizer 与 Base Model 对应
+
+□ 3. Chat Template Decode 已人工看过
+
+□ 4. Assistant Mask 非空且边界正确
+
+□ 5. EOS / End-of-turn 正确
+
+□ 6. 样本长度没有静默破坏 Response
+
+□ 7. Target Modules 实际匹配
+
+□ 8. Trainable Parameter Count 符合预期
+
+□ 9. 4-bit / Compute Dtype / Gradient Checkpointing 符合预期
+
+□ 10. 5-Step Smoke Test 正常</code></pre>
+<p>十项任意一项失败：</p>
+<blockquote>
+<p>不进入正式 Run。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="preflight-training-audit">Preflight Training Audit</h1>
+<h2 id="训练起飞前审计">训练起飞前审计</h2>
+<hr />
+<h1 id="十六训练过程中究竟看什么">十六、训练过程中究竟看什么？</h1>
+<p>不要只盯：</p>
+<pre class="text"><code>loss</code></pre>
+<p>至少同时观察：</p>
+<pre class="text"><code>Train Loss
+Validation Loss
+Learning Rate
+Gradient Norm
+Peak VRAM
+Tokens / Step
+Throughput</code></pre>
+<p>一个健康现象可能是：</p>
+<pre class="text"><code>Train Loss
+逐渐下降
+
+Validation Loss
+先下降然后趋稳
+
+Grad Norm
+总体有限，没有频繁巨大尖峰
+
+VRAM
+稳定在预算范围内</code></pre>
+<p>但：</p>
+<blockquote>
+<p><strong>Loss 下降只能证明模型越来越会预测训练目标
+Token。</strong></p>
+</blockquote>
+<p>不能证明：</p>
+<blockquote>
+<p>“政府采购风险判断已经变好。”</p>
+</blockquote>
+<p>所以最终仍要进入：</p>
+<pre class="text"><code>Procurement Benchmark
+Hard Negative
+Boundary Case
+General Capability Regression</code></pre>
+<p>这就是第 14 阶段存在的原因。</p>
+<hr />
+<h1 id="十七训练异常怎么读">十七、训练异常怎么读？</h1>
+<p>这里先建立最实用的诊断地图。</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>现象</th>
+<th>不要立刻得出什么结论</th>
+<th>优先检查</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Loss 完全不降</td>
+<td>“LoRA 太小”</td>
+<td>Mask、LR、Gradient、Target Modules、数据</td>
+</tr>
+<tr class="even">
+<td>Loss 很快接近极低</td>
+<td>“模型太强”</td>
+<td>泄漏、重复、任务太简单、过拟合</td>
+</tr>
+<tr class="odd">
+<td>Loss 出现 NaN</td>
+<td>“重启试试”</td>
+<td>LR、数值精度、异常样本、Grad Norm</td>
+</tr>
+<tr class="even">
+<td>Train 降、Val 升</td>
+<td>“继续多跑几轮”</td>
+<td>过拟合、数据分布、Epoch</td>
+</tr>
+<tr class="odd">
+<td>OOM</td>
+<td>“砍 Rank”</td>
+<td>Sequence、Micro Batch、Checkpointing、dtype</td>
+</tr>
+<tr class="even">
+<td>输出格式好但业务判断差</td>
+<td>“训练成功”</td>
+<td>数据覆盖、Hard Case、判断监督</td>
+</tr>
+<tr class="odd">
+<td>模型复述 User 内容</td>
+<td>“生成参数不好”</td>
+<td>Assistant-only Mask / Template</td>
+</tr>
+</tbody>
+</table>
+<p>最后一条特别重要。</p>
+<p>如果训练后模型喜欢：</p>
+<blockquote>
+<p>把用户问题先完整复述一遍，</p>
+</blockquote>
+<p>第一个嫌疑对象就应该包括：</p>
+<h1 id="loss-mask-2">Loss Mask</h1>
+<p>而不是先去改 Temperature。</p>
+<hr />
+<h1 id="十八stage-11-最终要留下的-run-manifest">十八、Stage 11
+最终要留下的 Run Manifest</h1>
+<p>每一次正式训练必须有一个身份。</p>
+<p>例如：</p>
+<h1
+id="procurementsfttrainingrun_v0.1-1"><code>ProcurementSFTTrainingRun_V0.1</code></h1>
+<p>记录：</p>
+<pre class="text"><code>run_id
+timestamp
+
+base_model
+base_model_revision
+tokenizer_revision
+chat_template_hash
+
+dataset_version
+train_split_hash
+validation_split_hash
+
+max_length
+packing_policy
+loss_policy
+
+quantization_config
+compute_dtype
+
+lora_rank
+lora_alpha
+lora_dropout
+target_modules
+
+trainable_parameter_count
+trainable_ratio
+
+micro_batch_size
+gradient_accumulation_steps
+effective_batch
+
+learning_rate
+warmup
+scheduler
+epochs
+max_grad_norm
+
+gradient_checkpointing
+attention_backend
+
+seed
+data_seed
+
+peak_vram
+
+final_train_loss
+final_validation_loss
+
+output_adapter_path</code></pre>
+<p>因为半年以后真正的问题不是：</p>
+<blockquote>
+<p>“当时模型效果挺好的吧？”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>我们能不能准确重建那一次训练？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十九把今天所有内容压成一条完整流程">十九、把今天所有内容压成一条完整流程</h1>
+<pre class="text"><code>ProcurementDataset_V0.1
+          │
+          ▼
+Semantic Audit
+          │
+          ▼
+messages
+          │
+          ▼
+Chat Template
+          │
+          ▼
+Assistant Mask Audit
+          │
+          ▼
+Length Audit
+          │
+          ▼
+Tokenizer
+          │
+          ▼
+4-bit NF4 Frozen Base
+          │
+          ▼
+prepare_model_for_kbit_training
+          │
+          ▼
+LoRA Injection
+          │
+          ▼
+Trainable Parameter Audit
+          │
+          ▼
+SFTConfig
+          │
+          ▼
+5-Step Smoke Test
+          │
+          ▼
+Formal Training
+          │
+          ▼
+Forward
+          │
+          ▼
+Causal LM Loss
+          │
+          ▼
+Backward
+          │
+          ▼
+LoRA Gradients
+          │
+          ▼
+Gradient Accumulation
+          │
+          ▼
+Optimizer Step
+          │
+          ▼
+Checkpoint
+          │
+          ▼
+ProcurementLM_V0.1 Adapter</code></pre>
+<p>这就是我们从第 1 阶段铺到今天的完整训练链。</p>
+<hr />
+<h1 id="二十本阶段真正需要记住的-5-句话">二十、本阶段真正需要记住的 5
+句话</h1>
+<blockquote>
+<p><strong>第一，真正的 SFT 不是
+<code>trainer.train()</code>，而是一份由
+Dataset、Template、Mask、Length、Model、LoRA、Optimizer 和 Evaluation
+共同构成的训练协议。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，在正式花 GPU 时间以前，必须人工 Decode Chat
+Template、检查 Assistant Loss Mask、检查长度和 Trainable
+Parameters，并先跑 5～20 Step Smoke Test。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，<code>loss.backward()</code> 只是计算和累积
+Gradient，真正改变 LoRA A/B 的时刻是
+<code>optimizer.step()</code>；Gradient Accumulation 决定多少个
+Micro-batch 合成一次参数更新。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Learning Rate、Warmup、Epoch、Batch、Gradient Clipping
+各自解决不同问题，不能把一个异常全部归因于“LoRA 参数不够”。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Training Loss 下降只说明训练目标的 Token
+概率在改善；是否真的成为更好的政府采购模型，必须交给独立
+Validation、Hard Case 和最终 Benchmark。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最后只记一句话-10">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>真正可靠的 SFT
+训练，不是“代码终于跑起来了”，而是我们能够证明：模型看到了正确的
+Prompt，只有正确的 Response Token 在产生 Loss，正确的 LoRA 参数在获得
+Gradient，每次 Optimizer Step 都在按可复现配置更新它们，而且整个过程能被
+Validation 和 Benchmark 独立检验。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-12-阶段">下一阶段：第五课 · 第 12 阶段</h1>
+<h1 id="checkpointlogging-与训练曲线">Checkpoint、Logging
+与训练曲线</h1>
+<h2
+id="一场训练跑了几个小时以后我们怎样判断它是在正常学习已经过拟合还是正在悄悄出问题">一场训练跑了几个小时以后，我们怎样判断它是在“正常学习”、已经过拟合，还是正在悄悄出问题？</h2>
+<p>第 11 阶段解决了：</p>
+<pre class="text"><code>训练怎样真正启动</code></pre>
+<p>第 12 阶段会开始读训练过程本身：</p>
+<pre class="text"><code>Train Loss
+Validation Loss
+Learning Rate
+Grad Norm
+Step
+Epoch
+Checkpoint
+Peak VRAM</code></pre>
+<p>并真正解决：</p>
+<blockquote>
+<p><strong>什么时候该继续，什么时候该停，哪个 Checkpoint
+值得保留，以及训练中断以后怎样恢复，而不是从头再烧一遍
+GPU。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage10.html">← 第 10 阶段</a><a class="btn" href="stage12.html">第 12 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

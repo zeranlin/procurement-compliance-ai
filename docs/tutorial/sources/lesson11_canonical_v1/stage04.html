@@ -1,0 +1,2368 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第十一课 · 第4阶段：附件 9 的 22 项规则工程化</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header strong{margin-right:auto}button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:38px 32px 100px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:48px 54px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+p strong:first-child{color:var(--text)}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:30px}
+.nav{display:flex;justify-content:space-between;gap:10px;margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
+@media(max-width:800px){main{padding:16px}article{padding:24px 18px}}
+@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第十一课 · 第 4 阶段</strong><a class="btn" href="index.html">课程首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note">中文释义增强版：英文工程字段、Schema、代码流程继续保留；所有英文-only数学心智模型与数学流程公式紧邻补充中文业务释义。</div><h1 id="第十一课-第-4-阶段">第十一课 · 第 4 阶段</h1>
+<h1
+id="四类专项整治采购人设置差别歧视条款附件-9-的-22-项规则工程化">“四类”专项整治——采购人设置差别歧视条款：附件
+9 的 22 项规则工程化</h1>
+<h2
+id="怎样把财政部2025-年政府采购领域四类违法违规行为专项整治工作指引中-7-类问题22-项具体表现形式转成机器可执行可解释可审计可评测的政府采购合规规则体系">怎样把财政部《2025
+年政府采购领域“四类”违法违规行为专项整治工作指引》中 7 类问题、22
+项具体表现形式，转成机器可执行、可解释、可审计、可评测的政府采购合规规则体系？</h2>
+<blockquote>
+<p><strong>中文阅读增强说明（本次修订新增）</strong>：为方便中国政府采购业务人员、合规人员和工程人员共同阅读，本阶段所有关键英文工程字段、状态值、流程节点和
+Schema 标识均保留原英文名称，并在同一代码块中增加
+<code># 中文：...</code>
+的业务释义。英文名称用于后续数据库、JSON/YAML、API
+和程序实现保持稳定；中文释义用于说明它在政府采购合规审查中的实际含义。</p>
+</blockquote>
+<p>第 3 阶段我们已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TextChunk
+\neq
+BusinessClause
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 检索文本块 ≠ 政府采购业务条款。</p>
+<p>并且把真实采购文件恢复为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>F</mi><mi>u</mi><mi>n</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>p</mi><mi>a</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Project
+\rightarrow
+Document
+\rightarrow
+Version
+\rightarrow
+Section
+\rightarrow
+Clause
+\rightarrow
+Requirement
+\rightarrow
+BusinessFunction
+\rightarrow
+EvidenceSpan
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 采购项目 → 采购文件 → 文档版本 → 章节
+→ 业务条款 → 业务要求 → 业务功能 / 条款作用 → 证据片段及原文定位。</p>
+<p>现在终于进入第十一课最核心的业务规则阶段之一：</p>
+<h1 id="采购人设置差别歧视条款">“采购人设置差别歧视条款”</h1>
+<h2 id="采购文件专项合规检查">采购文件专项合规检查</h2>
+<p>本阶段的正式业务来源是：</p>
+<pre class="text"><code>《2025年政府采购领域“四类”违法违规行为专项整治工作指引》
+
+第二部分 检查规范
+一、关于采购人设置差别歧视条款问题
+
+附件9
+处理处罚标准</code></pre>
+<p>该工作指引正文明确要求：</p>
+<blockquote>
+<p>对采购文件、采购公告的具体内容进行全面检查，重点包括采购需求、资格要求、实质性条款以及评分标准等。</p>
+</blockquote>
+<p>正文归纳为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>7</mn><mspace width="0.222em"></mspace><mi>类</mi><mi>违</mi><mi>法</mi><mi>违</mi><mi>规</mi><mi>问</mi><mi>题</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+7\ 类违法违规问题
+}
+</annotation></semantics></math></p>
+<p>附件 9 又进一步展开为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>22</mn><mspace width="0.222em"></mspace><mi>项</mi><mi>具</mi><mi>体</mi><mi>表</mi><mi>现</mi><mi>形</mi><mi>式</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+22\ 项具体表现形式
+}
+</annotation></semantics></math></p>
+<p>数量结构：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>2</mn><mo>+</mo><mn>2</mn><mo>+</mo><mn>4</mn><mo>+</mo><mn>2</mn><mo>+</mo><mn>2</mn><mo>+</mo><mn>3</mn><mo>+</mo><mn>7</mn><mo>=</mo><mn>22</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+2+2+4+2+2+3+7=22
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 2+2+4+2+2+3+7=22。</p>
+<p>因此本阶段第一条、也是最高优先级边界正式锁定为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>22</mn><mi>项</mi><mo>≠</mo><mn>22</mn><mi>个</mi><mi>关</mi><mi>键</mi><mi>词</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+22项
+\neq
+22个关键词
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementdiscrimination22ruleset_v1"><code>ProcurementDiscrimination22RuleSet_V1</code></h1>
+<hr />
+<h1 id="一先把附件-9-的业务层级锁死">一、先把附件 9 的业务层级锁死</h1>
+<p>正确结构是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo>“</mo><mi>四</mi><mi>类</mi><mo>”</mo><mi>专</mi><mi>项</mi><mi>整</mi><mi>治</mi><mo>⊃</mo><mi>采</mi><mi>购</mi><mi>人</mi><mi>设</mi><mi>置</mi><mi>差</mi><mi>别</mi><mi>歧</mi><mi>视</mi><mi>条</mi><mi>款</mi><mo>⊃</mo><mn>7</mn><mi>类</mi><mi>问</mi><mi>题</mi><mo>⊃</mo><mn>22</mn><mi>项</mi><mi>具</mi><mi>体</mi><mi>表</mi><mi>现</mi><mi>形</mi><mi>式</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+“四类”专项整治
+\supset
+采购人设置差别歧视条款
+\supset
+7类问题
+\supset
+22项具体表现形式
+}
+</annotation></semantics></math></p>
+<p>这意味着：</p>
+<blockquote>
+<p>D01～D22 不是 22 个互不相关的标签。</p>
+</blockquote>
+<p>它们有：</p>
+<pre class="text"><code>上位专项
+一级问题类别
+具体表现形式
+处理依据
+处罚依据
+处理建议
+责任主体</code></pre>
+<p>等正式来源关系。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>I</mi><mi>D</mi><mi>必</mi><mi>须</mi><mi>保</mi><mi>留</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>H</mi><mi>i</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RuleID
+必须保留
+SourceHierarchy
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二7-类问题与-22-项具体表现形式">二、7 类问题与 22
+项具体表现形式</h1>
+<p>下面的 D01～D22，是对附件 9“表现形式”逐项建立的工程 Rule ID。</p>
+<p>这里的目的不是改写附件 9，</p>
+<p>而是：</p>
+<blockquote>
+<p>给每一项具体表现形式建立稳定、可版本化、可测试的机器标识。</p>
+</blockquote>
+<hr />
+<h1 id="第一类">第一类</h1>
+<h1
+id="直接或变相对外地企业进入本地市场设置阻碍">直接或变相对外地企业进入本地市场设置阻碍</h1>
+<h2 id="项">2 项</h2>
+<h2 id="d01">D01</h2>
+<h3
+id="注册地距离行政区域内分支机构等不合理资格条件或评审因素">注册地、距离、行政区域内分支机构等不合理资格条件或评审因素</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件设置供应商注册地、所在地距离采购人的距离、在某行政区域内设立分支机构等不合理的资格条件、评审因素。</p>
+</blockquote>
+<p>典型结构：</p>
+<pre class="text"><code>Subject    # 中文：主体
+供应商
+
+RestrictionType    # 中文：限制类型
+地域 / 本地存在性
+
+BusinessFunction    # 中文：业务功能
+ENTRY_GATE / SCORING_FACTOR    # 中文：准入门槛 / 评分因素
+
+Timing    # 中文：适用 / 发生时点
+通常发生在投标前或评审阶段</code></pre>
+<p>重点不是只搜：</p>
+<pre class="text"><code>“本地”
+“分公司”</code></pre>
+<p>而是判断：</p>
+<pre class="text"><code>是否要求投标前满足
+是否作为资格门槛
+是否作为评分因素
+是否限制外地企业进入
+是否存在明确业务必要性或特别依据</code></pre>
+<hr />
+<h2 id="d02">D02</h2>
+<h3
+id="特定行政区域或特定主体的业绩奖励作为加分中标或成交条件">特定行政区域或特定主体的业绩、奖励作为加分、中标或成交条件</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将特定行政区域或特定主体的业绩、奖励作为加分条件或中标、成交条件。</p>
+</blockquote>
+<p>需要结构化识别：</p>
+<pre class="text"><code>ExperienceRegion    # 中文：业绩地域限制
+
+AwardRegion    # 中文：奖项地域限制
+
+SpecificEntity    # 中文：特定主体限制
+
+ScoreBonus    # 中文：评分加分
+
+WinningCondition    # 中文：中标 / 成交条件</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExperienceRequirement
+\neq
+RegionalExperienceRestriction
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 业绩要求 ≠ 地域业绩限制。</p>
+<hr />
+<h1 id="第二类">第二类</h1>
+<h1
+id="限定供应商所在行业或限制其他行业供应商参与竞争">限定供应商所在行业或限制其他行业供应商参与竞争</h1>
+<h2 id="项-1">2 项</h2>
+<h2 id="d03">D03</h2>
+<h3
+id="特定行业的业绩奖励作为资格条件或评审因素">特定行业的业绩、奖励作为资格条件或评审因素</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将特定行业的业绩、奖励作为资格条件或评审因素。</p>
+</blockquote>
+<p>系统必须区分：</p>
+<pre class="text"><code>与项目履约能力直接相关的类似经验</code></pre>
+<p>与：</p>
+<pre class="text"><code>无充分依据限定只能来自某一行业的业绩 / 奖励</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>I</mi><mi>n</mi><mi>d</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>L</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi>I</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RelevantExperience
+\neq
+IndustryLockIn
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 相关履约经验 ≠ 行业锁定。</p>
+<hr />
+<h2 id="d04">D04</h2>
+<h3
+id="除特别规定外将营业执照经营范围作为资格条件或评审因素">除特别规定外，将营业执照经营范围作为资格条件或评审因素</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>除特别规定外，采购文件将营业执照经营范围作为资格条件或评审因素。</p>
+</blockquote>
+<p>这里有一个非常重要的规则组件：</p>
+<pre class="text"><code>ExceptionCondition    # 中文：例外条件
+=
+除特别规定外</code></pre>
+<p>因此不能做成：</p>
+<pre class="text"><code>出现“营业执照经营范围”
+→ 自动违规</code></pre>
+<p>而必须：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Trigger
++
+ExceptionCheck
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 触发条件 + 例外检查。</p>
+<hr />
+<h1 id="第三类">第三类</h1>
+<h1
+id="设置对企业规模的不合理限制以排斥中小企业">设置对企业规模的不合理限制以排斥中小企业</h1>
+<h2 id="项-2">4 项</h2>
+<h2 id="d05">D05</h2>
+<h3
+id="经营年限注册资本资产总额营业收入从业人员利润纳税额等规模条件作为资格要求或评审因素">经营年限、注册资本、资产总额、营业收入、从业人员、利润、纳税额等规模条件作为资格要求或评审因素</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将经营年限、注册资本、资产总额、营业收入、从业人员、利润、纳税额等规模条件作为资格要求或评审因素。</p>
+</blockquote>
+<p>这是典型：</p>
+<h1 id="multi-trigger-rule">Multi-trigger Rule</h1>
+<h2 id="多触发字段规则">多触发字段规则</h2>
+<p>触发对象包括：</p>
+<pre class="text"><code>OperatingYears    # 中文：经营年限
+RegisteredCapital    # 中文：注册资本
+TotalAssets    # 中文：资产总额
+Revenue    # 中文：营业收入
+EmployeeCount    # 中文：从业人员数量
+Profit    # 中文：利润
+TaxAmount    # 中文：纳税额</code></pre>
+<p>但最终仍然要识别：</p>
+<pre class="text"><code>它是不是供应商准入 / 评分条件</code></pre>
+<p>而不是仅仅：</p>
+<blockquote>
+<p>文档里是否出现这些财务字段。</p>
+</blockquote>
+<hr />
+<h2 id="d06">D06</h2>
+<h3
+id="特定金额的合同业绩作为资格条件或评审因素">特定金额的合同业绩作为资格条件或评审因素</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将特定金额的合同业绩作为资格条件或评审因素。</p>
+</blockquote>
+<p>这里要结构化：</p>
+<pre class="text"><code>ExperienceType    # 中文：业绩类型
+ContractAmountThreshold    # 中文：合同金额门槛
+QualificationOrScoring    # 中文：用于资格条件还是评分因素
+TimeWindow    # 中文：时间窗口
+ProjectSimilarity    # 中文：项目相似性</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>A</mi><mi>r</mi><mi>b</mi><mi>i</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>A</mi><mi>m</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PastPerformance
+\neq
+ArbitraryAmountThreshold
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 历史业绩 ≠ 任意金额门槛。</p>
+<hr />
+<h2 id="d07">D07</h2>
+<h3
+id="与规模条件存在直接关联的第三方信用评价认证等不合理限制">与规模条件存在直接关联的第三方信用评价、认证等不合理限制</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件设置与规模条件存在直接关联的第三方信用评价、认证等不合理的限制条件。</p>
+</blockquote>
+<p>这条说明：</p>
+<blockquote>
+<p>风险可以通过“间接代理变量”出现。</p>
+</blockquote>
+<p>即采购文件可能没有直接写：</p>
+<pre class="text"><code>注册资本必须达到X</code></pre>
+<p>而是要求：</p>
+<pre class="text"><code>某信用等级
+某认证</code></pre>
+<p>但该评价体系本身：</p>
+<blockquote>
+<p>与企业规模直接关联。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>x</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>也</mi><mi>可</mi><mi>能</mi><mi>构</mi><mi>成</mi><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProxyRestriction
+也可能构成
+ScaleRestriction
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="d08">D08</h2>
+<h3
+id="场所面积营业网点数量及分布等与采购需求无关的条件">场所面积、营业网点数量及分布等与采购需求无关的条件</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件设置场所面积、营业网点数量及分布等与采购需求无关的资格条件或评审因素。</p>
+</blockquote>
+<p>真正判断关键是：</p>
+<pre class="text"><code>是否与采购需求有关</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>h</mi><mi>y</mi><mi>s</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>U</mi><mi>n</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PhysicalCapacityRequirement
+\neq
+AutomaticallyUnreasonable
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 场所 / 网点等实体能力要求 ≠
+自动视为不合理。</p>
+<p>必须建立：</p>
+<h1 id="relevance-test">Relevance Test</h1>
+<h2 id="业务相关性测试">业务相关性测试</h2>
+<hr />
+<h1 id="第四类">第四类</h1>
+<h1 id="非法限定供应商的企业形式等">非法限定供应商的企业形式等</h1>
+<h2 id="项-3">2 项</h2>
+<h2 id="d09">D09</h2>
+<h3
+id="限定供应商所有制形式组织形式等条件">限定供应商所有制形式、组织形式等条件</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件限定供应商的所有制形式、组织形式等条件。</p>
+</blockquote>
+<p>典型字段：</p>
+<pre class="text"><code>OwnershipType    # 中文：所有制形式
+OrganizationForm    # 中文：组织形式</code></pre>
+<p>风险位置可以出现在：</p>
+<pre class="text"><code>资格条件
+评分标准
+实质性条款</code></pre>
+<hr />
+<h2 id="d10">D10</h2>
+<h3
+id="企业股权结构投资者国别所在地等不合理条件">企业股权结构、投资者国别、所在地等不合理条件</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件设置企业股权结构、投资者国别、所在地等不合理条件。</p>
+</blockquote>
+<p>这条需要特别识别：</p>
+<pre class="text"><code>ShareholdingStructure    # 中文：股权结构
+InvestorNationality    # 中文：投资者国别
+Location    # 中文：所在地 / 地域</code></pre>
+<p>同时仍需保留：</p>
+<pre class="text"><code>是否存在明确法定特殊情形</code></pre>
+<p>的 Exception Slot。</p>
+<hr />
+<h1 id="第五类">第五类</h1>
+<h1
+id="指向限定或指定特定供应商特定产品等">指向、限定或指定特定供应商、特定产品等</h1>
+<h2 id="项-4">2 项</h2>
+<h2 id="d11">D11</h2>
+<h3
+id="技术服务需求指向特定供应商特定产品">技术、服务需求指向特定供应商、特定产品</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件中的技术、服务需求指向特定供应商、特定产品。</p>
+</blockquote>
+<p>这里最危险的误区是：</p>
+<pre class="text"><code>没有出现品牌名
+→ 就不存在指向性</code></pre>
+<p>实际可以通过：</p>
+<pre class="text"><code>参数组合
+接口约束
+独有功能
+尺寸组合
+专有协议
+服务体系</code></pre>
+<p>形成：</p>
+<h1 id="de-facto-direction">De facto Direction</h1>
+<h2 id="实质指向">实质指向</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>B</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>N</mi><mi>a</mi><mi>m</mi><mi>e</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>D</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoBrandName
+\neq
+NoProductDirection
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 未出现品牌名 ≠ 不存在产品指向。</p>
+<hr />
+<h2 id="d12">D12</h2>
+<h3
+id="限定或指定供应商专利商标品牌原产地零部件等">限定或指定供应商、专利、商标、品牌、原产地、零部件等</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件限定或指定特定的供应商或专利、商标、品牌、原产地、零部件等。</p>
+</blockquote>
+<p>正文还特别提示关注：</p>
+<pre class="text"><code>“知名”
+“一线”
+“参考品牌”</code></pre>
+<p>等表述。</p>
+<p>这里至少要抽：</p>
+<pre class="text"><code>SupplierReference    # 中文：特定供应商指向
+PatentReference    # 中文：专利指向
+TrademarkReference    # 中文：商标指向
+BrandReference    # 中文：品牌指向
+OriginReference    # 中文：原产地指向
+ComponentReference    # 中文：零部件指向
+EquivalentMechanism    # 中文：等效替代机制</code></pre>
+<hr />
+<h1 id="第六类">第六类</h1>
+<h1
+id="设置与采购项目实施不必要或无关的评审标准">设置与采购项目实施不必要或无关的评审标准</h1>
+<h2 id="项-5">3 项</h2>
+<h2 id="d13">D13</h2>
+<h3
+id="资格证书技术参数商务条件等与项目具体特点和实际需要不相适应或与合同履行无关">资格证书、技术参数、商务条件等与项目具体特点和实际需要不相适应或与合同履行无关</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件设定的资格证书、技术参数、商务条件等需求与采购项目的具体特点和实际需要不相适应或与合同履行无关。</p>
+</blockquote>
+<p>这是 D01～D22 中最典型的：</p>
+<h1 id="context-sensitive-rule">Context-sensitive Rule</h1>
+<h2 id="强上下文规则">强上下文规则</h2>
+<p>因为没有一个词：</p>
+<blockquote>
+<p>能直接决定违规。</p>
+</blockquote>
+<p>必须判断：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>↔</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Requirement
+\leftrightarrow
+ProjectNecessity
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 业务要求 ↔︎ 项目实际必要性。</p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>↔</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Requirement
+\leftrightarrow
+ContractPerformance
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 业务要求 ↔︎ 合同履约目标。</p>
+<hr />
+<h2 id="d14">D14</h2>
+<h3
+id="国务院取消的行政审批事项作为资格条件或评审因素">国务院取消的行政审批事项作为资格条件或评审因素</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将国务院取消的行政审批事项作为资格条件或评审因素。</p>
+</blockquote>
+<p>这类规则依赖：</p>
+<h1 id="external-registry">External Registry</h1>
+<h2 id="外部政策-审批事项状态库">外部政策 / 审批事项状态库</h2>
+<p>因为模型仅凭采购文件本身：</p>
+<blockquote>
+<p>无法可靠判断某审批事项是否已经取消。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mn>14</mn><mi>需</mi><mi>要</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi><mi>/</mi><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+D14
+需要
+PolicyRegistry / ExternalReference
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="d15">D15</h2>
+<h3
+id="aaa-级信用证书守合同重信用证书或其他行业协会组织颁发的证书奖项作为资格条件或评审因素">AAA
+级信用证书、守合同重信用证书或其他行业协会、组织颁发的证书、奖项作为资格条件或评审因素</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将 AAA
+级信用证书、守合同重信用证书或其他行业协会、组织颁发的证书、奖项作为资格条件或评审因素。</p>
+</blockquote>
+<p>这条需要：</p>
+<pre class="text"><code>CertificateType    # 中文：证书类型
+IssuerType    # 中文：出具 / 颁发机构类型
+AwardType    # 中文：奖项类型
+QualificationOrScoring    # 中文：用于资格条件还是评分因素</code></pre>
+<p>并继续确认：</p>
+<blockquote>
+<p>是否属于附件所指的情形。</p>
+</blockquote>
+<hr />
+<h1 id="第七类">第七类</h1>
+<h1
+id="以其他不合理的条件限制或排斥潜在供应商">以其他不合理的条件限制或排斥潜在供应商</h1>
+<h2 id="项-6">7 项</h2>
+<h2 id="d16">D16</h2>
+<h3
+id="除采购进口货物外设置厂家授权承诺证明背书等不合理限制">除采购进口货物外，设置厂家授权、承诺、证明、背书等不合理限制</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>除采购进口货物外，采购文件设置厂家授权、承诺、证明、背书等不合理的限制。</p>
+</blockquote>
+<p>这里有明确 Exception：</p>
+<pre class="text"><code>采购进口货物</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>n</mi><mi>u</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>I</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ManufacturerAuthorization
++
+ImportException
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 厂家授权 + 进口货物例外。</p>
+<p>必须同时判断。</p>
+<hr />
+<h2 id="d17">D17</h2>
+<h3
+id="供应商备选库名录库资格库等作为资格条件">供应商备选库、名录库、资格库等作为资格条件</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将供应商备选库、名录库、资格库等作为资格条件。</p>
+</blockquote>
+<p>结构化对象：</p>
+<pre class="text"><code>LibraryType    # 中文：库 / 名录类型
+MembershipRequired    # 中文：是否要求入库 / 入围
+BusinessFunction = ENTRY_GATE    # 中文：业务功能 = 准入门槛</code></pre>
+<hr />
+<h2 id="d18">D18</h2>
+<h3
+id="要求供应商进行不必要的登记注册等">要求供应商进行不必要的登记、注册等</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>要求供应商进行不必要的登记、注册等。</p>
+</blockquote>
+<p>这里的核心词不是：</p>
+<pre class="text"><code>登记 / 注册</code></pre>
+<p>而是：</p>
+<pre class="text"><code>不必要</code></pre>
+<p>因此必须评：</p>
+<h1 id="necessity">Necessity</h1>
+<h2 id="必要性">必要性</h2>
+<hr />
+<h2 id="d19">D19</h2>
+<h3
+id="将营业执照审计报告资质证书等资格条件证明材料作为获取采购文件的前置条件">将营业执照、审计报告、资质证书等资格条件证明材料作为获取采购文件的前置条件</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件将营业执照、审计报告、资质证书等资格条件证明材料作为获取采购文件的前置条件。</p>
+</blockquote>
+<p>这是典型：</p>
+<h1 id="stage-misplacement">Stage Misplacement</h1>
+<h2 id="条件设置阶段错误">条件设置阶段错误</h2>
+<p>重点字段：</p>
+<pre class="text"><code>RequiredMaterial    # 中文：要求提交的材料
+RequiredAtStage    # 中文：要求提交的程序阶段
+Consequence    # 中文：不满足时的后果</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>M</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>l</mi><mo>≠</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QualificationMaterial
+\neq
+DocumentAccessPrerequisite
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 资格证明材料 ≠
+获取采购文件前置条件。</p>
+<hr />
+<h2 id="d20">D20</h2>
+<h3
+id="除特别规定外无正当理由限制技术证明材料的出具机构">除特别规定外，无正当理由限制技术证明材料的出具机构</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>除特别规定外，采购文件无正当理由限制技术证明材料的出具机构等。</p>
+</blockquote>
+<p>至少要判断：</p>
+<pre class="text"><code>IssuerRestriction    # 中文：出具机构限制
+SpecialProvision    # 中文：特别规定
+Justification    # 中文：合理性 / 正当理由说明</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>需</mi><mi>要</mi><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>J</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+IssuerRestriction
+需要
+Exception
++
+Justification
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="d21">D21</h2>
+<h3
+id="违规要求投标人为特定范围的定点供应商入围单位等">违规要求投标人为特定范围的定点供应商、入围单位等</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件违规要求投标人为特定范围的定点供应商、入围单位等。</p>
+</blockquote>
+<p>结构化：</p>
+<pre class="text"><code>DesignatedSupplierPool    # 中文：指定供应商范围 / 供应商池
+FrameworkMembership    # 中文：框架 / 入围成员资格
+EntryGate    # 中文：准入门槛</code></pre>
+<hr />
+<h2 id="d22">D22</h2>
+<h3
+id="设置没有法律依据的黑名单不良记录名单违约名单等资格要求">设置没有法律依据的黑名单、不良记录名单、违约名单等资格要求</h3>
+<p>附件 9 表现形式：</p>
+<blockquote>
+<p>采购文件设置没有法律依据的黑名单、不良记录名单、违约名单等资格要求。</p>
+</blockquote>
+<p>最关键的判断不是：</p>
+<pre class="text"><code>是否出现黑名单</code></pre>
+<p>而是：</p>
+<pre class="text"><code>该名单是否有法律依据</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>l</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>l</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>l</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>=</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BlacklistRequirement
+WithoutLegalBasis
+=
+CandidateRisk
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 黑名单要求 缺乏法律依据 =
+候选风险。</p>
+<p>它天然需要：</p>
+<pre class="text"><code>PolicyRegistry    # 中文：政策 / 法规登记库</code></pre>
+<p>参与。</p>
+<hr />
+<h1 id="三22-项规则不是同一种类型">三、22 项规则不是同一种类型</h1>
+<p>D01～D22 至少可以分成不同 Decision Logic 类型。</p>
+<h2 id="type-a">Type A</h2>
+<h1 id="direct-structural-rule">Direct Structural Rule</h1>
+<h2 id="直接结构型">直接结构型</h2>
+<p>例如：</p>
+<pre class="text"><code>D17    # 中文：D17 规则编号（附件9工程化规则标识）
+供应商备选库 / 名录库 / 资格库作为资格条件</code></pre>
+<p>如果结构事实明确，</p>
+<p>规则判断相对直接。</p>
+<hr />
+<h2 id="type-b">Type B</h2>
+<h1 id="exception-sensitive-rule">Exception-sensitive Rule</h1>
+<h2 id="例外敏感型">例外敏感型</h2>
+<p>例如：</p>
+<pre class="text"><code>D04    # 中文：D04 规则编号（附件9工程化规则标识）
+除特别规定外，营业执照经营范围
+
+D16    # 中文：D16 规则编号（附件9工程化规则标识）
+除采购进口货物外，厂家授权
+
+D20    # 中文：D20 规则编号（附件9工程化规则标识）
+除特别规定外，限制技术证明材料出具机构</code></pre>
+<p>这类必须：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Trigger
++
+ExceptionCheck
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 触发条件 + 例外检查。</p>
+<hr />
+<h2 id="type-c">Type C</h2>
+<h1 id="context-necessity-rule">Context / Necessity Rule</h1>
+<h2 id="上下文必要性型">上下文必要性型</h2>
+<p>例如：</p>
+<pre class="text"><code>D08    # 中文：D08 规则编号（附件9工程化规则标识）
+场所面积 / 营业网点与采购需求是否相关
+
+D13    # 中文：D13 规则编号（附件9工程化规则标识）
+资格证书 / 技术参数 / 商务条件是否与实际需要相适应</code></pre>
+<p>必须：</p>
+<pre class="text"><code>Project Context    # 中文：项目业务上下文
++
+Requirement    # 中文：业务要求
++
+Business Necessity    # 中文：业务必要性</code></pre>
+<p>共同判断。</p>
+<hr />
+<h2 id="type-d">Type D</h2>
+<h1 id="external-status-rule">External-status Rule</h1>
+<h2 id="外部状态依赖型">外部状态依赖型</h2>
+<p>例如：</p>
+<pre class="text"><code>D14    # 中文：D14 规则编号（附件9工程化规则标识）
+国务院取消的行政审批事项
+
+D22    # 中文：D22 规则编号（附件9工程化规则标识）
+没有法律依据的黑名单</code></pre>
+<p>必须查：</p>
+<pre class="text"><code>Policy Registry    # 中文：政策法规登记库
+External Registry    # 中文：外部权威状态库
+Effective Status    # 中文：生效状态</code></pre>
+<hr />
+<h2 id="type-e">Type E</h2>
+<h1 id="semantic-direction-rule">Semantic Direction Rule</h1>
+<h2 id="语义指向型">语义指向型</h2>
+<p>例如：</p>
+<pre class="text"><code>D11    # 中文：D11 规则编号（附件9工程化规则标识）
+技术 / 服务需求指向特定供应商、特定产品</code></pre>
+<p>它可能没有明显关键词，</p>
+<p>需要综合：</p>
+<pre class="text"><code>参数组合
+市场可满足性
+等效产品
+上下文</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>l</mi><mi>l</mi><mn>22</mn><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>s</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+All22Rules
+\neq
+SameInferenceMethod
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> D01-D22全部规则 ≠ 同一种推理 /
+执行方式。</p>
+<hr />
+<h1 id="四核心心智模型-①">四、核心心智模型 ①</h1>
+<h1 id="ruletype-决定-executionstrategy"><code>RuleType</code> 决定
+<code>ExecutionStrategy</code></h1>
+<p>因此每个 Rule Object 必须声明：</p>
+<pre class="text"><code>execution_mode    # 中文：执行模式</code></pre>
+<p>例如：</p>
+<pre class="text"><code>DETERMINISTIC    # 中文：确定性规则执行
+SEMANTIC    # 中文：语义判断型执行
+CONTEXTUAL    # 中文：上下文判断型执行
+EXTERNAL_LOOKUP    # 中文：需要外部权威查询
+HYBRID    # 中文：混合执行模式</code></pre>
+<p>这样 Hybrid Compliance Engine 才知道：</p>
+<blockquote>
+<p>这个规则应该交给谁算。</p>
+</blockquote>
+<hr />
+<h1 id="五rule-object-的正式结构">五、Rule Object 的正式结构</h1>
+<p>每个 D01～D22 至少要包含：</p>
+<pre class="text"><code>rule_id    # 中文：规则标识
+
+rule_set_version    # 中文：规则集版本
+
+source_document    # 中文：来源文件
+
+source_section    # 中文：来源章节
+
+source_attachment    # 中文：来源附件
+
+primary_category_id    # 中文：一级问题类别标识
+
+primary_category_name    # 中文：一级问题类别名称
+
+manifestation_text    # 中文：具体表现形式文本
+
+legal_basis_refs    # 中文：法律 / 政策依据引用标识列表
+
+penalty_basis_refs    # 中文：处罚依据引用标识列表
+
+handling_advice_refs    # 中文：处理建议引用标识列表
+
+responsible_party_refs    # 中文：责任主体引用标识列表
+
+document_scope    # 中文：文档适用范围
+
+business_functions    # 中文：业务功能 / 作用
+
+execution_mode    # 中文：执行模式
+
+trigger_schema    # 中文：触发结构定义
+
+context_requirements    # 中文：上下文要求
+
+necessity_check    # 中文：必要性检查
+
+exception_conditions    # 中文：例外条件
+
+external_registry_dependencies    # 中文：外部登记库依赖项
+
+evidence_requirements    # 中文：证据要求
+
+negative_patterns    # 中文：负例模式
+
+hard_negative_patterns    # 中文：高难负例模式
+
+decision_logic    # 中文：决策逻辑
+
+risk_default    # 中文：风险默认
+
+human_review_policy    # 中文：人工复核政策 / 法规
+
+output_schema    # 中文：输出结构定义
+
+test_cases    # 中文：测试样例
+
+effective_from    # 中文：生效起始
+
+effective_to    # 中文：生效截止
+
+rule_status    # 中文：规则状态</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi><mi>I</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rule
+\neq
+PromptInstruction
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 规则 ≠ Prompt中的规则指令。</p>
+<p>Rule 是：</p>
+<blockquote>
+<p>一个被版本化管理、可以执行、可以测试、可以审计的工程资产。</p>
+</blockquote>
+<hr />
+<h1 id="六source-provenance-必须成为-rule-的一部分">六、Source
+Provenance 必须成为 Rule 的一部分</h1>
+<p>D01～D22 的 source 不能写成：</p>
+<pre class="text"><code>“根据政府采购相关规定”</code></pre>
+<p>而要明确：</p>
+<pre class="text"><code>source_document    # 中文：来源文件
+=
+2025年政府采购领域“四类”违法违规行为专项整治工作指引
+
+source_section    # 中文：来源章节
+=
+第二部分 检查规范
+一、关于采购人设置差别歧视条款问题
+
+source_attachment    # 中文：来源附件
+=
+附件9
+
+source_column    # 中文：来源表格列 / 来源字段
+=
+表现形式</code></pre>
+<p>必要时还要链接：</p>
+<pre class="text"><code>处理依据
+处罚依据
+处理建议
+责任主体</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>W</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>A</mi><mi>s</mi><mi>s</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RuleWithoutProvenance
+=
+WeakComplianceAsset
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 缺少来源链的规则 =
+薄弱的合规资产。</p>
+<hr />
+<h1 id="七附件-9-中的处理依据怎样进入-ruleset">七、附件 9
+中的“处理依据”怎样进入 RuleSet？</h1>
+<p>附件 9 不只列：</p>
+<pre class="text"><code>违法违规问题
+表现形式</code></pre>
+<p>还列：</p>
+<pre class="text"><code>处理依据
+处罚依据
+处理建议
+责任主体</code></pre>
+<p>因此一个 Rule Finding 最终应该能追踪：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>D</mi><mi>x</mi><mi>x</mi><mo>→</mo><mi>M</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>f</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>H</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Finding
+\rightarrow
+Dxx
+\rightarrow
+Manifestation
+\rightarrow
+HandlingBasis
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 合规发现项 → Dxx规则 → 具体表现形式 →
+处理依据。</p>
+<p>但必须注意：</p>
+<blockquote>
+<p>RuleSet 不应擅自把所有来源“压缩成一句法律结论”。</p>
+</blockquote>
+<p>应该保存原始引用关系。</p>
+<p>例如附件 9 将不同问题关联到：</p>
+<pre class="text"><code>《中华人民共和国政府采购法》
+
+《中华人民共和国政府采购法实施条例》
+
+《中华人民共和国中小企业促进法》
+
+《中华人民共和国外商投资法》
+
+《中华人民共和国外商投资法实施条例》
+
+《政府采购货物和服务招标投标管理办法》
+
+财库〔2019〕38号
+
+财库〔2020〕46号
+
+财库〔2021〕35号</code></pre>
+<p>等处理依据。</p>
+<p>具体 Finding 时：</p>
+<blockquote>
+<p>再由 Policy Registry 解析适用版本和有效状态。</p>
+</blockquote>
+<hr />
+<h1 id="八核心心智模型-②">八、核心心智模型 ②</h1>
+<h1
+id="inspectionrule-和-legalbasis-必须分层"><code>InspectionRule</code>
+和 <code>LegalBasis</code> 必须分层</h1>
+<p>D01～D22 是：</p>
+<h1 id="inspection-rule">Inspection Rule</h1>
+<h2 id="专项检查规则">专项检查规则</h2>
+<p>而：</p>
+<pre class="text"><code>政府采购法
+实施条例
+部门规章
+政策文件</code></pre>
+<p>是：</p>
+<h1 id="legal-policy-basis">Legal / Policy Basis</h1>
+<h2 id="法律与政策依据">法律与政策依据</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>s</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mo>≠</mo><mi>L</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>l</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InspectionRule
+\neq
+LegalProvision
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 专项检查规则 ≠ 法律 / 政策条文。</p>
+<p>但二者必须可追踪连接。</p>
+<hr />
+<h1 id="九trigger-到底是什么">九、Trigger 到底是什么？</h1>
+<h1 id="trigger">Trigger</h1>
+<h2 id="规则触发条件">规则触发条件</h2>
+<p>不是只有 Keyword。</p>
+<p>可以包括：</p>
+<pre class="text"><code>Lexical Trigger    # 中文：词语 / 表述触发器
+词语
+
+Structural Trigger    # 中文：结构型触发
+业务结构
+
+Numeric Trigger    # 中文：数值触发器
+数值条件
+
+Role Trigger    # 中文：业务角色触发
+资格 / 评分 / 实质性门槛
+
+Temporal Trigger    # 中文：程序时点 / 时间触发器
+投标前 / 中标后
+
+External Trigger    # 中文：外部触发
+政策状态
+
+Semantic Trigger    # 中文：语义触发
+语义指向</code></pre>
+<p>例如 D01：</p>
+<pre class="text"><code>注册地
++
+资格门槛</code></pre>
+<p>比：</p>
+<pre class="text"><code>只出现“注册地”</code></pre>
+<p>强得多。</p>
+<hr />
+<h1 id="十核心心智模型-③">十、核心心智模型 ③</h1>
+<h1 id="trigger-的目标是召回候选不是直接宣判"><code>Trigger</code>
+的目标是召回候选，不是直接宣判</h1>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Trigger
+\rightarrow
+Candidate
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 触发条件 → 候选。</p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>V</mi><mi>i</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Trigger
+\rightarrow
+Violation
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 触发条件 → Violation。</p>
+<p>这能显著降低：</p>
+<blockquote>
+<p>Keyword Matching 带来的误报。</p>
+</blockquote>
+<hr />
+<h1 id="十一context-requirements">十一、Context Requirements</h1>
+<p>每个 Rule 必须声明：</p>
+<blockquote>
+<p>做判断时需要哪些上下文。</p>
+</blockquote>
+<p>例如 D13：</p>
+<pre class="text"><code>采购项目具体特点
+
+实际采购需要
+
+合同履行目标
+
+当前Requirement
+
+SectionRole    # 中文：章节业务角色
+
+BusinessFunction    # 中文：业务功能</code></pre>
+<p>缺一个关键上下文：</p>
+<blockquote>
+<p>可能无法可靠判断。</p>
+</blockquote>
+<p>所以 Rule Object 需要：</p>
+<pre class="text"><code>required_context_fields    # 中文：必需上下文字段</code></pre>
+<hr />
+<h1 id="十二核心心智模型-④">十二、核心心智模型 ④</h1>
+<h1 id="missingcontext-必须能让规则-abstain"><code>MissingContext</code>
+必须能让规则 Abstain</h1>
+<p>如果 D13 缺少：</p>
+<pre class="text"><code>采购需求</code></pre>
+<p>却要判断：</p>
+<blockquote>
+<p>某技术参数是否与实际需要不相适应，</p>
+</blockquote>
+<p>系统应该：</p>
+<pre class="text"><code>UNRESOLVED    # 中文：无法确定 / 待解决</code></pre>
+<p>或者：</p>
+<pre class="text"><code>NEEDS_HUMAN_REVIEW    # 中文：需要人工复核</code></pre>
+<p>而不是强行：</p>
+<pre class="text"><code>COMPLIANT / NON_COMPLIANT    # 中文：合规 / 不合规（二值状态示例；复杂规则不应只依赖二值）</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>⇒</mo><mi>N</mi><mi>o</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MissingRequiredContext
+\Rightarrow
+NoForcedDecision
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> MissingRequired上下文 ⇒
+无/未Forced判断。</p>
+<hr />
+<h1 id="十三exception-必须是一级字段">十三、Exception
+必须是一级字段</h1>
+<p>D04：</p>
+<pre class="text"><code>除特别规定外</code></pre>
+<p>D16：</p>
+<pre class="text"><code>除采购进口货物外</code></pre>
+<p>D20：</p>
+<pre class="text"><code>除特别规定外</code></pre>
+<p>这些不是备注。</p>
+<p>而是：</p>
+<h1 id="exception-logic">Exception Logic</h1>
+<h2 id="例外逻辑">例外逻辑</h2>
+<p>必须进入：</p>
+<pre class="text"><code>exception_conditions    # 中文：例外条件
+exception_evidence    # 中文：例外证据
+exception_status    # 中文：例外状态</code></pre>
+<p>状态可以：</p>
+<pre class="text"><code>NO_EXCEPTION_FOUND    # 中文：未发现适用例外
+
+POSSIBLE_EXCEPTION    # 中文：可能存在例外
+
+EXCEPTION_CONFIRMED    # 中文：已确认适用例外
+
+EXCEPTION_UNRESOLVED    # 中文：例外情况尚无法确认</code></pre>
+<hr />
+<h1 id="十四核心心智模型-⑤">十四、核心心智模型 ⑤</h1>
+<h1 id="exception-不是模型自由发挥的但是"><code>Exception</code>
+不是模型自由发挥的“但是”</h1>
+<p>例外必须：</p>
+<pre class="text"><code>有来源
+有条件
+有证据
+有适用性</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>S</mi><mi>u</mi><mi>p</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Exception
+=
+RuleCondition
++
+Evidence
++
+PolicySupport
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 例外 = 规则条件 + 证据 +
+政策支持。</p>
+<hr />
+<h1 id="十五business-necessity">十五、Business Necessity</h1>
+<p>附件与正文中大量判断使用：</p>
+<pre class="text"><code>不合理
+不必要
+与实际需要不相适应
+与合同履行无关
+无正当理由</code></pre>
+<p>这些词说明：</p>
+<blockquote>
+<p>很多 Rule 不是简单形式规则。</p>
+</blockquote>
+<p>它们需要：</p>
+<h1 id="business-necessity-analysis">Business Necessity Analysis</h1>
+<h2 id="项目必要性分析">项目必要性分析</h2>
+<p>可以拆成：</p>
+<pre class="text"><code>Purpose    # 中文：采购业务目的
+为什么需要？
+
+Relation    # 中文：关联
+与项目目标有什么关系？
+
+Proportionality    # 中文：比例性 / 限制强度是否相称
+限制程度是否与需求相称？
+
+Alternative    # 中文：更少排斥竞争的替代方案
+有没有更少排斥的表达方式？
+
+CompetitionImpact    # 中文：竞争影响
+会排除多少合理竞争者？
+
+Evidence    # 中文：证据
+采购人有没有事实依据？</code></pre>
+<hr />
+<h1 id="十六核心心智模型-⑥">十六、核心心智模型 ⑥</h1>
+<h1 id="necessity-必须被解释不应该只是一个分数"><code>Necessity</code>
+必须被解释，不应该只是一个分数</h1>
+<p>不能：</p>
+<pre class="text"><code>necessity_score = 0.62    # 中文：必要性评分 = 062</code></pre>
+<p>然后结束。</p>
+<p>必须至少输出：</p>
+<pre class="text"><code>necessity_claim    # 中文：必要性说明 / 主张
+
+supporting_evidence    # 中文：支持性证据
+
+counter_evidence    # 中文：反向 / 反证证据
+
+alternative_requirement    # 中文：替代方案要求
+
+uncertainty    # 中文：不确定</code></pre>
+<hr />
+<h1 id="十七competition-impact">十七、Competition Impact</h1>
+<p>差别歧视条款的核心业务后果之一是：</p>
+<blockquote>
+<p>不合理限制或排斥潜在供应商公平参与。</p>
+</blockquote>
+<p>所以每个候选 Finding 可以抽：</p>
+<pre class="text"><code>competition_impact    # 中文：竞争影响
+
+entry_barrier    # 中文：是否形成市场准入障碍
+
+supplier_scope_reduction    # 中文：潜在供应商范围收窄程度
+
+product_scope_reduction    # 中文：可竞争产品范围收窄程度
+
+regional_restriction    # 中文：地域限制情况
+
+industry_restriction    # 中文：行业限制情况
+
+scale_restriction    # 中文：企业规模限制情况</code></pre>
+<p>但注意：</p>
+<blockquote>
+<p>这些字段是分析信息，不代表自动完成法律定性。</p>
+</blockquote>
+<hr />
+<h1 id="十八hard-negative-为什么是-d01-d22-最重要的数据之一">十八、Hard
+Negative 为什么是 D01-D22 最重要的数据之一？</h1>
+<p>如果只训练：</p>
+<pre class="text"><code>明显违规</code></pre>
+<p>模型会变成：</p>
+<blockquote>
+<p>看到敏感词就报风险。</p>
+</blockquote>
+<p>真正困难的是：</p>
+<h1 id="hard-negative">Hard Negative</h1>
+<h2 id="高难负例">高难负例</h2>
+<p>例如：</p>
+<pre class="text"><code>出现“本地”
+但只是描述项目履约地点
+
+出现“品牌”
+但不是限定供应商品牌
+
+出现“业绩”
+但要求与实际履约能力合理相关
+
+出现“授权”
+但属于规则明确的例外情形</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>需</mi><mi>要</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>+</mo><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>N</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>+</mo><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodRuleSystem
+需要
+Positive
++
+HardNegative
++
+ExceptionCase
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十九counterfactual-pair">十九、Counterfactual Pair</h1>
+<h1 id="counterfactual">Counterfactual</h1>
+<h2 id="反事实样本">反事实样本</h2>
+<p>例如：</p>
+<h3 id="a">A</h3>
+<pre class="text"><code>供应商投标前必须在本市设立分公司。</code></pre>
+<h3 id="b">B</h3>
+<pre class="text"><code>中标供应商应根据履约需要，在合同约定期限内建立满足服务响应要求的服务能力。</code></pre>
+<p>只改变：</p>
+<pre class="text"><code>Timing    # 中文：适用 / 发生时点
+Subject State    # 中文：主体 / 事项状态
+Business Necessity    # 中文：业务必要性</code></pre>
+<p>结论可能改变。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>P</mi><mi>a</mi><mi>i</mi><mi>r</mi><mi>帮</mi><mi>助</mi><mi>模</mi><mi>型</mi><mi>学</mi><mi>习</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CounterfactualPair
+帮助模型学习
+DecisionBoundary
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十rule-decision-state">二十、Rule Decision State</h1>
+<p>建议每个 Dxx 的执行结果不只：</p>
+<pre class="text"><code>true / false    # 中文：正确 / 真 / 错误 / 假</code></pre>
+<p>而是：</p>
+<pre class="text"><code>NOT_CHECKED    # 中文：尚未检查
+
+NOT_APPLICABLE    # 中文：不适用
+
+CHECKED_NO_TRIGGER    # 中文：已检查，未触发规则
+
+CANDIDATE_HIT    # 中文：命中候选规则
+
+CONTEXT_INSUFFICIENT    # 中文：上下文不足
+
+EXCEPTION_POSSIBLE    # 中文：可能存在例外
+
+NEEDS_HUMAN_REVIEW    # 中文：需要人工复核
+
+FINDING_SUPPORTED    # 中文：证据支持形成发现项
+
+FINDING_REJECTED    # 中文：经复核不支持形成发现项</code></pre>
+<p>这样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>B</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RuleExecutionState
+\neq
+BinaryLabel
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 规则执行状态 ≠ Binary标签。</p>
+<hr />
+<h1 id="二十一核心心智模型-⑦">二十一、核心心智模型 ⑦</h1>
+<h1
+id="findingsupported-必须经过-evidence-gate"><code>FindingSupported</code>
+必须经过 Evidence Gate</h1>
+<p>一个 Rule 最终进入：</p>
+<pre class="text"><code>FINDING_SUPPORTED    # 中文：证据支持形成发现项</code></pre>
+<p>至少要有：</p>
+<pre class="text"><code>matched_clause    # 中文：命中条款
+
+evidence_span    # 中文：证据片段及原文定位
+
+document_version    # 中文：文档版本
+
+business_role    # 中文：业务业务角色
+
+rule_id    # 中文：规则标识
+
+source_manifestation    # 中文：来源具体表现形式
+
+applicable_policy    # 中文：适用政策 / 法规
+
+reason    # 中文：原因 / 说明
+
+exception_status    # 中文：例外状态</code></pre>
+<p>缺关键字段：</p>
+<blockquote>
+<p>不能进入高置信正式 Finding。</p>
+</blockquote>
+<hr />
+<h1 id="二十二decision-logic-的标准流程">二十二、Decision Logic
+的标准流程</h1>
+<p>每个 Rule 可以共享一个外层状态机：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>p</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>?</mi><mo>→</mo><mi>T</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>?</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>E</mi><mi>n</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>?</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>?</mi><mo>→</mo><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>?</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>E</mi><mi>n</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>?</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Applicable?
+\rightarrow
+Trigger?
+\rightarrow
+ContextEnough?
+\rightarrow
+Exception?
+\rightarrow
+Necessity?
+\rightarrow
+EvidenceEnough?
+\rightarrow
+Decision
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 适用? → 触发条件? → 上下文是否充分? →
+例外? → 必要性? → 证据是否充分? → 判断结论。</p>
+<p>中文：</p>
+<pre class="text"><code>1. 这个Rule对当前对象适用吗？
+2. 是否出现候选触发？
+3. 判断需要的上下文够不够？
+4. 有没有例外？
+5. 是否有合理项目必要性？
+6. 证据是否充分？
+7. 形成Finding还是转人工？</code></pre>
+<hr />
+<h1 id="二十三规则不要直接写在-prompt-里">二十三、规则不要直接写在
+Prompt 里</h1>
+<p>最危险的实现：</p>
+<pre class="text"><code>System Prompt:    # 中文：系统提示词：
+请记住以下22项规定……</code></pre>
+<p>问题：</p>
+<pre class="text"><code>规则无法独立版本化
+
+无法逐项测试
+
+无法记录执行状态
+
+无法单独热更新
+
+难以审计
+
+容易被Prompt变化影响</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>t</mi><mo>≠</mo><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RuleSet
+\neq
+LongSystemPrompt
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 规则集合 ≠ LongSystem提示词。</p>
+<hr />
+<h1 id="二十四rule-engine-怎样调用-llm">二十四、Rule Engine 怎样调用
+LLM？</h1>
+<p>正确方式不是：</p>
+<pre class="text"><code>LLM负责全部D01-D22</code></pre>
+<p>而是：</p>
+<pre class="text"><code>Rule Engine    # 中文：规则引擎
+先确定需要检查哪个Rule
+↓
+准备结构化上下文
+↓
+必要时调用LLM Judge
+↓
+要求结构化输出
+↓
+Evidence Validator验证
+↓
+Rule Engine更新状态</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mi>是</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>的</mi><mi>一</mi><mi>部</mi><mi>分</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLM
+是
+RuleExecutor的一部分
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mo>=</mo><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>t</mi><mi>本</mi><mi>身</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLM
+=
+RuleSet本身
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十五d01-d22-规则矩阵">二十五、D01-D22 规则矩阵</h1>
+<p>第一版执行策略可以这样规划：</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Rule</th>
+<th>一级问题</th>
+<th>主要判断类型</th>
+<th>关键依赖</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>D01</td>
+<td>外地市场障碍</td>
+<td>结构 + 语义 + 必要性</td>
+<td>Qualification / Scoring / Timing</td>
+</tr>
+<tr class="even">
+<td>D02</td>
+<td>外地市场障碍</td>
+<td>结构 + 地域约束</td>
+<td>Scoring / Award / Experience</td>
+</tr>
+<tr class="odd">
+<td>D03</td>
+<td>行业限制</td>
+<td>结构 + 语义</td>
+<td>Industry / Experience / Award</td>
+</tr>
+<tr class="even">
+<td>D04</td>
+<td>行业限制</td>
+<td>结构 + 例外</td>
+<td>Business Scope / Exception</td>
+</tr>
+<tr class="odd">
+<td>D05</td>
+<td>企业规模</td>
+<td>确定性字段 + 业务角色</td>
+<td>Financial / Scale Fields</td>
+</tr>
+<tr class="even">
+<td>D06</td>
+<td>企业规模</td>
+<td>数值 + 业绩结构</td>
+<td>Contract Amount / Experience</td>
+</tr>
+<tr class="odd">
+<td>D07</td>
+<td>企业规模</td>
+<td>外部规则 + 代理限制</td>
+<td>Credit / Certification</td>
+</tr>
+<tr class="even">
+<td>D08</td>
+<td>企业规模</td>
+<td>必要性</td>
+<td>Premises / Outlets / Project Need</td>
+</tr>
+<tr class="odd">
+<td>D09</td>
+<td>企业形式</td>
+<td>结构型</td>
+<td>Ownership / Organization</td>
+</tr>
+<tr class="even">
+<td>D10</td>
+<td>企业形式</td>
+<td>结构 + 例外</td>
+<td>Shareholding / Nationality / Location</td>
+</tr>
+<tr class="odd">
+<td>D11</td>
+<td>指向供应商产品</td>
+<td>语义指向</td>
+<td>Technical / Service / Market Context</td>
+</tr>
+<tr class="even">
+<td>D12</td>
+<td>指定特定对象</td>
+<td>结构 + 语义</td>
+<td>Patent / Trademark / Brand / Origin</td>
+</tr>
+<tr class="odd">
+<td>D13</td>
+<td>无关评审标准</td>
+<td>强上下文 / 必要性</td>
+<td>Project Need / Contract Performance</td>
+</tr>
+<tr class="even">
+<td>D14</td>
+<td>无关评审标准</td>
+<td>外部状态查询</td>
+<td>Policy Registry</td>
+</tr>
+<tr class="odd">
+<td>D15</td>
+<td>无关评审标准</td>
+<td>结构 + 证书来源</td>
+<td>Certificate / Award / Issuer</td>
+</tr>
+<tr class="even">
+<td>D16</td>
+<td>其他限制</td>
+<td>结构 + 例外</td>
+<td>Manufacturer Authorization / Import</td>
+</tr>
+<tr class="odd">
+<td>D17</td>
+<td>其他限制</td>
+<td>直接结构型</td>
+<td>Supplier Library Membership</td>
+</tr>
+<tr class="even">
+<td>D18</td>
+<td>其他限制</td>
+<td>必要性</td>
+<td>Registration Requirement</td>
+</tr>
+<tr class="odd">
+<td>D19</td>
+<td>其他限制</td>
+<td>阶段逻辑</td>
+<td>Material / Document Access Stage</td>
+</tr>
+<tr class="even">
+<td>D20</td>
+<td>其他限制</td>
+<td>结构 + 例外 + 理由</td>
+<td>Proof Issuer</td>
+</tr>
+<tr class="odd">
+<td>D21</td>
+<td>其他限制</td>
+<td>直接结构型</td>
+<td>Designated / Shortlisted Supplier</td>
+</tr>
+<tr class="even">
+<td>D22</td>
+<td>其他限制</td>
+<td>外部法律依据</td>
+<td>Blacklist / Policy Registry</td>
+</tr>
+</tbody>
+</table>
+<p>这张表非常重要。</p>
+<p>它说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mn>01</mn><mo>−</mo><mi>D</mi><mn>22</mn><mi>不</mi><mi>是</mi><mi>一</mi><mi>个</mi><mi>单</mi><mi>一</mi><mi>分</mi><mi>类</mi><mi>任</mi><mi>务</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+D01-D22
+不是一个单一分类任务
+}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<blockquote>
+<p>多种规则执行问题的集合。</p>
+</blockquote>
+<hr />
+<h1 id="二十六ruleset-版本化">二十六、RuleSet 版本化</h1>
+<p>建议：</p>
+<pre class="text"><code>ProcurementDiscrimination22RuleSet_V1.0.0    # 中文：附件9差别歧视22项规则集 V1.0.0</code></pre>
+<p>后面如果：</p>
+<pre class="text"><code>只修正描述
+→ Patch    # 中文：→ Patch：补丁版本，仅修正不改变规则含义的问题
+
+增加不改变旧语义的检测字段
+→ Minor    # 中文：→ Minor：次版本，增加兼容性能力 / 字段
+
+规则来源、逻辑、适用范围重大变化
+→ Major    # 中文：→ Major：主版本，规则来源、逻辑或适用范围发生重大变化</code></pre>
+<p>每个 Finding 必须记录：</p>
+<pre class="text"><code>rule_set_version    # 中文：规则集版本
+rule_version    # 中文：规则版本</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RuleUpdate
+\neq
+SilentChange
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 规则更新 ≠ 静默变更。</p>
+<hr />
+<h1 id="二十七rule-hot-update">二十七、Rule Hot Update</h1>
+<p>后面生产系统需要：</p>
+<h1 id="rule-hot-update">Rule Hot Update</h1>
+<h2 id="规则热更新">规则热更新</h2>
+<p>即：</p>
+<blockquote>
+<p>不重新训练整个模型，也能更新规则资产。</p>
+</blockquote>
+<p>适合：</p>
+<pre class="text"><code>法规状态变化
+政策新增例外
+Rule Trigger更新
+处理依据版本变化</code></pre>
+<p>但：</p>
+<blockquote>
+<p>热更新之后必须重新跑受影响 Benchmark Slice。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>o</mi><mi>t</mi><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>⇒</mo><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HotUpdate
+\Rightarrow
+TargetedRegression
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 规则热更新 ⇒ 定向回归测试。</p>
+<hr />
+<h1 id="二十八d01-d22-与-policy-registry-的连接">二十八、D01-D22 与
+Policy Registry 的连接</h1>
+<p>Rule Object 里不要复制一份：</p>
+<blockquote>
+<p>永远不变的法规全文。</p>
+</blockquote>
+<p>而应存：</p>
+<pre class="text"><code>legal_basis_ref_ids    # 中文：法律 / 政策依据REF标识列表</code></pre>
+<p>连接：</p>
+<pre class="text"><code>ProcurementPolicyRegistry_V1    # 中文：采购政策 / 法规登记库V1</code></pre>
+<p>执行时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mo>→</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>v</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>A</mi><mi>p</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rule
+\rightarrow
+PolicyResolver
+\rightarrow
+ApplicableProvision
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 规则 → 政策Resolver → 适用条文。</p>
+<p>这样法规更新：</p>
+<blockquote>
+<p>不需要在 22 条规则里手工同步 22 份副本。</p>
+</blockquote>
+<hr />
+<h1 id="二十九核心心智模型-⑧">二十九、核心心智模型 ⑧</h1>
+<h1 id="rulelogic-和-policytext-解耦但不能脱链"><code>RuleLogic</code>
+和 <code>PolicyText</code> 解耦，但不能脱链</h1>
+<p>理想结构：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>c</mi><mo>↔</mo><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>f</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>↔</mo><mi>A</mi><mi>p</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>l</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExecutableLogic
+\leftrightarrow
+SourceManifestation
+\leftrightarrow
+ApplicableLegalBasis
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 可执行逻辑 ↔︎ 来源中的具体表现形式 ↔︎
+适用法律政策依据。</p>
+<p>既能执行，</p>
+<p>又能解释来源。</p>
+<hr />
+<h1 id="三十d01-d22-与-document-schema-的连接">三十、D01-D22 与 Document
+Schema 的连接</h1>
+<p>Stage 3 已经给出：</p>
+<pre class="text"><code>Clause    # 中文：条款
+Requirement    # 中文：业务要求
+BusinessFunction    # 中文：业务功能
+Timing    # 中文：适用 / 发生时点
+EvidenceSpan    # 中文：证据片段及原文定位</code></pre>
+<p>Stage 4 的 Rule Input 就应该直接读这些结构。</p>
+<p>例如 D19：</p>
+<pre class="text"><code>RequiredMaterial    # 中文：要求提交的材料
+=
+AuditReport    # 中文：审计报告
+
+BusinessFunction    # 中文：业务功能
+=
+DOCUMENT_ACCESS_GATE    # 中文：文档获取门槛
+
+Timing    # 中文：适用 / 发生时点
+=
+BEFORE_DOCUMENT_ACCESS    # 中文：之前文档获取</code></pre>
+<p>然后才判断：</p>
+<blockquote>
+<p>是否属于附件 9 所指的“作为获取采购文件的前置条件”。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+StructuredFact
+\rightarrow
+RuleDecision
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 结构化业务事实 → 规则判断。</p>
+<p>比：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>G</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawText
+\rightarrow
+Guess
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 原始文本 → 模型猜测。</p>
+<p>可靠得多。</p>
+<hr />
+<h1 id="三十一一个完整-d01-rule-object-示例">三十一、一个完整 D01 Rule
+Object 示例</h1>
+<p>概念上：</p>
+<pre class="text"><code>rule_id    # 中文：规则标识
+=
+D01    # 中文：D01 规则编号（附件9工程化规则标识）
+
+category    # 中文：类别
+=
+直接或变相对外地企业进入本地市场设置阻碍
+
+manifestation    # 中文：具体表现形式
+=
+采购文件设置供应商注册地、所在地距离采购人的距离、
+在某行政区域内设立分支机构等不合理的资格条件、评审因素
+
+execution_mode    # 中文：执行模式
+=
+HYBRID    # 中文：混合执行模式
+
+document_scope    # 中文：文档适用范围
+=
+QUALIFICATION / SCORING    # 中文：资格条件章节 / 评分标准章节
+
+trigger_fields    # 中文：触发字段
+=
+supplier_registration_location    # 中文：供应商注册 / 登记位置 / 地域
+distance_to_purchaser    # 中文：供应商所在地到采购人的距离
+required_local_branch    # 中文：是否需要地方 / 本地分支机构
+
+required_context    # 中文：必需上下文
+=
+business_function    # 中文：业务功能
+timing    # 中文：时点
+project_need    # 中文：项目实际需要
+
+exception_policy    # 中文：例外政策 / 法规
+=
+source-defined / policy-resolved    # 中文：由来源规则定义 / 由 Policy Registry 确认适用状态
+
+decision    # 中文：决策
+=
+candidate    # 中文：候选
+→ context    # 中文： → 上下文
+→ necessity    # 中文： → 必要性
+→ evidence    # 中文： → 证据
+→ human_if_needed    # 中文：→ 必要时转人工复核</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>这是工程表达，不是重新制定法律规则。</p>
+</blockquote>
+<hr />
+<h1 id="三十二一个完整-d16-rule-object-示例">三十二、一个完整 D16 Rule
+Object 示例</h1>
+<pre class="text"><code>rule_id    # 中文：规则标识
+=
+D16    # 中文：D16 规则编号（附件9工程化规则标识）
+
+manifestation    # 中文：具体表现形式
+=
+除采购进口货物外，
+采购文件设置厂家授权、承诺、证明、背书等不合理的限制
+
+execution_mode    # 中文：执行模式
+=
+HYBRID    # 中文：混合执行模式
+
+trigger    # 中文：触发
+=
+manufacturer_authorization    # 中文：厂家授权
+manufacturer_commitment    # 中文：厂家承诺
+manufacturer_certificate    # 中文：厂家证书
+manufacturer_endorsement    # 中文：厂家背书
+
+exception    # 中文：例外
+=
+procurement_of_imported_goods    # 中文：是否属于采购进口货物
+
+required_context    # 中文：必需上下文
+=
+procurement_category    # 中文：采购类别
+import_status    # 中文：进口状态
+business_function    # 中文：业务功能</code></pre>
+<p>这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>是</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>的</mi><mi>一</mi><mi>部</mi><mi>分</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Exception
+是Rule的一部分
+}
+</annotation></semantics></math></p>
+<p>不是后处理备注。</p>
+<hr />
+<h1 id="三十三rule-test-case-怎样设计">三十三、Rule Test Case
+怎样设计？</h1>
+<p>每条 Dxx 至少应有：</p>
+<pre class="text"><code>Positive    # 中文：正例
+
+Hard Positive    # 中文：高难正例
+
+Negative    # 中文：普通负例
+
+Hard Negative    # 中文：高难负例
+
+Exception    # 中文：例外条件
+
+Missing Context    # 中文：上下文缺失样本
+
+Cross-section    # 中文：跨章节样本
+
+Table-based    # 中文：表格型样本
+
+OCR Noise    # 中文：OCR 噪声样本
+
+Adversarial Paraphrase    # 中文：对抗性改写样本</code></pre>
+<p>所以每条规则不是：</p>
+<blockquote>
+<p>一两个例句。</p>
+</blockquote>
+<p>而是一组：</p>
+<h1 id="rule-test-suite">Rule Test Suite</h1>
+<h2 id="规则测试集">规则测试集</h2>
+<hr />
+<h1 id="三十四核心心智模型-⑨">三十四、核心心智模型 ⑨</h1>
+<h1 id="rulecoverage-不等于-rulereliability"><code>RuleCoverage</code>
+不等于 <code>RuleReliability</code></h1>
+<p>22 条都有代码：</p>
+<blockquote>
+<p>叫 Coverage。</p>
+</blockquote>
+<p>每条在：</p>
+<pre class="text"><code>正例
+负例
+边界例
+例外
+OCR噪声
+跨章节</code></pre>
+<p>都稳定：</p>
+<blockquote>
+<p>才叫 Reliability。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Implemented
+\neq
+Validated
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 已实现 ≠ 已验证。</p>
+<hr />
+<h1 id="三十五d01-d22-的-benchmark-必须逐项切-slice">三十五、D01-D22 的
+Benchmark 必须逐项切 Slice</h1>
+<p>后面第 15 阶段至少要有：</p>
+<pre class="text"><code>D01 Recall / Precision    # 中文：D01召回率 / 精确率
+D02 Recall / Precision    # 中文：D02召回率 / 精确率
+...
+D22 Recall / Precision    # 中文：D22召回率 / 精确率</code></pre>
+<p>还要看：</p>
+<pre class="text"><code>Category1    # 中文：类别1
+...
+Category7    # 中文：类别7</code></pre>
+<p>以及：</p>
+<pre class="text"><code>Qualification    # 中文：资格条件
+Technical    # 中文：技术
+Scoring    # 中文：评分
+Table    # 中文：表格
+OCR    # 中文：OCR
+HardNegative    # 中文：高难负例
+Exception    # 中文：例外条件</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mn>22</mn><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>P</mi><mi>e</mi><mi>r</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Overall22Score
+\neq
+PerRuleReliability
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 22项总体得分 ≠ 逐规则可靠性。</p>
+<hr />
+<h1 id="三十六false-negative-为什么要重点记录">三十六、False Negative
+为什么要重点记录？</h1>
+<p>如果：</p>
+<blockquote>
+<p>某一高风险表现形式真实存在，</p>
+</blockquote>
+<p>系统没发现，</p>
+<p>就是：</p>
+<h1 id="false-negative">False Negative</h1>
+<h2 id="漏检">漏检</h2>
+<p>对于合规预审：</p>
+<blockquote>
+<p>漏检可能让风险进入后续采购流程。</p>
+</blockquote>
+<p>因此每个 Rule 都要明确：</p>
+<pre class="text"><code>FN examples    # 中文：漏检（False Negative）样例
+FN root cause    # 中文：漏检根因
+FN severity    # 中文：FN严重程度</code></pre>
+<hr />
+<h1 id="三十七false-positive-也不能忽视">三十七、False Positive
+也不能忽视</h1>
+<p>如果系统：</p>
+<blockquote>
+<p>看到“品牌”“业绩”“本地”就报警，</p>
+</blockquote>
+<p>会导致：</p>
+<pre class="text"><code>大量人工复核
+规则系统失去可信度
+业务人员不再使用</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>≠</mo><mi>U</mi><mi>s</mi><mi>e</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighRecall
+\neq
+UsefulSystem
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 高召回率 ≠ 真正可用的系统。</p>
+<p>必须在：</p>
+<pre class="text"><code>Recall    # 中文：召回率
+Precision    # 中文：精确率
+Human Review Load    # 中文：人工复核工作量</code></pre>
+<p>之间设计业务工作点。</p>
+<hr />
+<h1 id="三十八human-review-policy">三十八、Human Review Policy</h1>
+<p>建议规则层至少有：</p>
+<pre class="text"><code>AUTO_CLEAR_ALLOWED    # 中文：允许自动判定无风险
+
+AUTO_FINDING_ALLOWED    # 中文：允许自动形成发现项
+
+HUMAN_CONFIRM_REQUIRED    # 中文：必须人工确认
+
+HUMAN_ON_UNCERTAINTY    # 中文：不确定时转人工
+
+HUMAN_ALWAYS    # 中文：始终需要人工复核</code></pre>
+<p>例如：</p>
+<blockquote>
+<p>强上下文、强裁量规则，</p>
+</blockquote>
+<p>可以默认：</p>
+<pre class="text"><code>HUMAN_CONFIRM_REQUIRED    # 中文：必须人工确认</code></pre>
+<p>而不是追求：</p>
+<blockquote>
+<p>全自动。</p>
+</blockquote>
+<hr />
+<h1 id="三十九核心心智模型-⑩">三十九、核心心智模型 ⑩</h1>
+<h1 id="automationrate-不是合规系统第一目标"><code>AutomationRate</code>
+不是合规系统第一目标</h1>
+<p>真正目标：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableRiskControl
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 可靠风险控制。</p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>100</mn><mi>%</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+100\%Automation
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 100%自动化。</p>
+<hr />
+<h1 id="四十最终-finding-怎样表达">四十、最终 Finding 怎样表达？</h1>
+<p>一个 Dxx Finding 至少：</p>
+<pre class="text"><code>finding_id    # 中文：发现项标识
+
+rule_id    # 中文：规则标识
+
+rule_version    # 中文：规则版本
+
+rule_set_version    # 中文：规则集版本
+
+primary_category    # 中文：一级问题类别
+
+manifestation    # 中文：具体表现形式
+
+document_id    # 中文：文档标识
+document_version    # 中文：文档版本
+
+clause_id    # 中文：条款标识
+requirement_id    # 中文：要求标识
+
+matched_text    # 中文：命中文本
+evidence_span    # 中文：证据片段及原文定位
+
+trigger_facts    # 中文：触发事实
+
+context_facts    # 中文：上下文事实
+
+business_necessity    # 中文：业务必要性
+
+competition_impact    # 中文：竞争影响
+
+exception_status    # 中文：例外状态
+
+legal_basis_refs    # 中文：法律 / 政策依据引用标识列表
+
+policy_snapshot_id    # 中文：政策法规快照标识
+
+decision_state    # 中文：决策状态
+
+risk_level    # 中文：风险等级
+
+confidence    # 中文：置信度
+
+reasoning_summary    # 中文：判断理由摘要
+
+recommended_revision    # 中文：建议修改方案
+
+human_review_required    # 中文：是否需要人工复核
+
+audit_trace    # 中文：审计追踪</code></pre>
+<hr />
+<h1 id="四十一recommended-revision-不能脱离原始问题">四十一、Recommended
+Revision 不能脱离原始问题</h1>
+<p>修改建议应该做到：</p>
+<pre class="text"><code>保留真实采购目的
+删除不合理限制
+尽量使用功能 / 性能 / 履约目标表达
+避免扩大采购需求
+保留必要条件</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>D</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Remediation
+\neq
+DeleteRequirement
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 修改建议 ≠ 删除要求。</p>
+<p>更专业的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>N</mi><mi>e</mi><mi>e</mi><mi>d</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>U</mi><mi>n</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Remediation
+=
+PreserveNeed
++
+RemoveUnreasonableRestriction
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 修改建议 = 保留真实采购需求 +
+移除不合理限制。</p>
+<hr />
+<h1 id="四十二核心心智模型-⑪">四十二、核心心智模型 ⑪</h1>
+<h1 id="合规-ai-不能只会找错还要能帮助改对">合规 AI
+不能只会“找错”，还要能帮助“改对”</h1>
+<p>但修改建议仍然必须：</p>
+<blockquote>
+<p>明确标记为建议。</p>
+</blockquote>
+<p>高风险或复杂场景：</p>
+<blockquote>
+<p>需要采购业务人员 / 法务 / 合规人员确认。</p>
+</blockquote>
+<hr />
+<h1 id="四十三本阶段正式工程产物">四十三、本阶段正式工程产物</h1>
+<h1
+id="procurementdiscrimination22ruleset_v1-1"><code>ProcurementDiscrimination22RuleSet_V1</code></h1>
+<p>建议目录：</p>
+<pre class="text"><code>ProcurementDiscrimination22RuleSet_V1/    # 中文：ProcurementDiscrimination22RuleSet_V1：附件9差别歧视22项规则集根目录
+
+├── rules/    # 中文：工程目录：规则
+│   ├── D01.yaml    # 中文：工程文件：D01YAML 配置文件
+│   ├── D02.yaml    # 中文：工程文件：D02YAML 配置文件
+│   ├── ...
+│   └── D22.yaml    # 中文：工程文件：D22YAML 配置文件
+│
+├── taxonomy/    # 中文：工程目录：分类体系
+│   ├── category_01.yaml    # 中文：工程文件：类别01YAML 配置文件
+│   ├── ...
+│   └── category_07.yaml    # 中文：工程文件：类别07YAML 配置文件
+│
+├── sources/    # 中文：工程目录：来源材料
+│   ├── source_document.json    # 中文：工程文件：来源文件JSON 配置文件
+│   ├── attachment9_mapping.json    # 中文：工程文件：附件9mappingJSON 配置文件
+│   └── legal_basis_refs.json    # 中文：工程文件：法律 / 政策依据引用标识列表JSON 配置文件
+│
+├── schemas/    # 中文：工程目录：结构定义
+│   ├── rule_schema.json    # 中文：工程文件：规则结构定义JSON 配置文件
+│   ├── execution_state.json    # 中文：工程文件：执行状态JSON 配置文件
+│   └── finding_schema.json    # 中文：工程文件：发现项结构定义JSON 配置文件
+│
+├── tests/    # 中文：工程目录：测试集
+│   ├── positive/    # 中文：工程目录：正例
+│   ├── hard_negative/    # 中文：工程目录：高难负例
+│   ├── exception/    # 中文：工程目录：例外
+│   └── missing_context/    # 中文：工程目录：缺失上下文
+│
+└── manifest.json    # 中文：工程文件：清单 / 元数据JSON 配置文件</code></pre>
+<hr />
+<h1 id="四十四rule-schema-第一版">四十四、Rule Schema 第一版</h1>
+<pre class="text"><code>rule_id    # 中文：规则标识
+
+name    # 中文：名称
+
+category_id    # 中文：类别标识
+
+category_name    # 中文：类别名称
+
+manifestation_text    # 中文：具体表现形式文本
+
+source_document_id    # 中文：来源文件标识
+
+source_location    # 中文：来源位置
+
+legal_basis_refs    # 中文：法律 / 政策依据引用标识列表
+
+execution_mode    # 中文：执行模式
+
+document_scope    # 中文：文档适用范围
+
+business_functions    # 中文：业务功能 / 作用
+
+trigger_schema    # 中文：触发结构定义
+
+required_context_fields    # 中文：必需上下文字段
+
+necessity_check    # 中文：必要性检查
+
+exception_conditions    # 中文：例外条件
+
+external_dependencies    # 中文：外部依赖项
+
+evidence_requirements    # 中文：证据要求
+
+decision_logic    # 中文：决策逻辑
+
+decision_states    # 中文：规则执行 / 决策状态集合
+
+default_risk_level    # 中文：默认风险等级
+
+human_review_policy    # 中文：人工复核政策 / 法规
+
+remediation_policy    # 中文：修改建议政策 / 法规
+
+test_suite_id    # 中文：测试集标识
+
+rule_version    # 中文：规则版本
+
+effective_from    # 中文：生效起始
+
+effective_to    # 中文：生效截止
+
+status    # 中文：状态</code></pre>
+<hr />
+<h1 id="四十五本阶段最重要的-14-个核心心智模型">四十五、本阶段最重要的
+14 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型 ①：<code>22项 ≠ 22个关键词</code>。附件 9 的 22 项是
+7 类问题下的 22 种具体表现形式。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ②：<code>Rule ≠ PromptInstruction</code>。每个 Dxx
+必须是可版本化、可执行、可测试、可审计的 Rule Object。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>InspectionRule ≠ LegalProvision</code>。专项检查规则与法律政策依据必须分层，但保持可追踪。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ④：<code>Trigger → Candidate</code>，不是
+<code>Trigger → Violation</code>。触发器负责召回候选，不负责最终宣判。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>All22Rules ≠ SameInferenceMethod</code>。有的规则偏确定性、有的依赖例外、有的依赖政策状态、有的需要强语义与项目必要性判断。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>MissingRequiredContext ⇒ NoForcedDecision</code>。上下文不够时必须允许
+Abstain / Human Review。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>Exception</code> 是 Rule
+的一级逻辑，不是模型自由生成的“但是”。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑧：<code>Necessity</code>
+必须有理由和证据，不能只输出一个不可解释分数。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>RuleHit ≠ FinalViolation</code>。命中后仍要做
+Context、Necessity、Exception、Evidence 检查。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑩：<code>Parser ≠ RuleEngine ≠ LLMJudge</code>。文档事实恢复、规则执行、语义裁量必须分层。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑪：<code>RuleUpdate ≠ SilentChange</code>。规则版本变化必须可追踪，并触发受影响
+Slice 的回归测试。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑫：<code>Implemented ≠ Validated</code>。22
+条有代码不等于 22 条可靠。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑬：<code>Overall22Score ≠ PerRuleReliability</code>。D01～D22 必须逐项看
+Recall、Precision、Hard Negative 和 Exception。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑭：<code>AutomationRate ≠ ComplianceQuality</code>。政府采购合规系统追求的是可靠风险控制，而不是
+100% 自动判断。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十六把-d01-d22-整体工程链压成一张图">四十六、把 D01-D22
+整体工程链压成一张图</h1>
+<pre class="text"><code>                 Attachment 9    # 中文：附件9
+                   附件9
+                      │
+                      ▼
+                7 Categories    # 中文：7 类一级问题
+                   7类问题
+                      │
+                      ▼
+                   D01-D22    # 中文：D01D22
+                22项表现形式
+                      │
+                      ▼
+                  Rule Object    # 中文：规则对象
+          来源 / Trigger / Context
+          Exception / Evidence / Logic    # 中文：例外条件 / 证据 / 逻辑
+                      │
+                      ▼
+              ProcurementDocumentSchema    # 中文：采购文档结构定义
+         Clause / Requirement / Function    # 中文：条款 / 业务要求 / 功能 / 作用
+                      │
+                      ▼
+                Candidate Trigger    # 中文：候选触发
+                    候选触发
+                      │
+                      ▼
+                 Context Check    # 中文：上下文检查
+                   上下文检查
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+      Necessity    Exception   External Lookup    # 中文：必要性例外外部查询
+      必要性分析      例外检查       政策状态查询
+          │           │           │
+          └───────────┼───────────┘
+                      ▼
+                Evidence Gate    # 中文：证据充分性门槛
+                   证据门
+                      │
+             ┌────────┴────────┐
+             ▼                 ▼
+        Evidence Enough     Uncertain    # 中文：证据充分 / 证据或判断仍不确定
+          证据充分             不确定
+             │                 │
+             ▼                 ▼
+       Supported Finding   Human Review    # 中文：支持发现项人工复核
+          支持发现项          人工复核
+             │                 │
+             └────────┬────────┘
+                      ▼
+               Remediation    # 中文：修改 / 整改建议
+                 修改建议
+                      │
+                      ▼
+               Audit + Benchmark    # 中文：审计记录 + Benchmark 评测
+                审计 + 评测</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>附件 9 的 22 项不是给模型背诵的 22 句话，而是 22
+个来源可追踪、条件可执行、例外可检查、证据可定位、结果可复核、版本可治理的
+Compliance Rule Objects；真正的系统流程是“结构化采购事实 → 候选规则 →
+上下文 / 必要性 / 例外 → 证据门 → Finding 或人工复核”，而不是“关键词出现
+→ 违规”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第十一课-第-4-阶段掌握测试">第十一课 · 第 4 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：</p>
+<pre class="text"><code>附件9中的7类问题和22项具体表现形式是什么关系？
+
+为什么D01-D22不能做成22个关键词？
+
+D01-D22中哪些更偏结构规则、哪些更依赖例外、哪些依赖外部政策状态、哪些依赖项目必要性？
+
+为什么Trigger只能产生Candidate？
+
+为什么D04、D16、D20必须把Exception做成一级字段？
+
+为什么D13不能离开Project Context判断？
+
+为什么D14和D22必须依赖Policy Registry？
+
+为什么D11即使没有品牌名，也仍然可能存在特定产品指向？
+
+为什么RuleSet不能只写进一个超长System Prompt？
+
+为什么Rule Object必须保存Source Provenance？
+
+为什么Inspection Rule与Legal Basis必须分层？
+
+为什么Missing Context应该允许Abstention？
+
+为什么Hard Negative比明显负例更重要？
+
+Counterfactual Pair如何帮助学习Decision Boundary？
+
+为什么Implemented不等于Validated？
+
+为什么D01-D22必须逐规则做Benchmark Slice？
+
+为什么Automation Rate不是合规系统的最终目标？
+
+为什么修改建议必须Preserve Need，而不是简单删除要求？</code></pre>
+<p>如果这些能够完整解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>十</mi><mi>一</mi><mi>课</mi><mi>第</mi><mn>4</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第十一课第4阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第十一课-第-5-阶段">下一阶段：第十一课 · 第 5 阶段</h1>
+<h1
+id="资格条件与市场准入合规地域行业所有制规模年限财务资质业绩">资格条件与市场准入合规：地域、行业、所有制、规模、年限、财务、资质、业绩</h1>
+<h2
+id="怎样区分真正的履约能力要求与不合理市场准入门槛">怎样区分真正的履约能力要求与不合理市场准入门槛？</h2>
+<p>下一阶段将把 D01～D10、D15～D22
+中大量与资格和市场准入有关的规则进一步展开到：</p>
+<pre class="text"><code>Qualification Gate    # 中文：资格准入门
+
+Market Access    # 中文：市场准入
+
+Supplier Eligibility    # 中文：供应商准入资格
+
+Experience    # 中文：业绩
+
+Financial Condition    # 中文：财务条件
+
+Enterprise Form    # 中文：企业表单
+
+Local Presence    # 中文：本地设点 / 本地存在性要求
+
+Certificate    # 中文：证书
+
+Pre-bid Requirement    # 中文：前投标要求</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementqualificationcompliance_v1"><code>ProcurementQualificationCompliance_V1</code></h1>
+<p>下一阶段最重要的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>M</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>e</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>B</mi><mi>a</mi><mi>r</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CapabilityRequirement
+\neq
+MarketAccessBarrier
+}
+</annotation></semantics></math></p>
+<p><strong>中文业务释义：</strong> 履约能力要求 ≠ 市场准入障碍。</p>
+<div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("lesson11-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("lesson11-theme")||"light";</script></body></html>

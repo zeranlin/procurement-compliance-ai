@@ -1,0 +1,443 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第1课 · 第1阶段：模型到底在“学习”什么？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第1课 · 第1阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>判断模型为什么学不好、泛化失败、指标失真或什么时候不该自动回答。<ul><li>数据 = 经验：模型世界来自训练样本，而不是模型名称。</li><li>信息决定上限：X 中不存在的信息，模型无法可靠利用。</li><li>标签 = 老师：错误、冲突、粗糙标签会直接塑造错误行为。</li></ul></div><h1 id="第一课-第-1-阶段模型到底在学习什么">第一课 · 第 1
+阶段：模型到底在“学习”什么？</h1>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>数据 =
+经验：模型世界来自训练样本，而不是模型名称。</strong></li>
+<li><strong>信息决定上限：X
+中不存在的信息，模型无法可靠利用。</strong></li>
+<li><strong>标签 =
+老师：错误、冲突、粗糙标签会直接塑造错误行为。</strong></li>
+<li><strong>学习 = 减少
+Loss：模型不会读懂我们的愿望，只会响应训练信号。</strong></li>
+<li><strong>能力 =
+泛化：真正能力体现在未知项目，不体现在训练集背诵成绩。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="even">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="odd">
+<td><code>Shortcut Learning</code></td>
+<td>捷径学习：利用表面相关线索而非真正任务规律</td>
+</tr>
+<tr class="even">
+<td><code>Learning Rate</code></td>
+<td>学习率：控制每次参数更新步幅</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>Generalization</code></td>
+<td>泛化：对未见项目、时间、地区和表达的有效能力</td>
+</tr>
+<tr class="even">
+<td><code>Hard Negative</code></td>
+<td>高难负例：表面像风险但正确结论不应判风险</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<blockquote>
+<p><strong>原文级教材源文件</strong>：本 Markdown
+是该阶段唯一内容源。HTML
+由本文件直接生成，不再二次压缩、合并知识点或改写公式。</p>
+</blockquote>
+<p>这一阶段建立后续所有课程共同使用的最小语言：<code>X、Y、模型、预测、Loss、参数、泛化</code>。核心定义是：机器学习不是把知识文件复制进模型，而是从有限历史样本中学习一个能推广到未知样本的映射规律。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mover><mo>→</mo><msub><mi>f</mi><mi>θ</mi></msub></mover><mover><mi>Y</mi><mo accent="true">̂</mo></mover></mrow><annotation encoding="application/x-tex">
+X \xrightarrow{f_\theta} \hat Y
+</annotation></semantics></math></p>
+<p>政府采购示例贯穿本阶段：先把“供应商资格条件是否存在潜在不合理限制风险”定义成一个可学习任务，再逐步理解训练到底改变了什么。</p>
+<hr />
+<h2 id="第一课总问题机器学习到底在学习什么">1.
+第一课总问题：机器学习到底在“学习”什么？</h2>
+<p>机器学习不是把文件“塞进模型”，而是从有限历史样本中寻找一个能推广到未知样本的映射规律。第一阶段先建立所有后续课程共同使用的最小语言。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>机器学习 = 从有限历史样本中，寻找一个可以泛化到未知样本的映射规律</p>
+</blockquote>
+<hr />
+<h2 id="从-x-y-开始">2. 从 X → Y 开始</h2>
+<p>任何监督学习任务都应该先写清楚输入 X 和目标 Y。模型只是连接 X 与 Y
+的参数化函数。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>X → fθ(X) → Ŷ</p>
+</blockquote>
+<hr />
+<h2 id="政府采购任务如何定义-x">3. 政府采购任务如何定义 X</h2>
+<p>如果任务是审查供应商资格条件，最简单的 X 可以是一条资格文本；更成熟的
+X 还可以加入采购标的、项目类型、地区、时间和上下文。</p>
+<blockquote>
+<p><strong>政府采购案例 / 例子</strong></p>
+<p>“供应商注册资本不得低于5000万元”可以作为最小
+X；如果缺少项目背景，模型能力上限也会被限制。</p>
+</blockquote>
+<hr />
+<h2 id="y-是什么标签就是老师">4. Y 是什么：标签就是老师</h2>
+<p>Y 是训练时告诉模型“什么叫正确”的目标。二分类中可以先用 1
+表示存在潜在风险、0 表示未发现明显风险。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>标签设计决定模型被教成什么样。错误标签会把梯度推向错误方向。</p>
+</blockquote>
+<hr />
+<h2 id="ŷ-是模型的预测">5. Ŷ 是模型的预测</h2>
+<p>模型不会直接看到“真理”，它先根据当前参数生成预测 Ŷ，再与 Y
+比较。训练早期 Ŷ 往往很差，这本来就是正常状态。</p>
+<hr />
+<h2 id="模型-fθ-是什么">6. 模型 fθ 是什么</h2>
+<p>fθ 表示一个由参数 θ 控制的映射。逻辑回归、神经网络、Transformer
+都只是更复杂的 fθ。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>Ŷ = fθ(X)</p>
+</blockquote>
+<hr />
+<h2 id="参数-θ-到底是什么">7. 参数 θ 到底是什么</h2>
+<p>参数是训练真正修改的对象。在线性模型中是权重和偏置；在大模型中则是大量矩阵中的数值。</p>
+<blockquote>
+<p><strong>政府采购案例 / 例子</strong></p>
+<p>一个三特征模型可以写成 θ=[w1,w2,w3,b]。</p>
+</blockquote>
+<hr />
+<h2 id="一个最小的政府采购特征模型">8. 一个最小的政府采购特征模型</h2>
+<p>为了建立直觉，可以先把条款表示成几个简单特征：是否限制注册资本、是否要求本地分支、是否限制成立年限。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>X=[x1,x2,x3]</p>
+</blockquote>
+<hr />
+<h2 id="线性打分">9. 线性打分</h2>
+<p>最简单模型把各特征乘以权重再相加，得到一个原始分数 z。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>z=w1x1+w2x2+w3x3+b</p>
+</blockquote>
+<hr />
+<h2 id="权重意味着什么">10. 权重意味着什么</h2>
+<p>如果 w2
+很大且为正，说明“本地分支要求”在当前数据里会把模型预测推向风险一侧。但注意：高权重只表示模型依赖它，不等于法律上天然违规。</p>
+<hr />
+<h2 id="loss模型怎样知道自己错了">11. Loss：模型怎样知道自己错了</h2>
+<p>Loss
+把预测与真实标签之间的差异压缩成一个可优化的数值。训练的直接目标不是“理解政府采购”，而是降低我们定义的
+Loss。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>Loss = L(Ŷ,Y)</p>
+</blockquote>
+<hr />
+<h2 id="为什么-loss-必须可优化">12. 为什么 Loss 必须可优化</h2>
+<p>如果一个评价标准不能对参数变化提供连续反馈，训练就很难知道下一步朝哪个方向改。后面我们会用交叉熵建立这种可微反馈。</p>
+<hr />
+<h2 id="训练就是反复纠错">13. 训练就是反复纠错</h2>
+<p>每一批样本都给模型一个反馈：哪些预测错、错多大、哪些参数应该往什么方向动。大量微小更新叠加后形成能力。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>θ(t+1)=θ(t)-η∇θL</p>
+</blockquote>
+<hr />
+<h2 id="gradient-是什么">14. Gradient 是什么</h2>
+<p>梯度告诉我们：如果稍微改变某个参数，Loss
+会朝什么方向变化、变化多快。第一阶段先记住它是“纠错方向”。</p>
+<hr />
+<h2 id="learning-rate-η-是步长">15. Learning Rate η 是步长</h2>
+<p>梯度给方向，学习率决定一次改多少。太大可能越过好解甚至发散，太小则几乎学不动。</p>
+<hr />
+<h2 id="数据-模型的经验">16. 数据 = 模型的经验</h2>
+<p>模型没有亲自参与采购活动，它的“经验世界”来自训练样本。数据中没有覆盖的模式，模型就缺少直接经验。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型①：数据就是经验。</p>
+</blockquote>
+<hr />
+<h2 id="信息决定能力上限">17. 信息决定能力上限</h2>
+<p>如果 X
+中没有项目背景、时间、地区或适用规则，模型不可能稳定利用这些缺失信息。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型②：信息决定上限。</p>
+</blockquote>
+<hr />
+<h2 id="标签-老师">18. 标签 = 老师</h2>
+<p>同样的 X，如果专家标注标准混乱，模型会接收到相互冲突的学习信号。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型③：标签就是老师。</p>
+</blockquote>
+<hr />
+<h2 id="学习-减少-loss">19. 学习 = 减少 Loss</h2>
+<p>模型并不知道我们心里的业务目标，它只接触到被编码进
+Loss、数据和训练流程里的目标。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型④：模型只会优化被明确写进训练系统的东西。</p>
+</blockquote>
+<hr />
+<h2 id="能力-泛化">20. 能力 = 泛化</h2>
+<p>训练集做得好只能说明模型适应了历史样本；真正能力要看未见项目、未见年份、未见地区和边界案例。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型⑤：泛化比记忆更重要。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-99-训练准确率可能毫无意义">21. 为什么 99%
+训练准确率可能毫无意义</h2>
+<p>如果模型只背住模板、机构名称、固定句式，它可以把训练集做得极好，却在新项目上失败。</p>
+<hr />
+<h2 id="shortcut-learning模型会走捷径">22. Shortcut
+Learning：模型会走捷径</h2>
+<p>模型倾向利用最容易降低 Loss
+的特征，而不是我们希望它掌握的业务原则。</p>
+<blockquote>
+<p><strong>政府采购案例 / 例子</strong></p>
+<p>若训练集中带数字的条款大多被标风险，模型可能学成“出现数字→风险”。</p>
+</blockquote>
+<hr />
+<h2 id="数字捷径的反例">23. 数字捷径的反例</h2>
+<p>“7×24小时故障响应服务”包含数字，但不因此自动构成不合理限制。这个反例能帮助模型打掉“数字=风险”的错误捷径。</p>
+<hr />
+<h2 id="相关性不等于规则">24. 相关性不等于规则</h2>
+<p>模型学到的是统计相关。它不能凭一个关键词自动推出法律结论，尤其政府采购判断需要上下文、必要性、比例性和适用规则。</p>
+<hr />
+<h2 id="从关键词升级到抽象原则">25. 从关键词升级到抽象原则</h2>
+<p>真正希望模型学习的是“条件是否与履约需要合理相关、是否造成不必要竞争限制”等更稳定原则，而不是死记“本地”“5000万”等词。</p>
+<hr />
+<h2 id="一个样本如何推动参数更新">26. 一个样本如何推动参数更新</h2>
+<p>样本进入模型得到预测，预测与标签计算
+Loss，反向传播得到梯度，优化器更新参数。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>X → Ŷ → Loss → Gradient → Update θ</p>
+</blockquote>
+<hr />
+<h2 id="为什么需要很多样本">27. 为什么需要很多样本</h2>
+<p>单个案例只能提供局部反馈；大量多样样本让参数在不同方向的反馈中逐渐形成更稳健的表示。</p>
+<hr />
+<h2 id="为什么高质量反例很值钱">28. 为什么高质量反例很值钱</h2>
+<p>一个模型特别容易误判的反例，比十个重复的简单样本更能修正决策边界。</p>
+<hr />
+<h2 id="政府采购二分类只是起点">29. 政府采购二分类只是起点</h2>
+<p>最终 Y
+可以扩展成风险类型、严重程度、依据、理由、修改建议和不确定性；但第一阶段先用简单任务理解学习机制。</p>
+<hr />
+<h2 id="训练不等于知识复制">30. 训练不等于知识复制</h2>
+<p>把法规 PDF
+放进训练目录，并不意味着模型把条文一字不漏“存进去”。训练更像用样本不断改变参数，使其对某类输入形成概率性响应。</p>
+<hr />
+<h2 id="模型权重不是数据库">31. 模型权重不是数据库</h2>
+<p>权重可以压缩统计规律，但不适合承担频繁变化、需要精确引用的法规事实，因此后续会引入
+RAG。</p>
+<hr />
+<h2 id="第一阶段完整链路">32. 第一阶段完整链路</h2>
+<p>把所有概念串成一条链：输入、模型、预测、误差、梯度、参数更新、泛化评测。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>X → Model → Ŷ → Loss → ∇ → θ更新 → 新样本泛化</p>
+</blockquote>
+<hr />
+<h2 id="思维实验模型到底利用了什么">33.
+思维实验：模型到底利用了什么</h2>
+<p>假设模型对所有含“本地”的条款都判风险，你应该构造“项目实施地点在本地但不限制供应商注册地”的反例测试它。</p>
+<hr />
+<h2 id="阶段掌握标准">34. 阶段掌握标准</h2>
+<p>你应能解释 X、Y、Ŷ、Loss、θ、Gradient、Learning Rate 和
+Generalization，并能说明“训练模型”为什么不是“把知识复制进去”。</p>
+<ul>
+<li>能写出一个政府采购任务的 X/Y</li>
+<li>能解释参数是训练真正修改的对象</li>
+<li>能说明 Loss 与业务目标的关系</li>
+<li>能举出一个 Shortcut Learning 反例</li>
+<li>能区分训练成绩与泛化能力</li>
+</ul>
+<hr />
+<hr />
+<h2 id="用一个完整二分类例子把-xy预测串起来">35. 用一个完整二分类例子把
+X、Y、预测串起来</h2>
+<p>假设第一版任务是：<strong>判断一条供应商资格条件是否存在潜在不合理限制风险</strong>。为了教学，先把输出压缩成二分类：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Y</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><mn>1</mn><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mtext mathvariant="normal">存在潜在风险</mtext></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mn>0</mn><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mtext mathvariant="normal">未发现明显风险</mtext></mtd></mtr></mtable></mrow></mrow><annotation encoding="application/x-tex">
+Y=\begin{cases}
+1,&amp;\text{存在潜在风险}\\
+0,&amp;\text{未发现明显风险}
+\end{cases}
+</annotation></semantics></math></p>
+<p>例如，“供应商须在项目所在地设有分公司”可以作为潜在风险样本；“供应商应依法缴纳社会保障资金”可以作为无明显风险样本。这里的例子用于机器学习结构教学，并不意味着现实中仅凭一句话就能自动形成最终法律结论。实际判断仍要结合采购标的、履约必要性、市场竞争状况、有效法规和项目上下文。</p>
+<p>模型真正接收的是 X，产生预测
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>Y</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat Y</annotation></semantics></math>，训练系统再拿
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>Y</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat Y</annotation></semantics></math>
+与 Y 比较。如果 X
+缺信息，即使标签再准确，模型也可能学不到你希望它掌握的条件性判断。</p>
+<h2 id="把自然语言先简化成三个可观察特征">36.
+把自然语言先简化成三个可观察特征</h2>
+<p>为了理解“参数到底在学什么”，先暂时不考虑
+Transformer，把一句采购条款手工表示为三个特征：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>x</mi><mn>1</mn></msub><mo>,</mo><msub><mi>x</mi><mn>2</mn></msub><mo>,</mo><msub><mi>x</mi><mn>3</mn></msub><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+X=[x_1,x_2,x_3]
+</annotation></semantics></math></p>
+<p>其中：<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mn>1</mn></msub><annotation encoding="application/x-tex">x_1</annotation></semantics></math>
+表示是否设置注册资本门槛，<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mn>2</mn></msub><annotation encoding="application/x-tex">x_2</annotation></semantics></math>
+表示是否要求本地分支机构，<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mn>3</mn></msub><annotation encoding="application/x-tex">x_3</annotation></semantics></math>
+表示是否设置成立年限限制。最简单模型可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><msub><mi>w</mi><mn>1</mn></msub><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><msub><mi>w</mi><mn>2</mn></msub><msub><mi>x</mi><mn>2</mn></msub><mo>+</mo><msub><mi>w</mi><mn>3</mn></msub><msub><mi>x</mi><mn>3</mn></msub><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">
+z=w_1x_1+w_2x_2+w_3x_3+b
+</annotation></semantics></math></p>
+<p>训练改变的是
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mn>1</mn></msub><mo>,</mo><msub><mi>w</mi><mn>2</mn></msub><mo>,</mo><msub><mi>w</mi><mn>3</mn></msub><mo>,</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">w_1,w_2,w_3,b</annotation></semantics></math>，而不是原始
+PDF，也不是标签本身。大模型只是把“特征”从三个手工变量升级成了海量内部表示，把参数从几个数字升级成数十亿个矩阵元素，但基本思想仍然一致。</p>
+<h2 id="一次训练更新到底发生了什么">37. 一次训练更新到底发生了什么</h2>
+<p>假设某条真实风险样本被模型预测成低风险。训练系统先计算 Loss，再计算
+Loss 对参数的梯度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>θ</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mi>θ</mi><mi>t</mi></msub><mo>−</mo><mi>η</mi><msub><mi>∇</mi><mi>θ</mi></msub><mi>L</mi></mrow><annotation encoding="application/x-tex">
+\theta_{t+1}=\theta_t-\eta\nabla_\theta L
+</annotation></semantics></math></p>
+<p>这句话可以翻成白话：<strong>先看错了多少，再判断每个参数该往哪个方向挪一点，然后挪一点。</strong>
+训练一次不会让模型突然“懂政府采购”，能力来自成千上万次这样的微小纠错累积。</p>
+<p>这也是为什么数据质量如此重要：错误标签会产生错误梯度；缺少上下文会让模型在错误信息基础上寻找捷径；高度重复的数据会让某些模式被反复强化。</p>
+<h2 id="模型学知识不是把法规原句存进某个参数">38.
+“模型学知识”不是把法规原句存进某个参数</h2>
+<p>神经网络里的知识通常是分布式表示。你很难找到一个单独参数说“这个参数就是政府采购法第某条”。训练更像是在大量样本反馈下逐渐调整一个巨大函数的形状，使特定输入更容易映射到特定输出。</p>
+<p>因此，把十万份法规 PDF
+直接扔进训练流程，并不自动等于得到十万份法规的可靠可检索知识。对于需要精确、最新、可引用的法规内容，后续我们会更偏向
+RAG；对于“如何审查、如何组织理由、如何识别典型风险模式”，SFT
+和领域训练更适合塑造行为。</p>
+<h2 id="为什么信息决定上限是第一课最值得记住的原则之一">39.
+为什么“信息决定上限”是第一课最值得记住的原则之一</h2>
+<p>如果只给模型一句“供应商须有五个同类业绩”，模型并不知道项目预算、采购复杂度、市场供应商数量，也不知道设置该条件的必要性说明。此时不存在一种训练技巧能让模型稳定利用根本没有输入的信息。</p>
+<p>因此更成熟的任务表示可能是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mtext mathvariant="normal">条款</mtext><mo>,</mo><mtext mathvariant="normal">采购标的</mtext><mo>,</mo><mtext mathvariant="normal">上下文</mtext><mo>,</mo><mtext mathvariant="normal">地区</mtext><mo>,</mo><mtext mathvariant="normal">时间</mtext><mo>,</mo><mtext mathvariant="normal">适用规则</mtext><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+X=[\text{条款},\text{采购标的},\text{上下文},\text{地区},\text{时间},\text{适用规则}]
+</annotation></semantics></math></p>
+<p>这意味着任务设计与数据 Schema
+不是训练前的行政工作，而是模型能力设计的一部分。</p>
+<h2 id="标签就是老师还意味着老师必须有统一教学标准">40.
+“标签就是老师”还意味着老师必须有统一教学标准</h2>
+<p>如果专家 A 把某类本地服务要求全部标成风险，专家 B
+认为必须区分“本地注册”和“本地履约服务能力”，模型会同时收到冲突信号。此时扩大模型规模并不能修复教学标准冲突。</p>
+<p>未来政府采购训练数据至少应该保存：标签、风险类型、理由、法律依据、专家置信度、是否存在分歧，以及必要时的复核结果。二分类只是第一版实验接口，不应被误认为现实世界只有
+0 和 1 两种真理。</p>
+<h2 id="泛化为什么背会历史文件不算真正能力">41.
+泛化：为什么“背会历史文件”不算真正能力</h2>
+<p>假设模型训练集准确率达到 99%，但新项目测试只有
+55%。这说明它可能记住了历史模板、代理机构风格、固定关键词甚至项目名称，却没有形成可迁移规律。</p>
+<p>真正希望的能力是：换项目、换措辞、换地区、换年份以后，仍然能识别更稳定的业务逻辑。后面的过拟合、数据分布、OOD
+和因果阶段，本质都在进一步回答“怎样知道模型是否真的形成了这种能力”。</p>
+<h2 id="shortcut-learning模型会主动寻找比专家原则更容易的捷径">42.
+Shortcut Learning：模型会主动寻找比专家原则更容易的捷径</h2>
+<p>如果风险样本里经常出现“5000万元”“10年以上”“本市”等词，而正常样本很少出现，模型可能把数字和地名当成非常好用的
+shortcut。它不需要理解竞争限制，只要抓住词频就能降低 Loss。</p>
+<p>所以必须准备反例。例如“7×24
+小时故障响应服务”有数字，但数字本身不能推出风险；“项目履约地点位于本市”出现“本市”，但与“供应商必须在本市注册”并不是同一约束。这些反例会在第六阶段发展成
+Hard Negative 与 Contrastive Data。</p>
+<h2 id="第一阶段思维实验到底应该改模型还是改-x">43.
+第一阶段思维实验：到底应该改模型还是改 X</h2>
+<p>假设模型对某些复杂技术参数一直判断不稳定。你有两个选择：A）直接换更大的模型；B）把采购标的、参数用途、市场可替代产品数量等信息加入
+X。应该先问：错误是不是由信息缺失导致？</p>
+<p>如果专家在只看原始 X
+的情况下也无法稳定判断，那么让模型在相同信息条件下输出确定答案，本身就是任务定义不合理。这个思维实验会贯穿整门课程。</p>
+<h2 id="第一阶段压缩表">44. 第一阶段压缩表</h2>
+<table>
+<thead>
+<tr class="header">
+<th>概念</th>
+<th>你应该形成的直觉</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>X</td>
+<td>模型真正能看到的信息</td>
+</tr>
+<tr class="even">
+<td>Y</td>
+<td>训练系统定义的正确目标</td>
+</tr>
+<tr class="odd">
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>f</mi><mi>θ</mi></msub><annotation encoding="application/x-tex">f_\theta</annotation></semantics></math></td>
+<td>由参数控制的映射函数</td>
+</tr>
+<tr class="even">
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>Y</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat Y</annotation></semantics></math></td>
+<td>当前参数产生的预测</td>
+</tr>
+<tr class="odd">
+<td>Loss</td>
+<td>对“错多少”的数学表达</td>
+</tr>
+<tr class="even">
+<td>Gradient</td>
+<td>参数应该如何微调的方向信号</td>
+</tr>
+<tr class="odd">
+<td>泛化</td>
+<td>未见数据上的稳定能力</td>
+</tr>
+</tbody>
+</table>
+<h2 id="第一阶段的五个核心心智模型">45. 第一阶段的五个核心心智模型</h2>
+<ol type="1">
+<li><strong>数据 =
+经验</strong>：模型世界来自训练样本，而不是模型名称。</li>
+<li><strong>信息决定上限</strong>：X
+中不存在的信息，模型无法可靠利用。</li>
+<li><strong>标签 =
+老师</strong>：错误、冲突、粗糙标签会直接塑造错误行为。</li>
+<li><strong>学习 = 减少
+Loss</strong>：模型不会读懂我们的愿望，只会响应训练信号。</li>
+<li><strong>能力 =
+泛化</strong>：真正能力体现在未知项目，不体现在训练集背诵成绩。</li>
+</ol>
+<p>如果第一阶段只记一句：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mi>训</mi><mi>练</mi><mi>是</mi><mi>在</mi><mi>大</mi><mi>量</mi><mi>样</mi><mi>本</mi><mi>反</mi><mi>馈</mi><mi>下</mi><mi>调</mi><mi>整</mi><mi>参</mi><mi>数</mi><mi>，</mi><mi>使</mi><mi>X</mi><mi>到</mi><mi>Y</mi><mi>的</mi><mi>映</mi><mi>射</mi><mi>在</mi><mi>未</mi><mi>知</mi><mi>数</mi><mi>据</mi><mi>上</mi><mi>越</mi><mi>来</mi><mi>越</mi><mi>可</mi><mi>靠</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{模型训练是在大量样本反馈下调整参数，使X到Y的映射在未知数据上越来越可靠。}
+</annotation></semantics></math></p>
+<hr /><div class="nav"><span></span><a class="btn" href="stage02.html">第 2 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

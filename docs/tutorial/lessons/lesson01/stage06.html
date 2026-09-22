@@ -1,0 +1,413 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第1课 · 第6阶段：数据分布、采样与“数据即模型”</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第1课 · 第6阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>判断模型为什么学不好、泛化失败、指标失真或什么时候不该自动回答。<ul><li>训练数据只是世界的样本，不是世界本身。</li><li>样本频率就是隐形权重，采样本身就是训练策略。</li><li>困难样本决定决策边界，简单重复样本边际价值会下降。</li></ul></div><h1 id="第一课-第-6-阶段数据分布采样与数据即模型">第一课 · 第 6
+阶段：数据分布、采样与“数据即模型”</h1>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-5">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-5">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>训练数据只是世界的样本，不是世界本身。</strong></li>
+<li><strong>样本频率就是隐形权重，采样本身就是训练策略。</strong></li>
+<li><strong>困难样本决定决策边界，简单重复样本边际价值会下降。</strong></li>
+<li><strong>高置信度错误暴露最深的错误规律，是高价值训练资产。</strong></li>
+<li><strong>Dataset
+是课程设计：应该主动决定模型看什么、看多少、以什么对比方式看。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-5">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Hard Positive</code></td>
+<td>高难正例：没有明显关键词但确实需要识别的风险</td>
+</tr>
+<tr class="even">
+<td><code>Curriculum</code></td>
+<td>课程式训练：按难度、类型或阶段安排训练数据顺序</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Deduplication</code></td>
+<td>去重：识别并处理完全重复或近似重复的数据</td>
+</tr>
+<tr class="odd">
+<td><code>Hard Negative</code></td>
+<td>高难负例：表面像风险但正确结论不应判风险</td>
+</tr>
+<tr class="even">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="odd">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-5">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<blockquote>
+<p><strong>原文级教材源文件</strong>：本 Markdown
+是该阶段唯一内容源。HTML
+由本文件直接生成，不再二次压缩、合并知识点或改写公式。</p>
+</blockquote>
+<p>这一阶段把重点从训练算法转向数据设计：训练集不是仓库，而是模型经历的世界和接受的课程。核心内容包括
+Data Distribution、Sampling、Class Imbalance、Hard
+Positive/Negative、Contrastive Data、Curriculum
+Learning、Deduplication、Active Learning 与错误闭环。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mrow><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>X</mi><mo>,</mo><mi>Y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><msub><mi>P</mi><mrow><mi>r</mi><mi>e</mi><mi>a</mi><mi>l</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>X</mi><mo>,</mo><mi>Y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{train}(X,Y) \approx P_{real}(X,Y)
+</annotation></semantics></math></p>
+<p>真正需要持续建设的长期资产，不是公开 PDF
+数量，而是专家标注、困难案例和模型真实错误。</p>
+<hr />
+<h2 id="第六阶段总问题数据不是仓库而是模型的课程">1.
+第六阶段总问题：数据不是仓库，而是模型的课程</h2>
+<p>模型看到什么、以什么频率看到、先看到什么、哪些难例被强调，都会改变最终能力。</p>
+<hr />
+<h2 id="data-distribution">2. Data Distribution</h2>
+<p>训练集不是一堆文件，而是从某个 P_train(X,Y)
+中采样出来的数据世界。</p>
+<hr />
+<h2 id="真实部署分布">3. 真实部署分布</h2>
+<p>上线面对的是 P_real(X,Y)。理想状态是训练分布尽量覆盖真实世界。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>P_train(X,Y) ≈ P_real(X,Y)</p>
+</blockquote>
+<hr />
+<h2 id="训练数据只是现实的样本">4. 训练数据只是现实的样本</h2>
+<p>模型学到的不是抽象“政府采购全部知识”，而是你采集到的那部分政府采购。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型①：Dataset 是世界的样本，不是世界本身。</p>
+</blockquote>
+<hr />
+<h2 id="采购对象分布">5. 采购对象分布</h2>
+<p>货物、服务、工程在规则、文本结构和风险模式上不同。</p>
+<hr />
+<h2 id="行业分布">6. 行业分布</h2>
+<p>IT、医疗、教育、物业、车辆、咨询、检测等都应做覆盖统计。</p>
+<hr />
+<h2 id="采购方式分布">7. 采购方式分布</h2>
+<p>公开招标、竞争性磋商、谈判、询价、单一来源等语言和流程差异明显。</p>
+<hr />
+<h2 id="地区分布">8. 地区分布</h2>
+<p>中央、省、市、县及不同省份的文件风格、地方政策和市场环境不同。</p>
+<hr />
+<h2 id="风险类型分布">9. 风险类型分布</h2>
+<p>资格、技术、评分、商务、合同、程序等需要分别统计。</p>
+<hr />
+<h2 id="难度分布">10. 难度分布</h2>
+<p>明显错误、普通问题、边界案例、争议案例不能只靠总数量描述。</p>
+<hr />
+<h2 id="distribution-shift">11. Distribution Shift</h2>
+<p>如果 Train 80% IT，而上线 60% 医疗，P_train 与 P_deploy
+明显不同。</p>
+<hr />
+<h2 id="class-imbalance">12. Class Imbalance</h2>
+<p>95% 无风险、5% 风险时，模型很容易学成“永远正常”。</p>
+<hr />
+<h2 id="oversampling">13. Oversampling</h2>
+<p>提高少数类在训练中的出现频率，让其产生更多梯度影响。</p>
+<hr />
+<h2 id="undersampling">14. Undersampling</h2>
+<p>减少多数类样本，但可能丢失有价值的多样性。</p>
+<hr />
+<h2 id="class-weight">15. Class Weight</h2>
+<p>不改样本数量，而给少数类错误更大 Loss 权重。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>Loss = w1·L_risk + w0·L_normal</p>
+</blockquote>
+<hr />
+<h2 id="cost-sensitive-learning">16. Cost-sensitive Learning</h2>
+<p>当 FN 业务代价更高时，可以在 Loss、采样和阈值多层体现这种代价。</p>
+<hr />
+<h2 id="样本频率就是隐形权重">17. 样本频率就是隐形权重</h2>
+<p>某种模式出现 10000 次，另一种 100 次，即使单样本 Loss
+相同，总梯度影响也不同。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型②：Sampling 本身就是训练策略。</p>
+</blockquote>
+<hr />
+<h2 id="hard-example-1">18. Hard Example</h2>
+<p>模型已经会的简单样本边际价值低；最难案例更能推动能力边界。</p>
+<hr />
+<h2 id="hard-negative-1">19. Hard Negative</h2>
+<p>看起来像风险但其实不应该直接判风险，用来打掉过度报警。</p>
+<blockquote>
+<p><strong>政府采购案例 / 例子</strong></p>
+<p>“项目需要在本市提供2小时应急服务，但不要求供应商预设本地机构。”</p>
+</blockquote>
+<hr />
+<h2 id="hard-positive-1">20. Hard Positive</h2>
+<p>看起来措辞正常，实际上可能存在限制，需要减少漏报。</p>
+<blockquote>
+<p><strong>政府采购案例 / 例子</strong></p>
+<p>“为确保质量，供应商须具有连续十年以上同类项目经验。”是否合理必须看必要性与竞争影响。</p>
+</blockquote>
+<hr />
+<h2 id="decision-boundary">21. Decision Boundary</h2>
+<p>Hard Example 往往位于分类边界附近，最能修正边界。</p>
+<hr />
+<h2 id="contrastive-pair-1">22. Contrastive Pair</h2>
+<p>相似措辞、不同标签，让模型学习真正差异。</p>
+<hr />
+<h2 id="高置信度错误特别值钱">23. 高置信度错误特别值钱</h2>
+<p>模型 p=.01 但真实 y=1，说明内部存在非常确定的错误规律。</p>
+<hr />
+<h2 id="hard-negative-mining">24. Hard Negative Mining</h2>
+<p>上线模型从大量数据中筛出“高置信风险但专家确认无风险”的案例，作为下一轮难负样本。</p>
+<hr />
+<h2 id="hard-positive-mining">25. Hard Positive Mining</h2>
+<p>寻找“模型高置信无风险但专家确认有风险”的漏报。</p>
+<hr />
+<h2 id="error-bank">26. Error Bank</h2>
+<p>把真实错误结构化沉淀为长期资产：模型版本、置信度、错误类型、根因、专家修正。</p>
+<hr />
+<h2 id="模型帮助我们找数据">27. 模型帮助我们找数据</h2>
+<p>V0 告诉你它最不会什么，数据团队去补这些区域，再训练 V1。</p>
+<blockquote>
+<p><strong>公式 / 关键表达</strong></p>
+<p>Model → Error → Data → Better Model</p>
+</blockquote>
+<hr />
+<h2 id="duplicate">28. Duplicate</h2>
+<p>原始 10 万条不代表 10
+万条独立信息。重复模板会让某些模式被过度加权。</p>
+<hr />
+<h2 id="exact-dedup">29. Exact Dedup</h2>
+<p>去除完全相同文本。</p>
+<hr />
+<h2 id="near-dedup">30. Near Dedup</h2>
+<p>去除只改数字、名称或少量措辞的近重复。</p>
+<hr />
+<h2 id="semantic-dedup">31. Semantic Dedup</h2>
+<p>语义高度相似但表面不同的样本也要控制比例。</p>
+<hr />
+<h2 id="raw-count-effective-data">32. Raw Count ≠ Effective Data</h2>
+<p>真正有价值的是新增信息量、覆盖和多样性。</p>
+<hr />
+<h2 id="long-tail">33. Long Tail</h2>
+<p>低频风险类别样本少，但不一定不重要，甚至可能更复杂。</p>
+<hr />
+<h2 id="长尾处理">34. 长尾处理</h2>
+<p>专项采集、Oversampling、Class Weight、RAG、Rules
+或专项模型都可以用。</p>
+<hr />
+<h2 id="curriculum-learning">35. Curriculum Learning</h2>
+<p>像课程一样组织数据：基础→普通→对比→边界→争议。</p>
+<hr />
+<h2 id="level-1明显案例">36. Level 1：明显案例</h2>
+<p>先学清晰模式，建立基础分界。</p>
+<hr />
+<h2 id="level-2上下文案例">37. Level 2：上下文案例</h2>
+<p>加入项目需求、采购标的、履约背景。</p>
+<hr />
+<h2 id="level-3对比案例">38. Level 3：对比案例</h2>
+<p>同词不同结论、同结论不同表达。</p>
+<hr />
+<h2 id="level-4边界案例">39. Level 4：边界案例</h2>
+<p>专家需要认真分析，训练模型处理灰区。</p>
+<hr />
+<h2 id="level-5争议案例">40. Level 5：争议案例</h2>
+<p>保留专家分歧和不确定性，而不是强压成伪确定标签。</p>
+<hr />
+<h2 id="dataset-是课程不是仓库">41. Dataset 是课程，不是仓库</h2>
+<p>你在设计一个学生接受什么教育，而不是只在堆文件。</p>
+<blockquote>
+<p><strong>专家心智模型</strong></p>
+<p>心智模型③：Dataset Design = Curriculum Design。</p>
+</blockquote>
+<hr />
+<h2 id="active-learning">42. Active Learning</h2>
+<p>专家时间昂贵，应优先标模型最犹豫、模型/规则冲突或高置信度错误的样本。</p>
+<hr />
+<h2 id="information-gain">43. Information Gain</h2>
+<p>下一条数据的价值取决于它能提供多少新信息，而不是它是否“又多一条”。</p>
+<hr />
+<h2 id="专家时间是稀缺资源">44. 专家时间是稀缺资源</h2>
+<p>目标不是标最多数据，而是每一小时专家标注带来最大模型提升。</p>
+<hr />
+<h2 id="data-quality-control">45. Data Quality Control</h2>
+<p>检查输入完整性、标签正确性、专家一致性、依据有效性、时间有效性、重复、难度和泄漏。</p>
+<hr />
+<h2 id="时间元数据">46. 时间元数据</h2>
+<p>法规、政策和案例随时间变化，应保存
+case_date、effective_date、expiry_date、jurisdiction 等。</p>
+<hr />
+<h2 id="时间也是-x-的一部分">47. 时间也是 X 的一部分</h2>
+<p>同一句话在不同时间、地区和制度背景下可能答案不同。</p>
+<hr />
+<h2 id="label-target-leakage">48. Label / Target Leakage</h2>
+<p>输入中如果已经包含“财政部门认定该条款不合理”，模型可以直接抄答案。</p>
+<hr />
+<h2 id="future-leakage">49. Future Leakage</h2>
+<p>发布前预测风险时不能把后续更正、投诉处理或中标结果放进输入。</p>
+<hr />
+<h2 id="六层数据质量金字塔">50. 六层数据质量金字塔</h2>
+<p>原始数据→清洗→结构化→专家标注→困难数据→真实错误闭环数据。</p>
+<hr />
+<h2 id="真正的护城河">51. 真正的护城河</h2>
+<p>公开原始文件不难复制，专家标注、难例和真实错误闭环才是高价值资产。</p>
+<hr />
+<h2 id="第六阶段五个心智模型">52. 第六阶段五个心智模型</h2>
+<p>训练数据是模型世界；样本频率是隐形权重；困难样本决定边界；高置信错误是宝藏；Dataset
+是课程。</p>
+<hr />
+<h2 id="阶段掌握标准-1">53. 阶段掌握标准</h2>
+<p>你应能用 Coverage、Balance、Difficulty、Label Quality、Deployment
+Match 五个维度比较两个数据集，而不是只看样本数。</p>
+<hr />
+<hr />
+<h2 id="dataset-不是世界而是从世界抽出来的一份样本">54. Dataset
+不是世界，而是从世界抽出来的一份样本</h2>
+<p>训练数据来自经验分布
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>P</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat P</annotation></semantics></math>，真实部署来自
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mrow><mi>r</mi><mi>e</mi><mi>a</mi><mi>l</mi></mrow></msub><annotation encoding="application/x-tex">P_{real}</annotation></semantics></math>。理想状态是二者足够接近，但政府采购会随地区、行业、政策和时间变化，因此
+IID 只能被视为近似假设。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mrow><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>X</mi><mo>,</mo><mi>Y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><msub><mi>P</mi><mrow><mi>d</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>X</mi><mo>,</mo><mi>Y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{train}(X,Y)\approx P_{deploy}(X,Y)
+</annotation></semantics></math></p>
+<p>数据量巨大但覆盖单一，仍然可能离真实部署很远。</p>
+<h2 id="建立政府采购数据覆盖矩阵">55. 建立政府采购数据覆盖矩阵</h2>
+<p>未来至少按“风险类型 × 采购类别 × 采购方式 × 地区 × 时间 × 严重度 ×
+难度”统计。十万条数据不能只报总数，还应该知道医疗 Hard Negative
+有多少、工程边界案例有多少、新政策后的案例有多少。</p>
+<p>这类 Coverage Dashboard 比单纯文件计数更接近模型真实教育经历。</p>
+<h2 id="类别不平衡与隐形奖励">56. 类别不平衡与隐形奖励</h2>
+<p>若 95% 样本是正常，5%
+是风险，模型频繁看到多数类，等价于多数类对总梯度拥有更大影响。因此样本频率本身就是一种
+Implicit Weight。</p>
+<p>解决办法包括 Oversampling、Undersampling、Class Weight、Focal Loss
+或重新设计 Batch 采样，但不能机械追求
+50/50；最终训练分布要服务于业务成本和部署环境。</p>
+<h2 id="oversampling-与-undersampling-的代价">57. Oversampling 与
+Undersampling 的代价</h2>
+<p>Oversampling
+风险类能增强学习信号，但过度重复可能导致过拟合；Undersampling
+多数类能快速平衡，但可能丢掉大量有价值的正常模式。更成熟的策略是保留多样性，同时控制每类在
+Batch 中出现的频率。</p>
+<h2 id="class-weight不改数量也可以改错误代价">58. Class
+Weight：不改数量，也可以改错误代价</h2>
+<p>可以让风险样本 Loss 权重大于正常样本：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>=</mo><msub><mi>w</mi><mn>1</mn></msub><msub><mi>L</mi><mrow><mi>r</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></msub><mo>+</mo><msub><mi>w</mi><mn>0</mn></msub><msub><mi>L</mi><mrow><mi>n</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+L=w_1L_{risk}+w_0L_{normal}
+</annotation></semantics></math></p>
+<p>如果漏报代价高，设置
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mn>1</mn></msub><mo>&gt;</mo><msub><mi>w</mi><mn>0</mn></msub></mrow><annotation encoding="application/x-tex">w_1&gt;w_0</annotation></semantics></math>
+能让模型更重视风险类错误。但最终效果仍需 Validation 验证。</p>
+<h2 id="hard-negative最能打掉关键词风险的假理解">59. Hard
+Negative：最能打掉“关键词=风险”的假理解</h2>
+<p>Hard Negative
+是“看起来非常像风险，但真实并非如此”的正常案例。例如“项目需要在本市提供
+2
+小时应急服务，但不要求供应商提前设立本地机构，可通过驻场或合作服务满足”。</p>
+<p>如果模型只是看到“本市”和“2小时”就报警，Hard Negative
+会迫使它学习约束对象、履约必要性和竞争影响。</p>
+<h2 id="hard-positive看起来正常但真正危险">60. Hard
+Positive：看起来正常但真正危险</h2>
+<p>例如“为确保服务质量，供应商须具有连续十年以上同类项目经验”。措辞很合理，但“十年”是否必要、是否与履约能力相关、是否造成不必要竞争限制，需要更深入判断。</p>
+<p>Hard Positive 能防止模型被“为了保证质量”等合理化语言麻痹。</p>
+<h2 id="high-confidence-wrong-是最宝贵的一类错误">61. High-Confidence
+Wrong 是最宝贵的一类错误</h2>
+<p>模型 p=0.49、真实 y=1 只是边界犹豫；模型 p=0.01、真实 y=1
+则说明它建立了非常确定但错误的内部规律。后者通常具有更高 Information
+Gain，应优先进入专家复核与训练集。</p>
+<p>未来 Error Bank 应记录
+model_confidence、root_cause、difficulty、domain 和
+expert_review_status。</p>
+<h2 id="hard-negative-mining让模型自己暴露下一批最值得标的数据">62. Hard
+Negative Mining：让模型自己暴露下一批最值得标的数据</h2>
+<p>当前模型先扫描大量未标注数据，找出高置信报警；专家确认其中哪些其实正常，这些就是
+Hard Negative。下一轮训练专门修复这些盲区。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>→</mo><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>N</mi><mi>e</mi><mi>w</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>→</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow><annotation encoding="application/x-tex">
+Model\rightarrow Error\rightarrow ExpertCorrection\rightarrow NewData\rightarrow BetterModel
+</annotation></semantics></math></p>
+<p>比随机下载更多 PDF 更高效。</p>
+<h2 id="duplicate十万条不等于十万条信息">63.
+Duplicate：十万条不等于十万条信息</h2>
+<p>如果同一模板只改公司名和数字出现两万次，Raw Count 很大但 Effective
+Data 很小，而且某种模式会被反复强化。去重要分 Exact Dedup、Near Dedup 和
+Semantic Dedup。</p>
+<p>去重也不能机械删除所有相似句，因为某些 Minimal Pair
+正是我们故意保留的对比信息。</p>
+<h2 id="long-tail低频不代表低价值">64. Long Tail：低频不代表低价值</h2>
+<p>程序性特殊风险、罕见行业或新政策案例可能一年只出现少量，但一旦发生业务代价很高。可以通过专项采集、Oversampling、权重、RAG、规则引擎或专项模型处理，不应让
+Overall Accuracy 掩盖长尾失效。</p>
+<h2 id="curriculum-learning数据是一套课程不是一堆文件">65. Curriculum
+Learning：数据是一套课程，不是一堆文件</h2>
+<p>可以从明显案例开始，再加入普通上下文、对比案例、边界案例和专家争议案例。现代
+LLM 训练不一定严格按“先易后难”顺序，也可能混合采样，但 Curriculum
+的核心思想仍然是主动设计学习经历。</p>
+<h2 id="contrastive-pair边界信息比重复简单样本更有价值">66. Contrastive
+Pair：边界信息比重复简单样本更有价值</h2>
+<p>“必须在本市设立分公司”与“要求在本市提供现场服务但不限制注册地”表面相似，却对应不同判断逻辑。把它们成对出现，模型必须解释差异，远比重复
+100 次同一个明显风险句更有信息量。</p>
+<h2 id="active-learning把有限专家时间花在最有信息量的数据上">67. Active
+Learning：把有限专家时间花在最有信息量的数据上</h2>
+<p>有 100 万条未标注数据、专家只能标 1
+万条时，可以优先选择模型最犹豫、模型与规则冲突、多模型分歧、高置信度疑似错误或关键长尾领域的案例。</p>
+<p>政府采购项目里真正昂贵的通常不是 GPU，而是高水平专家标注时间。</p>
+<h2 id="时间元数据必须进入数据设计">68. 时间元数据必须进入数据设计</h2>
+<p>法规会生效、废止、替代。训练数据至少应考虑
+case_date、effective_date、expiry_date、jurisdiction、status。否则模型可能把过去正确、现在失效的规则当成永久知识。</p>
+<p>同一句条款在不同时间和地区可能对应不同
+Y，因此时间和地区本身也可能属于 X。</p>
+<h2 id="target-future-leakage输入里不能偷偷藏答案">69. Target / Future
+Leakage：输入里不能偷偷藏答案</h2>
+<p>如果任务是在采购文件发布时预测风险，输入却包含后续投诉决定、更正公告或最终处理结果，模型离线成绩会虚高。要始终问：<strong>线上做出判断的那个时刻，这条信息真的已经存在吗？</strong></p>
+<h2 id="六层数据质量金字塔-1">70. 六层数据质量金字塔</h2>
+<p>L1 原始文件；L2 清洗数据；L3 结构化数据；L4 专家标注；L5
+Hard/Contrastive 数据；L6 真实模型错误 +
+专家纠正。越往上数量可能越少，但单位训练价值往往越高。</p>
+<p>公开原始文件容易复制，真正形成长期护城河的是 L4～L6。</p>
+<h2 id="第六阶段五个核心心智模型">71. 第六阶段五个核心心智模型</h2>
+<ol type="1">
+<li>训练数据只是世界的样本，不是世界本身。</li>
+<li>样本频率就是隐形权重，采样本身就是训练策略。</li>
+<li>困难样本决定决策边界，简单重复样本边际价值会下降。</li>
+<li>高置信度错误暴露最深的错误规律，是高价值训练资产。</li>
+<li>Dataset
+是课程设计：应该主动决定模型看什么、看多少、以什么对比方式看。</li>
+</ol>
+<hr /><div class="nav"><a class="btn" href="stage05.html">← 第 5 阶段</a><a class="btn" href="stage07.html">第 7 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

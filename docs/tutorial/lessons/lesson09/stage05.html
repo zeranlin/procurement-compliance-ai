@@ -1,0 +1,735 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第5阶段：Generation Evaluation：理由、引用、事实性、幻觉与 Groundedness</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>FluentAnswer ≠ CorrectAnswer。语言流畅和事实正确是两个不同维度。</li><li>ReferenceSimilarity ≠ SemanticCorrectness。文本重合度不能替代语义正确性。</li><li>Factuality ≠ Groundedness。事实可能是真的，但当前证据未必支持。</li></ul></div><h1 id="第九课-第-5-阶段">第九课 · 第 5 阶段</h1>
+<h1
+id="generation-evaluation理由引用事实性幻觉与-groundedness-1">Generation
+Evaluation：理由、引用、事实性、幻觉与 Groundedness</h1>
+<h2
+id="生成答案看起来很专业到底怎样证明它事实正确有证据没有幻觉而且真正回答了问题">生成答案“看起来很专业”，到底怎样证明它事实正确、有证据、没有幻觉，而且真正回答了问题？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>FluentAnswer ≠
+CorrectAnswer。语言流畅和事实正确是两个不同维度。</strong></li>
+<li><strong>ReferenceSimilarity ≠
+SemanticCorrectness。文本重合度不能替代语义正确性。</strong></li>
+<li><strong>Factuality ≠
+Groundedness。事实可能是真的，但当前证据未必支持。</strong></li>
+<li><strong>AnswerLevelEval 应尽可能拆到
+ClaimLevelEval，否则很难定位幻觉。</strong></li>
+<li><strong>CitationPresent ≠ CitationCorrect，而 CitationCorrect ≠
+CitationComplete。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Citation</code></td>
+<td>引用：把生成结论和具体来源建立可追踪链接</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="odd">
+<td><code>Generalization</code></td>
+<td>泛化：对未见项目、时间、地区和表达的有效能力</td>
+</tr>
+<tr class="even">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>分类任务的答案空间有限。</p>
+<p>但生成任务不同。</p>
+<p>同一个正确答案可以有很多种表达。</p>
+<p>所以生成评测不能简单依赖：</p>
+<pre class="text"><code>Exact Match</code></pre>
+<p>最危险的情况是：</p>
+<blockquote>
+<p>模型语言非常流畅、专业术语很多、格式也很好，但事实和证据是错的。</p>
+</blockquote>
+<p>因此本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>l</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FluentAnswer
+\neq
+CorrectAnswer
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementgenerationevalpolicy_v0.1-1"><code>ProcurementGenerationEvalPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一生成评测为什么比分类难">一、生成评测为什么比分类难？</h1>
+<p>分类：</p>
+<pre class="text"><code>Gold = 风险
+Pred = 风险</code></pre>
+<p>比较直接。</p>
+<p>生成：</p>
+<pre class="text"><code>Gold：
+该条款存在潜在地域限制风险……
+
+Pred：
+从履约便利性角度看，该要求具有一定合理性……</code></pre>
+<p>需要判断：</p>
+<pre class="text"><code>结论
+事实
+理由
+证据
+完整性
+引用
+不确定性
+任务遵循</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>=</mo><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>D</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GenerationEval
+=
+MultiDimensionalJudgment
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二核心心智模型-①-3">二、核心心智模型 ①</h1>
+<h1
+id="referencesimilarity-semanticcorrectness"><code>ReferenceSimilarity ≠ SemanticCorrectness</code></h1>
+<p>传统 NLP 常用：</p>
+<pre class="text"><code>BLEU
+ROUGE</code></pre>
+<p>这些指标衡量：</p>
+<blockquote>
+<p>文本表面重合度。</p>
+</blockquote>
+<p>但在高自由度生成任务里：</p>
+<p>一个答案和 Gold 用词不同，</p>
+<p>仍可能完全正确。</p>
+<p>反过来：</p>
+<p>一个答案和 Gold 很像，</p>
+<p>也可能在关键事实处错了一句。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>l</mi><mi>a</mi><mi>p</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LexicalOverlap
+\neq
+Truth
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三生成评测至少拆成哪些维度">三、生成评测至少拆成哪些维度？</h1>
+<p>建议至少：</p>
+<pre class="text"><code>Task Correctness
+任务结论正确性
+
+Factuality
+事实正确性
+
+Groundedness
+证据支撑度
+
+Completeness
+完整性
+
+Relevance
+相关性
+
+Citation Correctness
+引用正确性
+
+Citation Completeness
+引用覆盖度
+
+Instruction Following
+指令遵循
+
+Abstention Quality
+拒答质量
+
+Style / Clarity
+表达清晰度</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>Style 应该放在较后层。</p>
+</blockquote>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>y</mi><mi>W</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>不</mi><mi>能</mi><mi>补</mi><mi>偿</mi><mi>F</mi><mi>a</mi><mi>l</mi><mi>s</mi><mi>e</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PrettyWriting
+不能补偿
+FalseFacts
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四factuality-和-groundedness-有什么区别">四、Factuality 和
+Groundedness 有什么区别？</h1>
+<h1 id="factuality">Factuality</h1>
+<h2 id="事实正确性">事实正确性</h2>
+<p>问：</p>
+<blockquote>
+<p>这句话本身是否符合真实事实？</p>
+</blockquote>
+<h1 id="groundedness">Groundedness</h1>
+<h2 id="证据支撑度">证据支撑度</h2>
+<p>问：</p>
+<blockquote>
+<p>这句话是否被当前提供的证据支持？</p>
+</blockquote>
+<p>例如某句话：</p>
+<blockquote>
+<p>在现实中可能是真的，</p>
+</blockquote>
+<p>但当前 RAG Context 没有提供这个事实。</p>
+<p>那么：</p>
+<pre class="text"><code>Factuality = 可能正确
+Groundedness = 不充分</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>d</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Factuality
+\neq
+Groundedness
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五核心心智模型-②-2">五、核心心智模型 ②</h1>
+<h1
+id="truebutungrounded-仍然可能是系统风险"><code>TrueButUngrounded</code>
+仍然可能是系统风险</h1>
+<p>在要求：</p>
+<blockquote>
+<p>基于指定采购文件回答</p>
+</blockquote>
+<p>的任务中，</p>
+<p>模型即使凭记忆说了一个真实知识，</p>
+<p>也可能违反：</p>
+<blockquote>
+<p>只能基于文档证据回答。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mo>=</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>l</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TaskTruth
+=
+WorldTruth
++
+EvidenceConstraint
+}
+</annotation></semantics></math></p>
+<p>在 Grounded QA 里，</p>
+<p>证据边界本身就是任务定义的一部分。</p>
+<hr />
+<h1
+id="六claim-level-evaluation为什么要把答案拆成-claim">六、Claim-level
+Evaluation：为什么要把答案拆成 Claim？</h1>
+<p>一段生成答案可能包含 8 个断言。</p>
+<p>如果只给整段：</p>
+<pre class="text"><code>overall = 0.8</code></pre>
+<p>很难定位哪里错。</p>
+<p>更专业的是：</p>
+<h1 id="claim-decomposition">Claim Decomposition</h1>
+<h2 id="断言拆解">断言拆解</h2>
+<p>例如：</p>
+<pre class="text"><code>Claim 1：该条款限制供应商注册地
+Claim 2：该限制与履约必要性缺乏关联
+Claim 3：因此属于高风险</code></pre>
+<p>然后逐条评：</p>
+<pre class="text"><code>Supported?
+Contradicted?
+NotEnoughEvidence?</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>可</mi><mi>以</mi><mi>进</mi><mi>一</mi><mi>步</mi><mi>拆</mi><mi>成</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>i</mi><mi>m</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AnswerLevelEval
+可以进一步拆成
+ClaimLevelEval
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七hallucination-怎么定义">七、Hallucination 怎么定义？</h1>
+<p>在评测里不要只写：</p>
+<blockquote>
+<p>“有幻觉。”</p>
+</blockquote>
+<p>要做 Taxonomy。</p>
+<p>例如：</p>
+<pre class="text"><code>Unsupported Claim
+无证据断言
+
+Contradicted Claim
+与证据矛盾
+
+Fabricated Citation
+伪造引用
+
+Wrong Attribution
+错误归因
+
+Invented Number
+编造数字
+
+Invented Policy
+编造政策
+
+Overgeneralization
+过度泛化</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>是</mi><mi>单</mi><mi>一</mi><mi>错</mi><mi>误</mi><mi>类</mi><mi>型</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Hallucination
+不是单一错误类型
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八核心心智模型-③-2">八、核心心智模型 ③</h1>
+<h1
+id="hallucination-rate-必须知道幻觉是什么"><code>Hallucination Rate</code>
+必须知道“幻觉是什么”</h1>
+<p>如果不同团队对 Hallucination 定义不同，</p>
+<p>那么：</p>
+<pre class="text"><code>Hallucination Rate = 3%</code></pre>
+<p>没有可比性。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>D</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>先</mi><mi>于</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MetricDefinition
+先于
+MetricValue
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九citation-correctness引用存在不等于引用正确">九、Citation
+Correctness：引用“存在”不等于引用“正确”</h1>
+<p>可以拆成：</p>
+<pre class="text"><code>Citation Presence
+有没有引用
+
+Citation Validity
+引用是否指向真实来源
+
+Citation Entailment
+引用内容是否真的支持结论
+
+Citation Location
+引用定位是否正确</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>C</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CitationPresent
+\neq
+CitationCorrect
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十citation-completeness有些关键结论根本没引证">十、Citation
+Completeness：有些关键结论根本没引证</h1>
+<p>一个回答可能：</p>
+<pre class="text"><code>第一段有引用
+第二段有三个关键结论但没有引用</code></pre>
+<p>这时：</p>
+<blockquote>
+<p>Citation Correctness 可能很高，</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>Citation Completeness 很差。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>C</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorrectCitation
+\neq
+CompleteCitationCoverage
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一reason-quality理由怎么评">十一、Reason
+Quality：理由怎么评？</h1>
+<p>理由评测至少可以看：</p>
+<pre class="text"><code>Logical Consistency
+逻辑一致
+
+Evidence Use
+是否使用证据
+
+Causal Validity
+因果是否合理
+
+Rule Application
+规则适用是否正确
+
+Boundary Awareness
+是否意识到条件边界</code></pre>
+<p>一个看起来很长的 Explanation：</p>
+<blockquote>
+<p>不代表 Reason Quality 高。</p>
+</blockquote>
+<hr />
+<h1 id="十二核心心智模型-④">十二、核心心智模型 ④</h1>
+<h1
+id="longexplanation-goodreasoning"><code>LongExplanation ≠ GoodReasoning</code></h1>
+<p>模型很容易生成：</p>
+<blockquote>
+<p>很长、很顺、很专业的解释。</p>
+</blockquote>
+<p>但真正评测应该问：</p>
+<pre class="text"><code>有没有错误前提？
+有没有证据跳跃？
+有没有把相关性当因果？
+有没有忽略关键上下文？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>需</mi><mi>要</mi><mi>结</mi><mi>构</mi><mi>化</mi><mi>R</mi><mi>u</mi><mi>b</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReasoningQuality
+需要结构化Rubric
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三llm-as-a-judge-能不能用">十三、LLM-as-a-Judge
+能不能用？</h1>
+<p>可以。</p>
+<h1 id="llm-as-a-judge">LLM-as-a-Judge</h1>
+<h2 id="使用大模型做评测裁判">使用大模型做评测裁判</h2>
+<p>优点：</p>
+<pre class="text"><code>便宜
+可扩展
+能处理开放式文本</code></pre>
+<p>风险：</p>
+<pre class="text"><code>Judge偏差
+偏好长答案
+偏好某种写作风格
+自我偏好
+Prompt敏感
+模型版本变化</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mo>≠</mo><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLMJudge
+\neq
+GroundTruth
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十四怎样让-llm-judge-更可靠">十四、怎样让 LLM Judge
+更可靠？</h1>
+<p>至少：</p>
+<pre class="text"><code>固定Judge Model
+固定Judge Prompt
+固定Temperature
+固定Rubric
+给Gold Evidence
+要求逐维度评分
+做Human Calibration
+定期抽检</code></pre>
+<p>并记录：</p>
+<pre class="text"><code>judge_model_version
+judge_prompt_version
+rubric_version</code></pre>
+<hr />
+<h1 id="十五核心心智模型-⑤">十五、核心心智模型 ⑤</h1>
+<h1 id="llm-judge-是可扩展评测器不是最终真相来源"><code>LLM Judge</code>
+是可扩展评测器，不是最终真相来源</h1>
+<p>最适合的定位：</p>
+<blockquote>
+<p>程序规则和人工专家之间的扩展层。</p>
+</blockquote>
+<p>可以采用：</p>
+<pre class="text"><code>Programmatic Checks
++
+LLM Judge
++
+Human Audit</code></pre>
+<p>形成：</p>
+<h1 id="hybrid-evaluation">Hybrid Evaluation</h1>
+<h2 id="混合评测">混合评测</h2>
+<hr />
+<h1 id="十六pairwise-evaluation-为什么经常比绝对打分稳定">十六、Pairwise
+Evaluation 为什么经常比绝对打分稳定？</h1>
+<p>让 Judge 判断：</p>
+<pre class="text"><code>A = 8.2
+B = 8.5</code></pre>
+<p>有时很不稳定。</p>
+<p>但问：</p>
+<blockquote>
+<p>A 和 B 哪个更好？</p>
+</blockquote>
+<p>通常更容易。</p>
+<p>这叫：</p>
+<h1 id="pairwise-evaluation">Pairwise Evaluation</h1>
+<h2 id="成对比较">成对比较</h2>
+<p>适合：</p>
+<pre class="text"><code>模型版本比较
+Prompt版本比较
+生成质量比较</code></pre>
+<p>但也要防：</p>
+<pre class="text"><code>Position Bias
+顺序偏差</code></pre>
+<p>所以可以：</p>
+<blockquote>
+<p>A/B 和 B/A 都跑。</p>
+</blockquote>
+<hr />
+<h1 id="十七abstention-也属于生成质量">十七、Abstention
+也属于生成质量</h1>
+<p>如果证据不足，</p>
+<p>模型应该：</p>
+<pre class="text"><code>无法从当前材料可靠判断</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>自信补全。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>包</mi><mi>括</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>N</mi><mi>o</mi><mi>t</mi><mi>T</mi><mi>o</mi><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodGeneration
+包括
+KnowingWhenNotToGenerate
+}
+</annotation></semantics></math></p>
+<p>这会在第 9 阶段进一步展开。</p>
+<hr />
+<h1 id="十八generation-rubric-示例">十八、Generation Rubric 示例</h1>
+<p>可以设计：</p>
+<table>
+<thead>
+<tr class="header">
+<th>维度</th>
+<th>0</th>
+<th>1</th>
+<th>2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>结论</td>
+<td>错</td>
+<td>部分正确</td>
+<td>正确</td>
+</tr>
+<tr class="even">
+<td>事实</td>
+<td>多处错误</td>
+<td>小瑕疵</td>
+<td>无关键错误</td>
+</tr>
+<tr class="odd">
+<td>Groundedness</td>
+<td>无证据</td>
+<td>部分支持</td>
+<td>充分支持</td>
+</tr>
+<tr class="even">
+<td>引用</td>
+<td>错/伪造</td>
+<td>部分正确</td>
+<td>正确完整</td>
+</tr>
+<tr class="odd">
+<td>完整性</td>
+<td>严重缺失</td>
+<td>基本完整</td>
+<td>完整</td>
+</tr>
+<tr class="even">
+<td>指令遵循</td>
+<td>明显违反</td>
+<td>小偏差</td>
+<td>完全遵循</td>
+</tr>
+</tbody>
+</table>
+<p>然后再配：</p>
+<blockquote>
+<p>Critical Error Gate。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Fabricated Policy = Critical
+Fabricated Citation = Critical</code></pre>
+<hr />
+<h1 id="十九核心心智模型-⑥">十九、核心心智模型 ⑥</h1>
+<h1
+id="rubricscore-不能掩盖-critical-hallucination"><code>RubricScore</code>
+不能掩盖 Critical Hallucination</h1>
+<p>即使：</p>
+<pre class="text"><code>总分 = 9/10</code></pre>
+<p>但如果出现：</p>
+<blockquote>
+<p>编造政策依据，</p>
+</blockquote>
+<p>仍然可能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseFail
+}
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AverageQuality
+\neq
+CriticalSafety
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十本阶段正式工程产物">二十、本阶段正式工程产物</h1>
+<h1
+id="procurementgenerationevalpolicy_v0.1-2"><code>ProcurementGenerationEvalPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>generation_eval_policy_version
+
+task_correctness_rubric
+
+factuality_rubric
+
+groundedness_rubric
+
+completeness_rubric
+
+relevance_rubric
+
+citation_correctness_rubric
+
+citation_completeness_rubric
+
+instruction_following_rubric
+
+abstention_rubric
+
+claim_decomposition_policy
+
+hallucination_taxonomy
+
+critical_hallucination_policy
+
+judge_type
+
+judge_model_version
+
+judge_prompt_version
+
+pairwise_eval_policy
+
+human_audit_rate
+
+release_gate</code></pre>
+<p>每个生成样本至少记录：</p>
+<pre class="text"><code>item_id
+
+gold_answer
+gold_evidence
+
+model_answer
+
+claims
+
+claim_support_status
+
+dimension_scores
+
+hallucination_codes
+
+citation_scores
+
+judge_metadata
+
+critical_error
+
+final_status</code></pre>
+<hr />
+<h1 id="二十一本阶段最重要的-9-个核心心智模型">二十一、本阶段最重要的 9
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>FluentAnswer ≠ CorrectAnswer</code>。语言流畅和事实正确是两个不同维度。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>ReferenceSimilarity ≠ SemanticCorrectness</code>。文本重合度不能替代语义正确性。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>Factuality ≠ Groundedness</code>。事实可能是真的，但当前证据未必支持。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ④：<code>AnswerLevelEval</code> 应尽可能拆到
+<code>ClaimLevelEval</code>，否则很难定位幻觉。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>CitationPresent ≠ CitationCorrect</code>，而
+<code>CitationCorrect ≠ CitationComplete</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>LongExplanation ≠ GoodReasoning</code>。解释长度不能代表推理质量。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>LLMJudge ≠ GroundTruth</code>。LLM Judge
+是扩展评测器，不是最终真相来源。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑧：<code>GoodGeneration</code>
+包括正确拒答，知道什么时候不回答也是能力。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>RubricScore ≠ CriticalSafety</code>。高平均分不能掩盖编造政策、伪造引用等关键失败。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十二下一阶段第九课-第-6-阶段">二十二、下一阶段：第九课 · 第 6
+阶段</h1>
+<h1 id="rag-evaluationretrievalrankingcontextgeneration-分层评测">RAG
+Evaluation：Retrieval、Ranking、Context、Generation 分层评测</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>L</mi><mi>L</mi><mi>M</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGFailure
+\neq
+LLMFailure
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementragevalpolicy_v0.1"><code>ProcurementRAGEvalPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

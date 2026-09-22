@@ -1,0 +1,3294 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第6阶段：Train / Validation / Test 到底应该怎么切？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第6阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>Benchmark 泄漏不一定是把答案文件直接放进训练集。</li><li>Split 的单位不一定是 Row， 很多时候应该是 Project / Group</li><li>Train / Validation / Test 的核心区别 不是“比例”，而是“用途”</li></ul></div><h1 id="第四课-第-6-阶段train-validation-test-到底应该怎么切">第四课 ·
+第 6 阶段：Train / Validation / Test 到底应该怎么切？</h1>
+<h2
+id="为什么对政府采购数据随机按行切-811可能从根本上就是错的">为什么对政府采购数据“随机按行切
+8:1:1”可能从根本上就是错的？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-5">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-5">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Benchmark
+泄漏不一定是把答案文件直接放进训练集。</strong></li>
+<li><strong>Split 的单位不一定是 Row， 很多时候应该是 Project /
+Group</strong></li>
+<li><strong>Train / Validation / Test 的核心区别
+不是“比例”，而是“用途”</strong></li>
+<li><strong>同一个 Project 的 Clause 通常不应该跨 Train /
+Test</strong></li>
+<li><strong>Duplicate Group / Template Group 也不能随便跨
+Split</strong></li>
+<li><strong>时间是最接近真实生产环境的一种隔离方式</strong></li>
+<li><strong>Test Set 一旦开始被反复看， 它就正在慢慢变成 Train
+Set</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-5">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="odd">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>Accuracy</code></td>
+<td>准确率：全部样本中判断正确的比例</td>
+</tr>
+<tr class="odd">
+<td><code>Checkpoint</code></td>
+<td>检查点：保存模型和训练状态以便恢复/发布</td>
+</tr>
+<tr class="even">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="odd">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+<tr class="even">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-5">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第五阶段结束以后，我们已经把数据从：</p>
+<pre class="text"><code>CleanClause_V0.1</code></pre>
+<p>推进到了：</p>
+<pre class="text"><code>DedupedClauseSet_V0.1</code></pre>
+<p>现在每一条 Clause 不仅知道：</p>
+<pre class="text"><code>它来自哪个 project
+它来自哪个 document
+它属于哪个 section
+它的原始文本是什么
+它的规范化文本是什么
+它有没有重复关系
+它属于哪个 duplicate group
+它属于哪个 template group</code></pre>
+<p>于是很多人接下来会非常自然地写：</p>
+<div class="sourceCode" id="cb1217"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb1217-1"><a href="#cb1217-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.model_selection <span class="im">import</span> train_test_split</span>
+<span id="cb1217-2"><a href="#cb1217-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1217-3"><a href="#cb1217-3" aria-hidden="true" tabindex="-1"></a>train, test <span class="op">=</span> train_test_split(</span>
+<span id="cb1217-4"><a href="#cb1217-4" aria-hidden="true" tabindex="-1"></a>    data,</span>
+<span id="cb1217-5"><a href="#cb1217-5" aria-hidden="true" tabindex="-1"></a>    test_size<span class="op">=</span><span class="fl">0.2</span>,</span>
+<span id="cb1217-6"><a href="#cb1217-6" aria-hidden="true" tabindex="-1"></a>    random_state<span class="op">=</span><span class="dv">42</span></span>
+<span id="cb1217-7"><a href="#cb1217-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>甚至再切一次：</p>
+<pre class="text"><code>80% Train
+10% Validation
+10% Test</code></pre>
+<p>看起来非常标准。</p>
+<p>教科书里也经常这么写。</p>
+<p>但对于我们的政府采购数据：</p>
+<blockquote>
+<p><strong>这可能从数据集设计的第一步就把 Benchmark 做假。</strong></p>
+</blockquote>
+<p>今天这一阶段要解决的，不是“80%、10%、10%怎么写代码”。</p>
+<p>而是一个更本质的问题：</p>
+<h1
+id="什么东西绝对不能被拆到不同数据集里">什么东西绝对不能被拆到不同数据集里？</h1>
+<hr />
+<h1
+id="一本阶段真正要解决的一个核心问题-4">一、本阶段真正要解决的一个核心问题</h1>
+<p>今天只解决：</p>
+<blockquote>
+<p><strong>怎样把政府采购数据切成真正独立的 Train / Validation /
+Test，使 Test
+尽量模拟模型未来遇到的“新项目”，而不是偷偷把训练数据的兄弟姐妹拿来考试？</strong></p>
+</blockquote>
+<p>最终我们要产出：</p>
+<h1 id="datasetsplit_v0.1-1"><code>DatasetSplit_V0.1</code></h1>
+<p>从第五阶段：</p>
+<pre class="text"><code>DedupedClauseSet_V0.1</code></pre>
+<p>推进到：</p>
+<pre class="text"><code>Train
+Validation
+Test</code></pre>
+<p>但真正的流水线应该是：</p>
+<pre class="text"><code>DedupedClauseSet
+        ↓
+Leakage Groups
+        ↓
+Group-aware Split
+        ↓
+Distribution Check
+        ↓
+Leakage Audit
+        ↓
+Frozen Test Set
+        ↓
+DatasetSplit_V0.1</code></pre>
+<hr />
+<h1
+id="二先建立本阶段最重要的-6-个核心心智模型-1">二、先建立本阶段最重要的
+6 个核心心智模型</h1>
+<p>先把这六句话钉住：</p>
+<pre class="text"><code>① Split 的单位不一定是 Row，
+   很多时候应该是 Project / Group
+
+② Train / Validation / Test 的核心区别
+   不是“比例”，而是“用途”
+
+③ 同一个 Project 的 Clause
+   通常不应该跨 Train / Test
+
+④ Duplicate Group / Template Group
+   也不能随便跨 Split
+
+⑤ 时间是最接近真实生产环境的一种隔离方式
+
+⑥ Test Set 一旦开始被反复看，
+   它就正在慢慢变成 Train Set</code></pre>
+<p>最后一句非常重要。</p>
+<p>以后会发现：</p>
+<blockquote>
+<p>Benchmark 泄漏不一定是把答案文件直接放进训练集。</p>
+</blockquote>
+<p>人类不断根据 Test 调模型：</p>
+<blockquote>
+<p>一样会泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="三先彻底理解-trainvalidationtest-各自在干什么">三、先彻底理解
+Train、Validation、Test 各自在干什么</h1>
+<p>很多人知道三个名字。</p>
+<p>但没有真正理解它们的角色。</p>
+<p>我们先不用机器学习术语。</p>
+<p>用：</p>
+<h1 id="上课模拟考试期末考试">上课、模拟考试、期末考试</h1>
+<p>来类比。</p>
+<hr />
+<h1 id="四train-set-是什么">四、Train Set 是什么？</h1>
+<p>Train：</p>
+<blockquote>
+<p>教材 + 平时练习题。</p>
+</blockquote>
+<p>模型训练时：</p>
+<pre class="text"><code>直接看到这些样本</code></pre>
+<p>并根据这些样本：</p>
+<blockquote>
+<p>修改 Weight。</p>
+</blockquote>
+<hr />
+<h1 id="五也就是说">五、也就是说</h1>
+<p>Train 数据直接影响：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelParameters
+}
+</annotation></semantics></math></p>
+<p>这是模型真正：</p>
+<blockquote>
+<p>“学过”的内容。</p>
+</blockquote>
+<hr />
+<h1 id="六例如我们有一条">六、例如我们有一条：</h1>
+<pre class="text"><code>供应商须在本市注册。</code></pre>
+<p>Train Label：</p>
+<pre class="text"><code>potential_risk</code></pre>
+<p>模型通过训练：</p>
+<blockquote>
+<p>学习这种判断模式。</p>
+</blockquote>
+<hr />
+<h1 id="七validation-set-是什么">七、Validation Set 是什么？</h1>
+<p>Validation：</p>
+<blockquote>
+<p>模拟考试。</p>
+</blockquote>
+<p>它的作用不是：</p>
+<blockquote>
+<p>更新模型 Weight。</p>
+</blockquote>
+<p>而是帮助我们决定：</p>
+<pre class="text"><code>哪个模型更好？
+训练几轮？
+Learning Rate多少？
+LoRA Rank多少？
+哪个Prompt更好？
+哪个Threshold更好？
+哪个Checkpoint最好？</code></pre>
+<hr />
+<h1 id="八也就是说-validation-会影响">八、也就是说 Validation
+会影响：</h1>
+<h1 id="model-selection">Model Selection</h1>
+<p>虽然模型没有直接对 Validation 做梯度下降，</p>
+<p>但人类会根据 Validation：</p>
+<blockquote>
+<p>改系统。</p>
+</blockquote>
+<hr />
+<h1 id="九举个例子">九、举个例子</h1>
+<p>我们训练：</p>
+<pre class="text"><code>Checkpoint A
+Checkpoint B
+Checkpoint C</code></pre>
+<p>Validation Accuracy：</p>
+<pre class="text"><code>A = 82%
+B = 86%
+C = 84%</code></pre>
+<p>于是我们选：</p>
+<pre class="text"><code>B</code></pre>
+<p>Validation：</p>
+<blockquote>
+<p>已经影响了最终模型。</p>
+</blockquote>
+<hr />
+<h1 id="十所以-validation-其实不是完全没被模型见过">十、所以 Validation
+其实不是“完全没被模型见过”</h1>
+<p>更准确说：</p>
+<blockquote>
+<p><strong>它没有直接用于参数梯度更新，但它参与了整个开发决策。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十一test-set-是什么">十一、Test Set 是什么？</h1>
+<p>Test：</p>
+<blockquote>
+<p>真正期末考试。</p>
+</blockquote>
+<p>它应该尽量只回答：</p>
+<blockquote>
+<p><strong>整个模型和开发流程完成以后，对真正没参与开发决策的数据表现如何？</strong></p>
+</blockquote>
+<hr />
+<h1 id="十二所以三个集合可以记成">十二、所以三个集合可以记成</h1>
+<pre class="text"><code>Train
+=
+学
+
+Validation
+=
+选
+
+Test
+=
+最后考</code></pre>
+<hr />
+<h1 id="十三这三个字比-811-更重要">十三、这三个字比 8:1:1 更重要</h1>
+<p>因为：</p>
+<blockquote>
+<p>比例是工程参数。</p>
+</blockquote>
+<p>角色：</p>
+<blockquote>
+<p>才是统计意义。</p>
+</blockquote>
+<hr />
+<h1
+id="十四所以第二个核心心智模型可以写成">十四、所以第二个核心心智模型可以写成</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>=</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Train = Learn
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>S</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Validation = Select
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>=</mo><mi>E</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Test = Estimate
+}
+</annotation></semantics></math></p>
+<p>Test 最终在估计：</p>
+<blockquote>
+<p>模型面对真正新数据的能力。</p>
+</blockquote>
+<hr />
+<h1
+id="十五为什么随机按行切在采购数据中危险">十五、为什么随机按行切在采购数据中危险？</h1>
+<p>先看一个非常具体的例子。</p>
+<p>假设一个采购项目：</p>
+<pre class="text"><code>Project P001</code></pre>
+<p>有：</p>
+<pre class="text"><code>300个Clause</code></pre>
+<hr />
+<h1 id="十六里面包括">十六、里面包括</h1>
+<pre class="text"><code>资格条件：40条
+技术参数：120条
+商务要求：50条
+评分标准：60条
+合同条款：30条</code></pre>
+<hr />
+<h1 id="十七如果我们按行随机切-801010">十七、如果我们按行随机切
+80/10/10</h1>
+<p>大概会得到：</p>
+<pre class="text"><code>P001
+├── 240条 → Train
+├── 30条  → Validation
+└── 30条  → Test</code></pre>
+<p>看起来：</p>
+<blockquote>
+<p>很公平。</p>
+</blockquote>
+<p>实际上：</p>
+<blockquote>
+<p>非常危险。</p>
+</blockquote>
+<hr />
+<h1 id="十八为什么">十八、为什么？</h1>
+<p>Test 中虽然某一句 Clause：</p>
+<blockquote>
+<p>没进入 Train。</p>
+</blockquote>
+<p>但是 Train 已经包含：</p>
+<pre class="text"><code>同一个项目名称
+同一个采购需求
+同一个项目预算
+同一种排版
+同一套模板
+同一批技术参数
+同一章上下文
+同一个采购代理机构写作习惯</code></pre>
+<hr />
+<h1 id="十九于是-test-不是在问">十九、于是 Test 不是在问：</h1>
+<blockquote>
+<p>模型能不能处理一个新采购项目？</p>
+</blockquote>
+<p>而更像在问：</p>
+<blockquote>
+<p><strong>看过这本书 80% 内容以后，能不能猜剩下 10%？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十这当然比处理一本从没见过的新书容易">二十、这当然比处理一本从没见过的新书容易。</h1>
+<hr />
+<h1 id="二十一所以这里发生的是">二十一、所以这里发生的是</h1>
+<h1 id="group-leakage">Group Leakage</h1>
+<p>分组泄漏。</p>
+<hr />
+<h1 id="二十二最常见的-group-就是">二十二、最常见的 Group 就是：</h1>
+<h1 id="project">Project</h1>
+<p>因此第一条极其重要的原则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>同</mi><mi>一</mi><mi>个</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>尽</mi><mi>量</mi><mi>只</mi><mi>属</mi><mi>于</mi><mi>一</mi><mi>个</mi><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+同一个Project
+尽量只属于一个Split
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十三也就是说">二十三、也就是说</h1>
+<p>正确方式更像：</p>
+<pre class="text"><code>Project P001
+全部 → Train
+
+Project P002
+全部 → Train
+
+Project P003
+全部 → Validation
+
+Project P004
+全部 → Test</code></pre>
+<hr />
+<h1 id="二十四而不是">二十四、而不是：</h1>
+<pre class="text"><code>P001的一部分 → Train
+P001的一部分 → Validation
+P001的一部分 → Test</code></pre>
+<hr />
+<h1 id="二十五这叫">二十五、这叫</h1>
+<h1 id="group-aware-split">Group-aware Split</h1>
+<p>按 Group 切分。</p>
+<hr />
+<h1 id="二十六第一个核心概念出现了">二十六、第一个核心概念出现了</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SplitUnit
+\neq
+SampleRow
+}
+</annotation></semantics></math></p>
+<p>Split Unit：</p>
+<blockquote>
+<p>不一定是一行样本。</p>
+</blockquote>
+<p>对于我们的项目：</p>
+<blockquote>
+<p>经常是一个 Project Group。</p>
+</blockquote>
+<hr />
+<h1 id="二十七为什么不是-document">二十七、为什么不是 Document？</h1>
+<p>假设一个项目有：</p>
+<pre class="text"><code>招标文件
+更正公告
+采购公告
+评分附件
+合同草案</code></pre>
+<p>如果按 Document 切：</p>
+<pre class="text"><code>招标文件 → Train
+更正公告 → Test</code></pre>
+<p>还是可能泄漏。</p>
+<hr />
+<h1 id="二十八因为它们属于">二十八、因为它们属于：</h1>
+<blockquote>
+<p>同一个真实采购事件。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>project_id</code></pre>
+<p>通常比：</p>
+<pre class="text"><code>document_id</code></pre>
+<p>更适合作为基础 Split Group。</p>
+<hr />
+<h1
+id="二十九这就是为什么第一阶段我们那么早就要求">二十九、这就是为什么第一阶段我们那么早就要求：</h1>
+<pre class="text"><code>project_id</code></pre>
+<p>必须保存。</p>
+<p>当时可能觉得：</p>
+<blockquote>
+<p>一个 Metadata 字段而已。</p>
+</blockquote>
+<p>现在终于看到：</p>
+<blockquote>
+<p>没有它，Benchmark 甚至可能无法正确建立。</p>
+</blockquote>
+<hr />
+<h1 id="三十这就是好-schema-的长期价值">三十、这就是好 Schema
+的长期价值</h1>
+<p>前面一个字段设计正确，</p>
+<p>后面：</p>
+<blockquote>
+<p>省掉大量返工。</p>
+</blockquote>
+<hr />
+<h1 id="三十一但是-project-group-就够了吗">三十一、但是 Project Group
+就够了吗？</h1>
+<p>不够。</p>
+<p>第五阶段刚刚发现：</p>
+<pre class="text"><code>Project A</code></pre>
+<p>和：</p>
+<pre class="text"><code>Project B</code></pre>
+<p>虽然 project_id 不同，</p>
+<p>可能：</p>
+<blockquote>
+<p>使用完全相同的采购模板。</p>
+</blockquote>
+<hr />
+<h1 id="三十二例如">三十二、例如：</h1>
+<p>Project A：</p>
+<blockquote>
+<p>智慧校园系统项目。</p>
+</blockquote>
+<p>Project B：</p>
+<blockquote>
+<p>智慧政务系统项目。</p>
+</blockquote>
+<p>两个项目来自：</p>
+<blockquote>
+<p>同一个代理机构。</p>
+</blockquote>
+<hr />
+<h1 id="三十三资格条件几乎完全一样">三十三、资格条件几乎完全一样：</h1>
+<pre class="text"><code>供应商须……
+供应商应……
+供应商不得……</code></pre>
+<p>只替换：</p>
+<pre class="text"><code>项目名称
+项目编号
+预算
+日期</code></pre>
+<hr />
+<h1 id="三十四于是">三十四、于是：</h1>
+<pre class="text"><code>Project A → Train
+Project B → Test</code></pre>
+<p>表面上：</p>
+<blockquote>
+<p>Project 隔离了。</p>
+</blockquote>
+<p>但实际上：</p>
+<blockquote>
+<p>Template 泄漏了。</p>
+</blockquote>
+<hr />
+<h1 id="三十五这就是">三十五、这就是：</h1>
+<h1 id="template-leakage-2">Template Leakage</h1>
+<p>第五阶段已经见过。</p>
+<p>现在它第一次变成：</p>
+<blockquote>
+<p>Split 设计问题。</p>
+</blockquote>
+<hr />
+<h1 id="三十六所以我们还需要考虑">三十六、所以我们还需要考虑：</h1>
+<pre class="text"><code>template_group_id</code></pre>
+<hr />
+<h1 id="三十七例如">三十七、例如：</h1>
+<pre class="text"><code>TG-0017
+├── Project A
+├── Project B
+├── Project C
+├── Project D
+└── Project E</code></pre>
+<hr />
+<h1 id="三十八如果我们真的要测试">三十八、如果我们真的要测试：</h1>
+<blockquote>
+<p>对新模板的泛化能力，</p>
+</blockquote>
+<p>这五个项目：</p>
+<blockquote>
+<p>最好不要跨 Train/Test。</p>
+</blockquote>
+<hr />
+<h1 id="三十九于是-split-group-开始变复杂">三十九、于是 Split Group
+开始变复杂：</h1>
+<pre class="text"><code>Project Group
++
+Duplicate Group
++
+Template Group</code></pre>
+<hr />
+<h1 id="四十接下来还有一个-group">四十、接下来还有一个 Group</h1>
+<h1 id="duplicate-group-1">Duplicate Group</h1>
+<p>假设：</p>
+<pre class="text"><code>Clause A</code></pre>
+<p>和：</p>
+<pre class="text"><code>Clause B</code></pre>
+<p>是同一内容不同格式。</p>
+<p>第五阶段已经放进：</p>
+<pre class="text"><code>DG-0031</code></pre>
+<hr />
+<h1 id="四十一如果">四十一、如果：</h1>
+<pre class="text"><code>A → Train
+B → Test</code></pre>
+<p>那几乎就是：</p>
+<blockquote>
+<p>开卷考试。</p>
+</blockquote>
+<hr />
+<h1 id="四十二所以所有">四十二、所以所有：</h1>
+<pre class="text"><code>duplicate_group_id</code></pre>
+<p>成员：</p>
+<blockquote>
+<p>绝对不应该跨 Train/Test。</p>
+</blockquote>
+<hr />
+<h1
+id="四十三因此我们已经有第一版-leakage-constraint">四十三、因此我们已经有第一版
+Leakage Constraint：</h1>
+<pre class="text"><code>同Project
+不能跨Train/Test
+
+同DuplicateGroup
+不能跨Train/Test
+
+高相似TemplateGroup
+尽量不能跨Train/Test</code></pre>
+<hr />
+<h1
+id="四十四这可以写成一个非常直观的数学约束">四十四、这可以写成一个非常直观的数学约束</h1>
+<p>对任意 Group
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>G</mi><annotation encoding="application/x-tex">G</annotation></semantics></math>：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mo>⊆</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mspace width="1.0em"></mspace><mtext mathvariant="normal">or</mtext><mspace width="1.0em"></mspace><mi>G</mi><mo>⊆</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="1.0em"></mspace><mtext mathvariant="normal">or</mtext><mspace width="1.0em"></mspace><mi>G</mi><mo>⊆</mo><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+G
+\subseteq
+Train
+\quad
+\text{or}
+\quad
+G
+\subseteq
+Validation
+\quad
+\text{or}
+\quad
+G
+\subseteq
+Test
+}
+</annotation></semantics></math></p>
+<p>不能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>∩</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>≠</mo><mi>⌀</mi></mrow><annotation encoding="application/x-tex">
+G
+\cap Train \neq \varnothing
+</annotation></semantics></math></p>
+<p>同时又：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>∩</mo><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>≠</mo><mi>⌀</mi></mrow><annotation encoding="application/x-tex">
+G
+\cap Test \neq \varnothing
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十五翻译成人话">四十五、翻译成人话：</h1>
+<blockquote>
+<p><strong>同一个泄漏群体只能进一个集合。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四十六但现在出现一个麻烦问题">四十六、但现在出现一个麻烦问题</h1>
+<p>假设：</p>
+<pre class="text"><code>Project A</code></pre>
+<p>和：</p>
+<pre class="text"><code>Project B</code></pre>
+<p>不同 Project。</p>
+<p>但共享：</p>
+<pre class="text"><code>Template Group T1</code></pre>
+<hr />
+<h1 id="四十七同时">四十七、同时：</h1>
+<p>Project B 的某条 Clause</p>
+<p>又和：</p>
+<p>Project C 的 Clause</p>
+<p>属于：</p>
+<pre class="text"><code>Duplicate Group D7</code></pre>
+<hr />
+<h1 id="四十八那么">四十八、那么：</h1>
+<pre class="text"><code>A
+↔ Template
+B
+↔ Duplicate
+C</code></pre>
+<p>实际上：</p>
+<blockquote>
+<p>三个 Project 被连接起来了。</p>
+</blockquote>
+<hr />
+<h1 id="四十九这时不能">四十九、这时不能：</h1>
+<pre class="text"><code>A → Train
+B → Train
+C → Test</code></pre>
+<p>因为：</p>
+<p>B 和 C：</p>
+<blockquote>
+<p>有 Duplicate Link。</p>
+</blockquote>
+<hr />
+<h1 id="五十所以更专业的做法是">五十、所以更专业的做法是：</h1>
+<h1 id="build-leakage-graph">Build Leakage Graph</h1>
+<p>建立泄漏关系图。</p>
+<hr />
+<h1 id="五十一节点可以是">五十一、节点可以是：</h1>
+<pre class="text"><code>Project</code></pre>
+<p>边可以是：</p>
+<pre class="text"><code>Duplicate Relation
+Template Relation
+Version Relation</code></pre>
+<hr />
+<h1 id="五十二例如">五十二、例如：</h1>
+<pre class="text"><code>Project A
+   │ Template
+   ▼
+Project B
+   │ Duplicate
+   ▼
+Project C</code></pre>
+<p>那么 A、B、C：</p>
+<blockquote>
+<p>可能应该作为一个 Connected Group。</p>
+</blockquote>
+<hr />
+<h1 id="五十三也就是">五十三、也就是：</h1>
+<h1 id="connected-component">Connected Component</h1>
+<p>连通分量。</p>
+<hr />
+<h1 id="五十四别被术语吓到">五十四、别被术语吓到。</h1>
+<p>生活类比：</p>
+<p>假设老师规定：</p>
+<blockquote>
+<p>同一家族的人不能有人进训练题库、有人进考试题库。</p>
+</blockquote>
+<hr />
+<h1 id="五十五a-是-b-的兄弟">五十五、A 是 B 的兄弟。</h1>
+<p>B 是 C 的兄弟。</p>
+<p>即使 A 和 C：</p>
+<blockquote>
+<p>没直接关系。</p>
+</blockquote>
+<p>A、B、C 仍然属于：</p>
+<blockquote>
+<p>同一个家庭群。</p>
+</blockquote>
+<hr />
+<h1 id="五十六数据也是一样">五十六、数据也是一样。</h1>
+<p>只要通过高风险泄漏关系：</p>
+<blockquote>
+<p>连起来，</p>
+</blockquote>
+<p>就可以考虑：</p>
+<blockquote>
+<p>整体一起 Split。</p>
+</blockquote>
+<hr />
+<h1 id="五十七这会形成">五十七、这会形成：</h1>
+<pre class="text"><code>split_group_id</code></pre>
+<p>例如：</p>
+<pre class="text"><code>SG-0001</code></pre>
+<p>里面：</p>
+<pre class="text"><code>Project A
+Project B
+Project C</code></pre>
+<hr />
+<h1 id="五十八然后真正切的是">五十八、然后真正切的是：</h1>
+<h1 id="split-group">Split Group</h1>
+<p>而不是：</p>
+<h1 id="clause-row">Clause Row</h1>
+<hr />
+<h1 id="五十九于是第一版总关系变成">五十九、于是第一版总关系变成：</h1>
+<pre class="text"><code>Clause
+  ↓
+Document
+  ↓
+Project
+  ↓
+Duplicate / Template Relations
+  ↓
+Leakage Connected Group
+  ↓
+split_group_id</code></pre>
+<hr />
+<h1 id="六十这个-split_group_id">六十、这个
+<code>split_group_id</code></h1>
+<p>以后极其重要。</p>
+<hr />
+<h1
+id="六十一现在理解-train-validation-test-的真正切分单位了">六十一、现在理解
+Train / Validation / Test 的真正切分单位了</h1>
+<p>不是：</p>
+<pre class="text"><code>一条 Clause</code></pre>
+<p>而更像：</p>
+<pre class="text"><code>一个独立信息群体</code></pre>
+<hr />
+<h1
+id="六十二于是我们可以把今天核心压成">六十二、于是我们可以把今天核心压成：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>真</mi><mi>正</mi><mi>的</mi><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>是</mi><mi>在</mi><mi>切</mi><mi>独</mi><mi>立</mi><mi>信</mi><mi>息</mi><mi>源</mi><mi>而</mi><mi>不</mi><mi>是</mi><mi>在</mi><mi>切</mi><mi>行</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+真正的Split
+是在切独立信息源
+而不是在切行
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六十三现在讨论比例">六十三、现在讨论比例</h1>
+<p>是不是一定要：</p>
+<pre class="text"><code>80 / 10 / 10</code></pre>
+<p>不是。</p>
+<hr />
+<h1 id="六十四常见比例可能有">六十四、常见比例可能有：</h1>
+<pre class="text"><code>80 / 10 / 10</code></pre>
+<p>也可能：</p>
+<pre class="text"><code>70 / 15 / 15</code></pre>
+<p>或者：</p>
+<pre class="text"><code>90 / 5 / 5</code></pre>
+<hr />
+<h1 id="六十五真正应该问的是">六十五、真正应该问的是：</h1>
+<blockquote>
+<p>Test 是否足够大，能稳定估计业务能力？</p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p>Validation 是否足够支撑模型选择？</p>
+</blockquote>
+<hr />
+<h1 id="六十六假设只有">六十六、假设只有：</h1>
+<pre class="text"><code>1000个项目</code></pre>
+<p>Test 放：</p>
+<pre class="text"><code>100个项目</code></pre>
+<p>可能已经不错。</p>
+<hr />
+<h1 id="六十七如果有">六十七、如果有：</h1>
+<pre class="text"><code>100万个项目</code></pre>
+<p>Test 未必需要：</p>
+<blockquote>
+<p>10 万个。</p>
+</blockquote>
+<p>因为评测成本：</p>
+<blockquote>
+<p>很高。</p>
+</blockquote>
+<hr />
+<h1 id="六十八特别是-expert-gold-set">六十八、特别是 Expert Gold
+Set</h1>
+<p>人工高质量审核：</p>
+<blockquote>
+<p>非常昂贵。</p>
+</blockquote>
+<p>所以 Test 比例：</p>
+<blockquote>
+<p>不是越大越好。</p>
+</blockquote>
+<hr />
+<h1 id="六十九真正重要的是">六十九、真正重要的是</h1>
+<h1 id="effective-test-size">Effective Test Size</h1>
+<p>有效测试规模。</p>
+<hr />
+<h1 id="七十如果-test-有">七十、如果 Test 有：</h1>
+<pre class="text"><code>100,000条Clause</code></pre>
+<p>但是：</p>
+<blockquote>
+<p>90,000 条来自同一个模板，</p>
+</blockquote>
+<p>有效信息量：</p>
+<blockquote>
+<p>可能远少于 100,000。</p>
+</blockquote>
+<hr />
+<h1 id="七十一反过来">七十一、反过来，</h1>
+<p>Test 只有：</p>
+<pre class="text"><code>5,000条</code></pre>
+<p>但覆盖：</p>
+<pre class="text"><code>100个项目类型
+多个地区
+多种风险
+大量Hard Case</code></pre>
+<p>可能：</p>
+<blockquote>
+<p>更有价值。</p>
+</blockquote>
+<hr />
+<h1 id="七十二所以-test-size-不应该只看">七十二、所以 Test Size
+不应该只看：</h1>
+<h1 id="row-count">Row Count</h1>
+<p>还要看：</p>
+<h1 id="diversity">Diversity</h1>
+<hr />
+<h1
+id="七十三再次出现第五阶段那个公式">七十三、再次出现第五阶段那个公式：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>R</mi><mi>o</mi><mi>w</mi><mi>s</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreRows
+\neq
+MoreInformation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七十四现在进入第二个大问题">七十四、现在进入第二个大问题</h1>
+<h1 id="distribution">Distribution</h1>
+<p>如果按 Group 切，</p>
+<p>有可能出现：</p>
+<pre class="text"><code>Train
+90% 技术参数
+
+Test
+70% 资格条件</code></pre>
+<hr />
+<h1 id="七十五这时候-test-分数不好">七十五、这时候 Test 分数不好，</h1>
+<p>不一定是：</p>
+<blockquote>
+<p>模型泛化特别差。</p>
+</blockquote>
+<p>可能只是：</p>
+<blockquote>
+<p>Train 和 Test 的任务组成完全不一样。</p>
+</blockquote>
+<hr />
+<h1 id="七十六所以一般需要检查">七十六、所以一般需要检查：</h1>
+<h1 id="label-distribution">Label Distribution</h1>
+<p>例如五类风险：</p>
+<pre class="text"><code>qualification
+technical
+commercial
+scoring
+requirements</code></pre>
+<hr />
+<h1 id="七十七我们希望-train-val-test">七十七、我们希望 Train / Val /
+Test：</h1>
+<blockquote>
+<p>不一定完全一样，</p>
+</blockquote>
+<p>但至少知道：</p>
+<blockquote>
+<p>各自分布是什么。</p>
+</blockquote>
+<hr />
+<h1 id="七十八例如">七十八、例如：</h1>
+<table>
+<thead>
+<tr class="header">
+<th>Risk Type</th>
+<th style="text-align: right;">Train</th>
+<th style="text-align: right;">Val</th>
+<th style="text-align: right;">Test</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Qualification</td>
+<td style="text-align: right;">21%</td>
+<td style="text-align: right;">20%</td>
+<td style="text-align: right;">22%</td>
+</tr>
+<tr class="even">
+<td>Technical</td>
+<td style="text-align: right;">29%</td>
+<td style="text-align: right;">30%</td>
+<td style="text-align: right;">28%</td>
+</tr>
+<tr class="odd">
+<td>Commercial</td>
+<td style="text-align: right;">18%</td>
+<td style="text-align: right;">17%</td>
+<td style="text-align: right;">19%</td>
+</tr>
+<tr class="even">
+<td>Scoring</td>
+<td style="text-align: right;">17%</td>
+<td style="text-align: right;">18%</td>
+<td style="text-align: right;">16%</td>
+</tr>
+<tr class="odd">
+<td>Requirements</td>
+<td style="text-align: right;">15%</td>
+<td style="text-align: right;">15%</td>
+<td style="text-align: right;">15%</td>
+</tr>
+</tbody>
+</table>
+<p>这种比较容易解释。</p>
+<hr />
+<h1
+id="七十九但是不要为了让比例漂亮">七十九、但是不要为了让比例漂亮：</h1>
+<blockquote>
+<p>把同 Project 拆开。</p>
+</blockquote>
+<hr />
+<h1 id="八十也就是说">八十、也就是说</h1>
+<h1 id="group-integrity">Group Integrity</h1>
+<p>优先级通常高于：</p>
+<h1 id="perfect-stratification">Perfect Stratification</h1>
+<hr />
+<h1 id="八十一这是很重要的权衡">八十一、这是很重要的权衡。</h1>
+<p>你不能为了：</p>
+<pre class="text"><code>每类刚好20%</code></pre>
+<p>把同一个项目：</p>
+<blockquote>
+<p>拆进三个集合。</p>
+</blockquote>
+<hr />
+<h1 id="八十二因此我们需要">八十二、因此我们需要：</h1>
+<h1 id="group-aware-stratification">Group-aware Stratification</h1>
+<p>不是普通 Stratification。</p>
+<hr />
+<h1 id="八十三什么是-stratification">八十三、什么是
+Stratification？</h1>
+<p>简单说：</p>
+<blockquote>
+<p>切分时尽量保持类别比例。</p>
+</blockquote>
+<hr />
+<h1 id="八十四普通二分类">八十四、普通二分类：</h1>
+<pre class="text"><code>正样本 20%
+负样本 80%</code></pre>
+<p>希望：</p>
+<p>Train / Val / Test：</p>
+<blockquote>
+<p>都大约保持这个比例。</p>
+</blockquote>
+<hr />
+<h1 id="八十五但我们的-group-很大">八十五、但我们的 Group 很大。</h1>
+<p>一个项目可能有：</p>
+<pre class="text"><code>80% technical
+20% commercial</code></pre>
+<p>另一个项目：</p>
+<pre class="text"><code>90% scoring</code></pre>
+<hr />
+<h1
+id="八十六所以-group-aware-stratification-本质上变成一个">八十六、所以
+Group-aware Stratification 本质上变成一个：</h1>
+<h1 id="packing-problem">Packing Problem</h1>
+<hr />
+<h1 id="八十七就像有很多箱子">八十七、就像有很多箱子。</h1>
+<p>每个箱子里装：</p>
+<blockquote>
+<p>不同比例的彩球。</p>
+</blockquote>
+<p>你不能拆箱。</p>
+<p>现在要把箱子分成：</p>
+<pre class="text"><code>Train堆
+Val堆
+Test堆</code></pre>
+<p>同时尽量让：</p>
+<blockquote>
+<p>三堆颜色分布合理。</p>
+</blockquote>
+<hr />
+<h1 id="八十八这就是-group-split-的现实难度">八十八、这就是 Group Split
+的现实难度。</h1>
+<hr />
+<h1
+id="八十九因此切分算法不一定一次随机完成">八十九、因此切分算法不一定一次随机完成。</h1>
+<p>可以：</p>
+<pre class="text"><code>多次候选 Split
+↓
+计算分布偏差
+↓
+选择较好的</code></pre>
+<hr />
+<h1 id="九十甚至用优化算法">九十、甚至用优化算法。</h1>
+<p>但第一版不需要复杂。</p>
+<p>先建立正确原则：</p>
+<blockquote>
+<p><strong>Group First, Balance Second。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="九十一现在看另一个很重要的维度">九十一、现在看另一个很重要的维度：</h1>
+<h1 id="positive-negative">Positive / Negative</h1>
+<p>假设 Risk Review 数据：</p>
+<pre class="text"><code>Potential Risk
+No Risk
+Needs Review</code></pre>
+<hr />
+<h1 id="九十二如果-test-几乎全是">九十二、如果 Test 几乎全是：</h1>
+<pre class="text"><code>No Risk</code></pre>
+<p>模型只要一直回答：</p>
+<pre class="text"><code>No Risk</code></pre>
+<p>Accuracy：</p>
+<blockquote>
+<p>可能很漂亮。</p>
+</blockquote>
+<hr />
+<h1 id="九十三但风险识别">九十三、但风险识别：</h1>
+<blockquote>
+<p>完全没用。</p>
+</blockquote>
+<hr />
+<h1 id="九十四所以-test-必须保证">九十四、所以 Test 必须保证：</h1>
+<blockquote>
+<p>业务关键类别有足够样本。</p>
+</blockquote>
+<hr />
+<h1 id="九十五尤其我们最终最关心">九十五、尤其我们最终最关心：</h1>
+<h1 id="false-negative">False Negative</h1>
+<p>真正有风险的条款，</p>
+<p>模型却说：</p>
+<blockquote>
+<p>没风险。</p>
+</blockquote>
+<hr />
+<h1 id="九十六这类样本在-test">九十六、这类样本在 Test：</h1>
+<blockquote>
+<p>必须有足够规模。</p>
+</blockquote>
+<hr />
+<h1 id="九十七所以-test-设计本质上是">九十七、所以 Test
+设计本质上是：</h1>
+<h1 id="evaluation-design">Evaluation Design</h1>
+<p>不是简单 Data Split。</p>
+<hr />
+<h1 id="九十八你想测什么能力">九十八、你想测什么能力，</h1>
+<p>就必须：</p>
+<blockquote>
+<p>在 Test 里有对应案例。</p>
+</blockquote>
+<hr />
+<h1 id="九十九例如想测">九十九、例如想测：</h1>
+<pre class="text"><code>技术参数倾向性</code></pre>
+<p>如果 Test：</p>
+<blockquote>
+<p>只有 8 条这种案例。</p>
+</blockquote>
+<p>那结果：</p>
+<blockquote>
+<p>波动会非常大。</p>
+</blockquote>
+<hr />
+<h1 id="一百8-条里错-1-条">一百、8 条里错 1 条：</h1>
+<p>Accuracy：</p>
+<pre class="text"><code>87.5%</code></pre>
+<p>错 2 条：</p>
+<pre class="text"><code>75%</code></pre>
+<hr />
+<h1 id="一百零一样本太少">一百零一、样本太少：</h1>
+<blockquote>
+<p>一条错误就大幅改变指标。</p>
+</blockquote>
+<hr />
+<h1 id="一百零二所以关键-slice">一百零二、所以关键 Slice：</h1>
+<blockquote>
+<p>需要最小样本量。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零三这和第八课的-gold-benchmark-会深度连接">一百零三、这和第八课的
+Gold Benchmark 会深度连接。</h1>
+<p>现在先记：</p>
+<blockquote>
+<p><strong>Test 不只是总量够，还要每个关键 Slice 够。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百零四现在进入今天非常重要的主题">一百零四、现在进入今天非常重要的主题：</h1>
+<h1 id="time-aware-split">Time-aware Split</h1>
+<p>时间切分。</p>
+<hr />
+<h1 id="一百零五假设我们有">一百零五、假设我们有：</h1>
+<pre class="text"><code>2023
+2024
+2025
+2026</code></pre>
+<p>四年的采购项目。</p>
+<hr />
+<h1
+id="一百零六我们可以随机按项目切">一百零六、我们可以随机按项目切。</h1>
+<p>也可以：</p>
+<pre class="text"><code>2023～2025
+→ Train
+
+2026年1～6月
+→ Validation
+
+2026年7～9月
+→ Test</code></pre>
+<hr />
+<h1 id="一百零七后者更接近什么">一百零七、后者更接近什么？</h1>
+<p>现实部署。</p>
+<hr />
+<h1 id="一百零八真实生产环境永远是">一百零八、真实生产环境永远是：</h1>
+<pre class="text"><code>过去的数据
+      ↓
+训练
+      ↓
+面对未来的数据</code></pre>
+<p>模型不可能：</p>
+<blockquote>
+<p>用未来数据训练以后再回到过去部署。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零九所以从真实业务模拟角度">一百零九、所以从真实业务模拟角度：</h1>
+<h1 id="temporal-split">Temporal Split</h1>
+<p>时间切分非常强。</p>
+<hr />
+<h1 id="一百一十可以写成">一百一十、可以写成：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo>&lt;</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo>&lt;</mo><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainTime
+&lt;
+ValidationTime
+&lt;
+TestTime
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百一十一这个方法特别能检测">一百一十一、这个方法特别能检测：</h1>
+<h1 id="temporal-generalization">Temporal Generalization</h1>
+<p>模型能不能：</p>
+<blockquote>
+<p>对未来的新项目继续工作。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十二这比纯随机-split">一百一十二、这比纯随机 Split：</h1>
+<blockquote>
+<p>更难。</p>
+</blockquote>
+<p>但也：</p>
+<blockquote>
+<p>更真实。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十三为什么时间切分通常更难">一百一十三、为什么时间切分通常更难？</h1>
+<p>因为未来会发生：</p>
+<pre class="text"><code>政策变化
+法规更新
+采购模板变化
+新技术产品出现
+新项目类型出现
+语言表达变化</code></pre>
+<hr />
+<h1 id="一百一十四所以-test-不再只是">一百一十四、所以 Test
+不再只是：</h1>
+<blockquote>
+<p>同一分布的随机样本。</p>
+</blockquote>
+<p>而开始包含：</p>
+<h1 id="distribution-shift">Distribution Shift</h1>
+<p>分布漂移。</p>
+<hr />
+<h1 id="一百一十五这其实正是部署中">一百一十五、这其实正是部署中：</h1>
+<blockquote>
+<p>真正会发生的事情。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十六比如-2025-年以前">一百一十六、比如 2025 年以前：</h1>
+<p>某类采购文件普遍使用：</p>
+<pre class="text"><code>传统服务器参数</code></pre>
+<p>2026 年开始：</p>
+<blockquote>
+<p>出现新的 AI 算力采购。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十七模型在历史数据训练以后">一百一十七、模型在历史数据训练以后，</h1>
+<p>能不能处理：</p>
+<blockquote>
+<p>新采购类别？</p>
+</blockquote>
+<p>Temporal Test：</p>
+<blockquote>
+<p>能测出来。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十八但时间切分也不是永远必须">一百一十八、但时间切分也不是永远必须。</h1>
+<p>取决于：</p>
+<blockquote>
+<p>我们想回答什么问题。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十九例如研究问题-a">一百一十九、例如研究问题 A：</h1>
+<blockquote>
+<p>在当前数据分布中，模型对新项目表现如何？</p>
+</blockquote>
+<p>可以：</p>
+<h1 id="project-holdout">Project Holdout</h1>
+<hr />
+<h1 id="一百二十研究问题-b">一百二十、研究问题 B：</h1>
+<blockquote>
+<p>用历史数据训练后，面对未来项目表现如何？</p>
+</blockquote>
+<p>可以：</p>
+<h1 id="temporal-holdout">Temporal Holdout</h1>
+<hr />
+<h1 id="一百二十一研究问题-c">一百二十一、研究问题 C：</h1>
+<blockquote>
+<p>在某些未见地区能不能泛化？</p>
+</blockquote>
+<p>可以：</p>
+<h1 id="geographic-holdout">Geographic Holdout</h1>
+<hr />
+<h1 id="一百二十二比如">一百二十二、比如：</h1>
+<pre class="text"><code>Train:
+东部若干地区
+
+Test:
+一个从未进入训练的地区</code></pre>
+<hr />
+<h1 id="一百二十三这会测试">一百二十三、这会测试：</h1>
+<blockquote>
+<p>区域泛化。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十四再比如">一百二十四、再比如：</h1>
+<h1 id="agency-holdout">Agency Holdout</h1>
+<p>某些采购代理机构：</p>
+<blockquote>
+<p>使用自己的模板。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十五如果同一家代理机构">一百二十五、如果同一家代理机构：</h1>
+<p>Train/Test 都有，</p>
+<p>模型可能只是：</p>
+<blockquote>
+<p>学会这个代理机构的模板。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十六所以甚至可以做">一百二十六、所以甚至可以做：</h1>
+<pre class="text"><code>Agency-level Holdout</code></pre>
+<p>测试：</p>
+<blockquote>
+<p>新机构。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十七这说明一个非常深的概念">一百二十七、这说明一个非常深的概念：</h1>
+<h1 id="test-set-should-represent-the-generalization-question">Test Set
+should represent the generalization question</h1>
+<p>测试集应该代表：</p>
+<blockquote>
+<p><strong>你真正想知道的泛化问题。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百二十八所以">一百二十八、所以：</h1>
+<blockquote>
+<p>“Test 怎么切？”</p>
+</blockquote>
+<p>不能脱离：</p>
+<blockquote>
+<p>“未来模型要面对什么？”</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十九这就是为什么没有万能">一百二十九、这就是为什么没有万能：</h1>
+<pre class="text"><code>80/10/10</code></pre>
+<p>答案。</p>
+<hr />
+<h1
+id="一百三十现在给-procurementai-建三个层级的评测-split">一百三十、现在给
+ProcurementAI 建三个层级的评测 Split</h1>
+<p>这是一个很有价值的设计。</p>
+<hr />
+<h1 id="一百三十一第一层">一百三十一、第一层：</h1>
+<h1 id="iid-like-project-holdout">IID-like Project Holdout</h1>
+<p>虽然项目隔离，</p>
+<p>但 Train/Test：</p>
+<blockquote>
+<p>时间、地区、任务分布接近。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十二它回答">一百三十二、它回答：</h1>
+<blockquote>
+<p><strong>面对同类分布中的新项目，模型表现如何？</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百三十三第二层">一百三十三、第二层：</h1>
+<h1 id="temporal-holdout-1">Temporal Holdout</h1>
+<p>Test 来自：</p>
+<blockquote>
+<p>未来时间窗口。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十四它回答">一百三十四、它回答：</h1>
+<blockquote>
+<p><strong>面对未来项目，性能掉多少？</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百三十五第三层">一百三十五、第三层：</h1>
+<h1 id="stress-ood-holdout">Stress / OOD Holdout</h1>
+<p>例如：</p>
+<pre class="text"><code>新地区
+新项目类型
+稀有风险
+Hard Negative
+超长文档
+复杂评分表</code></pre>
+<hr />
+<h1 id="一百三十六它回答">一百三十六、它回答：</h1>
+<blockquote>
+<p><strong>模型离开舒适区以后会怎样？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="一百三十七所以以后成熟-benchmark-不一定只有">一百三十七、所以以后成熟
+Benchmark 不一定只有：</h1>
+<h1 id="一个-test-set">一个 Test Set</h1>
+<p>可以有：</p>
+<pre class="text"><code>Test-IID
+Test-Future
+Test-Hard</code></pre>
+<hr />
+<h1 id="一百三十八但是现在-stage-6">一百三十八、但是现在 Stage 6：</h1>
+<p>第一版先建立：</p>
+<h1 id="主-train-val-test">主 Train / Val / Test</h1>
+<p>并为后面：</p>
+<blockquote>
+<p>多测试集</p>
+</blockquote>
+<p>保留 Metadata。</p>
+<hr />
+<h1 id="一百三十九现在看-validation-怎么切">一百三十九、现在看
+Validation 怎么切</h1>
+<p>很多团队非常重视 Test 隔离，</p>
+<p>但忽略 Validation。</p>
+<hr />
+<h1 id="一百四十假设">一百四十、假设：</h1>
+<pre class="text"><code>Train
+和Validation
+大量共享模板</code></pre>
+<p>会发生什么？</p>
+<hr />
+<h1 id="一百四十一你会根据-validation">一百四十一、你会根据
+Validation：</h1>
+<blockquote>
+<p>选择模型。</p>
+</blockquote>
+<p>模型 A：</p>
+<blockquote>
+<p>更会背模板。</p>
+</blockquote>
+<p>于是 Validation 分数高。</p>
+<hr />
+<h1 id="一百四十二你最后选了-a">一百四十二、你最后选了 A。</h1>
+<p>虽然 Test 最终可能揭露问题，</p>
+<p>但整个模型开发过程：</p>
+<blockquote>
+<p>已经被 Validation 偏置。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十三所以-validation-也应该">一百四十三、所以 Validation
+也应该：</h1>
+<blockquote>
+<p>做类似 Group Isolation。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十四通常我们希望">一百四十四、通常我们希望：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>∩</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>⌀</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Train \cap Validation = \varnothing
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>∩</mo><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>=</mo><mi>⌀</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Train \cap Test = \varnothing
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>∩</mo><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>=</mo><mi>⌀</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Validation \cap Test = \varnothing
+}
+</annotation></semantics></math></p>
+<p>当然这里不是只说：</p>
+<blockquote>
+<p>Row 不重叠。</p>
+</blockquote>
+<p>而是：</p>
+<h1 id="leakage-group-不重叠">Leakage Group 不重叠</h1>
+<hr />
+<h1 id="一百四十五更准确可以写">一百四十五、更准确可以写：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><msub><mi>p</mi><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mo>∩</mo><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><msub><mi>p</mi><mrow><mi>V</mi><mi>a</mi><mi>l</mi></mrow></msub><mo>=</mo><mi>⌀</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SplitGroup_{Train}
+\cap
+SplitGroup_{Val}
+=
+\varnothing
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><msub><mi>p</mi><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></msub><mo>∩</mo><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><msub><mi>p</mi><mrow><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><mo>=</mo><mi>⌀</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SplitGroup_{Train}
+\cap
+SplitGroup_{Test}
+=
+\varnothing
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百四十六这才是我们真正关心的">一百四十六、这才是我们真正关心的。</h1>
+<hr />
+<h1
+id="一百四十七现在出现一个常见问题">一百四十七、现在出现一个常见问题：</h1>
+<h1 id="我数据很少怎么办">我数据很少怎么办？</h1>
+<p>假设只有：</p>
+<pre class="text"><code>200个项目</code></pre>
+<p>再按 Group 切：</p>
+<blockquote>
+<p>Test 很小。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十八这时可以使用">一百四十八、这时可以使用：</h1>
+<h1 id="cross-validation">Cross-validation</h1>
+<p>交叉验证。</p>
+<hr />
+<h1 id="一百四十九但注意">一百四十九、但注意：</h1>
+<p>不能用普通 Row-level K-fold。</p>
+<p>应该使用：</p>
+<h1 id="group-k-fold">Group K-fold</h1>
+<hr />
+<h1 id="一百五十例如-5-fold">一百五十、例如 5 Fold：</h1>
+<pre class="text"><code>Project Group</code></pre>
+<p>整体进入一个 Fold。</p>
+<hr />
+<h1 id="一百五十一每次">一百五十一、每次：</h1>
+<pre class="text"><code>4份 Train
+1份 Validation</code></pre>
+<p>轮流测试。</p>
+<hr />
+<h1
+id="一百五十二这样能够更充分利用小数据">一百五十二、这样能够更充分利用小数据。</h1>
+<hr />
+<h1 id="一百五十三但对于最终-test">一百五十三、但对于最终 Test：</h1>
+<blockquote>
+<p>仍然最好保留独立 Holdout。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十四也就是说">一百五十四、也就是说：</h1>
+<pre class="text"><code>Train/Dev Pool
+       ↓
+Group Cross Validation</code></pre>
+<p>用于开发。</p>
+<p>另外：</p>
+<pre class="text"><code>Final Test</code></pre>
+<p>彻底冻结。</p>
+<hr />
+<h1
+id="一百五十五这是一种很稳健的架构">一百五十五、这是一种很稳健的架构。</h1>
+<hr />
+<h1
+id="一百五十六现在讲一个非常危险的现象">一百五十六、现在讲一个非常危险的现象：</h1>
+<h1 id="test-set-peeking">Test Set Peeking</h1>
+<p>偷看 Test。</p>
+<hr />
+<h1 id="一百五十七比如第一次-test">一百五十七、比如第一次 Test：</h1>
+<pre class="text"><code>Accuracy = 78%</code></pre>
+<p>你查看错误：</p>
+<blockquote>
+<p>技术参数类很差。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十八于是修改">一百五十八、于是修改：</h1>
+<pre class="text"><code>Prompt</code></pre>
+<p>再跑 Test：</p>
+<pre class="text"><code>82%</code></pre>
+<hr />
+<h1 id="一百五十九再发现">一百五十九、再发现：</h1>
+<blockquote>
+<p>评分条款不行。</p>
+</blockquote>
+<p>又修改：</p>
+<pre class="text"><code>Rule</code></pre>
+<p>Test：</p>
+<pre class="text"><code>85%</code></pre>
+<hr />
+<h1 id="一百六十重复-50-次">一百六十、重复 50 次。</h1>
+<p>这个 Test 还是 Test 吗？</p>
+<hr />
+<h1 id="一百六十一统计意义上">一百六十一、统计意义上：</h1>
+<blockquote>
+<p>越来越不像了。</p>
+</blockquote>
+<p>因为你已经根据 Test：</p>
+<blockquote>
+<p>开发系统。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十二test-开始扮演">一百六十二、Test 开始扮演：</h1>
+<h1 id="validation">Validation</h1>
+<p>的角色。</p>
+<hr />
+<h1
+id="一百六十三所以第六个核心心智模型-1">一百六十三、所以第六个核心心智模型：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>F</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mo>→</mo><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RepeatedTestFeedback
+\rightarrow
+TestContamination
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百六十四人没有把-test-文件直接送去训练">一百六十四、人没有把
+Test 文件直接送去训练。</h1>
+<p>但人类大脑：</p>
+<blockquote>
+<p>已经在训练。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十五所以成熟项目通常有">一百六十五、所以成熟项目通常有：</h1>
+<pre class="text"><code>Development Validation Set</code></pre>
+<p>可以经常看。</p>
+<hr />
+<h1 id="一百六十六以及">一百六十六、以及：</h1>
+<pre class="text"><code>Final Locked Test Set</code></pre>
+<p>尽量少碰。</p>
+<hr />
+<h1 id="一百六十七甚至更成熟可以有">一百六十七、甚至更成熟可以有：</h1>
+<h1 id="hidden-test">Hidden Test</h1>
+<p>开发者：</p>
+<blockquote>
+<p>看不到答案。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十八每次提交模型">一百六十八、每次提交模型：</h1>
+<blockquote>
+<p>自动评分。</p>
+</blockquote>
+<p>这能减少：</p>
+<blockquote>
+<p>人工针对 Test 调参。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十九第八课做-benchmark-时">一百六十九、第八课做 Benchmark
+时，</h1>
+<p>我们会再次回到：</p>
+<blockquote>
+<p>Test Governance。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十现在看一个完整的泄漏案例">一百七十、现在看一个完整的泄漏案例</h1>
+<p>假设：</p>
+<pre class="text"><code>Project P001</code></pre>
+<p>有 100 个 Clause。</p>
+<p>其中一条：</p>
+<pre class="text"><code>供应商须在本市设有服务机构。</code></pre>
+<hr />
+<h1 id="一百七十一另一个">一百七十一、另一个：</h1>
+<pre class="text"><code>Project P381</code></pre>
+<p>用了同一模板。</p>
+<p>写成：</p>
+<pre class="text"><code>供应商须在项目所在地设有服务机构。</code></pre>
+<hr />
+<h1 id="一百七十二现在">一百七十二、现在：</h1>
+<pre class="text"><code>P001 → Train
+P381 → Test</code></pre>
+<p>Project 不重复。</p>
+<hr />
+<h1 id="一百七十三但">一百七十三、但：</h1>
+<pre class="text"><code>template_group_id</code></pre>
+<p>一样。</p>
+<p>模型训练时：</p>
+<blockquote>
+<p>见过大量高度相似表达。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十四测试成绩">一百七十四、测试成绩：</h1>
+<blockquote>
+<p>可能虚高。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十五是不是所有-template-group-都必须严格隔离">一百七十五、是不是所有
+Template Group 都必须严格隔离？</h1>
+<p>不一定。</p>
+<hr />
+<h1 id="一百七十六这取决于">一百七十六、这取决于：</h1>
+<blockquote>
+<p>你想测什么。</p>
+</blockquote>
+<p>如果生产环境里：</p>
+<blockquote>
+<p>未来确实会继续大量使用相同模板，</p>
+</blockquote>
+<p>那么 Test 里出现同模板新项目：</p>
+<blockquote>
+<p>也有现实意义。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十七所以成熟评测可以同时测两类">一百七十七、所以成熟评测可以同时测两类：</h1>
+<pre class="text"><code>Seen-template New-project</code></pre>
+<p>和：</p>
+<pre class="text"><code>Unseen-template New-project</code></pre>
+<hr />
+<h1
+id="一百七十八这是一个非常专业的切片">一百七十八、这是一个非常专业的切片。</h1>
+<hr />
+<h1 id="一百七十九第一类回答">一百七十九、第一类回答：</h1>
+<blockquote>
+<p>模型面对熟悉模板的新项目能力如何？</p>
+</blockquote>
+<hr />
+<h1 id="一百八十第二类回答">一百八十、第二类回答：</h1>
+<blockquote>
+<p>模型面对陌生模板的新项目能力如何？</p>
+</blockquote>
+<hr />
+<h1 id="一百八十一如果只给一个总分">一百八十一、如果只给一个总分，</h1>
+<p>这两种能力：</p>
+<blockquote>
+<p>会被混在一起。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十二所以我们以后可以有字段">一百八十二、所以我们以后可以有字段：</h1>
+<pre class="text"><code>template_seen_in_train = true / false</code></pre>
+<hr />
+<h1 id="一百八十三然后单独评测">一百八十三、然后单独评测：</h1>
+<pre class="text"><code>Seen Template Accuracy</code></pre>
+<p>和：</p>
+<pre class="text"><code>Unseen Template Accuracy</code></pre>
+<hr />
+<h1 id="一百八十四这就是-metadata-的力量">一百八十四、这就是 Metadata
+的力量。</h1>
+<hr />
+<h1 id="一百八十五现在再看法规引用">一百八十五、现在再看法规引用。</h1>
+<p>Train 项目和 Test 项目：</p>
+<blockquote>
+<p>都引用同一法律条文。</p>
+</blockquote>
+<p>这算泄漏吗？</p>
+<hr />
+<h1 id="一百八十六不一定">一百八十六、不一定。</h1>
+<p>如果我们训练的是：</p>
+<blockquote>
+<p>合规分析模型，</p>
+</blockquote>
+<p>法规本来就是：</p>
+<blockquote>
+<p>应该掌握的公共知识。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十七所以不能说">一百八十七、所以不能说：</h1>
+<blockquote>
+<p>Test 里引用的法规在 Train 出现过，就一定泄漏。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十八这暴露了一个更深的概念">一百八十八、这暴露了一个更深的概念：</h1>
+<h1 id="what-is-supposed-to-generalize">What is supposed to
+generalize?</h1>
+<hr />
+<h1
+id="一百八十九我们真正希望模型泛化的是">一百八十九、我们真正希望模型泛化的是：</h1>
+<pre class="text"><code>新采购项目
+新条款表达
+新业务组合</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>每次考试都必须遇到完全陌生的法律。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十所以">一百九十、所以：</h1>
+<h1 id="shared-knowledge-leakage">Shared Knowledge ≠ Leakage</h1>
+<hr />
+<h1 id="一百九十一但是">一百九十一、但是：</h1>
+<h1 id="shared-answer-instance">Shared Answer Instance</h1>
+<p>通常才是危险。</p>
+<hr />
+<h1 id="一百九十二比如-test-case">一百九十二、比如 Test Case：</h1>
+<pre class="text"><code>Clause + Expert Rationale</code></pre>
+<p>如果同一 Clause 和同一 Rationale：</p>
+<blockquote>
+<p>已经进入 SFT Train。</p>
+</blockquote>
+<p>这当然：</p>
+<blockquote>
+<p>是严重泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十三所以-leakage-判断要问">一百九十三、所以 Leakage
+判断要问：</h1>
+<blockquote>
+<p><strong>模型训练时是否已经接触了这个测试问题本身，或者高度等价的答案实例？</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百九十四共享通用法规知识">一百九十四、共享通用法规知识：</h1>
+<blockquote>
+<p>可以接受。</p>
+</blockquote>
+<p>共享同一项目的判例式答案：</p>
+<blockquote>
+<p>很危险。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十五这也为第七阶段">一百九十五、这也为第七阶段：</h1>
+<h1 id="data-leakage">Data Leakage</h1>
+<p>铺路。</p>
+<p>第六阶段重点是：</p>
+<blockquote>
+<p>正确 Split。</p>
+</blockquote>
+<p>第七阶段会专门研究：</p>
+<blockquote>
+<p>即使 Split 看起来正确，数据仍然怎样偷偷泄漏。</p>
+</blockquote>
+<hr />
+<h1
+id="一百九十六现在看-label-leakage-与-split-leakage-的区别">一百九十六、现在看
+Label Leakage 与 Split Leakage 的区别</h1>
+<p>第四课第一阶段讲过：</p>
+<h1 id="label-leakage-1">Label Leakage</h1>
+<p>Input 里直接出现：</p>
+<blockquote>
+<p>答案。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十七今天讲的是">一百九十七、今天讲的是：</h1>
+<h1 id="split-leakage">Split Leakage</h1>
+<p>训练集和测试集之间：</p>
+<blockquote>
+<p>信息隔离失败。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十八两者完全不同">一百九十八、两者完全不同。</h1>
+<hr />
+<h1 id="一百九十九例如">一百九十九、例如：</h1>
+<p>Input：</p>
+<pre class="text"><code>专家判断：本条存在地域歧视。
+原条款：……</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>Label Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="二百而">二百、而：</h1>
+<pre class="text"><code>同一项目的99条Clause在Train
+第100条在Test</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>Split Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="二百零一再比如">二百零一、再比如：</h1>
+<pre class="text"><code>同一模板变体
+Train/Test各一半</code></pre>
+<p>属于：</p>
+<blockquote>
+<p>Template Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="二百零二再比如">二百零二、再比如：</h1>
+<pre class="text"><code>同一Duplicate Group
+Train/Test各一个</code></pre>
+<p>属于：</p>
+<blockquote>
+<p>Duplicate Leakage。</p>
+</blockquote>
+<hr />
+<h1
+id="二百零三所以以后我们可以建立-leakage-taxonomy">二百零三、所以以后我们可以建立
+Leakage Taxonomy：</h1>
+<pre class="text"><code>Label Leakage
+Project Leakage
+Document Leakage
+Duplicate Leakage
+Template Leakage
+Temporal Leakage
+Answer Leakage</code></pre>
+<hr />
+<h1
+id="二百零四第七阶段会把这张图做完整">二百零四、第七阶段会把这张图做完整。</h1>
+<hr />
+<h1
+id="二百零五现在回到真正工程操作">二百零五、现在回到真正工程操作。</h1>
+<p>第一版 Split Pipeline 可以这样做。</p>
+<hr />
+<h1 id="二百零六step-1确定-split-objective">二百零六、Step 1：确定 Split
+Objective</h1>
+<p>先写一句：</p>
+<blockquote>
+<p>Test 想模拟什么？</p>
+</blockquote>
+<p>例如我们的 Baseline：</p>
+<blockquote>
+<p><strong>模拟模型面对未来从未参与训练的新政府采购项目时的风险审查能力。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二百零七这句话决定">二百零七、这句话决定：</h1>
+<blockquote>
+<p>后面怎么 Split。</p>
+</blockquote>
+<hr />
+<h1 id="二百零八step-2定义基础-group">二百零八、Step 2：定义基础
+Group</h1>
+<p>至少：</p>
+<pre class="text"><code>project_id</code></pre>
+<hr />
+<h1 id="二百零九step-3加入泄漏关系">二百零九、Step 3：加入泄漏关系</h1>
+<p>比如：</p>
+<pre class="text"><code>duplicate_group_id</code></pre>
+<hr />
+<h1 id="二百一十必要时">二百一十、必要时：</h1>
+<pre class="text"><code>template_group_id</code></pre>
+<hr />
+<h1 id="二百一十一step-4生成-split_group_id">二百一十一、Step 4：生成
+<code>split_group_id</code></h1>
+<p>将相互连接的项目：</p>
+<blockquote>
+<p>合成不可拆单位。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十二step-5按-group-分-train-val-test">二百一十二、Step
+5：按 Group 分 Train / Val / Test</h1>
+<p>例如目标：</p>
+<pre class="text"><code>80 / 10 / 10</code></pre>
+<p>只是：</p>
+<blockquote>
+<p>近似目标。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十三step-6检查分布">二百一十三、Step 6：检查分布</h1>
+<p>至少检查：</p>
+<pre class="text"><code>Risk Type
+Positive / Negative
+Region
+Year
+Project Type
+Document Type
+Difficulty
+Case Type</code></pre>
+<hr />
+<h1
+id="二百一十四step-7做-cross-split-similarity-audit">二百一十四、Step
+7：做 Cross-split Similarity Audit</h1>
+<p>即使 Group 已切好，</p>
+<p>仍然再检查：</p>
+<blockquote>
+<p>Train 和 Test 是否有异常相似文本。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十五比如随机抽">二百一十五、比如随机抽：</h1>
+<pre class="text"><code>每个Test Clause</code></pre>
+<p>去 Train：</p>
+<blockquote>
+<p>找最相似邻居。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十六如果发现">二百一十六、如果发现：</h1>
+<pre class="text"><code>Similarity = 0.998</code></pre>
+<p>就值得调查。</p>
+<hr />
+<h1 id="二百一十七这个步骤非常强">二百一十七、这个步骤非常强。</h1>
+<p>因为它能发现：</p>
+<blockquote>
+<p>前面 Dedup 没抓到的泄漏。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十八我们可以保存">二百一十八、我们可以保存：</h1>
+<pre class="text"><code>nearest_train_similarity</code></pre>
+<hr />
+<h1 id="二百一十九例如">二百一十九、例如：</h1>
+<div class="sourceCode" id="cb1345"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1345-1"><a href="#cb1345-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1345-2"><a href="#cb1345-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;test_clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;C-991&quot;</span><span class="fu">,</span></span>
+<span id="cb1345-3"><a href="#cb1345-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;nearest_train_clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;C-117&quot;</span><span class="fu">,</span></span>
+<span id="cb1345-4"><a href="#cb1345-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;similarity&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.</span><span class="dv">997</span></span>
+<span id="cb1345-5"><a href="#cb1345-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百二十然后人工检查">二百二十、然后人工检查：</h1>
+<blockquote>
+<p>是不是泄漏？</p>
+</blockquote>
+<hr />
+<h1 id="二百二十一这就是">二百二十一、这就是：</h1>
+<h1 id="leakage-audit">Leakage Audit</h1>
+<hr />
+<h1 id="二百二十二step-8冻结-test">二百二十二、Step 8：冻结 Test</h1>
+<p>生成：</p>
+<pre class="text"><code>split_version = split_v0.1</code></pre>
+<hr />
+<h1 id="二百二十三以后再训练">二百二十三、以后再训练：</h1>
+<blockquote>
+<p>不随意重新洗牌。</p>
+</blockquote>
+<hr />
+<h1
+id="二百二十四为什么不能每次训练都重新-random-split">二百二十四、为什么不能每次训练都重新
+Random Split？</h1>
+<p>因为模型 A：</p>
+<blockquote>
+<p>用 Split A。</p>
+</blockquote>
+<p>模型 B：</p>
+<blockquote>
+<p>用 Split B。</p>
+</blockquote>
+<p>最后两个分数：</p>
+<blockquote>
+<p>不能公平比较。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十五所以">二百二十五、所以：</h1>
+<h1 id="benchmark-split-必须版本化">Benchmark Split 必须版本化</h1>
+<hr />
+<h1 id="二百二十六例如">二百二十六、例如：</h1>
+<pre class="text"><code>ProcurementSplit_v0.1</code></pre>
+<p>以后模型全部：</p>
+<blockquote>
+<p>用同一 Test。</p>
+</blockquote>
+<hr />
+<h1
+id="二百二十七如果数据规模大幅变化">二百二十七、如果数据规模大幅变化，</h1>
+<p>可以建立：</p>
+<pre class="text"><code>v0.2</code></pre>
+<p>但不能：</p>
+<blockquote>
+<p>偷偷改。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十八否则你会发现">二百二十八、否则你会发现：</h1>
+<pre class="text"><code>Model A = 84%
+Model B = 87%</code></pre>
+<p>实际上：</p>
+<blockquote>
+<p>考卷不同。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十九这根本不能比较">二百二十九、这根本不能比较。</h1>
+<hr />
+<h1 id="二百三十所以每个实验记录">二百三十、所以每个实验记录：</h1>
+<pre class="text"><code>dataset_version
+split_version</code></pre>
+<p>极其重要。</p>
+<hr />
+<h1 id="二百三十一现在设计-datasetsplit_v0.1">二百三十一、现在设计
+<code>DatasetSplit_V0.1</code></h1>
+<p>一条样本可以有：</p>
+<div class="sourceCode" id="cb1351"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1351-1"><a href="#cb1351-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1351-2"><a href="#cb1351-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb1351-3"><a href="#cb1351-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROJECT-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb1351-4"><a href="#cb1351-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1351-5"><a href="#cb1351-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;duplicate_group_id&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">,</span></span>
+<span id="cb1351-6"><a href="#cb1351-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;template_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TG-00017&quot;</span><span class="fu">,</span></span>
+<span id="cb1351-7"><a href="#cb1351-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SG-00091&quot;</span><span class="fu">,</span></span>
+<span id="cb1351-8"><a href="#cb1351-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1351-9"><a href="#cb1351-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split&quot;</span><span class="fu">:</span> <span class="st">&quot;train&quot;</span><span class="fu">,</span></span>
+<span id="cb1351-10"><a href="#cb1351-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1351-11"><a href="#cb1351-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_reason&quot;</span><span class="fu">:</span> <span class="st">&quot;group_assignment&quot;</span><span class="fu">,</span></span>
+<span id="cb1351-12"><a href="#cb1351-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1351-13"><a href="#cb1351-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_split_v0.1&quot;</span></span>
+<span id="cb1351-14"><a href="#cb1351-14" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百三十二一个-test-样本">二百三十二、一个 Test 样本：</h1>
+<div class="sourceCode" id="cb1352"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1352-1"><a href="#cb1352-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1352-2"><a href="#cb1352-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-88102&quot;</span><span class="fu">,</span></span>
+<span id="cb1352-3"><a href="#cb1352-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROJECT-09112&quot;</span><span class="fu">,</span></span>
+<span id="cb1352-4"><a href="#cb1352-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1352-5"><a href="#cb1352-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;template_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TG-00772&quot;</span><span class="fu">,</span></span>
+<span id="cb1352-6"><a href="#cb1352-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SG-03188&quot;</span><span class="fu">,</span></span>
+<span id="cb1352-7"><a href="#cb1352-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1352-8"><a href="#cb1352-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split&quot;</span><span class="fu">:</span> <span class="st">&quot;test&quot;</span><span class="fu">,</span></span>
+<span id="cb1352-9"><a href="#cb1352-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1352-10"><a href="#cb1352-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;template_seen_in_train&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb1352-11"><a href="#cb1352-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1352-12"><a href="#cb1352-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_split_v0.1&quot;</span></span>
+<span id="cb1352-13"><a href="#cb1352-13" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百三十三甚至可以加">二百三十三、甚至可以加：</h1>
+<pre class="text"><code>time_bucket
+region
+project_category</code></pre>
+<p>帮助后面 Slice。</p>
+<hr />
+<h1
+id="二百三十四现在看一个非常实用的数据表">二百三十四、现在看一个非常实用的数据表</h1>
+<p>最终 Split Summary 可以自动生成：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th style="text-align: right;">Train</th>
+<th style="text-align: right;">Validation</th>
+<th style="text-align: right;">Test</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Projects</td>
+<td style="text-align: right;">8,000</td>
+<td style="text-align: right;">1,000</td>
+<td style="text-align: right;">1,000</td>
+</tr>
+<tr class="even">
+<td>Clauses</td>
+<td style="text-align: right;">320,000</td>
+<td style="text-align: right;">39,000</td>
+<td style="text-align: right;">41,000</td>
+</tr>
+<tr class="odd">
+<td>Positive Risk</td>
+<td style="text-align: right;">31%</td>
+<td style="text-align: right;">30%</td>
+<td style="text-align: right;">32%</td>
+</tr>
+<tr class="even">
+<td>Hard Negative</td>
+<td style="text-align: right;">7%</td>
+<td style="text-align: right;">8%</td>
+<td style="text-align: right;">8%</td>
+</tr>
+<tr class="odd">
+<td>Unique Templates</td>
+<td style="text-align: right;">1,420</td>
+<td style="text-align: right;">182</td>
+<td style="text-align: right;">201</td>
+</tr>
+<tr class="even">
+<td>Regions</td>
+<td style="text-align: right;">28</td>
+<td style="text-align: right;">27</td>
+<td style="text-align: right;">28</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="二百三十五注意这里">二百三十五、注意这里：</h1>
+<blockquote>
+<p>项目数和 Clause 数都要看。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十六因为有的-project">二百三十六、因为有的 Project：</h1>
+<pre class="text"><code>10条Clause</code></pre>
+<p>有的：</p>
+<pre class="text"><code>1000条Clause</code></pre>
+<hr />
+<h1 id="二百三十七如果只按-project-数量">二百三十七、如果只按 Project
+数量：</h1>
+<pre class="text"><code>80 / 10 / 10</code></pre>
+<p>Clause 数量可能变成：</p>
+<pre class="text"><code>60 / 20 / 20</code></pre>
+<hr />
+<h1 id="二百三十八所以-split-是多目标平衡">二百三十八、所以 Split
+是多目标平衡：</h1>
+<pre class="text"><code>Project数量
+Clause数量
+Label分布
+Risk Type
+Time
+Region
+Template</code></pre>
+<hr />
+<h1 id="二百三十九这就是为什么现实-split">二百三十九、这就是为什么现实
+Split：</h1>
+<blockquote>
+<p>比 <code>train_test_split()</code> 难很多。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十但是第一版不要追求数学完美">二百四十、但是第一版不要追求数学完美。</h1>
+<p>只要做到：</p>
+<pre class="text"><code>Group不泄漏
+关键类别不过度失衡
+Test具有足够覆盖</code></pre>
+<p>就已经：</p>
+<blockquote>
+<p>非常专业。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十一现在看极端-group-size">二百四十一、现在看极端 Group
+Size</h1>
+<p>假设一个超级项目：</p>
+<pre class="text"><code>Project Mega</code></pre>
+<p>有：</p>
+<pre class="text"><code>50,000条Clause</code></pre>
+<hr />
+<h1 id="二百四十二而普通项目平均">二百四十二、而普通项目平均：</h1>
+<pre class="text"><code>100条</code></pre>
+<hr />
+<h1 id="二百四十三如果-mega-project-被分到-test">二百四十三、如果 Mega
+Project 被分到 Test，</h1>
+<p>整个 Test：</p>
+<blockquote>
+<p>一半都被它占了。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十四怎么办">二百四十四、怎么办？</h1>
+<p>不能把它随便拆掉。</p>
+<p>因为：</p>
+<blockquote>
+<p>Group Integrity。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十五可以考虑">二百四十五、可以考虑：</h1>
+<pre class="text"><code>特殊大Group单独处理</code></pre>
+<p>例如：</p>
+<blockquote>
+<p>不进入主 Benchmark，</p>
+</blockquote>
+<p>单独成为：</p>
+<h1 id="stress-test">Stress Test</h1>
+<hr />
+<h1 id="二百四十六或者">二百四十六、或者：</h1>
+<blockquote>
+<p>设计项目级采样。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十七这再次说明">二百四十七、这再次说明：</h1>
+<blockquote>
+<p>不要让一个异常项目支配整个指标。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十八类似还有">二百四十八、类似还有：</h1>
+<h1 id="very-large-template-group">Very Large Template Group</h1>
+<p>一个模板覆盖：</p>
+<pre class="text"><code>20,000个项目</code></pre>
+<hr />
+<h1 id="二百四十九如果严格不跨-split">二百四十九、如果严格不跨
+Split，</h1>
+<p>可能：</p>
+<blockquote>
+<p>整个数据集都难切。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十这时就要重新问">二百五十、这时就要重新问：</h1>
+<blockquote>
+<p>我们是想测试“新项目”，还是“新模板”？</p>
+</blockquote>
+<hr />
+<h1
+id="二百五十一如果生产环境会继续使用这个主流模板">二百五十一、如果生产环境会继续使用这个主流模板，</h1>
+<p>可以允许：</p>
+<blockquote>
+<p>同模板不同 Project 跨 Split。</p>
+</blockquote>
+<p>但需要：</p>
+<blockquote>
+<p>明确标记。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十二然后同时建立">二百五十二、然后同时建立：</h1>
+<pre class="text"><code>Unseen-template Slice</code></pre>
+<p>专门测陌生模板。</p>
+<hr />
+<h1 id="二百五十三这比强行">二百五十三、这比强行：</h1>
+<blockquote>
+<p>所有 Template 永不跨 Split</p>
+</blockquote>
+<p>更现实。</p>
+<hr />
+<h1 id="二百五十四所以-group-constraint-有两类">二百五十四、所以 Group
+Constraint 有两类：</h1>
+<h1 id="hard-constraint">Hard Constraint</h1>
+<p>绝不能跨。</p>
+<hr />
+<h1 id="二百五十五例如">二百五十五、例如：</h1>
+<pre class="text"><code>同一个Project
+Exact Duplicate Group
+同一个Annotation Instance</code></pre>
+<p>通常：</p>
+<blockquote>
+<p>Hard。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十六第二类">二百五十六、第二类：</h1>
+<h1 id="soft-constraint">Soft Constraint</h1>
+<p>最好隔离，</p>
+<p>但根据评测目标：</p>
+<blockquote>
+<p>可以允许。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Template Group
+Agency
+Region</code></pre>
+<hr />
+<h1 id="二百五十七这张区别非常重要">二百五十七、这张区别非常重要。</h1>
+<hr />
+<h1 id="二百五十八可以设计">二百五十八、可以设计：</h1>
+<pre class="text"><code>Hard Leakage Groups:
+Project
+Exact Duplicate
+
+Soft Generalization Groups:
+Template
+Agency
+Region</code></pre>
+<hr />
+<h1 id="二百五十九hard-group">二百五十九、Hard Group：</h1>
+<blockquote>
+<p>用于保证评测合法。</p>
+</blockquote>
+<p>Soft Group：</p>
+<blockquote>
+<p>用于定义评测难度。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十这是一个非常漂亮的框架">二百六十、这是一个非常漂亮的框架。</h1>
+<hr />
+<h1 id="二百六十一例如主-benchmark">二百六十一、例如主 Benchmark：</h1>
+<pre class="text"><code>Project-disjoint
+Duplicate-disjoint</code></pre>
+<p>保证：</p>
+<blockquote>
+<p>基本独立。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十二然后标记">二百六十二、然后标记：</h1>
+<pre class="text"><code>Template Seen
+Template Unseen
+Region Seen
+Region Unseen</code></pre>
+<p>用于：</p>
+<blockquote>
+<p>Slice Analysis。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十三这就避免把所有目标">二百六十三、这就避免把所有目标：</h1>
+<blockquote>
+<p>强行塞进一个 Split 规则。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十四现在进入另一个问题">二百六十四、现在进入另一个问题</h1>
+<h1 id="time-leakage">Time Leakage</h1>
+<p>假设你做 Temporal Split：</p>
+<pre class="text"><code>2025以前 → Train
+2026 → Test</code></pre>
+<p>看起来很严谨。</p>
+<hr />
+<h1 id="二百六十五但你使用了一个">二百六十五、但你使用了一个：</h1>
+<pre class="text"><code>2026年12月生成的专家整理文档</code></pre>
+<p>它总结了：</p>
+<blockquote>
+<p>2026 年全年案例。</p>
+</blockquote>
+<p>然后把这份材料：</p>
+<blockquote>
+<p>放进 Train。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十六虽然-clause-时间是过去">二百六十六、虽然 Clause
+时间是过去，</h1>
+<p>但知识来源：</p>
+<blockquote>
+<p>包含未来。</p>
+</blockquote>
+<p>这还是：</p>
+<h1 id="temporal-leakage">Temporal Leakage</h1>
+<hr />
+<h1
+id="二百六十七所以时间切分不能只看">二百六十七、所以时间切分不能只看：</h1>
+<pre class="text"><code>project_date</code></pre>
+<p>还要考虑：</p>
+<blockquote>
+<p>数据来源生成时间。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十八例如">二百六十八、例如：</h1>
+<pre class="text"><code>annotation_date
+knowledge_snapshot_date</code></pre>
+<p>都可能重要。</p>
+<hr />
+<h1
+id="二百六十九这将在第七阶段专门展开">二百六十九、这将在第七阶段专门展开。</h1>
+<hr />
+<h1 id="二百七十现在看-synthetic-data">二百七十、现在看 Synthetic
+Data</h1>
+<p>以后模型会生成：</p>
+<blockquote>
+<p>合成训练样本。</p>
+</blockquote>
+<p>如果 Synthetic Sample 是从：</p>
+<blockquote>
+<p>Test Case 改写出来的。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十一即使字完全不同">二百七十一、即使字完全不同，</h1>
+<p>也可能：</p>
+<blockquote>
+<p>把 Test 答案泄漏进 Train。</p>
+</blockquote>
+<hr />
+<h1
+id="二百七十二所以未来-synthetic-data-也必须知道">二百七十二、所以未来
+Synthetic Data 也必须知道：</h1>
+<pre class="text"><code>source_sample_id</code></pre>
+<hr />
+<h1 id="二百七十三如果来源">二百七十三、如果来源：</h1>
+<blockquote>
+<p>属于 Test，</p>
+</blockquote>
+<p>它的派生数据：</p>
+<blockquote>
+<p>不能进入 Train。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十四这叫">二百七十四、这叫：</h1>
+<h1 id="lineage-aware-split">Lineage-aware Split</h1>
+<p>根据血缘切分。</p>
+<hr />
+<h1 id="二百七十五非常重要">二百七十五、非常重要。</h1>
+<p>我们前面一直保存：</p>
+<h1 id="data-lineage-1">Data Lineage</h1>
+<p>现在再次产生巨大价值。</p>
+<hr />
+<h1 id="二百七十六如果-sample-a">二百七十六、如果 Sample A：</h1>
+<blockquote>
+<p>派生出 Sample B、C、D。</p>
+</blockquote>
+<p>那么：</p>
+<pre class="text"><code>A → Test</code></pre>
+<p>B/C/D：</p>
+<blockquote>
+<p>也应该跟着 Test 或被排除。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十七不能">二百七十七、不能：</h1>
+<pre class="text"><code>A → Test
+B → Train</code></pre>
+<p>然后说：</p>
+<blockquote>
+<p>文本不一样，所以没事。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十八所以除了-group-relation">二百七十八、所以除了 Group
+Relation，</h1>
+<p>还有：</p>
+<h1 id="derivation-relation">Derivation Relation</h1>
+<hr />
+<h1 id="二百七十九最终-split-graph-可能包括">二百七十九、最终 Split
+Graph 可能包括：</h1>
+<pre class="text"><code>Same Project
+Exact Duplicate
+Derived From
+Same Original Case</code></pre>
+<p>这些都是：</p>
+<blockquote>
+<p>Hard Edges。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十可以画成">二百八十、可以画成：</h1>
+<pre class="text"><code>Sample A
+├── duplicate → Sample B
+├── derived   → Sample C
+└── same_case → Sample D</code></pre>
+<p>A/B/C/D：</p>
+<blockquote>
+<p>必须一起 Split。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十一这个思想非常强">二百八十一、这个思想非常强。</h1>
+<hr />
+<h1
+id="二百八十二现在看一个很现实的-sft-数据问题">二百八十二、现在看一个很现实的
+SFT 数据问题。</h1>
+<p>原始专家案例：</p>
+<pre class="text"><code>Clause A
++
+Expert Rationale A</code></pre>
+<hr />
+<h1 id="二百八十三我们让-llm-产生">二百八十三、我们让 LLM 产生：</h1>
+<pre class="text"><code>Paraphrase 1
+Paraphrase 2
+Paraphrase 3</code></pre>
+<p>作为数据增强。</p>
+<hr />
+<h1 id="二百八十四如果原始-a">二百八十四、如果原始 A：</h1>
+<blockquote>
+<p>在 Test。</p>
+</blockquote>
+<p>Paraphrase：</p>
+<blockquote>
+<p>进入 Train。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十五测试几乎必然虚高">二百八十五、测试几乎必然虚高。</h1>
+<hr />
+<h1 id="二百八十六所以">二百八十六、所以：</h1>
+<h1 id="augmentation-must-inherit-split">Augmentation must inherit
+split</h1>
+<p>数据增强应该：</p>
+<blockquote>
+<p>继承母样本 Split。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十七这句话以后做-sft-时">二百八十七、这句话以后做 SFT
+时：</h1>
+<blockquote>
+<p>非常重要。</p>
+</blockquote>
+<hr />
+<h1
+id="二百八十八现在看-rag-knowledge-corpus-和-task-split-的关系">二百八十八、现在看
+RAG Knowledge Corpus 和 Task Split 的关系。</h1>
+<p>假设我们评测：</p>
+<blockquote>
+<p>法规风险审查。</p>
+</blockquote>
+<p>Test Case 需要用某条法律。</p>
+<p>RAG Knowledge Base：</p>
+<blockquote>
+<p>包含这条法律。</p>
+</blockquote>
+<p>是不是泄漏？</p>
+<hr />
+<h1 id="二百八十九不是">二百八十九、不是。</h1>
+<p>因为生产系统本来：</p>
+<blockquote>
+<p>就应该允许查法规。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十这叫">二百九十、这叫：</h1>
+<h1 id="allowed-external-knowledge">Allowed External Knowledge</h1>
+<hr />
+<h1 id="二百九十一但是如果-rag-知识库里">二百九十一、但是如果 RAG
+知识库里：</h1>
+<blockquote>
+<p>直接存了 Test Case 的专家答案，</p>
+</blockquote>
+<p>那就：</p>
+<blockquote>
+<p>泄漏。</p>
+</blockquote>
+<hr />
+<h1
+id="二百九十二所以评测时必须定义">二百九十二、所以评测时必须定义：</h1>
+<pre class="text"><code>Allowed Knowledge</code></pre>
+<p>和：</p>
+<pre class="text"><code>Forbidden Test-specific Knowledge</code></pre>
+<hr />
+<h1
+id="二百九十三这会在第八课评测系统里正式解决">二百九十三、这会在第八课评测系统里正式解决。</h1>
+<p>现在先有意识。</p>
+<hr />
+<h1
+id="二百九十四现在做一个非常典型的-split-失败案例">二百九十四、现在做一个非常典型的
+Split 失败案例。</h1>
+<p>数据：</p>
+<pre class="text"><code>10,000个项目
+400,000条Clause</code></pre>
+<p>随机按 Clause：</p>
+<pre class="text"><code>320k Train
+40k Val
+40k Test</code></pre>
+<hr />
+<h1 id="二百九十五模型-test-accuracy">二百九十五、模型 Test
+Accuracy：</h1>
+<pre class="text"><code>94%</code></pre>
+<hr />
+<h1 id="二百九十六改成-project-disjoint">二百九十六、改成
+Project-disjoint：</h1>
+<pre class="text"><code>86%</code></pre>
+<hr />
+<h1 id="二百九十七再改成-unseen-template">二百九十七、再改成
+Unseen-template：</h1>
+<pre class="text"><code>74%</code></pre>
+<hr />
+<h1 id="二百九十八哪个分数是真的">二百九十八、哪个分数是真的？</h1>
+<p>三个都可能是真的。</p>
+<hr />
+<h1
+id="二百九十九它们回答了三个不同问题">二百九十九、它们回答了三个不同问题。</h1>
+<p>94%：</p>
+<blockquote>
+<p>看过同项目大量兄弟 Clause 后的能力。</p>
+</blockquote>
+<hr />
+<h1 id="三百">三百、</h1>
+<p>86%：</p>
+<blockquote>
+<p>面对新项目，但模板可能熟悉。</p>
+</blockquote>
+<hr />
+<h1 id="三百零一">三百零一、</h1>
+<p>74%：</p>
+<blockquote>
+<p>面对新项目 + 新模板。</p>
+</blockquote>
+<hr />
+<h1 id="三百零二所以">三百零二、所以：</h1>
+<h1 id="metric-without-split-definition-is-almost-meaningless">Metric
+without Split Definition is almost meaningless</h1>
+<p>没有 Split 定义的分数：</p>
+<blockquote>
+<p>几乎没有解释力。</p>
+</blockquote>
+<hr />
+<h1 id="三百零三以后看到别人说">三百零三、以后看到别人说：</h1>
+<blockquote>
+<p>“我们的采购模型准确率 95%。”</p>
+</blockquote>
+<p>你第一反应应该问：</p>
+<pre class="text"><code>怎么切的？</code></pre>
+<hr />
+<h1 id="三百零四甚至比问">三百零四、甚至比问：</h1>
+<pre class="text"><code>用什么模型？</code></pre>
+<p>更重要。</p>
+<hr />
+<h1 id="三百零五因为一个错误-split">三百零五、因为一个错误 Split：</h1>
+<blockquote>
+<p>可以让普通模型看起来像超级模型。</p>
+</blockquote>
+<hr />
+<h1
+id="三百零六这就是-dataset-engineering-对-ai-项目的影响">三百零六、这就是
+Dataset Engineering 对 AI 项目的影响。</h1>
+<hr />
+<h1 id="三百零七现在建立-split-manifest">三百零七、现在建立
+<code>Split Manifest</code></h1>
+<p>每次 Split 最好保存：</p>
+<pre class="text"><code>split_version
+random_seed
+grouping_policy
+date_boundary
+hard_constraints
+soft_constraints
+created_at
+dataset_version</code></pre>
+<hr />
+<h1 id="三百零八例如">三百零八、例如：</h1>
+<div class="sourceCode" id="cb1392"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1392-1"><a href="#cb1392-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1392-2"><a href="#cb1392-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_split_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb1392-3"><a href="#cb1392-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dataset_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_dataset_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb1392-4"><a href="#cb1392-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1392-5"><a href="#cb1392-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;strategy&quot;</span><span class="fu">:</span> <span class="st">&quot;project_group_holdout&quot;</span><span class="fu">,</span></span>
+<span id="cb1392-6"><a href="#cb1392-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1392-7"><a href="#cb1392-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;hard_constraints&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1392-8"><a href="#cb1392-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;same_project_same_split&quot;</span><span class="ot">,</span></span>
+<span id="cb1392-9"><a href="#cb1392-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;exact_duplicate_same_split&quot;</span><span class="ot">,</span></span>
+<span id="cb1392-10"><a href="#cb1392-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;derived_sample_same_split&quot;</span></span>
+<span id="cb1392-11"><a href="#cb1392-11" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1392-12"><a href="#cb1392-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1392-13"><a href="#cb1392-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;soft_constraints&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1392-14"><a href="#cb1392-14" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;template_balance&quot;</span><span class="ot">,</span></span>
+<span id="cb1392-15"><a href="#cb1392-15" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;region_balance&quot;</span></span>
+<span id="cb1392-16"><a href="#cb1392-16" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1392-17"><a href="#cb1392-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1392-18"><a href="#cb1392-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;target_ratio&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1392-19"><a href="#cb1392-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;train&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.</span><span class="dv">8</span><span class="fu">,</span></span>
+<span id="cb1392-20"><a href="#cb1392-20" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;validation&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.</span><span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb1392-21"><a href="#cb1392-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;test&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.</span><span class="dv">1</span></span>
+<span id="cb1392-22"><a href="#cb1392-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1392-23"><a href="#cb1392-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1392-24"><a href="#cb1392-24" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;random_seed&quot;</span><span class="fu">:</span> <span class="dv">20260915</span></span>
+<span id="cb1392-25"><a href="#cb1392-25" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这里的数字只是：</p>
+<blockquote>
+<p>教学示例。</p>
+</blockquote>
+<hr />
+<h1 id="三百零九为什么保存-seed">三百零九、为什么保存 Seed？</h1>
+<p>因为如果是可随机重现的 Split，</p>
+<p>以后：</p>
+<blockquote>
+<p>能重新生成。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十但仅保存-seed-还不够">三百一十、但仅保存 Seed
+还不够。</h1>
+<p>还要保存：</p>
+<pre class="text"><code>算法版本
+排序方式
+输入数据版本</code></pre>
+<hr />
+<h1 id="三百一十一否则同一个-seed">三百一十一、否则同一个 Seed，</h1>
+<p>Dataset 变了以后：</p>
+<blockquote>
+<p>Split 也会变。</p>
+</blockquote>
+<hr />
+<h1
+id="三百一十二所以最稳妥还应该直接保存">三百一十二、所以最稳妥还应该直接保存：</h1>
+<h1 id="split-assignment-table">Split Assignment Table</h1>
+<hr />
+<h1 id="三百一十三例如">三百一十三、例如：</h1>
+<table>
+<thead>
+<tr class="header">
+<th>project_id</th>
+<th>split_group_id</th>
+<th>split</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>P001</td>
+<td>SG001</td>
+<td>train</td>
+</tr>
+<tr class="even">
+<td>P002</td>
+<td>SG002</td>
+<td>train</td>
+</tr>
+<tr class="odd">
+<td>P003</td>
+<td>SG003</td>
+<td>validation</td>
+</tr>
+<tr class="even">
+<td>P004</td>
+<td>SG004</td>
+<td>test</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="三百一十四这个表">三百一十四、这个表：</h1>
+<blockquote>
+<p>就是最终真相。</p>
+</blockquote>
+<hr />
+<h1
+id="三百一十五以后新增数据怎么办">三百一十五、以后新增数据怎么办？</h1>
+<p>这是非常现实的问题。</p>
+<hr />
+<h1 id="三百一十六假设今天有">三百一十六、假设今天有：</h1>
+<pre class="text"><code>Dataset v0.1</code></pre>
+<p>半年后新增：</p>
+<pre class="text"><code>20万条</code></pre>
+<p>是不是重新把所有数据：</p>
+<blockquote>
+<p>洗牌？</p>
+</blockquote>
+<hr />
+<h1 id="三百一十七不建议随便这么做">三百一十七、不建议随便这么做。</h1>
+<p>因为旧 Benchmark：</p>
+<blockquote>
+<p>会失去连续性。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十八一个常见思路是">三百一十八、一个常见思路是：</h1>
+<p>旧 Test：</p>
+<blockquote>
+<p>保持冻结。</p>
+</blockquote>
+<p>新增项目：</p>
+<blockquote>
+<p>进入 Train/Val，或者构建新的 Test v0.2。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十九例如-1">三百一十九、例如：</h1>
+<pre class="text"><code>Test_v1
+=
+长期稳定回归集</code></pre>
+<hr />
+<h1 id="三百二十-2">三百二十、</h1>
+<pre class="text"><code>Test_v2
+=
+加入最新时间窗口</code></pre>
+<hr />
+<h1 id="三百二十一这样可以同时知道">三百二十一、这样可以同时知道：</h1>
+<blockquote>
+<p>对历史稳定 Benchmark 有没有退化。</p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p>对新数据表现如何。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十二这就是">三百二十二、这就是：</h1>
+<h1 id="benchmark-versioning">Benchmark Versioning</h1>
+<hr />
+<h1
+id="三百二十三以后第八课会正式展开">三百二十三、以后第八课会正式展开。</h1>
+<hr />
+<h1 id="三百二十四现在看看-validation-是否也要冻结">三百二十四、现在看看
+Validation 是否也要冻结。</h1>
+<p>通常：</p>
+<blockquote>
+<p>可以比 Test 灵活。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十五因为-validation">三百二十五、因为 Validation：</h1>
+<blockquote>
+<p>本来就用于开发。</p>
+</blockquote>
+<p>随着任务变化：</p>
+<blockquote>
+<p>可以增加新的 Validation Slice。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十六但为了实验公平">三百二十六、但为了实验公平，</h1>
+<p>某一轮模型比较：</p>
+<blockquote>
+<p>仍然应该使用固定 Validation Version。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十七否则今天">三百二十七、否则今天：</h1>
+<p>Model A 在 Val A。</p>
+<p>明天：</p>
+<p>Model B 在 Val B。</p>
+<p>你又无法：</p>
+<blockquote>
+<p>公平比较。</p>
+</blockquote>
+<hr />
+<h1
+id="三百二十八所以任何有分数的东西">三百二十八、所以任何有分数的东西，</h1>
+<p>都应该知道：</p>
+<pre class="text"><code>Dataset Version
+Split Version
+Benchmark Version</code></pre>
+<hr />
+<h1
+id="三百二十九现在把第六阶段工程架构压缩成一张图">三百二十九、现在把第六阶段工程架构压缩成一张图</h1>
+<pre class="text"><code>                 DedupedClauseSet_V0.1
+                          │
+                          ▼
+                    Build Hard Groups
+             ┌────────────┼─────────────┐
+             ▼            ▼             ▼
+          Project      Duplicate      Lineage
+             │            │             │
+             └────────────┼─────────────┘
+                          ▼
+                    split_group_id
+                          │
+                          ▼
+                   Group-aware Split
+             ┌────────────┼─────────────┐
+             ▼            ▼             ▼
+           Train       Validation       Test
+             │            │             │
+             └────────────┼─────────────┘
+                          ▼
+                 Distribution Audit
+                          │
+                          ▼
+                  Similarity Leakage Audit
+                          │
+                          ▼
+                    Freeze Test
+                          │
+                          ▼
+                  DatasetSplit_V0.1</code></pre>
+<hr />
+<h1 id="三百三十本阶段最容易犯的-12-个错误">三百三十、本阶段最容易犯的
+12 个错误</h1>
+<h3 id="错误-1-2">错误 1</h3>
+<blockquote>
+<p>直接按 Clause 行随机 8:1:1。</p>
+</blockquote>
+<p>对于采购数据：</p>
+<blockquote>
+<p>很危险。</p>
+</blockquote>
+<h3 id="错误-2-2">错误 2</h3>
+<blockquote>
+<p>同一个项目里的不同 Clause 可以随便分到 Train/Test。</p>
+</blockquote>
+<p>容易产生 Project Leakage。</p>
+<h3 id="错误-3-2">错误 3</h3>
+<blockquote>
+<p>Document 不同，所以一定独立。</p>
+</blockquote>
+<p>不一定。</p>
+<p>可能同项目、同模板、同版本链。</p>
+<h3 id="错误-4-2">错误 4</h3>
+<blockquote>
+<p>Exact Duplicate 去掉以后就不会泄漏。</p>
+</blockquote>
+<p>错。</p>
+<p>还有 Near Duplicate 和 Template Leakage。</p>
+<h3 id="错误-5-2">错误 5</h3>
+<blockquote>
+<p>比例必须严格 80/10/10。</p>
+</blockquote>
+<p>错。</p>
+<p>独立性和评测覆盖更重要。</p>
+<h3 id="错误-6-2">错误 6</h3>
+<blockquote>
+<p>为了类别比例漂亮，可以拆 Project。</p>
+</blockquote>
+<p>通常不值得。</p>
+<h3 id="错误-7-2">错误 7</h3>
+<blockquote>
+<p>Validation 泄漏没关系，只有 Test 需要干净。</p>
+</blockquote>
+<p>错。</p>
+<p>Validation 会影响模型选择。</p>
+<h3 id="错误-8-2">错误 8</h3>
+<blockquote>
+<p>Test 可以每天反复跑、反复看、反复调。</p>
+</blockquote>
+<p>会逐渐污染 Test。</p>
+<h3 id="错误-9-2">错误 9</h3>
+<blockquote>
+<p>Temporal Split 只需要看项目发布日期。</p>
+</blockquote>
+<p>不一定。</p>
+<p>还要注意知识和标注来源的时间。</p>
+<h3 id="错误-10-2">错误 10</h3>
+<blockquote>
+<p>Synthetic Data 字不同，所以不会泄漏。</p>
+</blockquote>
+<p>错。</p>
+<p>需要看 Lineage。</p>
+<h3 id="错误-11-1">错误 11</h3>
+<blockquote>
+<p>同一法规知识出现在 Train/Test 就一定是泄漏。</p>
+</blockquote>
+<p>不一定。</p>
+<p>共享公共知识和共享测试答案不是一回事。</p>
+<h3 id="错误-12-1">错误 12</h3>
+<blockquote>
+<p>一个总 Accuracy 就足够评价 Split。</p>
+</blockquote>
+<p>错。</p>
+<p>必须看关键 Slice 和 Split 定义。</p>
+<hr />
+<h1 id="三百三十一本阶段最重要的-6-个">三百三十一、本阶段最重要的 6
+个“≠”</h1>
+<pre class="text"><code>Row Split
+≠
+Independent Split</code></pre>
+<pre class="text"><code>Different Document
+≠
+Independent Project</code></pre>
+<pre class="text"><code>Different Project
+≠
+Different Template</code></pre>
+<pre class="text"><code>No Exact Duplicate
+≠
+No Leakage</code></pre>
+<pre class="text"><code>Fixed Ratio
+≠
+Good Benchmark</code></pre>
+<pre class="text"><code>Never Used for Gradient
+≠
+Never Influenced Development</code></pre>
+<p>最后一句描述的就是：</p>
+<blockquote>
+<p>Validation 和频繁查看的 Test。</p>
+</blockquote>
+<hr />
+<h1
+id="三百三十二再记住一个最重要的">三百三十二、再记住一个最重要的“=”</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mo>=</mo><mi>I</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>+</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodSplit
+=
+Independence
++
+Representativeness
++
+LeakageControl
++
+Reproducibility
+}
+</annotation></semantics></math></p>
+<p>翻译成人话：</p>
+<blockquote>
+<p><strong>好的数据切分不是把行数按比例切开，而是让
+Train、Validation、Test
+尽量来自彼此独立的信息群，同时保持业务代表性、控制重复和模板泄漏，并且整个切分过程可以复现和审计。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三百三十三stage-16-现在已经形成一条完整的数据流水线">三百三十三、Stage
+1～6 现在已经形成一条完整的数据流水线</h1>
+<pre class="text"><code>Stage 1
+Task Schema
+“什么是一条样本？”
+        │
+        ▼
+Stage 2
+ParsedDocument
+“原文件里到底有什么？”
+        │
+        ▼
+Stage 3
+ClauseUnit
+“文字属于哪条业务要求？”
+        │
+        ▼
+Stage 4
+CleanClause
+“怎样安全规范表示？”
+        │
+        ▼
+Stage 5
+DedupedClauseSet
+“到底有多少独立信息？”
+        │
+        ▼
+Stage 6
+DatasetSplit
+“哪些数据可以教模型，
+哪些数据必须留着考试？”</code></pre>
+<p>现在我们第一次拥有：</p>
+<blockquote>
+<p>真正意义上的 Train / Validation / Test。</p>
+</blockquote>
+<hr />
+<h1
+id="三百三十四但是还有一个坏消息">三百三十四、但是还有一个坏消息</h1>
+<p>即使我们做到：</p>
+<pre class="text"><code>Project-disjoint
+Duplicate-disjoint
+Lineage-disjoint</code></pre>
+<p>是不是就能保证：</p>
+<blockquote>
+<p>Test 一定干净？</p>
+</blockquote>
+<p>还不能。</p>
+<hr />
+<h1
+id="三百三十五因为数据泄漏比切错行狡猾得多">三百三十五、因为数据泄漏比“切错行”狡猾得多。</h1>
+<p>例如：</p>
+<pre class="text"><code>Test里的专家答案</code></pre>
+<p>可能曾经出现在：</p>
+<blockquote>
+<p>一个 Excel 说明文件里。</p>
+</blockquote>
+<hr />
+<h1 id="三百三十六或者">三百三十六、或者：</h1>
+<p>Test 项目的风险审查结论，</p>
+<p>已经被整理进：</p>
+<blockquote>
+<p>一篇培训材料。</p>
+</blockquote>
+<hr />
+<h1 id="三百三十七或者">三百三十七、或者：</h1>
+<p>同一案例被：</p>
+<blockquote>
+<p>LLM 改写成另一种语言，</p>
+</blockquote>
+<p>然后进了 Train。</p>
+<hr />
+<h1 id="三百三十八或者更隐蔽">三百三十八、或者更隐蔽：</h1>
+<p>我们使用 Test Set 调 Prompt：</p>
+<blockquote>
+<p>调了 200 次。</p>
+</blockquote>
+<hr />
+<h1 id="三百三十九甚至">三百三十九、甚至：</h1>
+<p>未来 SFT 数据由当前模型错误生成，</p>
+<p>而这些错误案例本来来自：</p>
+<blockquote>
+<p>Test。</p>
+</blockquote>
+<hr />
+<h1 id="三百四十这时候即使">三百四十、这时候即使：</h1>
+<pre class="text"><code>project_id</code></pre>
+<p>完全不重叠，</p>
+<p>Benchmark：</p>
+<blockquote>
+<p>仍然可能被污染。</p>
+</blockquote>
+<hr />
+<h1 id="三百四十一本阶段掌握测试">三百四十一、本阶段掌握测试</h1>
+<p>如果现在不看前文，你能完整解释下面这些问题，第 6
+阶段就真正掌握了：</p>
+<blockquote>
+<p>Train、Validation、Test 的真正角色分别是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Train = Learn、Validation = Select、Test = Estimate？</p>
+</blockquote>
+<blockquote>
+<p>为什么比例不是 Split 最重要的东西？</p>
+</blockquote>
+<blockquote>
+<p>为什么 ProcurementAI 不应该默认按 Clause 行随机切？</p>
+</blockquote>
+<blockquote>
+<p>为什么同一项目中的不同 Clause 会造成 Project Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>project_id</code> 从 Schema 第一阶段就非常重要？</p>
+</blockquote>
+<blockquote>
+<p>为什么按 Document Split 仍然可能泄漏？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Group-aware Split？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Split Unit？</p>
+</blockquote>
+<blockquote>
+<p>Duplicate Group 为什么绝对不能跨 Train/Test？</p>
+</blockquote>
+<blockquote>
+<p>Template Group 为什么也可能造成泄漏？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Leakage Graph？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Connected Component / Split Group？</p>
+</blockquote>
+<blockquote>
+<p>为什么真正 Split 的应该是“独立信息群”？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Group Integrity 通常优先于完美类别比例？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Group-aware Stratification？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Test Set 不能只看行数？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Test Diversity 很重要？</p>
+</blockquote>
+<blockquote>
+<p>为什么关键 Risk Slice 必须有足够样本？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Temporal Split？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Temporal Split 更接近真实部署？</p>
+</blockquote>
+<blockquote>
+<p>Project Holdout、Temporal Holdout、Geographic Holdout
+分别在测什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Test Set 必须围绕“泛化问题”设计？</p>
+</blockquote>
+<blockquote>
+<p>为什么成熟系统可能同时拥有 IID Test、Future Test、Hard Test？</p>
+</blockquote>
+<blockquote>
+<p>Validation 为什么也必须控制泄漏？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Group K-fold 比普通 K-fold 更适合小规模采购项目数据？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Test Set Peeking？</p>
+</blockquote>
+<blockquote>
+<p>为什么反复查看 Test 并调模型会污染 Test？</p>
+</blockquote>
+<blockquote>
+<p>Seen-template 与 Unseen-template 为什么应该分开评测？</p>
+</blockquote>
+<blockquote>
+<p>为什么共享法规知识不一定构成泄漏？</p>
+</blockquote>
+<blockquote>
+<p>Shared Knowledge 和 Shared Answer Instance 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>Label Leakage 和 Split Leakage 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Template Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Synthetic Data 必须继承母样本 Split？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Lineage-aware Split？</p>
+</blockquote>
+<blockquote>
+<p>为什么数据增强不能从 Test 派生以后放进 Train？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Hard Split Constraint？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Soft Generalization Constraint？</p>
+</blockquote>
+<blockquote>
+<p>Project、Exact Duplicate 为什么更接近 Hard Constraint？</p>
+</blockquote>
+<blockquote>
+<p>Template、Agency、Region 为什么可以作为 Soft Constraint 或评测
+Slice？</p>
+</blockquote>
+<blockquote>
+<p>为什么同一个 Benchmark 必须固定 <code>split_version</code>？</p>
+</blockquote>
+<blockquote>
+<p>为什么不同模型若使用不同 Test Split，分数不能直接比较？</p>
+</blockquote>
+<blockquote>
+<p>为什么必须保存 Split Assignment Table？</p>
+</blockquote>
+<blockquote>
+<p>新数据加入以后为什么不应该随便重洗旧 Test？</p>
+</blockquote>
+<blockquote>
+<p>为什么一个“95%准确率”如果没有 Split 定义几乎没有解释力？</p>
+</blockquote>
+<p>如果这些你都能自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>6</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第6阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三百四十二本阶段最终只记一句话">三百四十二、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>政府采购数据的 Train / Validation / Test
+不能只按行随机切，而应该围绕“独立信息群”切分：同项目、重复样本和派生样本必须严格隔离，模板、时间、地区等维度则用来定义模型真正要面对的泛化难度；一个好的
+Test Set 不是数据剩下的
+10%，而是一套被严格保护、真正代表未来未知项目的考试。</strong></p>
+</blockquote>
+<p>最后压成一张图：</p>
+<pre class="text"><code>                  Procurement Data
+                         │
+                         ▼
+                    Clause Rows
+                         │
+                         ▼
+                ┌────────────────┐
+                │ Leakage Links  │
+                │                │
+                │ Same Project   │
+                │ Duplicate      │
+                │ Derived From   │
+                └───────┬────────┘
+                        │
+                        ▼
+                  Split Groups
+                        │
+              ┌─────────┼─────────┐
+              ▼         ▼         ▼
+            Train      Val       Test
+              │         │         │
+           学参数     选方案     最后考
+              │         │         │
+              └─────────┼─────────┘
+                        ▼
+               Distribution Audit
+                        │
+                        ▼
+                Cross-split Audit
+                        │
+                        ▼
+                  Frozen Test
+                        │
+                        ▼
+                DatasetSplit_V0.1</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-7-阶段">下一阶段：第四课 · 第 7 阶段</h1>
+<h2
+id="数据泄漏与-benchmark-污染为什么-train-和-test-明明已经按-project-完全分开模型仍然可能提前看过答案">数据泄漏与
+Benchmark 污染——为什么 Train 和 Test 明明已经按 Project
+完全分开，模型仍然可能“提前看过答案”？</h2>
+<p>第 7 阶段我们会专门处理一个比随机切分更隐蔽的问题：</p>
+<h1 id="data-leakage-1">Data Leakage</h1>
+<p>我们会把泄漏分成：</p>
+<pre class="text"><code>Label Leakage
+Project Leakage
+Duplicate Leakage
+Template Leakage
+Temporal Leakage
+Lineage Leakage
+Answer Leakage
+Benchmark Contamination
+Human-in-the-loop Leakage</code></pre>
+<p>尤其会拆一个非常容易被忽视的问题：</p>
+<blockquote>
+<p><strong>当你根据 Test 的错误不断改 Prompt、改规则、补训练数据时，Test
+是怎么一点一点被“训练进去”的？</strong></p>
+</blockquote>
+<p>还会第一次建立：</p>
+<pre class="text"><code>Leakage Audit Checklist</code></pre>
+<p>以及：</p>
+<pre class="text"><code>Benchmark Firewall</code></pre>
+<p>最终产出第一版：</p>
+<h1 id="leakageaudit_v0.1"><code>LeakageAudit_V0.1</code></h1>
+<p>到那一步，第四课的数据才开始从“形式上分开”，进入真正意义上的：</p>
+<blockquote>
+<p><strong>可信评测数据。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage05.html">← 第 5 阶段</a><a class="btn" href="stage07.html">第 7 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

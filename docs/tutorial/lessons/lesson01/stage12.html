@@ -1,0 +1,1767 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第1课 · 第12阶段：因果、相关性、反事实，以及模型到底有没有学到“真正规律”</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第1课 · 第12阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>判断模型为什么学不好、泛化失败、指标失真或什么时候不该自动回答。<ul><li>为什么这条数据会出现在我的数据库里？</li><li>哪些数据永远不会被我看到？</li><li>没有发生投诉但实际存在隐性风险的项目</li></ul></div><h1
+id="第一课-第-12-阶段因果相关性反事实以及模型到底有没有学到真正规律">第一课
+· 第 12
+阶段：因果、相关性、反事实，以及模型到底有没有学到“真正规律”</h1>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-11">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-11">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>为什么这条数据会出现在我的数据库里？</strong></li>
+<li><strong>哪些数据永远不会被我看到？</strong></li>
+<li><strong>没有发生投诉但实际存在隐性风险的项目</strong></li>
+<li><strong>你的数据可能系统性缺失重要样本。</strong></li>
+<li><strong>改了之后会更好。</strong></li>
+<li><strong>越接近真正专家能力。</strong></li>
+<li><strong>“某类技术参数项目风险特别高。”</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-11">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Counterfactual</code></td>
+<td>反事实：改变关键事实，检查正确结论是否应随之变化</td>
+</tr>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Generalization</code></td>
+<td>泛化：对未见项目、时间、地区和表达的有效能力</td>
+</tr>
+<tr class="odd">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="even">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="odd">
+<td><code>Accuracy</code></td>
+<td>准确率：全部样本中判断正确的比例</td>
+</tr>
+<tr class="even">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="odd">
+<td><code>Precision</code></td>
+<td>精确率：系统报出的风险中真正成立的比例</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>OOD</code></td>
+<td>分布外数据：明显偏离训练/验证分布的新输入</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-11">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<blockquote>
+<p>这是第一课的收官阶段。<br />
+本文件按聊天课程内容完整保存，Markdown 作为“原始教材源文件”，HTML
+由同一份内容生成。</p>
+</blockquote>
+<p>前 11
+个阶段，我们已经把机器学习从“训练、评估、诊断、上线、监控、不确定性”全部走了一遍。现在最后要解决一个最深的问题：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mi>到</mi><mi>底</mi><mi>是</mi><mi>在</mi><mi>理</mi><mi>解</mi><mi>真</mi><mi>正</mi><mi>稳</mi><mi>定</mi><mi>的</mi><mi>规</mi><mi>律</mi><mi>，</mi><mi>还</mi><mi>是</mi><mi>只</mi><mi>是</mi><mi>在</mi><mi>利</mi><mi>用</mi><mi>训</mi><mi>练</mi><mi>数</mi><mi>据</mi><mi>里</mi><mi>的</mi><mi>表</mi><mi>面</mi><mi>相</mi><mi>关</mi><mi>性</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+模型到底是在理解真正稳定的规律，
+还是只是在利用训练数据里的表面相关性？
+}
+</annotation></semantics></math></p>
+<p>这一步非常关键，因为政府采购模型真正想要的不是：</p>
+<blockquote>
+<p>“见过类似句子就会判。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>换地区、换年份、换行业、换措辞以后，仍然能够根据更稳定的业务和合规逻辑判断。</strong></p>
+</blockquote>
+<p>这一阶段的主线是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>p</mi><mi>u</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>u</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>→</mo><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>I</mi><mi>n</mi><mi>v</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>a</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mo>→</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Correlation
+\rightarrow
+Spurious\ Correlation
+\rightarrow
+Confounder
+\rightarrow
+Causality
+\rightarrow
+Intervention
+\rightarrow
+Counterfactual
+\rightarrow
+Invariant\ Pattern
+\rightarrow
+Generalization
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="先从最重要的一句话开始">1. 先从最重要的一句话开始</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Correlation \neq Causation
+}
+</annotation></semantics></math></p>
+<p>相关不等于因果。</p>
+<p>这个概念你肯定听过，但在机器学习里它远比日常语言里的意思重要。</p>
+<p>因为大多数机器学习模型：</p>
+<blockquote>
+<p><strong>非常擅长发现相关性。</strong></p>
+</blockquote>
+<p>却并不天然知道：</p>
+<blockquote>
+<p>哪个相关性才是真正稳定的因果关系。</p>
+</blockquote>
+<hr />
+<h2 id="一个政府采购例子">2. 一个政府采购例子</h2>
+<p>假设你的训练数据中存在：</p>
+<pre class="text"><code>出现“本市”
+→ 很多案例被标记为风险</code></pre>
+<p>模型可能学出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo stretchy="false" form="prefix">|</mo><mtext mathvariant="normal">“本市”</mtext><mo stretchy="true" form="postfix">)</mo></mrow><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+P(Risk|\text{“本市”}) \uparrow
+</annotation></semantics></math></p>
+<p>于是：</p>
+<blockquote>
+<p>看到“本市”就报警。</p>
+</blockquote>
+<p>训练集上可能表现很好。</p>
+<p>但现实里：</p>
+<blockquote>
+<p>“项目实施地点位于本市。”</p>
+</blockquote>
+<p>也包含“本市”。</p>
+<p>却不代表：</p>
+<blockquote>
+<p>存在不合理限制。</p>
+</blockquote>
+<p>因此模型真正学到的可能只是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>关</mi><mi>键</mi><mi>词</mi><mi>与</mi><mi>标</mi><mi>签</mi><mi>的</mi><mi>相</mi><mi>关</mi><mi>性</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+关键词与标签的相关性
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>为</mi><mi>什</mi><mi>么</mi><mi>某</mi><mi>种</mi><mi>本</mi><mi>地</mi><mi>要</mi><mi>求</mi><mi>会</mi><mi>限</mi><mi>制</mi><mi>供</mi><mi>应</mi><mi>商</mi><mi>竞</mi><mi>争</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+为什么某种本地要求会限制供应商竞争
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="什么叫-spurious-correlation">3. 什么叫 Spurious
+Correlation？</h2>
+<p>就是：</p>
+<h1 id="虚假相关-非稳定相关">虚假相关 / 非稳定相关</h1>
+<p>某个特征在训练数据里和结果高度相关，但它本身并不是你真正希望模型依赖的规律。</p>
+<p>例如：</p>
+<pre class="text"><code>代理机构 A
+→ 历史上风险案例很多</code></pre>
+<p>模型可能学：</p>
+<blockquote>
+<p>看到机构 A 就判高风险。</p>
+</blockquote>
+<p>这在训练数据里：</p>
+<blockquote>
+<p>有用。</p>
+</blockquote>
+<p>但如果未来换机构：</p>
+<blockquote>
+<p>规律消失。</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>u</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>u</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Spurious\ Correlation
+}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="第一个核心心智模型模型最容易学习最好用的捷径而不是最正确的解释">4.
+第一个核心心智模型：模型最容易学习“最好用的捷径”，而不是“最正确的解释”</h2>
+<p>模型优化目标是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>↓</mo></mrow><annotation encoding="application/x-tex">
+Loss \downarrow
+</annotation></semantics></math></p>
+<p>它不会主动问：</p>
+<blockquote>
+<p>“这个规律在业务上是否有道理？”</p>
+</blockquote>
+<p>如果：</p>
+<blockquote>
+<p>机构名称、模板、某个关键词</p>
+</blockquote>
+<p>可以快速降低 Loss，</p>
+<p>模型就可能使用它们。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Predictive
+\neq
+Causal
+}
+</annotation></semantics></math></p>
+<p>一个特征有预测能力，</p>
+<p>不等于它是业务原因。</p>
+<hr />
+<h2 id="相关性模型到底在做什么">5. 相关性模型到底在做什么？</h2>
+<p>一般监督学习学的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P(Y|X)
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo stretchy="false" form="prefix">|</mo><mtext mathvariant="normal">出现本市</mtext><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P(Risk|\text{出现本市})
+</annotation></semantics></math></p>
+<p>如果训练集中：</p>
+<blockquote>
+<p>“本市”经常和风险共同出现，</p>
+</blockquote>
+<p>模型自然会利用它。</p>
+<p>但它没有回答：</p>
+<blockquote>
+<p><strong>如果我们主动改变“本市”这个条件，风险是否真的会变化？</strong></p>
+</blockquote>
+<p>这就进入：</p>
+<h1 id="causal-question">Causal Question</h1>
+<p>因果问题。</p>
+<hr />
+<h2 id="因果问题关注的是干预">6. 因果问题关注的是“干预”</h2>
+<p>相关性问：</p>
+<blockquote>
+<p>出现 X 时，Y 通常是什么？</p>
+</blockquote>
+<p>因果问：</p>
+<blockquote>
+<p><strong>如果我主动改变 X，Y 会发生什么变化？</strong></p>
+</blockquote>
+<p>这两个问题不同。</p>
+<p>通常用一个概念：</p>
+<h1 id="intervention">Intervention</h1>
+<p>干预。</p>
+<p>在因果推断里常写：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>o</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>X</mi><mo>=</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+do(X=x)
+</annotation></semantics></math></p>
+<p>意思是：</p>
+<blockquote>
+<p>不只是观察 X=x，而是人为把 X 设置成 x。</p>
+</blockquote>
+<hr />
+<h2 id="政府采购中的观察和干预">7. 政府采购中的“观察”和“干预”</h2>
+<p>观察：</p>
+<blockquote>
+<p>历史上具有本地分支机构要求的项目投诉率较高。</p>
+</blockquote>
+<p>这是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo stretchy="false" form="prefix">|</mo><mi>L</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P(Complaint|LocalRequirement)
+</annotation></semantics></math></p>
+<p>但不能直接推出：</p>
+<blockquote>
+<p>本地要求导致投诉。</p>
+</blockquote>
+<p>因为可能还有其他因素。</p>
+<p>例如这些项目可能：</p>
+<ul>
+<li>更复杂；</li>
+<li>金额更大；</li>
+<li>竞争更激烈；</li>
+<li>行业更特殊。</li>
+</ul>
+<p>这些变量也可能同时影响：</p>
+<blockquote>
+<p>是否设置本地条件</p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p>是否产生投诉。</p>
+</blockquote>
+<p>这就引出：</p>
+<h1 id="confounder">Confounder</h1>
+<p>混杂变量。</p>
+<hr />
+<h2 id="confounder-是什么">8. Confounder 是什么？</h2>
+<p>一个变量：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Z</mi><annotation encoding="application/x-tex">
+Z
+</annotation></semantics></math></p>
+<p>同时影响：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">
+X
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Y</mi><annotation encoding="application/x-tex">
+Y
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>项目复杂度
+   ↙        ↘
+本地服务要求   质疑投诉概率</code></pre>
+<p>项目复杂度可能导致：</p>
+<ol type="1">
+<li>采购人更容易设置本地服务要求；</li>
+<li>同时项目本身更容易产生争议。</li>
+</ol>
+<p>那么观察到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>本</mi><mi>地</mi><mi>要</mi><mi>求</mi><mo>↔</mo><mi>投</mi><mi>诉</mi></mrow><annotation encoding="application/x-tex">
+本地要求 \leftrightarrow 投诉
+</annotation></semantics></math></p>
+<p>不一定意味着：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>本</mi><mi>地</mi><mi>要</mi><mi>求</mi><mo>→</mo><mi>投</mi><mi>诉</mi></mrow><annotation encoding="application/x-tex">
+本地要求 \rightarrow 投诉
+</annotation></semantics></math></p>
+<p>可能真正原因是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>项</mi><mi>目</mi><mi>复</mi><mi>杂</mi><mi>度</mi></mrow><annotation encoding="application/x-tex">
+项目复杂度
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="第二个核心心智模型看到相关性要主动问有没有第三个变量同时解释两边">9.
+第二个核心心智模型：看到相关性，要主动问“有没有第三个变量同时解释两边？”</h2>
+<p>这就是因果思维里的条件反射。</p>
+<p>看到：</p>
+<blockquote>
+<p>“某类技术参数项目风险特别高。”</p>
+</blockquote>
+<p>不要马上说：</p>
+<blockquote>
+<p>“技术参数导致风险。”</p>
+</blockquote>
+<p>要问：</p>
+<blockquote>
+<p>是不是因为这些项目本身更专业、更复杂？</p>
+</blockquote>
+<p>看到：</p>
+<blockquote>
+<p>“金额越大的项目投诉越多。”</p>
+</blockquote>
+<p>也不能马上说：</p>
+<blockquote>
+<p>“预算高导致投诉。”</p>
+</blockquote>
+<p>可能是：</p>
+<blockquote>
+<p>项目复杂度、竞争程度、供应商数量</p>
+</blockquote>
+<p>共同作用。</p>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Confounding
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="因果图可以帮助思考">10. 因果图可以帮助思考</h2>
+<p>可以画成简单 DAG：</p>
+<pre class="text"><code>项目复杂度
+   ↓        ↘
+资格要求  →  投诉</code></pre>
+<p>或者：</p>
+<pre class="text"><code>采购行业
+ ↓        ↓
+技术参数   风险</code></pre>
+<p>DAG：</p>
+<h1 id="directed-acyclic-graph">Directed Acyclic Graph</h1>
+<p>有向无环图。</p>
+<p>它不是为了画漂亮图。</p>
+<p>而是强迫你思考：</p>
+<blockquote>
+<p>谁可能影响谁？</p>
+</blockquote>
+<hr />
+<h2 id="政府采购模型为什么需要因果思维">11.
+政府采购模型为什么需要因果思维？</h2>
+<p>因为你的目标不是只在历史数据上预测。</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>换环境以后仍然有效。</strong></p>
+</blockquote>
+<p>真正稳定的规律通常更接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>M</mi><mi>e</mi><mi>c</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+Causal\ Mechanism
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>u</mi><mi>r</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Surface\ Correlation
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>代理机构名称</code></pre>
+<p>是脆弱特征。</p>
+<p>而：</p>
+<pre class="text"><code>条件是否与履约能力存在合理关联</code></pre>
+<p>更接近稳定业务机制。</p>
+<hr />
+<h2 id="一个特别重要的例子">12. 一个特别重要的例子</h2>
+<p>训练数据显示：</p>
+<pre class="text"><code>“注册资本”
+→ 风险</code></pre>
+<p>表面相关。</p>
+<p>但更深层的机制可能是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>资</mi><mi>格</mi><mi>条</mi><mi>件</mi><mo>→</mo><mi>是</mi><mi>否</mi><mi>与</mi><mi>项</mi><mi>目</mi><mi>履</mi><mi>约</mi><mi>需</mi><mi>要</mi><mi>合</mi><mi>理</mi><mi>相</mi><mi>关</mi><mo>→</mo><mi>是</mi><mi>否</mi><mi>造</mi><mi>成</mi><mi>不</mi><mi>必</mi><mi>要</mi><mi>竞</mi><mi>争</mi><mi>限</mi><mi>制</mi><mo>→</mo><mi>风</mi><mi>险</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+资格条件
+\rightarrow
+是否与项目履约需要合理相关
+\rightarrow
+是否造成不必要竞争限制
+\rightarrow
+风险
+}
+</annotation></semantics></math></p>
+<p>真正希望模型学到的是后者。</p>
+<p>因为即使未来把：</p>
+<blockquote>
+<p>“注册资本”</p>
+</blockquote>
+<p>换成：</p>
+<ul>
+<li>成立年限</li>
+<li>本地注册</li>
+<li>企业规模</li>
+<li>特定资质</li>
+<li>业绩数量</li>
+</ul>
+<p>同一个深层逻辑仍可能成立。</p>
+<hr />
+<h2 id="什么叫-invariant-pattern">13. 什么叫 Invariant Pattern？</h2>
+<h1 id="不变规律">不变规律</h1>
+<p>意思是：</p>
+<blockquote>
+<p>环境变化以后仍然比较稳定的关系。</p>
+</blockquote>
+<p>例如：</p>
+<p>训练环境：</p>
+<pre class="text"><code>北京 IT 项目</code></pre>
+<p>测试环境：</p>
+<pre class="text"><code>广东物业项目</code></pre>
+<p>表面词汇、机构、项目类型都变了。</p>
+<p>但某个深层原则：</p>
+<blockquote>
+<p><strong>不合理地排除潜在供应商，会增加合规风险。</strong></p>
+</blockquote>
+<p>可能仍然成立。</p>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>v</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>h</mi><mi>i</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Invariant\ Relationship
+}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="第三个核心心智模型真正高级的泛化不是记住更多表面模式而是找到跨环境稳定的规律">14.
+第三个核心心智模型：真正高级的泛化，不是记住更多表面模式，而是找到跨环境稳定的规律</h2>
+<p>以前我们讲：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Generalization
+</annotation></semantics></math></p>
+<p>现在可以进一步分层：</p>
+<h3 id="第一层泛化">第一层泛化</h3>
+<p>换一句话还能认出来。</p>
+<h3 id="第二层泛化">第二层泛化</h3>
+<p>换项目还能认出来。</p>
+<h3 id="第三层泛化">第三层泛化</h3>
+<p>换行业还能认出来。</p>
+<h3 id="第四层泛化">第四层泛化</h3>
+<p>换地区、年份还能工作。</p>
+<h3 id="第五层泛化">第五层泛化</h3>
+<p>表面特征变化后，</p>
+<p>仍然依据稳定机制判断。</p>
+<p>越往后：</p>
+<blockquote>
+<p>越接近真正专家能力。</p>
+</blockquote>
+<hr />
+<h2 id="怎么判断模型学的是表面规律还是稳定规律">15.
+怎么判断模型学的是表面规律还是稳定规律？</h2>
+<p>一个非常有用的方法：</p>
+<h1 id="counterfactual-test-1">Counterfactual Test</h1>
+<p>反事实测试。</p>
+<p>问：</p>
+<blockquote>
+<p>如果只改变某一个关键条件，模型判断是否发生合理变化？</p>
+</blockquote>
+<hr />
+<h2 id="什么是-counterfactual">16. 什么是 Counterfactual？</h2>
+<p>现实样本：</p>
+<blockquote>
+<p>“供应商必须在本市注册。”</p>
+</blockquote>
+<p>模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>=</mo><mn>0.96</mn></mrow><annotation encoding="application/x-tex">
+Risk=0.96
+</annotation></semantics></math></p>
+<p>构造反事实：</p>
+<blockquote>
+<p>“供应商无需在本市注册，但需满足项目现场服务要求。”</p>
+</blockquote>
+<p>如果模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>=</mo><mn>0.15</mn></mrow><annotation encoding="application/x-tex">
+Risk=0.15
+</annotation></semantics></math></p>
+<p>说明模型可能识别到了：</p>
+<blockquote>
+<p>“注册地限制”这个关键因素。</p>
+</blockquote>
+<p>再构造：</p>
+<blockquote>
+<p>“项目履约地点为本市。”</p>
+</blockquote>
+<p>如果模型仍：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>=</mo><mn>0.95</mn></mrow><annotation encoding="application/x-tex">
+Risk=0.95
+</annotation></semantics></math></p>
+<p>就说明：</p>
+<blockquote>
+<p>它可能只是看到“本市”两个字。</p>
+</blockquote>
+<p>这就是反事实测试的价值。</p>
+<hr />
+<h2 id="反事实的核心问题">17. 反事实的核心问题</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>如</mi><mi>果</mi><mi>其</mi><mi>他</mi><mi>条</mi><mi>件</mi><mi>保</mi><mi>持</mi><mi>不</mi><mi>变</mi><mi>，</mi><mi>只</mi><mi>改</mi><mi>变</mi><mi>因</mi><mi>素</mi><mi>X</mi><mi>，</mi><mi>结</mi><mi>果</mi><mi>是</mi><mi>否</mi><mi>应</mi><mi>该</mi><mi>改</mi><mi>变</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+如果其他条件保持不变，
+只改变因素 X，
+结果是否应该改变？
+}
+</annotation></semantics></math></p>
+<p>这叫：</p>
+<h1 id="ceteris-paribus">Ceteris Paribus</h1>
+<p>其他条件不变。</p>
+<p>虽然现实世界很难做到绝对控制，</p>
+<p>但在构造模型测试集时非常有用。</p>
+<hr />
+<h2 id="政府采购特别适合做最小对比对">18.
+政府采购特别适合做“最小对比对”</h2>
+<p>例如：</p>
+<h3 id="样本-a">样本 A</h3>
+<blockquote>
+<p>供应商须在本市设立分公司。</p>
+</blockquote>
+<p>标签：</p>
+<blockquote>
+<p>高风险。</p>
+</blockquote>
+<h3 id="样本-b">样本 B</h3>
+<blockquote>
+<p>供应商须确保在本市提供现场服务，但不限制服务机构设立方式。</p>
+</blockquote>
+<p>标签：</p>
+<blockquote>
+<p>需结合项目需要判断，不能仅因“本市服务”直接判风险。</p>
+</blockquote>
+<p>两句话只改变：</p>
+<blockquote>
+<p><strong>约束的真正对象。</strong></p>
+</blockquote>
+<p>这样的数据比：</p>
+<blockquote>
+<p>随机找两个完全不同句子</p>
+</blockquote>
+<p>更能训练模型的决策边界。</p>
+<p>这叫：</p>
+<h1 id="minimal-pair">Minimal Pair</h1>
+<p>最小对比样本。</p>
+<hr />
+<h2 id="minimal-pair-的价值">19. Minimal Pair 的价值</h2>
+<p>如果模型面对：</p>
+<p>A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.95</mn><annotation encoding="application/x-tex">
+0.95
+</annotation></semantics></math></p>
+<p>B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.92</mn><annotation encoding="application/x-tex">
+0.92
+</annotation></semantics></math></p>
+<p>说明它没理解真正差异。</p>
+<p>如果：</p>
+<p>A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.95</mn><annotation encoding="application/x-tex">
+0.95
+</annotation></semantics></math></p>
+<p>B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.35</mn><annotation encoding="application/x-tex">
+0.35
+</annotation></semantics></math></p>
+<p>说明它更可能学到了深层区别。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>对</mi><mi>比</mi><mi>测</mi><mi>试</mi><mi>比</mi><mi>单</mi><mi>独</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mi>更</mi><mi>能</mi><mi>暴</mi><mi>露</mi><mi>模</mi><mi>型</mi><mi>的</mi><mi>真</mi><mi>实</mi><mi>理</mi><mi>解</mi><mi>程</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+对比测试
+比单独 Accuracy 更能暴露模型的真实理解程度
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="intervention-和-counterfactual-的区别">20. Intervention 和
+Counterfactual 的区别</h2>
+<p>可以简单理解：</p>
+<h3 id="intervention-1">Intervention</h3>
+<p>问：</p>
+<blockquote>
+<p>如果把某个变量主动设置成另一种值，会怎样？</p>
+</blockquote>
+<h3 id="counterfactual">Counterfactual</h3>
+<p>问：</p>
+<blockquote>
+<p>对这个已经发生的具体案例，如果当时某个条件不同，会怎样？</p>
+</blockquote>
+<p>例如：</p>
+<p>Intervention：</p>
+<blockquote>
+<p>一般来说取消本地注册要求会怎样影响风险？</p>
+</blockquote>
+<p>Counterfactual：</p>
+<blockquote>
+<p>在这个具体项目里，如果把“必须本市注册”改成“提供2小时响应服务”，模型判断会怎样变化？</p>
+</blockquote>
+<hr />
+<h2 id="因果模型和预测模型的目标不同">21.
+因果模型和预测模型的目标不同</h2>
+<p>预测模型关心：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>Y</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">
+\hat Y
+</annotation></semantics></math></p>
+<p>准不准。</p>
+<p>因果分析关心：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>为</mi><mi>什</mi><mi>么</mi><mi>Y</mi><mi>会</mi><mi>变</mi><mi>化</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+为什么Y会变化？
+}
+</annotation></semantics></math></p>
+<p>比如：</p>
+<blockquote>
+<p>哪个条件真正导致风险上升？</p>
+</blockquote>
+<p>两者可以重叠，</p>
+<p>但不等同。</p>
+<hr />
+<h2 id="一个模型预测能力很强也可能不适合做政策干预">22.
+一个模型预测能力很强，也可能不适合做政策干预</h2>
+<p>假设模型发现：</p>
+<blockquote>
+<p>使用某模板的项目更容易被投诉。</p>
+</blockquote>
+<p>预测很好。</p>
+<p>但你不能因此建议：</p>
+<blockquote>
+<p>“不要用这个模板。”</p>
+</blockquote>
+<p>因为模板本身可能不是原因。</p>
+<p>它可能只是：</p>
+<blockquote>
+<p>某类高风险项目恰好都由某机构使用这个模板。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>能</mi><mi>自</mi><mi>动</mi><mi>变</mi><mi>成</mi><mi>I</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Prediction
+不能自动变成
+Intervention\ Recommendation
+}
+</annotation></semantics></math></p>
+<p>这是非常重要的专家认知。</p>
+<hr />
+<h2 id="政府采购-ai-中哪些任务主要是预测">23. 政府采购 AI
+中哪些任务主要是预测？</h2>
+<p>例如：</p>
+<blockquote>
+<p>这个条款是否值得重点审查？</p>
+</blockquote>
+<p>这是预测任务。</p>
+<p>但：</p>
+<blockquote>
+<p>删除这个条件是否会降低投诉风险？</p>
+</blockquote>
+<p>开始涉及因果。</p>
+<blockquote>
+<p>修改评分结构是否会增加竞争性？</p>
+</blockquote>
+<p>也涉及更强的因果问题。</p>
+<p>越接近：</p>
+<blockquote>
+<p>“如果我们改变政策/规则会怎样”</p>
+</blockquote>
+<p>越不能只靠相关性模型。</p>
+<hr />
+<h2
+id="第四个核心心智模型预测会发生什么和判断改变什么会导致结果变化是两种问题">24.
+第四个核心心智模型：预测“会发生什么”和判断“改变什么会导致结果变化”是两种问题</h2>
+<p>记住：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Prediction
+\neq
+Causal\ Effect
+}
+</annotation></semantics></math></p>
+<p>所以未来 ProcurementAI 应该区分：</p>
+<h3 id="模式-a">模式 A</h3>
+<blockquote>
+<p>风险识别。</p>
+</blockquote>
+<p>可以主要靠机器学习预测。</p>
+<h3 id="模式-b">模式 B</h3>
+<blockquote>
+<p>修改建议。</p>
+</blockquote>
+<p>需要更强：</p>
+<ul>
+<li>法规规则</li>
+<li>专业知识</li>
+<li>因果逻辑</li>
+<li>专家判断</li>
+</ul>
+<p>因为建议意味着：</p>
+<blockquote>
+<p>改了之后会更好。</p>
+</blockquote>
+<p>这已经不是单纯分类。</p>
+<hr />
+<h2 id="再看一个-confounder-实例">25. 再看一个 Confounder 实例</h2>
+<p>假设数据发现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>大</mi><mi>型</mi><mi>项</mi><mi>目</mi><mo>→</mo><mi>投</mi><mi>诉</mi><mi>率</mi><mi>高</mi></mrow><annotation encoding="application/x-tex">
+大型项目
+\rightarrow
+投诉率高
+</annotation></semantics></math></p>
+<p>你可能认为：</p>
+<blockquote>
+<p>项目预算导致投诉。</p>
+</blockquote>
+<p>但可能真实结构：</p>
+<pre class="text"><code>项目复杂度
+   ↙        ↘
+预算高      供应商竞争激烈
+              ↓
+            投诉</code></pre>
+<p>预算只是复杂度的一个表征。</p>
+<p>如果未来某大型项目其实非常标准化，</p>
+<p>高预算不一定意味着投诉风险高。</p>
+<p>所以模型如果过度依赖：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Budget
+</annotation></semantics></math></p>
+<p>跨场景可能失效。</p>
+<hr />
+<h2 id="还有-collider-bias">26. 还有 Collider Bias</h2>
+<p>这是稍微高级一点的因果概念，但值得建立直觉。</p>
+<p>假设：</p>
+<pre class="text"><code>项目风险 → 被投诉 ← 供应商维权积极程度</code></pre>
+<p>如果你只研究：</p>
+<blockquote>
+<p>“被投诉项目”</p>
+</blockquote>
+<p>那么你实际上条件化了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+Complaint=1
+</annotation></semantics></math></p>
+<p>这可能人为制造：</p>
+<blockquote>
+<p>项目风险与供应商特征之间的虚假关系。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="collider-bias">Collider Bias</h1>
+<p>碰撞变量偏差。</p>
+<hr />
+<h2 id="为什么这对政府采购训练数据很重要">27.
+为什么这对政府采购训练数据很重要？</h2>
+<p>假设你的训练集风险样本几乎全部来自：</p>
+<blockquote>
+<p>投诉案例。</p>
+</blockquote>
+<p>那你实际上只观察：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+Complaint=1
+</annotation></semantics></math></p>
+<p>的数据。</p>
+<p>此时模型可能学到：</p>
+<blockquote>
+<p>某些供应商行为、措辞、项目特征</p>
+</blockquote>
+<p>和风险相关。</p>
+<p>但这种关系：</p>
+<blockquote>
+<p>在全部采购项目中可能并不存在。</p>
+</blockquote>
+<p>这就是为什么第 7 阶段我们说：</p>
+<blockquote>
+<p>不能只从投诉数据构造整个训练世界。</p>
+</blockquote>
+<p>现在你可以从因果角度理解为什么。</p>
+<hr />
+<h2 id="selection-bias">28. Selection Bias</h2>
+<p>选择偏差也可以从因果角度理解。</p>
+<p>你训练的数据不是随机来自：</p>
+<blockquote>
+<p>所有政府采购项目。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>哪些项目容易进入你的数据平台。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>被投诉
+→ 更容易被收集</code></pre>
+<p>或者：</p>
+<pre class="text"><code>大城市项目
+→ 数据更完整</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Dataset
+</annotation></semantics></math></p>
+<p>本身就是被某个“选择机制”影响后的结果。</p>
+<p>模型最终会学习：</p>
+<blockquote>
+<p>被选择数据的世界。</p>
+</blockquote>
+<p>不是现实整体。</p>
+<hr />
+<h2
+id="第五个核心心智模型数据不是现实而是现实经过一个采集机制后的样本">29.
+第五个核心心智模型：数据不是“现实”，而是现实经过一个采集机制后的样本</h2>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Reality
+\rightarrow
+SelectionProcess
+\rightarrow
+Dataset
+}
+</annotation></semantics></math></p>
+<p>所以做数据集时必须问：</p>
+<blockquote>
+<p>为什么这条数据会出现在我的数据库里？</p>
+</blockquote>
+<blockquote>
+<p>哪些数据永远不会被我看到？</p>
+</blockquote>
+<p>例如：</p>
+<blockquote>
+<p>没有发生投诉但实际存在隐性风险的项目</p>
+</blockquote>
+<p>可能特别难收集。</p>
+<p>这意味着：</p>
+<blockquote>
+<p>你的数据可能系统性缺失重要样本。</p>
+</blockquote>
+<hr />
+<h2 id="这与-missing-not-at-random-有关系">30. 这与 Missing Not At
+Random 有关系</h2>
+<p>如果数据缺失是完全随机的：</p>
+<blockquote>
+<p>问题相对简单。</p>
+</blockquote>
+<p>但很多现实数据是：</p>
+<h1 id="mnar">MNAR</h1>
+<p>Missing Not At Random。</p>
+<p>缺失本身有规律。</p>
+<p>例如：</p>
+<blockquote>
+<p>高质量内部专家纠错案例往往不公开。</p>
+</blockquote>
+<p>于是公开数据里：</p>
+<blockquote>
+<p>复杂边界案例可能严重不足。</p>
+</blockquote>
+<p>这就是现实数据的结构性偏差。</p>
+<hr />
+<h2 id="怎么让模型少依赖-spurious-correlation第一种数据多样化">31.
+怎么让模型少依赖 Spurious Correlation？第一种：数据多样化</h2>
+<p>让同一个表面特征出现在：</p>
+<blockquote>
+<p>不同标签里。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>含“本市” + 风险
+含“本市” + 无风险</code></pre>
+<p>这样“本市”本身就不再是一个完美捷径。</p>
+<p>模型被迫学习：</p>
+<blockquote>
+<p>上下文。</p>
+</blockquote>
+<hr />
+<h2 id="第二种contrastive-data">32. 第二种：Contrastive Data</h2>
+<p>专门构造：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>相</mi><mi>似</mi><mi>X</mi></mrow><annotation encoding="application/x-tex">
+相似X
+</annotation></semantics></math></p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>不</mi><mi>同</mi><mi>Y</mi></mrow><annotation encoding="application/x-tex">
+不同Y
+</annotation></semantics></math></p>
+<p>例如：</p>
+<h3 id="a">A</h3>
+<blockquote>
+<p>必须在本市注册。</p>
+</blockquote>
+<p>风险高。</p>
+<h3 id="b">B</h3>
+<blockquote>
+<p>项目服务地点在本市。</p>
+</blockquote>
+<p>无明显风险。</p>
+<p>这种对比能打掉：</p>
+<blockquote>
+<p>关键词捷径。</p>
+</blockquote>
+<hr />
+<h2 id="第三种counterfactual-augmentation">33. 第三种：Counterfactual
+Augmentation</h2>
+<p>人为构造反事实样本。</p>
+<p>例如原句：</p>
+<blockquote>
+<p>“供应商必须具有10年成立历史。”</p>
+</blockquote>
+<p>风险。</p>
+<p>反事实：</p>
+<blockquote>
+<p>“供应商须具备完成本项目所需的履约能力，并提供相应证明。”</p>
+</blockquote>
+<p>更合理。</p>
+<p>模型被训练：</p>
+<blockquote>
+<p>不是“年限”本身，而是条件与履约需求关系。</p>
+</blockquote>
+<hr />
+<h2 id="第四种多环境训练">34. 第四种：多环境训练</h2>
+<p>例如把数据明确拆成：</p>
+<pre class="text"><code>Environment 1：IT
+Environment 2：医疗
+Environment 3：物业
+Environment 4：工程</code></pre>
+<p>看：</p>
+<blockquote>
+<p>哪些规律在所有环境都稳定？</p>
+</blockquote>
+<p>如果一个特征：</p>
+<pre class="text"><code>某特定模板词</code></pre>
+<p>只在 IT 有效，</p>
+<p>但医疗完全没用，</p>
+<p>很可能是脆弱特征。</p>
+<p>而：</p>
+<blockquote>
+<p>“条件是否与履约能力相关”</p>
+</blockquote>
+<p>如果多个领域都有效，</p>
+<p>更可能具有稳定性。</p>
+<hr />
+<h2 id="这就接近-domain-generalization">35. 这就接近 Domain
+Generalization</h2>
+<h1 id="领域泛化">领域泛化</h1>
+<p>目标不是：</p>
+<blockquote>
+<p>在已见领域做到最高分。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>在</mi><mi>未</mi><mi>见</mi><mi>领</mi><mi>域</mi><mi>也</mi><mi>尽</mi><mi>可</mi><mi>能</mi><mi>保</mi><mi>持</mi><mi>能</mi><mi>力</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+在未见领域也尽可能保持能力
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p>Train：</p>
+<ul>
+<li>IT</li>
+<li>物业</li>
+<li>教育</li>
+</ul>
+<p>Test：</p>
+<blockquote>
+<p>医疗。</p>
+</blockquote>
+<p>这种测试比：</p>
+<blockquote>
+<p>同行业随机切分</p>
+</blockquote>
+<p>更能检查模型是不是学到稳定规律。</p>
+<hr />
+<h2 id="leave-one-domain-out">36. Leave-One-Domain-Out</h2>
+<p>一个很实用的实验方法。</p>
+<p>假设有：</p>
+<pre class="text"><code>IT
+医疗
+物业
+教育</code></pre>
+<p>可以：</p>
+<h3 id="experiment-a">Experiment A</h3>
+<p>Train：</p>
+<blockquote>
+<p>IT + 医疗 + 物业</p>
+</blockquote>
+<p>Test：</p>
+<blockquote>
+<p>教育</p>
+</blockquote>
+<h3 id="experiment-b">Experiment B</h3>
+<p>Train：</p>
+<blockquote>
+<p>IT + 医疗 + 教育</p>
+</blockquote>
+<p>Test：</p>
+<blockquote>
+<p>物业</p>
+</blockquote>
+<p>如此轮换。</p>
+<p>看看：</p>
+<blockquote>
+<p>模型真正跨领域泛化能力如何。</p>
+</blockquote>
+<hr />
+<h2 id="同样可以跨地区测试">37. 同样可以跨地区测试</h2>
+<p>Train：</p>
+<pre class="text"><code>北京
+上海
+浙江</code></pre>
+<p>Test：</p>
+<pre class="text"><code>广东</code></pre>
+<p>或者：</p>
+<p>Train：</p>
+<pre class="text"><code>2022–2025</code></pre>
+<p>Test：</p>
+<pre class="text"><code>2026</code></pre>
+<p>如果能力大幅崩溃：</p>
+<blockquote>
+<p>说明模型依赖了环境特定规律。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="invariance-test">Invariance Test</h1>
+<p>不变性测试。</p>
+<hr />
+<h2 id="什么叫-invariant-risk-minimization-的思想">38. 什么叫 Invariant
+Risk Minimization 的思想？</h2>
+<p>不需要掌握算法细节。</p>
+<p>只需要理解它背后的愿望：</p>
+<blockquote>
+<p><strong>找那些在多个环境里都有效的预测规律。</strong></p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>在某一个环境里把 Loss 降到最低。</p>
+</blockquote>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>A</mi><mi>c</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>n</mi><mi>v</mi><mi>i</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi><mo>&gt;</mo><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>O</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>O</mi><mi>n</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>n</mi><mi>v</mi><mi>i</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Stable\ Across\ Environments
+&gt;
+Best\ On\ One\ Environment
+}
+</annotation></semantics></math></p>
+<p>这对政府采购模型非常适合。</p>
+<hr />
+<h2 id="一个具体例子">39. 一个具体例子</h2>
+<p>模型 A：</p>
+<p>IT：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>97</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+97\%
+</annotation></semantics></math></p>
+<p>医疗：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>65</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+65\%
+</annotation></semantics></math></p>
+<p>物业：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>62</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+62\%
+</annotation></semantics></math></p>
+<p>模型 B：</p>
+<p>IT：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>90</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+90\%
+</annotation></semantics></math></p>
+<p>医疗：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>87</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+87\%
+</annotation></semantics></math></p>
+<p>物业：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>88</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+88\%
+</annotation></semantics></math></p>
+<p>如果未来要全国、跨行业部署，</p>
+<p>很多时候：</p>
+<blockquote>
+<p>B 更有价值。</p>
+</blockquote>
+<p>因为它的规律更加稳定。</p>
+<hr />
+<h2 id="这也是为什么总-accuracy-不够">40. 这也是为什么总 Accuracy
+不够</h2>
+<p>假设 IT 样本最多。</p>
+<p>模型 A 总体：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>94</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+94\%
+</annotation></semantics></math></p>
+<p>模型 B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>89</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+89\%
+</annotation></semantics></math></p>
+<p>只看 Overall，</p>
+<p>你可能选 A。</p>
+<p>但跨域部署：</p>
+<blockquote>
+<p>A 很可能非常脆弱。</p>
+</blockquote>
+<p>所以专家看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>+</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>s</mi><mi>t</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>p</mi><mo>+</mo><mi>C</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Average
++
+WorstGroup
++
+CrossDomain
+}
+</annotation></semantics></math></p>
+<p>尤其：</p>
+<h1 id="worst-group-performance">Worst-Group Performance</h1>
+<p>最差群体表现。</p>
+<hr />
+<h2 id="政府采购模型未来应该关注-worst-slice">41.
+政府采购模型未来应该关注 Worst Slice</h2>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Slice</th>
+<th style="text-align: right;">Recall</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IT</td>
+<td style="text-align: right;">96%</td>
+</tr>
+<tr class="even">
+<td>物业</td>
+<td style="text-align: right;">92%</td>
+</tr>
+<tr class="odd">
+<td>教育</td>
+<td style="text-align: right;">91%</td>
+</tr>
+<tr class="even">
+<td>医疗</td>
+<td style="text-align: right;">64%</td>
+</tr>
+</tbody>
+</table>
+<p>Overall：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>91</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+91\%
+</annotation></semantics></math></p>
+<p>但真正的问题是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>o</mi><mi>r</mi><mi>s</mi><mi>t</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mo>=</mo><mn>64</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+WorstSlice=64\%
+</annotation></semantics></math></p>
+<p>如果你宣称：</p>
+<blockquote>
+<p>“政府采购模型 Recall 91%”</p>
+</blockquote>
+<p>可能非常误导。</p>
+<p>更专业：</p>
+<blockquote>
+<p>“总体 91%，但医疗复杂技术采购仅 64%，当前不建议自动处理该场景。”</p>
+</blockquote>
+<p>这就连接了第 11 阶段：</p>
+<blockquote>
+<p>能力边界 + 不确定性。</p>
+</blockquote>
+<hr />
+<h2 id="因果与解释性也有关系">42. 因果与解释性也有关系</h2>
+<p>假设模型告诉你：</p>
+<blockquote>
+<p>“这条风险高，因为出现了‘本地’。”</p>
+</blockquote>
+<p>这可能只是：</p>
+<blockquote>
+<p>Feature Attribution。</p>
+</blockquote>
+<p>不一定是：</p>
+<blockquote>
+<p>因果解释。</p>
+</blockquote>
+<p>例如 SHAP 告诉你：</p>
+<blockquote>
+<p>“本市”这个词对模型预测影响很大。</p>
+</blockquote>
+<p>只能说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>模</mi><mi>型</mi><mi>依</mi><mi>赖</mi><mi>它</mi></mrow><annotation encoding="application/x-tex">
+模型依赖它
+</annotation></semantics></math></p>
+<p>不能说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>它</mi><mi>在</mi><mi>现</mi><mi>实</mi><mi>中</mi><mi>导</mi><mi>致</mi><mi>风</mi><mi>险</mi></mrow><annotation encoding="application/x-tex">
+它在现实中导致风险
+</annotation></semantics></math></p>
+<p>这是很重要的区别：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>x</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>x</mi><mi>p</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Model\ Explanation
+\neq
+Causal\ Explanation
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="解释模型为什么这样预测不等于解释现实为什么这样发生">43.
+解释模型为什么这样预测，不等于解释现实为什么这样发生</h2>
+<p>比如：</p>
+<blockquote>
+<p>模型为什么判风险？</p>
+</blockquote>
+<p>答案：</p>
+<blockquote>
+<p>因为“注册资本”token 权重很大。</p>
+</blockquote>
+<p>这是：</p>
+<h1 id="model-explanation">Model Explanation</h1>
+<p>而：</p>
+<blockquote>
+<p>为什么设置这个条件构成潜在风险？</p>
+</blockquote>
+<p>可能是：</p>
+<blockquote>
+<p>因为它与履约能力缺乏合理关联并限制潜在供应商。</p>
+</blockquote>
+<p>这是：</p>
+<h1 id="domain-causal-explanation">Domain / Causal Explanation</h1>
+<p>两者完全不同。</p>
+<hr />
+<h2 id="政府采购-ai-最终需要哪一种">44. 政府采购 AI
+最终需要哪一种？</h2>
+<p>最好两种都要。</p>
+<h3 id="系统层">系统层</h3>
+<p>知道：</p>
+<blockquote>
+<p>模型到底依赖了什么。</p>
+</blockquote>
+<p>用于：</p>
+<blockquote>
+<p>调试和审计。</p>
+</blockquote>
+<h3 id="业务层">业务层</h3>
+<p>告诉专家：</p>
+<blockquote>
+<p>为什么业务上存在风险。</p>
+</blockquote>
+<p>用于：</p>
+<blockquote>
+<p>实际工作。</p>
+</blockquote>
+<p>不要把：</p>
+<blockquote>
+<p>Attention / SHAP / Feature Importance</p>
+</blockquote>
+<p>直接当成法律或业务解释。</p>
+<hr />
+<h2 id="再看一个很重要的问题模型到底能不能学到因果">45.
+再看一个很重要的问题：模型到底能不能“学到因果”？</h2>
+<p>普通监督学习：</p>
+<blockquote>
+<p>不保证。</p>
+</blockquote>
+<p>但如果你给它：</p>
+<ul>
+<li>多环境数据</li>
+<li>对比案例</li>
+<li>干预数据</li>
+<li>反事实数据</li>
+<li>丰富上下文</li>
+<li>稳定的专家规则</li>
+</ul>
+<p>它更有机会学到：</p>
+<blockquote>
+<p>与真正机制更接近的表示。</p>
+</blockquote>
+<p>所以数据设计依然非常重要。</p>
+<hr />
+<h2 id="政府采购专家经验其实天然包含很多因果判断">46.
+政府采购专家经验其实天然包含很多因果判断</h2>
+<p>真正专家不会只说：</p>
+<blockquote>
+<p>“出现成立年限，所以风险。”</p>
+</blockquote>
+<p>他更可能思考：</p>
+<pre class="text"><code>这个条件
+↓
+是否真的提高履约能力？
+↓
+是否排除了本来有能力的供应商？
+↓
+对竞争有什么影响？
+↓
+有没有必要性和比例性？
+↓
+风险如何？</code></pre>
+<p>这是一个隐含的：</p>
+<h1 id="causal-chain">Causal Chain</h1>
+<p>因果链。</p>
+<p>未来高质量专家数据应该把这层推理显式化。</p>
+<hr />
+<h2 id="所以专家标注可以升级">47. 所以专家标注可以升级</h2>
+<p>不要只标：</p>
+<pre class="text"><code>Risk = 1</code></pre>
+<p>可以加入：</p>
+<div class="sourceCode" id="cb37"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;condition&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商成立满10年&quot;</span><span class="fu">,</span></span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;intended_goal&quot;</span><span class="fu">:</span> <span class="st">&quot;保证履约能力&quot;</span><span class="fu">,</span></span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;causal_relevance&quot;</span><span class="fu">:</span> <span class="st">&quot;weak&quot;</span><span class="fu">,</span></span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;competitive_effect&quot;</span><span class="fu">:</span> <span class="st">&quot;restrictive&quot;</span><span class="fu">,</span></span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;necessity&quot;</span><span class="fu">:</span> <span class="st">&quot;not_demonstrated&quot;</span><span class="fu">,</span></span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk&quot;</span><span class="fu">:</span> <span class="st">&quot;high&quot;</span></span>
+<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>模型就更有机会学习：</p>
+<blockquote>
+<p>“为什么”。</p>
+</blockquote>
+<p>而不只是：</p>
+<blockquote>
+<p>“哪些词和风险一起出现”。</p>
+</blockquote>
+<hr />
+<h2 id="这会成为未来-procurementlm-的高价值训练数据">48. 这会成为未来
+ProcurementLM 的高价值训练数据</h2>
+<p>我们可以把专家判断拆成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Requirement
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>P</mi><mi>u</mi><mi>r</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+BusinessPurpose
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Relevance
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+Necessity
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+CompetitiveEffect
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+Risk
+</annotation></semantics></math></p>
+<p>这比单纯：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+Text\rightarrow Risk
+</annotation></semantics></math></p>
+<p>高级很多。</p>
+<hr />
+<h2 id="这其实是在设计结构化推理标签">49.
+这其实是在设计“结构化推理标签”</h2>
+<p>例如：</p>
+<pre class="text"><code>事实：
+要求成立10年以上
+
+目标：
+保证供应商稳定性
+
+关联：
+成立年限并不当然代表履约能力
+
+替代方案：
+可以通过业绩、人员、服务能力等方式评估
+
+竞争影响：
+可能排除新成立但具有履约能力的供应商
+
+结论：
+较高风险</code></pre>
+<p>这种数据对领域模型的价值：</p>
+<blockquote>
+<p>极高。</p>
+</blockquote>
+<p>因为你在教：</p>
+<blockquote>
+<p>决策机制。</p>
+</blockquote>
+<hr />
+<h2 id="第-12-阶段五个核心专家心智模型">50. 第 12
+阶段五个核心专家心智模型</h2>
+<p>现在正式总结。</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>心智模型</th>
+<th>核心认知</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① 模型会优先学捷径</strong></td>
+<td>预测有效不代表业务规律正确</td>
+</tr>
+<tr class="even">
+<td><strong>② 相关性后面要找混杂因素</strong></td>
+<td>第三个变量可能同时解释 X 和 Y</td>
+</tr>
+<tr class="odd">
+<td><strong>③ 稳定规律比单环境高分更重要</strong></td>
+<td>真正泛化依赖跨环境不变关系</td>
+</tr>
+<tr class="even">
+<td><strong>④ 预测和干预是不同问题</strong></td>
+<td>会预测风险，不代表知道怎么修改就一定降低风险</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ 数据是现实经过选择机制后的结果</strong></td>
+<td>数据采集方式本身就会造成偏差</td>
+</tr>
+</tbody>
+</table>
+<p>如果只记一句：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>真</mi><mi>正</mi><mi>强</mi><mi>的</mi><mi>模</mi><mi>型</mi><mi>，</mi><mi>不</mi><mi>是</mi><mi>把</mi><mi>历</mi><mi>史</mi><mi>相</mi><mi>关</mi><mi>性</mi><mi>记</mi><mi>得</mi><mi>最</mi><mi>牢</mi><mi>，</mi><mi>而</mi><mi>是</mi><mi>尽</mi><mi>可</mi><mi>能</mi><mi>抓</mi><mi>住</mi><mi>那</mi><mi>些</mi><mi>换</mi><mi>环</mi><mi>境</mi><mi>以</mi><mi>后</mi><mi>仍</mi><mi>然</mi><mi>成</mi><mi>立</mi><mi>的</mi><mi>规</mi><mi>律</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+真正强的模型，不是把历史相关性记得最牢，
+而是尽可能抓住那些换环境以后仍然成立的规律。
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="把第一课-12-个阶段真正闭环">51. 把第一课 12 个阶段真正闭环</h2>
+<p>现在可以回头看整个第一课。</p>
+<h3 id="阶段-1">阶段 1</h3>
+<p>模型到底学什么？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>,</mo><mi>Y</mi><mo>,</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>,</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+X,Y,Loss,Parameter
+</annotation></semantics></math></p>
+<h3 id="阶段-2">阶段 2</h3>
+<p>学会还是背会？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>i</mi><mi>t</mi><mo>,</mo><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>i</mi><mi>t</mi><mo>,</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Underfit,Overfit,Generalization
+</annotation></semantics></math></p>
+<h3 id="阶段-3">阶段 3</h3>
+<p>怎么评价？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>,</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>,</mo><mi>F</mi><mn>1</mn></mrow><annotation encoding="application/x-tex">
+Precision,Recall,F1
+</annotation></semantics></math></p>
+<h3 id="阶段-4">阶段 4</h3>
+<p>错误怎么改变参数？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>,</mo><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>,</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Probability,Loss,Gradient
+</annotation></semantics></math></p>
+<h3 id="阶段-5">阶段 5</h3>
+<p>训练实际怎么跑？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>,</mo><mi>S</mi><mi>t</mi><mi>e</mi><mi>p</mi><mo>,</mo><mi>E</mi><mi>p</mi><mi>o</mi><mi>c</mi><mi>h</mi><mo>,</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Batch,Step,Epoch,Optimizer
+</annotation></semantics></math></p>
+<h3 id="阶段-6">阶段 6</h3>
+<p>给模型什么经验？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>,</mo><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>E</mi><mi>x</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>s</mi><mo>,</mo><mi>C</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>u</mi><mi>l</mi><mi>u</mi><mi>m</mi></mrow><annotation encoding="application/x-tex">
+Distribution,HardExamples,Curriculum
+</annotation></semantics></math></p>
+<h3 id="阶段-7">阶段 7</h3>
+<p>为什么失败？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>i</mi><mi>a</mi><mi>s</mi><mo>,</mo><mi>D</mi><mi>r</mi><mi>i</mi><mi>f</mi><mi>t</mi><mo>,</mo><mi>O</mi><mi>O</mi><mi>D</mi><mo>,</mo><mi>D</mi><mi>i</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Bias,Drift,OOD,Diagnosis
+</annotation></semantics></math></p>
+<h3 id="阶段-8">阶段 8</h3>
+<p>怎么做科学实验？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>y</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>,</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>,</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Hypothesis,Baseline,Evaluation
+</annotation></semantics></math></p>
+<h3 id="阶段-9">阶段 9</h3>
+<p>怎么工程化？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>,</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>,</mo><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+Versioning,Tracking,Registry
+</annotation></semantics></math></p>
+<h3 id="阶段-10">阶段 10</h3>
+<p>上线后怎么持续学习？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>o</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>,</mo><mi>F</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mo>,</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+Monitoring,Feedback,Retraining
+</annotation></semantics></math></p>
+<h3 id="阶段-11">阶段 11</h3>
+<p>什么时候应该相信模型？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>y</mi><mo>,</mo><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>,</mo><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Uncertainty,Calibration,Abstention
+</annotation></semantics></math></p>
+<h3 id="阶段-12">阶段 12</h3>
+<p>模型到底学的是捷径还是真正规律？</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>C</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>I</mi><mi>n</mi><mi>v</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Correlation
+\rightarrow
+Causality
+\rightarrow
+Counterfactual
+\rightarrow
+Invariant\ Generalization
+}
+</annotation></semantics></math></p>
+<p>到这里：</p>
+<h1 id="第一课正式闭环">第一课正式闭环。</h1>
+<hr />
+<h2 id="重新定义机器学习">52. 重新定义“机器学习”</h2>
+<p>学第一阶段时，我们的定义是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>机</mi><mi>器</mi><mi>学</mi><mi>习</mi><mo>=</mo><mi>从</mi><mi>历</mi><mi>史</mi><mi>数</mi><mi>据</mi><mi>中</mi><mi>学</mi><mi>习</mi><mi>X</mi><mo>→</mo><mi>Y</mi></mrow><annotation encoding="application/x-tex">
+机器学习
+=
+从历史数据中学习X\rightarrow Y
+</annotation></semantics></math></p>
+<p>现在可以升级成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>机</mi><mi>器</mi><mi>学</mi><mi>习</mi><mo>=</mo><mi>利</mi><mi>用</mi><mi>有</mi><mi>限</mi><mi>、</mi><mi>可</mi><mi>能</mi><mi>有</mi><mi>偏</mi><mi>的</mi><mi>数</mi><mi>据</mi><mi>，</mi><mi>通</mi><mi>过</mi><mi>优</mi><mi>化</mi><mi>参</mi><mi>数</mi><mi>学</mi><mi>习</mi><mi>可</mi><mi>预</mi><mi>测</mi><mi>规</mi><mi>律</mi><mi>，</mi><mi>并</mi><mi>通</mi><mi>过</mi><mi>严</mi><mi>格</mi><mi>评</mi><mi>估</mi><mi>、</mi><mi>诊</mi><mi>断</mi><mi>、</mi><mi>实</mi><mi>验</mi><mi>和</mi><mi>反</mi><mi>馈</mi><mi>，</mi><mi>努</mi><mi>力</mi><mi>获</mi><mi>得</mi><mi>能</mi><mi>够</mi><mi>在</mi><mi>未</mi><mi>知</mi><mi>环</mi><mi>境</mi><mi>中</mi><mi>稳</mi><mi>定</mi><mi>泛</mi><mi>化</mi><mi>的</mi><mi>能</mi><mi>力</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+机器学习
+=
+利用有限、可能有偏的数据，
+通过优化参数学习可预测规律，
+并通过严格评估、诊断、实验和反馈，
+努力获得能够在未知环境中稳定泛化的能力。
+}
+</annotation></semantics></math></p>
+<p>再加入第 12 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>真</mi><mi>正</mi><mi>高</mi><mi>级</mi><mi>的</mi><mi>目</mi><mi>标</mi><mi>，</mi><mi>是</mi><mi>让</mi><mi>模</mi><mi>型</mi><mi>尽</mi><mi>量</mi><mi>减</mi><mi>少</mi><mi>对</mi><mi>表</mi><mi>面</mi><mi>相</mi><mi>关</mi><mi>和</mi><mi>环</mi><mi>境</mi><mi>捷</mi><mi>径</mi><mi>的</mi><mi>依</mi><mi>赖</mi><mi>，</mi><mi>转</mi><mi>向</mi><mi>更</mi><mi>稳</mi><mi>定</mi><mi>、</mi><mi>更</mi><mi>有</mi><mi>业</mi><mi>务</mi><mi>意</mi><mi>义</mi><mi>的</mi><mi>规</mi><mi>律</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+真正高级的目标，
+是让模型尽量减少对表面相关和环境捷径的依赖，
+转向更稳定、更有业务意义的规律。
+}
+</annotation></semantics></math></p>
+<p>这就是第一课真正的最高层理解。</p>
+<hr />
+<h2 id="对于政府采购项目这意味着什么">53.
+对于政府采购项目，这意味着什么？</h2>
+<p>我们最终不能只训练：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+Text
+\rightarrow
+Risk
+</annotation></semantics></math></p>
+<p>而应该逐渐升级成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>采</mi><mi>购</mi><mi>事</mi><mi>实</mi><mo>+</mo><mi>上</mi><mi>下</mi><mi>文</mi><mo>+</mo><mi>适</mi><mi>用</mi><mi>规</mi><mi>则</mi><mo>+</mo><mi>市</mi><mi>场</mi><mi>信</mi><mi>息</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+采购事实
++
+上下文
++
+适用规则
++
+市场信息
+}
+</annotation></semantics></math></p>
+<p>↓</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>条</mi><mi>件</mi><mi>目</mi><mi>的</mi><mo>→</mo><mi>业</mi><mi>务</mi><mi>关</mi><mi>联</mi><mi>性</mi><mo>→</mo><mi>必</mi><mi>要</mi><mi>性</mi><mo>→</mo><mi>竞</mi><mi>争</mi><mi>影</mi><mi>响</mi><mo>→</mo><mi>合</mi><mi>规</mi><mi>风</mi><mi>险</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+条件目的
+\rightarrow
+业务关联性
+\rightarrow
+必要性
+\rightarrow
+竞争影响
+\rightarrow
+合规风险
+}
+</annotation></semantics></math></p>
+<p>然后输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>U</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>m</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Risk
++
+Evidence
++
+Uncertainty
++
+Recommendation
+</annotation></semantics></math></p>
+<p>这已经越来越接近真正的：</p>
+<blockquote>
+<p><strong>政府采购专家认知模型。</strong></p>
+</blockquote>
+<hr />
+<h2 id="第一课毕业后的-5-个总心智模型">54. 第一课毕业后的 5
+个总心智模型</h2>
+<p>12 个阶段内容很多，我建议最后只带走 5 个最顶层的。</p>
+<h3 id="目标模型">1. 目标模型</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Y</mi><mi>o</mi><mi>u</mi><mspace width="0.222em"></mspace><mi>g</mi><mi>e</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>w</mi><mi>h</mi><mi>a</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>y</mi><mi>o</mi><mi>u</mi><mspace width="0.222em"></mspace><mi>o</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+You\ get\ what\ you\ optimize
+}
+</annotation></semantics></math></p>
+<p>你定义什么目标，模型就朝什么方向学习。</p>
+<h3 id="数据世界模型">2. 数据世界模型</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mspace width="0.222em"></mspace><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>=</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>′</mi><mi>s</mi><mspace width="0.222em"></mspace><mi>W</mi><mi>o</mi><mi>r</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Training\ Data
+=
+Model&#39;s\ World
+}
+</annotation></semantics></math></p>
+<p>训练数据定义模型看到的世界。</p>
+<h3 id="泛化模型">3. 泛化模型</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>A</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>U</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>e</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>W</mi><mi>o</mi><mi>r</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Real\ Ability
+=
+Performance\ on\ Unseen\ World
+}
+</annotation></semantics></math></p>
+<p>训练集成绩没有意义，未知环境才是真能力。</p>
+<h3 id="诊断实验模型">4. 诊断实验模型</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>r</mi><mi>r</mi><mi>o</mi><mi>r</mi><mo>→</mo><mi>H</mi><mi>y</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>L</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Error
+\rightarrow
+Hypothesis
+\rightarrow
+Experiment
+\rightarrow
+Learning
+}
+</annotation></semantics></math></p>
+<p>错误不是失败，而是研发信息。</p>
+<h3 id="稳定规律模型">5. 稳定规律模型</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>M</mi><mi>e</mi><mi>c</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>m</mi><mo>&gt;</mo><mi>S</mi><mi>u</mi><mi>r</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Stable\ Mechanism
+&gt;
+Surface\ Correlation
+}
+</annotation></semantics></math></p>
+<p>长期真正有价值的能力来自更稳定的规律，而不是训练数据捷径。</p>
+<p>这五个就是你后面继续学习神经网络、Transformer、LLM、SFT、RAG
+时的“操作系统”。</p>
+<hr />
+<h2 id="第一课毕业标准">55. 第一课毕业标准</h2>
+<p>现在如果有人跟你说：</p>
+<blockquote>
+<p>“我们拿 100 万份政府采购文件，找几十张 GPU，把一个 32B 模型 Fine-tune
+一下，应该就能做出一个很强的政府采购 AI。”</p>
+</blockquote>
+<p>你应该已经本能地开始问：</p>
+<blockquote>
+<p>任务是什么？</p>
+</blockquote>
+<blockquote>
+<p>X 和 Y 怎么定义？</p>
+</blockquote>
+<blockquote>
+<p>标签来自哪里？</p>
+</blockquote>
+<blockquote>
+<p>数据分布是什么？</p>
+</blockquote>
+<blockquote>
+<p>有没有项目泄漏？</p>
+</blockquote>
+<blockquote>
+<p>Baseline 是什么？</p>
+</blockquote>
+<blockquote>
+<p>Recall 和 Precision 怎么定？</p>
+</blockquote>
+<blockquote>
+<p>高风险漏报代价是多少？</p>
+</blockquote>
+<blockquote>
+<p>Hard Negative 有没有？</p>
+</blockquote>
+<blockquote>
+<p>新行业表现怎样？</p>
+</blockquote>
+<blockquote>
+<p>是否 OOD？</p>
+</blockquote>
+<blockquote>
+<p>概率校准了吗？</p>
+</blockquote>
+<blockquote>
+<p>什么情况下拒答？</p>
+</blockquote>
+<blockquote>
+<p>法规变化怎么处理？</p>
+</blockquote>
+<blockquote>
+<p>模型错误到底是知识、数据还是推理问题？</p>
+</blockquote>
+<blockquote>
+<p>新版本能不能复现？</p>
+</blockquote>
+<blockquote>
+<p>上线以后怎么监控？</p>
+</blockquote>
+<blockquote>
+<p>模型是否依赖关键词、机构或模板捷径？</p>
+</blockquote>
+<blockquote>
+<p>换地区、换年份以后哪些规律还能成立？</p>
+</blockquote>
+<p>如果这些问题已经自然出现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>一</mi><mi>课</mi><mi>，</mi><mi>你</mi><mi>已</mi><mi>经</mi><mi>真</mi><mi>正</mi><mi>学</mi><mi>完</mi><mi>了</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第一课，你已经真正学完了。
+}
+</annotation></semantics></math></p>
+<p>下一步就可以正式进入
+<strong>第二课：神经网络——模型究竟如何用大量参数表示复杂规律</strong>。</p>
+<p>第二课我们会从最简单的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>e</mi><mi>u</mi><mi>r</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Neuron
+</annotation></semantics></math></p>
+<p>开始，一路学到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mspace width="0.222em"></mspace><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>e</mi><mi>p</mi><mspace width="0.222em"></mspace><mi>N</mi><mi>e</mi><mi>t</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>k</mi><mo>→</mo><mi>B</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>a</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+Linear\ Layer
+\rightarrow
+Activation
+\rightarrow
+Hidden\ Layer
+\rightarrow
+Deep\ Network
+\rightarrow
+Backpropagation
+</annotation></semantics></math></p>
+<p>并且第一次亲手构造一个小型政府采购神经网络，让你真正看到：</p>
+<blockquote>
+<p><strong>“几十亿参数的大模型”究竟是怎样从一个最简单神经元一步步发展出来的。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage11.html">← 第 11 阶段</a><a class="btn" href="../lesson02/stage01.html">第 2 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

@@ -1,0 +1,1086 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第12阶段：Checkpoint、Logging 与训练曲线</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第12阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>训练样本上的目标 Token 概率在上升。</li><li>Logging 告诉你训练过程正在发生什么</li><li>Checkpoint 保存某一时刻的模型 / 训练状态</li></ul></div><h1 id="第五课-第-12-阶段">第五课 · 第 12 阶段</h1>
+<h1 id="checkpointlogging-与训练曲线-1">Checkpoint、Logging
+与训练曲线</h1>
+<h2
+id="模型已经开始训练以后我们怎样知道它在正常学习已经过拟合还是正在悄悄出问题">模型已经开始训练以后，我们怎样知道它在正常学习、已经过拟合，还是正在悄悄出问题？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-11">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-11">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>训练样本上的目标 Token 概率在上升。</strong></li>
+<li><strong>Logging 告诉你训练过程正在发生什么</strong></li>
+<li><strong>Checkpoint 保存某一时刻的模型 / 训练状态</strong></li>
+<li><strong>Evaluation
+检查这个时刻的模型在未训练数据上表现如何</strong></li>
+<li><strong>政府采购判断更准确 Hard Negative更好 新项目泛化更强
+幻觉更少</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-11">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Checkpoint</code></td>
+<td>检查点：保存模型和训练状态以便恢复/发布</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="odd">
+<td><code>Step</code></td>
+<td>训练步：通常指一次优化器更新</td>
+</tr>
+<tr class="even">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="odd">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="even">
+<td><code>Adapter</code></td>
+<td>适配器：附加在基座模型上的轻量可训练参数模块</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-11">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 11 阶段，我们终于真正启动了：</p>
+<pre class="text"><code>Forward
+↓
+Loss
+↓
+Backward
+↓
+Gradient
+↓
+Optimizer Step
+↓
+LoRA A/B 更新</code></pre>
+<p>但训练能跑起来，只解决了：</p>
+<blockquote>
+<p><strong>“机器有没有动。”</strong></p>
+</blockquote>
+<p>现在要解决的是更专业的问题：</p>
+<blockquote>
+<p><strong>机器正在往正确方向走吗？走到哪里应该保存？哪一个版本值得保留？中途断电以后怎样继续？</strong></p>
+</blockquote>
+<p>本阶段最终形成：</p>
+<h1
+id="sftmonitoringandcheckpointpolicy_v0.1"><code>SFTMonitoringAndCheckpointPolicy_V0.1</code></h1>
+<hr />
+<h2 id="一先锁死-5-个核心心智模型">一、先锁死 5 个核心心智模型</h2>
+<p><strong>心智模型 1：Logging 是仪表盘，Checkpoint 是存档，Evaluation
+是体检。</strong></p>
+<p>三者完全不同：</p>
+<pre class="text"><code>Logging
+告诉你训练过程正在发生什么
+
+Checkpoint
+保存某一时刻的模型 / 训练状态
+
+Evaluation
+检查这个时刻的模型在未训练数据上表现如何</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>≠</mo><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Logging
+\neq
+Checkpoint
+\neq
+Evaluation
+}
+</annotation></semantics></math></p>
+<hr />
+<p><strong>心智模型 2：Train Loss
+下降，只说明模型越来越会拟合训练目标。</strong></p>
+<p>第 2 阶段我们已经知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>=</mo><mi>−</mi><mo>log</mo><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mtext mathvariant="normal">正确Target Token</mtext><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Loss
+=
+-\log P(\text{正确Target Token})
+</annotation></semantics></math></p>
+<p>所以 Train Loss 下降意味着：</p>
+<blockquote>
+<p>训练样本上的目标 Token 概率在上升。</p>
+</blockquote>
+<p>但它不自动意味着：</p>
+<pre class="text"><code>政府采购判断更准确
+Hard Negative更好
+新项目泛化更强
+幻觉更少</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LowerTrainLoss
+\neq
+BetterBusinessModel
+}
+</annotation></semantics></math></p>
+<hr />
+<p><strong>心智模型 3：真正判断过拟合，要看 Train 和 Validation
+的“分叉”。</strong></p>
+<p>典型情况：</p>
+<pre class="text"><code>Train Loss
+持续下降
+
+Validation Loss
+先下降
+然后上升</code></pre>
+<p>这非常像：</p>
+<pre class="text"><code>前期
+模型学到可泛化模式
+
+后期
+开始越来越贴合训练集细节</code></pre>
+<p>这就是经典：</p>
+<h1 id="overfitting">Overfitting</h1>
+<h2 id="过拟合">过拟合</h2>
+<hr />
+<p><strong>心智模型 4：能用于推理的
+Checkpoint，不一定足够“无缝恢复训练”。</strong></p>
+<p>这是非常重要的一点。</p>
+<p>如果你只保存：</p>
+<pre class="text"><code>LoRA Adapter Weights</code></pre>
+<p>它足够让你：</p>
+<blockquote>
+<p>加载 Base + Adapter 做推理。</p>
+</blockquote>
+<p>但如果想从 Step 2400 精确继续训练，</p>
+<p>通常还需要：</p>
+<pre class="text"><code>Optimizer State
+Scheduler State
+Global Step
+Random State
+Trainer State</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InferenceCheckpoint
+\neq
+ResumeCheckpoint
+}
+</annotation></semantics></math></p>
+<hr />
+<p><strong>心智模型 5：最好的 Checkpoint 不应该由“最后一步”或“最低 Train
+Loss”自动决定。</strong></p>
+<p>真正要问：</p>
+<blockquote>
+<p><strong>哪一个 Checkpoint 在独立验证集和业务 Benchmark
+上最好？</strong></p>
+</blockquote>
+<p>最终：</p>
+<pre class="text"><code>Last Checkpoint</code></pre>
+<p>和：</p>
+<pre class="text"><code>Best Checkpoint</code></pre>
+<p>完全可能不是同一个。</p>
+<hr />
+<h1 id="二先建立训练监控的-4-层结构">二、先建立训练监控的 4 层结构</h1>
+<p>一场正式 SFT Run 最好同时看四层：</p>
+<table>
+<thead>
+<tr class="header">
+<th>层</th>
+<th>核心指标</th>
+<th>回答的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>优化层</td>
+<td>Train Loss、Grad Norm、Learning Rate</td>
+<td>优化过程正常吗？</td>
+</tr>
+<tr class="even">
+<td>泛化层</td>
+<td>Validation Loss</td>
+<td>有没有开始过拟合？</td>
+</tr>
+<tr class="odd">
+<td>系统层</td>
+<td>VRAM、吞吐、Step Time</td>
+<td>训练系统稳定吗？</td>
+</tr>
+<tr class="even">
+<td>业务层</td>
+<td>Procurement Benchmark / Hard Case</td>
+<td>模型真的更有用了吗？</td>
+</tr>
+</tbody>
+</table>
+<p>所以一个成熟训练系统，不是只有：</p>
+<pre class="text"><code>loss = 0.82</code></pre>
+<p>而应该能够回答：</p>
+<blockquote>
+<p><strong>训练是否稳定、泛化是否改善、系统是否健康、业务是否变好。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三stepmicro-stepepoch-必须再精准一次">三、Step、Micro-step、Epoch
+必须再精准一次</h1>
+<p>假设：</p>
+<pre class="text"><code>micro_batch_size = 1
+gradient_accumulation_steps = 8</code></pre>
+<p>GPU 会经历：</p>
+<pre class="text"><code>Micro Batch 1
+Backward
+
+Micro Batch 2
+Backward
+
+...
+
+Micro Batch 8
+Backward
+↓
+Optimizer Step 1</code></pre>
+<p>因此训练日志里的：</p>
+<h1 id="global-step">Global Step</h1>
+<p>通常应该理解成：</p>
+<blockquote>
+<p><strong>Optimizer Update 的进度单位。</strong></p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>每个 Micro-batch 都一定算一个完整参数更新。</p>
+</blockquote>
+<hr />
+<p>Epoch 则表示：</p>
+<blockquote>
+<p>训练集大约被完整遍历一次。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Step
+=
+参数更新次数
+
+Epoch
+=
+数据集遍历进度</code></pre>
+<p>二者不要混。</p>
+<p>如果使用：</p>
+<pre class="text"><code>Packing
+Distributed Training
+Gradient Accumulation</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>“一个 Step 等于几条原始 Sample”</p>
+</blockquote>
+<p>就更不稳定。</p>
+<p>这也是为什么我们前面一直强调：</p>
+<h1 id="tokens-per-step-1">Tokens per Step</h1>
+<hr />
+<h1 id="四train-loss-曲线应该怎么看">四、Train Loss
+曲线应该怎么看？</h1>
+<p>不要期待：</p>
+<pre class="text"><code>Step 1    2.3
+Step 2    2.2
+Step 3    2.1
+Step 4    2.0</code></pre>
+<p>像教科书一样完美。</p>
+<p>真实训练更可能是：</p>
+<pre class="text"><code>2.31
+2.08
+2.19
+1.92
+2.04
+1.81
+1.76
+1.83
+...</code></pre>
+<p>因为每个 Batch 难度不同。</p>
+<p>所以真正应该看：</p>
+<blockquote>
+<p><strong>趋势，而不是单个点。</strong></p>
+</blockquote>
+<p>概念上：</p>
+<pre class="text"><code>Loss
+│\
+│ \
+│  \__
+│     \___
+│         \__
+└────────────── Step</code></pre>
+<p>健康训练通常是：</p>
+<blockquote>
+<p>在噪声中总体下降。</p>
+</blockquote>
+<hr />
+<h1 id="五validation-loss-为什么更重要">五、Validation Loss
+为什么更重要？</h1>
+<p>训练数据：</p>
+<blockquote>
+<p>模型已经看过。</p>
+</blockquote>
+<p>Validation 数据：</p>
+<blockquote>
+<p>不参与参数更新。</p>
+</blockquote>
+<p>所以 Validation Loss 更接近回答：</p>
+<blockquote>
+<p><strong>模型学到的是可迁移模式，还是只在背训练集？</strong></p>
+</blockquote>
+<p>最经典的三种曲线：</p>
+<h3 id="情况-a正常学习">情况 A：正常学习</h3>
+<pre class="text"><code>Train Loss      ↓
+Validation Loss ↓</code></pre>
+<p>说明：</p>
+<blockquote>
+<p>训练和泛化都在改善。</p>
+</blockquote>
+<hr />
+<h3 id="情况-b过拟合">情况 B：过拟合</h3>
+<pre class="text"><code>Train Loss      ↓↓↓
+Validation Loss ↓ → ↑</code></pre>
+<p>这时候继续训练：</p>
+<blockquote>
+<p>训练集会越来越漂亮。</p>
+</blockquote>
+<p>但真实泛化：</p>
+<blockquote>
+<p>反而越来越差。</p>
+</blockquote>
+<hr />
+<h3 id="情况-c两边都基本不动">情况 C：两边都基本不动</h3>
+<pre class="text"><code>Train Loss      ───
+Validation Loss ───</code></pre>
+<p>这不应该第一时间解释成：</p>
+<blockquote>
+<p>“Epoch 不够。”</p>
+</blockquote>
+<p>可能是：</p>
+<pre class="text"><code>Learning Rate不合适
+Loss Mask错误
+LoRA没有真正注入
+Gradient异常
+数据质量问题
+任务容量不足</code></pre>
+<p>需要诊断。</p>
+<hr />
+<h1 id="六learning-rate-曲线为什么必须和-loss-一起看">六、Learning Rate
+曲线为什么必须和 Loss 一起看？</h1>
+<p>假设采用：</p>
+<pre class="text"><code>Warmup
++
+Cosine Decay</code></pre>
+<p>Learning Rate 可能类似：</p>
+<pre class="text"><code>LR
+│      /\
+│     /  \
+│    /    \
+│___/      \____
+└─────────────── Step</code></pre>
+<p>前期：</p>
+<blockquote>
+<p>Warmup。</p>
+</blockquote>
+<p>中期：</p>
+<blockquote>
+<p>较高更新强度。</p>
+</blockquote>
+<p>后期：</p>
+<blockquote>
+<p>逐渐降低。</p>
+</blockquote>
+<p>如果你发现：</p>
+<pre class="text"><code>Loss突然剧烈震荡</code></pre>
+<p>不能只看 Loss。</p>
+<p>要同时看：</p>
+<pre class="text"><code>当前 Learning Rate
+Grad Norm
+是否刚进入某个LR阶段</code></pre>
+<p>因为优化现象需要：</p>
+<blockquote>
+<p>多条曲线一起解释。</p>
+</blockquote>
+<hr />
+<h1 id="七grad-norm它不是模型有多错而是参数更新信号的规模指标">七、Grad
+Norm：它不是“模型有多错”，而是参数更新信号的规模指标</h1>
+<p>第 2 阶段讲过：</p>
+<p>Gradient 表示：</p>
+<blockquote>
+<p>Loss 对可训练参数的局部敏感度和更新方向。</p>
+</blockquote>
+<p>Gradient Norm：</p>
+<h1 id="梯度范数-1">梯度范数</h1>
+<p>则把大量 Gradient Tensor 压缩成一个总体规模指标。</p>
+<p>例如：</p>
+<pre class="text"><code>正常区域
+0.6
+0.8
+1.1
+0.7
+
+异常突然
+38.4</code></pre>
+<p>这种尖峰值得检查。</p>
+<p>但不要机械规定：</p>
+<blockquote>
+<p>“Grad Norm 超过 1 就一定错误。”</p>
+</blockquote>
+<p>因为数值尺度和：</p>
+<pre class="text"><code>模型
+参数量
+Optimizer
+Loss Scale
+Gradient Clipping</code></pre>
+<p>有关。</p>
+<p>我们主要看：</p>
+<blockquote>
+<p><strong>趋势和异常尖峰。</strong></p>
+</blockquote>
+<hr />
+<h1 id="八training-curve-真正有价值的是联合诊断">八、Training Curve
+真正有价值的是“联合诊断”</h1>
+<p>例如你看到：</p>
+<pre class="text"><code>Train Loss ↓
+Validation Loss ↑
+Grad Norm 正常
+Learning Rate 正常</code></pre>
+<p>最合理的第一假设：</p>
+<blockquote>
+<p>过拟合。</p>
+</blockquote>
+<hr />
+<p>如果：</p>
+<pre class="text"><code>Train Loss 突然 NaN
+Grad Norm 先剧烈爆炸</code></pre>
+<p>更像：</p>
+<blockquote>
+<p>数值或优化稳定性问题。</p>
+</blockquote>
+<hr />
+<p>如果：</p>
+<pre class="text"><code>Train Loss 基本不降
+Grad Norm ≈ 0</code></pre>
+<p>则值得检查：</p>
+<pre class="text"><code>LoRA参数有没有梯度？
+Loss Mask是否全是-100？
+Target Modules是否真正匹配？</code></pre>
+<p>所以不要：</p>
+<blockquote>
+<p>一条曲线单独判案。</p>
+</blockquote>
+<hr />
+<h1 id="九checkpoint-到底应该保存什么">九、Checkpoint
+到底应该保存什么？</h1>
+<p>这里建立一个非常好用的三层模型。</p>
+<h2 id="第一层model-artifact">第一层：Model Artifact</h2>
+<p>对于 LoRA / QLoRA：</p>
+<pre class="text"><code>Adapter Weights
+Adapter Config
+Tokenizer / Template相关信息
+Base Model Identity</code></pre>
+<p>作用：</p>
+<blockquote>
+<p><strong>部署和推理。</strong></p>
+</blockquote>
+<hr />
+<h2 id="第二层training-state">第二层：Training State</h2>
+<p>例如：</p>
+<pre class="text"><code>Optimizer State
+Scheduler State
+Global Step
+Epoch Progress
+Random State
+Trainer State</code></pre>
+<p>作用：</p>
+<blockquote>
+<p><strong>从中断位置继续训练。</strong></p>
+</blockquote>
+<hr />
+<h2 id="第三层run-metadata">第三层：Run Metadata</h2>
+<p>例如：</p>
+<pre class="text"><code>Dataset Version
+Code Version
+Hyperparameters
+Trainable Params
+Peak VRAM
+Metrics
+Timestamp</code></pre>
+<p>作用：</p>
+<blockquote>
+<p><strong>复现和审计。</strong></p>
+</blockquote>
+<p>这三个东西千万别混成一个：</p>
+<h1 id="模型文件">“模型文件”</h1>
+<hr />
+<h1 id="十为什么只保存-adapter不能保证精确续训">十、为什么“只保存
+Adapter”不能保证精确续训？</h1>
+<p>假设训练到：</p>
+<pre class="text"><code>Step 2000</code></pre>
+<p>AdamW 内部已经形成：</p>
+<pre class="text"><code>m
+v</code></pre>
+<p>也就是优化器的一阶、二阶状态。</p>
+<p>Scheduler 此时：</p>
+<blockquote>
+<p>Learning Rate 也已经走到了特定位置。</p>
+</blockquote>
+<p>如果你只加载 Adapter：</p>
+<pre class="text"><code>A/B 权重恢复了</code></pre>
+<p>但：</p>
+<pre class="text"><code>Optimizer重新初始化
+Scheduler重新开始</code></pre>
+<p>那么你其实不是：</p>
+<blockquote>
+<p>从 Step 2000 原地继续。</p>
+</blockquote>
+<p>而是在：</p>
+<blockquote>
+<p><strong>从相同模型权重启动一场新的优化过程。</strong></p>
+</blockquote>
+<p>这两者可能得到不同结果。</p>
+<p>所以真正 Resume：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelState
++
+OptimizerState
++
+SchedulerState
++
+ProgressState
+}
+</annotation></semantics></math></p>
+<p>才更完整。</p>
+<p>具体框架保存哪些状态、文件名是什么，会随实现和版本不同；我们记住这个<strong>状态层级</strong>即可。</p>
+<hr />
+<h1 id="十一多久保存一次-checkpoint">十一、多久保存一次
+Checkpoint？</h1>
+<p>这是一个成本权衡。</p>
+<p>保存太频繁：</p>
+<pre class="text"><code>每10 Steps</code></pre>
+<p>可能导致：</p>
+<pre class="text"><code>I/O频繁
+磁盘大量占用
+训练受影响</code></pre>
+<p>保存太稀：</p>
+<pre class="text"><code>每5000 Steps</code></pre>
+<p>如果中途机器掉了：</p>
+<blockquote>
+<p>可能损失大量训练进度。</p>
+</blockquote>
+<p>因此第一版应该根据：</p>
+<pre class="text"><code>单次Run总时长
+机器稳定性
+Checkpoint大小
+Evaluation频率</code></pre>
+<p>确定。</p>
+<p>一个很实用的原则：</p>
+<blockquote>
+<p><strong>让一次故障造成的最大可接受训练损失，反推 Save
+Interval。</strong></p>
+</blockquote>
+<p>例如：</p>
+<blockquote>
+<p>能接受最多损失 20～30 分钟训练，</p>
+</blockquote>
+<p>那就应该让 Checkpoint 周期与此大致匹配。</p>
+<p>而不是死记：</p>
+<pre class="text"><code>save_steps = 100</code></pre>
+<hr />
+<h1 id="十二evaluation-和-save-最好建立关联">十二、Evaluation 和 Save
+最好建立关联</h1>
+<p>例如训练：</p>
+<pre class="text"><code>Step 500
+Evaluate
+↓
+保存 Checkpoint 500
+
+Step 1000
+Evaluate
+↓
+保存 Checkpoint 1000
+
+Step 1500
+Evaluate
+↓
+保存 Checkpoint 1500</code></pre>
+<p>这样每个保存点都有：</p>
+<pre class="text"><code>Train状态
++
+Validation指标</code></pre>
+<p>以后才能真正比较：</p>
+<pre class="text"><code>Checkpoint 500
+vs
+Checkpoint 1000
+vs
+Checkpoint 1500</code></pre>
+<p>否则你保留了一堆 Adapter：</p>
+<blockquote>
+<p>却不知道哪个更好。</p>
+</blockquote>
+<hr />
+<h1 id="十三best-checkpoint-应该怎么选">十三、Best Checkpoint
+应该怎么选？</h1>
+<p>第一层可以先使用：</p>
+<h1 id="validation-loss">Validation Loss</h1>
+<p>例如：</p>
+<pre class="text"><code>Checkpoint 500
+Val Loss = 1.04
+
+Checkpoint 1000
+Val Loss = 0.88
+
+Checkpoint 1500
+Val Loss = 0.91</code></pre>
+<p>从 Token-level 泛化角度：</p>
+<blockquote>
+<p>Step 1000 更值得保留。</p>
+</blockquote>
+<p>但我们政府采购项目必须再向前一步。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>G</mi><mi>u</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LowestValidationLoss
+\neq
+GuaranteedBestProcurementModel
+}
+</annotation></semantics></math></p>
+<p>有可能：</p>
+<pre class="text"><code>Checkpoint A
+Val Loss更低
+
+但Hard Negative更差</code></pre>
+<p>所以最终“Best”应该基于：</p>
+<blockquote>
+<p><strong>预先定义的业务评测标准。</strong></p>
+</blockquote>
+<p>Stage 12 可以暂时建立：</p>
+<pre class="text"><code>Loss-based candidate selection</code></pre>
+<p>Stage 14 再进行：</p>
+<pre class="text"><code>正式业务决赛</code></pre>
+<hr />
+<h1 id="十四early-stopping什么时候应该停止继续训练">十四、Early
+Stopping：什么时候应该停止继续训练？</h1>
+<p>假设：</p>
+<pre class="text"><code>Eval 1  = 0.95
+Eval 2  = 0.87
+Eval 3  = 0.84
+Eval 4  = 0.85
+Eval 5  = 0.87
+Eval 6  = 0.90</code></pre>
+<p>而 Train Loss：</p>
+<blockquote>
+<p>还在不断下降。</p>
+</blockquote>
+<p>这说明：</p>
+<blockquote>
+<p>继续训练越来越可能只是在贴合训练数据。</p>
+</blockquote>
+<p>于是可以建立：</p>
+<h1 id="early-stopping">Early Stopping</h1>
+<h2 id="提前停止">提前停止</h2>
+<p>基本思想：</p>
+<pre class="text"><code>Validation长时间没有改善
+↓
+达到Patience阈值
+↓
+停止训练</code></pre>
+<p>这里：</p>
+<h1 id="patience">Patience</h1>
+<p>意思不是：</p>
+<blockquote>
+<p>等几个 Step。</p>
+</blockquote>
+<p>而通常应该理解为：</p>
+<blockquote>
+<p><strong>允许连续多少次 Evaluation 没有改善。</strong></p>
+</blockquote>
+<p>所以 Early Stopping 必须和：</p>
+<pre class="text"><code>Evaluation Frequency</code></pre>
+<p>一起理解。</p>
+<hr />
+<h1 id="十五不要因为一次-validation-变差就立刻停">十五、不要因为一次
+Validation 变差就立刻停</h1>
+<p>Validation 本身也有噪声。</p>
+<p>例如：</p>
+<pre class="text"><code>0.86
+0.84
+0.85
+0.83</code></pre>
+<p>这不能简单解释成：</p>
+<blockquote>
+<p>第三次 Eval 已经过拟合。</p>
+</blockquote>
+<p>正确看法：</p>
+<blockquote>
+<p>看持续趋势。</p>
+</blockquote>
+<p>所以我们通常需要：</p>
+<pre class="text"><code>Patience
++
+Minimum Improvement</code></pre>
+<p>这样的思想。</p>
+<p>也就是说：</p>
+<blockquote>
+<p>只有持续没有实质改善，才认为训练已经进入收益递减区。</p>
+</blockquote>
+<hr />
+<h1 id="十六logging-frequency-也不是越密越好">十六、Logging Frequency
+也不是越密越好</h1>
+<p>假设：</p>
+<pre class="text"><code>logging_steps = 1</code></pre>
+<p>优点：</p>
+<blockquote>
+<p>能看到极细训练变化。</p>
+</blockquote>
+<p>缺点：</p>
+<blockquote>
+<p>曲线非常吵，日志非常多。</p>
+</blockquote>
+<p>如果：</p>
+<pre class="text"><code>logging_steps = 1000</code></pre>
+<p>又太稀。</p>
+<p>可能错过：</p>
+<pre class="text"><code>NaN前兆
+Loss异常跳变
+Grad Norm尖峰</code></pre>
+<p>所以应该根据：</p>
+<blockquote>
+<p>总 Step 数</p>
+</blockquote>
+<p>来决定。</p>
+<p>如果整个训练只有：</p>
+<pre class="text"><code>500 Steps</code></pre>
+<p>每 100 Step Log 一次：</p>
+<blockquote>
+<p>太粗。</p>
+</blockquote>
+<p>如果总共：</p>
+<pre class="text"><code>100,000 Steps</code></pre>
+<p>每一步都写日志：</p>
+<blockquote>
+<p>没什么必要。</p>
+</blockquote>
+<p>核心不是固定数字，而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>应</mi><mi>足</mi><mi>以</mi><mi>看</mi><mi>见</mi><mi>训</mi><mi>练</mi><mi>动</mi><mi>态</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LoggingResolution
+应足以看见训练动态
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十七给-procurementlm_v0.1-定一个第一版-monitoring-contract">十七、给
+ProcurementLM_V0.1 定一个第一版 Monitoring Contract</h1>
+<p>我们可以先规定：</p>
+<pre class="text"><code>每次Logging记录：
+train_loss
+learning_rate
+grad_norm
+epoch
+global_step
+throughput
+
+每次Evaluation记录：
+validation_loss
+Procurement validation metrics
+hard_negative metrics
+
+系统记录：
+peak_vram
+step_time
+tokens_per_second
+
+每次Checkpoint关联：
+global_step
+eval metrics
+run_id
+dataset_version
+config version</code></pre>
+<p>这样一个 Checkpoint 就不再是：</p>
+<pre class="text"><code>checkpoint-1200/</code></pre>
+<p>这么一个没有意义的目录名。</p>
+<p>它应该能回答：</p>
+<blockquote>
+<p><strong>它来自哪次实验，训练到哪里，当时效果怎样。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十八一个训练曲线的完整阅读示例">十八、一个训练曲线的完整阅读示例</h1>
+<p>假设我们训练 <code>ProcurementLM_V0.1</code>：</p>
+<pre class="text"><code>Step    Train Loss    Val Loss
+200       1.42          1.38
+400       1.10          1.09
+600       0.89          0.94
+800       0.72          0.91
+1000      0.58          0.93
+1200      0.47          0.99</code></pre>
+<p>可以看到：</p>
+<pre class="text"><code>Train
+持续改善
+
+Validation
+到Step 800最好
+然后开始恶化</code></pre>
+<p>第一判断：</p>
+<blockquote>
+<p>Step 800 左右可能已经进入最佳泛化区域。</p>
+</blockquote>
+<p>但接下来不能直接宣布：</p>
+<blockquote>
+<p>“800 就是最终模型。”</p>
+</blockquote>
+<p>还要拿：</p>
+<pre class="text"><code>600
+800
+1000</code></pre>
+<p>这几个候选 Checkpoint 跑：</p>
+<pre class="text"><code>Hard Negative
+Boundary Case
+输出Schema
+通用能力回归</code></pre>
+<p>可能最终发现：</p>
+<pre class="text"><code>Step 600
+业务边界最好</code></pre>
+<p>这完全合理。</p>
+<hr />
+<h1
+id="十九如果训练中断恢复训练时必须验证什么">十九、如果训练中断，恢复训练时必须验证什么？</h1>
+<p>假设机器断电，最后有：</p>
+<pre class="text"><code>checkpoint-1200</code></pre>
+<p>恢复前应该确认：</p>
+<pre class="text"><code>Base Model Revision没变
+Tokenizer没变
+Dataset版本没变
+LoRA Config没变
+Target Modules没变
+Optimizer / Scheduler State存在
+Global Step正确</code></pre>
+<p>然后 Resume。</p>
+<p>如果 Dataset 已经从：</p>
+<pre class="text"><code>V0.1</code></pre>
+<p>改成：</p>
+<pre class="text"><code>V0.2</code></pre>
+<p>这时候最好不要还叫：</p>
+<blockquote>
+<p>“继续同一次训练”。</p>
+</blockquote>
+<p>更准确：</p>
+<blockquote>
+<p><strong>这是从旧 Checkpoint 初始化的一次新 Run。</strong></p>
+</blockquote>
+<p>这对实验治理非常重要。</p>
+<hr />
+<h1 id="二十checkpoint-不等于最终发布模型">二十、Checkpoint
+不等于最终发布模型</h1>
+<p>训练阶段可能产生：</p>
+<pre class="text"><code>checkpoint-200
+checkpoint-400
+checkpoint-600
+checkpoint-800
+final_adapter</code></pre>
+<p>这些都属于：</p>
+<h1 id="training-artifacts">Training Artifacts</h1>
+<p>真正发布：</p>
+<h1 id="procurementlm_v0.1-1"><code>ProcurementLM_V0.1</code></h1>
+<p>之前还需要：</p>
+<pre class="text"><code>选择候选Checkpoint
+↓
+固定Benchmark
+↓
+正式对比
+↓
+确认回归
+↓
+冻结版本
+↓
+保存 / Merge</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Checkpoint
+\neq
+Release
+}
+</annotation></semantics></math></p>
+<p>Checkpoint 是：</p>
+<blockquote>
+<p>候选状态。</p>
+</blockquote>
+<p>Release 是：</p>
+<blockquote>
+<p>经过评测和版本冻结的模型产品。</p>
+</blockquote>
+<hr />
+<h1 id="二十一本阶段最危险的-7-个反例">二十一、本阶段最危险的 7
+个反例</h1>
+<p>第一，<strong>只看 Train
+Loss，看到一直下降就一直训练。</strong><br />
+可能已经严重过拟合。</p>
+<p>第二，<strong>默认最后一个 Checkpoint 就是最好的。</strong><br />
+最后一步可能已经过了最佳泛化点。</p>
+<p>第三，<strong>只保存 LoRA Adapter，却以为一定能精确
+Resume。</strong><br />
+缺少 Optimizer / Scheduler 等状态时，不是严格原地续训。</p>
+<p>第四，<strong>一次 Validation 变差就立刻 Early Stop。</strong><br />
+单点噪声不等于趋势。</p>
+<p>第五，<strong>Checkpoint 保存很多，却不记录对应 Eval
+Metric。</strong><br />
+以后无法判断谁值得保留。</p>
+<p>第六，<strong>训练日志只有 Loss。</strong><br />
+Grad Norm、LR、VRAM 和业务指标都可能暴露不同问题。</p>
+<p>第七，<strong>改了 Dataset 还继续沿用同一个 Run ID。</strong><br />
+实验边界被破坏，结果无法解释。</p>
+<hr />
+<h1 id="二十二把整个第-12-阶段压成-5-句话">二十二、把整个第 12 阶段压成
+5 句话</h1>
+<blockquote>
+<p><strong>第一，Logging 是训练仪表盘，Evaluation 是泛化检查，Checkpoint
+是状态存档；三者职责不同。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Train Loss
+下降只能证明模型更贴合训练目标，判断过拟合必须同时看 Validation，并关注
+Train/Val 是否持续分叉。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，一个可推理的 Adapter Checkpoint 不等于一个可无缝续训的
+Checkpoint；精确 Resume 还需要 Optimizer、Scheduler、Step
+和随机状态等训练状态。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Best Checkpoint 不应该默认是最后一个或 Train Loss
+最低的，而应先由独立 Validation 筛选，再由固定业务 Benchmark
+最终决定。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，训练曲线必须联合看：Loss、Validation、Learning
+Rate、Grad Norm、VRAM
+和业务指标一起解释，不能拿单个数字判案。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-1">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         Training Run
+                              │
+                              ▼
+                      Optimizer Step
+                              │
+               ┌──────────────┼──────────────┐
+               │              │              │
+               ▼              ▼              ▼
+            Logging       Evaluation     Checkpoint
+               │              │              │
+               ▼              ▼              ▼
+        Train Loss        Val Loss       Adapter State
+        Learning Rate     Hard Cases     Optimizer State
+        Grad Norm         Metrics        Scheduler State
+        Throughput                       Trainer State
+               │              │              │
+               └──────────────┼──────────────┘
+                              ▼
+                         Curve Analysis
+                              │
+             ┌────────────────┼────────────────┐
+             ▼                ▼                ▼
+         正常学习           过拟合           不稳定
+             │                │                │
+             ▼                ▼                ▼
+          继续训练          Early Stop        Diagnose
+             │
+             └───────────┬────┘
+                         ▼
+                Candidate Checkpoints
+                         │
+                         ▼
+                  Procurement Benchmark
+                         │
+                         ▼
+                    Best Candidate</code></pre>
+<p>脑中只留一句：</p>
+<blockquote>
+<p><strong>训练不是跑到结束，而是持续观察、保存证据、选择最佳状态。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十三本阶段掌握测试">二十三、本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Logging、Evaluation、Checkpoint
+三者有什么区别；为什么 Train Loss 一直下降并不等于模型一直变好；什么样的
+Train/Validation 曲线提示过拟合；什么是 Global
+Step，为什么它不能简单等同于 Micro-batch 数量；Learning Rate
+曲线为什么必须和 Loss 一起看；Grad Norm 可以帮助诊断什么；为什么一个
+Adapter 文件可以用于推理，却不一定足以精确 Resume；Optimizer State 和
+Scheduler State 为什么影响续训；为什么 Best Checkpoint 不一定是 Last
+Checkpoint；Early Stopping 的 Patience 为什么应该以 Evaluation
+次数理解；为什么单次 Val Loss 反弹不能直接判定过拟合；为什么 Checkpoint
+必须和 Run ID、Dataset Version、指标绑定；以及为什么最终发布模型必须经过
+Stage 14 的正式 Benchmark，而不是训练结束自动宣布胜利。</p>
+<p>如果这些能完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>12</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第12阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-11">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>Checkpoint 是“某一时刻模型与训练状态的存档”，Logging
+是“训练过程的仪表盘”，Evaluation 是“模型离开训练集后的体检”；真正可靠的
+SFT 不是把 Epoch 跑完，而是用 Train/Validation 曲线、Grad Norm、Learning
+Rate
+和业务指标持续判断模型何时仍在学习、何时开始过拟合，并把最值得进入最终评测的状态完整保存下来。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-13-阶段">下一阶段：第五课 · 第 13 阶段</h1>
+<h1 id="lora-merge模型保存与推理">LoRA Merge、模型保存与推理</h1>
+<h2
+id="训练出来的-adapter-到底怎样变成真正能部署能复现能推理的-procurementlm_v0.1">训练出来的
+Adapter 到底怎样变成真正能部署、能复现、能推理的
+<code>ProcurementLM_V0.1</code>？</h2>
+<p>下一阶段我们会把：</p>
+<pre class="text"><code>Base Model
++
+LoRA Adapter</code></pre>
+<p>处理成两条正式交付路径：</p>
+<pre class="text"><code>路径 A
+Base + Adapter
+动态加载
+
+路径 B
+Base + LoRA
+      ↓
+Merge
+      ↓
+Merged Model</code></pre>
+<p>并精准解决：</p>
+<blockquote>
+<p><strong>到底应该保存哪些文件、Merge 前后有什么区别、Tokenizer/Chat
+Template 为什么必须一起锁定，以及怎样避免“Adapter
+明明训练成功，换一台机器却复现不出来”。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage11.html">← 第 11 阶段</a><a class="btn" href="stage13.html">第 13 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

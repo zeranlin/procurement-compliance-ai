@@ -1,0 +1,196 @@
+{
+  "title": "政府采购 AI / ML 实战课程 V2：第一课～第十一课完整体系",
+  "version": "pedagogy_cn_enhanced_v2",
+  "status": "complete",
+  "lessons": "11/11",
+  "stages": "130/130",
+  "final_deliverable": "ProcurementLM_V1.0",
+  "summary": {
+    "lesson01": {
+      "title": "机器学习到底在学习什么？",
+      "stages": 12,
+      "changed": 12,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 1,
+        "MEDIUM": 11,
+        "LIGHT": 0,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson02": {
+      "title": "神经网络到完整 Transformer / LLM",
+      "stages": 12,
+      "changed": 12,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 11,
+        "MEDIUM": 0,
+        "LIGHT": 1,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson03": {
+      "title": "GPU 环境与第一个开源大模型",
+      "stages": 10,
+      "changed": 10,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 10,
+        "MEDIUM": 0,
+        "LIGHT": 0,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson04": {
+      "title": "政府采购数据工程与训练数据集",
+      "stages": 12,
+      "changed": 12,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 12,
+        "MEDIUM": 0,
+        "LIGHT": 0,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson05": {
+      "title": "SFT + LoRA / QLoRA 微调",
+      "stages": 14,
+      "changed": 14,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 3,
+        "MEDIUM": 1,
+        "LIGHT": 10,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson06": {
+      "title": "RAG、Embedding 与向量检索",
+      "stages": 11,
+      "changed": 11,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 0,
+        "MEDIUM": 5,
+        "LIGHT": 6,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson07": {
+      "title": "Agent、Tool Calling 与政府采购工作流",
+      "stages": 11,
+      "changed": 11,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 1,
+        "MEDIUM": 1,
+        "LIGHT": 9,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson08": {
+      "title": "CPT 与高级领域适配",
+      "stages": 10,
+      "changed": 10,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 0,
+        "MEDIUM": 0,
+        "LIGHT": 10,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson09": {
+      "title": "Gold Benchmark、评测与可靠性",
+      "stages": 12,
+      "changed": 12,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 0,
+        "MEDIUM": 0,
+        "LIGHT": 12,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson10": {
+      "title": "推理部署、性能优化与 MLOps",
+      "stages": 10,
+      "changed": 10,
+      "unchanged": 0,
+      "severity_counts": {
+        "HEAVY": 1,
+        "MEDIUM": 2,
+        "LIGHT": 7,
+        "UNCHANGED": 0
+      }
+    },
+    "lesson11": {
+      "title": "ProcurementLM V1.0 政府采购合规智能体全流程实战",
+      "stages": 16,
+      "changed": 2,
+      "unchanged": 14,
+      "severity_counts": {
+        "HEAVY": 0,
+        "MEDIUM": 0,
+        "LIGHT": 2,
+        "UNCHANGED": 14
+      }
+    }
+  },
+  "lesson11_unchanged_byte_identical_stages": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    7,
+    8,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16
+  ],
+  "source_integrity": {
+    "previous_integrated_course_all_sha256": "d8b8ad900823cdeff1ddf7a40289b2e4b1eb1a812778b62772d29294763068e4",
+    "copied_previous_integrated_course_all_sha256": "d8b8ad900823cdeff1ddf7a40289b2e4b1eb1a812778b62772d29294763068e4",
+    "lesson11_stage_sha256": {
+      "stage01": "694e98ebabf92a9dd9235769af7d67e383240b967409b30ddf774cc694c1053f",
+      "stage02": "e6fee08e8b1649278bd8d14da15d1d51b4120f8c3018e57672b9a8a2aea52bb6",
+      "stage03": "c99f536d1da0ecc46decd31aec2563c05842a6f98e1527566179bd4a9820f2df",
+      "stage04": "a7303d4f65dcaca7f1b6b7604d1115a0a9a426bc37a3a6c1954975e98fd7842e",
+      "stage05": "4990fef4cbb673be633f6bb0ef1f43703cfc3e2b117875e790d4e296cf927078",
+      "stage06": "4e83bee7c397f6c4772a3071bf14ae3e32495098fe77cb936f242e3369583414",
+      "stage07": "5323dce20b998c79e8e23c91271d048ee0ae7fea34758fb9981c4b2c968cf03d",
+      "stage08": "ed8f1332c2beb0fb5b7e7eea3fc65005dea693aeaf03d997db43c0f2b96ca2ea",
+      "stage09": "9f9513976a6672a31a41dc63e8a36656369a33fd27292dec0165954259a1b696",
+      "stage10": "92d0f4a21a347dceceab3d3c2730e650aad41961533899354d3fc0eef2a2ff1a",
+      "stage11": "3a85f7e5039f8341c49ede46084e8170329a16f22bf4eb447c144b172608a5ec",
+      "stage12": "c536202b9b78720e55a2e46b326ccb089ec4f3465a6329fb81b0ad96a34bb203",
+      "stage13": "e4561fb6246f625f0dbf1c1692318171a6757df3650b75c6901f9e78d55dd8e5",
+      "stage14": "3bd10700cba63dfe6a008612372481c82f90bee764264836b3ffde42bd418236",
+      "stage15": "39eb944c17a5ee6c4ad9ed63bab948693d928c1c7092043034270c58eabe3851",
+      "stage16": "81a73ed3ae323e2663f045d596266e999535b6d38c7598b7305ec4416b6548cb"
+    }
+  },
+  "validation": {
+    "all_130_stage_markdown_exist": true,
+    "lesson11_unchanged_stages_byte_identical": true,
+    "visible_raw_formula_delimiters": 0,
+    "course_all_html_built_from_rendered_lesson_pages": true
+  },
+  "files": {
+    "index": "index.html",
+    "course_all": "COURSE_ALL.html",
+    "course_all_markdown": "COURSE_ALL.md",
+    "reading_guide": "COURSE_READING_GUIDE.html",
+    "mental_model_index": "CORE_MENTAL_MODEL_INDEX.html",
+    "glossary": "GLOSSARY_CN_EN.html",
+    "revision_audit": "REVISION_AUDIT.html",
+    "outline": "COURSE_OUTLINE.html"
+  }
+}

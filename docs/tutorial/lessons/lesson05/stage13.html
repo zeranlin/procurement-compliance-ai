@@ -1,0 +1,936 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第13阶段：LoRA Merge、模型保存与推理</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第13阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>把原来分开的 Base Weight 和 LoRA 增量提前加在一起。</li><li>这个 merged checkpoint 本身不会替你保留“可随时拆出来的 LoRA”。</li><li>Merge 前永远保留 Adapter 原件。</li></ul></div><h1 id="第五课-第-13-阶段">第五课 · 第 13 阶段</h1>
+<h1 id="lora-merge模型保存与推理-1">LoRA Merge、模型保存与推理</h1>
+<h2
+id="训练出来的-adapter怎样真正变成可部署可复现的-procurementlm_v0.1">训练出来的
+Adapter，怎样真正变成可部署、可复现的
+<code>ProcurementLM_V0.1</code>？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-12">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-12">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>把原来分开的 Base Weight 和 LoRA
+增量提前加在一起。</strong></li>
+<li><strong>这个 merged checkpoint 本身不会替你保留“可随时拆出来的
+LoRA”。</strong></li>
+<li><strong>Merge 前永远保留 Adapter 原件。</strong></li>
+<li><strong>同样的模型权重收到的是不同 Token 序列。</strong></li>
+<li><strong>Adapter A/B + Adapter Config</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-12">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Adapter</code></td>
+<td>适配器：附加在基座模型上的轻量可训练参数模块</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="odd">
+<td><code>Checkpoint</code></td>
+<td>检查点：保存模型和训练状态以便恢复/发布</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="odd">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-12">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 12 阶段，我们手里已经有了一个经过训练和筛选的 LoRA
+Checkpoint。</p>
+<p>现在模型仍然可以理解为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mi>A</mi><mi>d</mi><mi>a</mi><mi>p</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BaseModel + LoRAAdapter
+}
+</annotation></semantics></math></p>
+<p>但到了部署阶段，我们必须做一个决定：</p>
+<pre class="text"><code>路径 A
+Base Model
++
+LoRA Adapter
+动态加载</code></pre>
+<p>或者：</p>
+<pre class="text"><code>路径 B
+Base Model
++
+LoRA Adapter
+        ↓
+       Merge
+        ↓
+一个新的完整模型权重</code></pre>
+<p>这两条路都能得到微调后的行为，但它们的：</p>
+<blockquote>
+<p>文件结构、部署方式、版本管理、磁盘大小、可切换能力</p>
+</blockquote>
+<p>完全不同。</p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementlmreleasebundle_v0.1"><code>ProcurementLMReleaseBundle_V0.1</code></h1>
+<hr />
+<h2 id="一先锁死-5-个核心心智模型-1">一、先锁死 5 个核心心智模型</h2>
+<p><strong>心智模型 1：Adapter 模式与 Merge
+模式，模型“学到的东西”并没有变。</strong></p>
+<p>LoRA 训练时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+W&#39; = W + sBA
+</annotation></semantics></math></p>
+<p>Adapter 模式推理：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y=Wx+sBAx
+</annotation></semantics></math></p>
+<p>Merge 以后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mtext mathvariant="normal">merged</mtext></msub><mo>=</mo><mi>W</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+W_{\text{merged}}
+=
+W+sBA
+</annotation></semantics></math></p>
+<p>推理变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><msub><mi>W</mi><mtext mathvariant="normal">merged</mtext></msub><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y=W_{\text{merged}}x
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>r</mi><mi>g</mi><mi>e</mi><mo>≠</mo><mi>再</mi><mi>次</mi><mi>训</mi><mi>练</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Merge
+\neq
+再次训练
+}
+</annotation></semantics></math></p>
+<p>它只是：</p>
+<blockquote>
+<p><strong>把原来分开的 Base Weight 和 LoRA
+增量提前加在一起。</strong></p>
+</blockquote>
+<hr />
+<p><strong>心智模型 2：保存 Adapter ≠ 保存完整模型。</strong></p>
+<p>如果只保存 LoRA：</p>
+<pre class="text"><code>Adapter A/B
++
+Adapter Config</code></pre>
+<p>你仍然需要：</p>
+<pre class="text"><code>正确的 Base Model</code></pre>
+<p>才能恢复完整行为。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>d</mi><mi>a</mi><mi>p</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>依</mi><mi>赖</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AdapterArtifact
+依赖
+BaseModelIdentity
+}
+</annotation></semantics></math></p>
+<hr />
+<p><strong>心智模型 3：Merge 以后部署更像普通模型，但失去了“Adapter
+可拆卸性”。</strong></p>
+<p>动态 Adapter：</p>
+<pre class="text"><code>Base
+├── Procurement Adapter
+├── Contract Adapter
+└── Other Adapter</code></pre>
+<p>可以切换。</p>
+<p>Merge 以后：</p>
+<pre class="text"><code>ProcurementLM_Merged</code></pre>
+<p>LoRA 增量已经写进完整权重。</p>
+<p>如果没有另外保存原 Adapter：</p>
+<blockquote>
+<p>这个 merged checkpoint 本身不会替你保留“可随时拆出来的 LoRA”。</p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p><strong>Merge 前永远保留 Adapter 原件。</strong></p>
+</blockquote>
+<hr />
+<p><strong>心智模型 4：Tokenizer、Chat Template 与 Base Model Revision
+都是模型产品的一部分。</strong></p>
+<p>很多部署失败不是 Weight 坏了。</p>
+<p>而是：</p>
+<pre class="text"><code>训练时 Template A
+
+部署时 Template B</code></pre>
+<p>或者：</p>
+<pre class="text"><code>训练时 Tokenizer Revision A
+
+部署时 Revision B</code></pre>
+<p>于是：</p>
+<blockquote>
+<p>同样的模型权重收到的是不同 Token 序列。</p>
+</blockquote>
+<p>所以发布模型不能只保存：</p>
+<pre class="text"><code>model.safetensors</code></pre>
+<p>而要保存：</p>
+<blockquote>
+<p><strong>完整推理协议。</strong></p>
+</blockquote>
+<hr />
+<p><strong>心智模型 5：模型保存完成 ≠ 模型发布完成。</strong></p>
+<p>真正的 Release 流程应该是：</p>
+<pre class="text"><code>Candidate Checkpoint
+        ↓
+Adapter / Merge Packaging
+        ↓
+Inference Parity Test
+        ↓
+Tokenizer / Template Lock
+        ↓
+Benchmark
+        ↓
+Manifest
+        ↓
+Release</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>v</mi><mi>e</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Save
+\neq
+Release
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二先把两种交付方式彻底分清">二、先把两种交付方式彻底分清</h1>
+<table>
+<thead>
+<tr class="header">
+<th>维度</th>
+<th>Base + Adapter</th>
+<th>Merged Model</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base Model</td>
+<td>单独存在</td>
+<td>已写入完整权重</td>
+</tr>
+<tr class="even">
+<td>Adapter</td>
+<td>单独加载</td>
+<td>已合并</td>
+</tr>
+<tr class="odd">
+<td>文件大小</td>
+<td>Adapter 很小</td>
+<td>接近完整模型</td>
+</tr>
+<tr class="even">
+<td>多 Adapter 切换</td>
+<td>很方便</td>
+<td>不方便</td>
+</tr>
+<tr class="odd">
+<td>部署结构</td>
+<td>两部分</td>
+<td>更像普通完整模型</td>
+</tr>
+<tr class="even">
+<td>Base Revision 依赖</td>
+<td>显式依赖</td>
+<td>已固定进 merged 权重</td>
+</tr>
+<tr class="odd">
+<td>实验管理</td>
+<td>很方便</td>
+<td>较重</td>
+</tr>
+<tr class="even">
+<td>单一固定部署</td>
+<td>可以</td>
+<td>通常更方便</td>
+</tr>
+</tbody>
+</table>
+<p>因此不要问：</p>
+<blockquote>
+<p>“Merge 是不是更高级？”</p>
+</blockquote>
+<p>真正的问题是：</p>
+<blockquote>
+<p><strong>部署到底需不需要 Adapter 可切换能力？</strong></p>
+</blockquote>
+<hr />
+<h1 id="三merge-数学上到底发生了什么">三、Merge
+数学上到底发生了什么？</h1>
+<p>第 6、7 阶段我们有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>s</mi><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+=
+sBA
+</annotation></semantics></math></p>
+<p>其中标准 LoRA 常见：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mfrac><mi>α</mi><mi>r</mi></mfrac></mrow><annotation encoding="application/x-tex">
+s=\frac{\alpha}{r}
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+W&#39;
+=
+W+sBA
+</annotation></semantics></math></p>
+<p>Merge 做的就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>W</mi><mtext mathvariant="normal">merged</mtext></msub><mo>=</mo><mi>W</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+W_{\text{merged}}
+=
+W+sBA
+}
+</annotation></semantics></math></p>
+<p>原先 Forward：</p>
+<pre class="text"><code>输入 x
+  │
+  ├── Base W ───────► Wx
+  │
+  └── LoRA A→B ─────► sBAx
+                        │
+                 两条路径相加</code></pre>
+<p>Merge 后：</p>
+<pre class="text"><code>输入 x
+  │
+  ▼
+W_merged
+  │
+  ▼
+W_merged x</code></pre>
+<p>数学上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>x</mi><mo>=</mo><mi>W</mi><mi>x</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+(W+sBA)x
+=
+Wx+sBAx
+</annotation></semantics></math></p>
+<p>因此理想情况下：</p>
+<blockquote>
+<p><strong>Adapter 模式与 Merge 模式应该产生等价行为。</strong></p>
+</blockquote>
+<p>实际浮点计算中可能出现极小数值差异。</p>
+<hr />
+<h1 id="四merge-最大的意义不是效果变好而是部署结构发生变化">四、Merge
+最大的意义不是“效果变好”，而是部署结构发生变化</h1>
+<p>这是今天特别重要的一点。</p>
+<p>不要形成：</p>
+<pre class="text"><code>Merge前
+模型一般
+
+Merge后
+模型更强</code></pre>
+<p>这样的理解。</p>
+<p>如果同一个 Base、同一个 Adapter、同一种数值精度：</p>
+<blockquote>
+<p>Merge 本身不应该凭空提升业务能力。</p>
+</blockquote>
+<p>它主要改变：</p>
+<h1 id="parameter-representation">Parameter Representation</h1>
+<p>从：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W + \Delta W
+</annotation></semantics></math></p>
+<p>两份参数</p>
+<p>变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mtext mathvariant="normal">merged</mtext></msub><annotation encoding="application/x-tex">
+W_{\text{merged}}
+</annotation></semantics></math></p>
+<p>一份完整权重。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>是</mi><mi>P</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>/</mi><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>操</mi><mi>作</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Merge
+是Packaging / Deployment操作
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<h1 id="training-operation">Training Operation</h1>
+<hr />
+<h1 id="五qlora-场景下merge-要特别小心">五、QLoRA 场景下，Merge
+要特别小心</h1>
+<p>我们训练时的 Base Model 是：</p>
+<pre class="text"><code>4-bit NF4
+Frozen Base</code></pre>
+<p>但 LoRA 学到的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+</annotation></semantics></math></p>
+<p>并不意味着我们应该简单地认为：</p>
+<blockquote>
+<p>“直接往原来的 4-bit 编码里加 BA 就完事。”</p>
+</blockquote>
+<p>第一版最好建立这样的流程：</p>
+<pre class="text"><code>QLoRA训练
+        ↓
+得到 LoRA Adapter
+        ↓
+重新加载
+同一个 Base Model Revision
+以 BF16 / FP16 等适合 Merge 的精度
+        ↓
+加载 Adapter
+        ↓
+Merge
+        ↓
+得到完整 Merged Model</code></pre>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>QLoRA 的 4-bit 是训练时节省 Base Weight 显存的策略；最终
+Merge 的权重精度与部署量化，是另一个独立决策。</strong></p>
+</blockquote>
+<p>如果部署最终还需要：</p>
+<pre class="text"><code>4-bit
+8-bit
+其他量化格式</code></pre>
+<p>更清楚的思路是：</p>
+<pre class="text"><code>Base + Adapter
+     ↓
+Merge得到完整模型
+     ↓
+验证
+     ↓
+再做部署量化</code></pre>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingQuantization
+\neq
+DeploymentQuantization
+}
+</annotation></semantics></math></p>
+<p>这两个不要混。</p>
+<hr />
+<h1 id="六真正应该保存哪些东西">六、真正应该保存哪些东西？</h1>
+<p>我们把模型产物拆成四层。</p>
+<h3 id="第一层adapter-artifact">第一层：Adapter Artifact</h3>
+<p>至少包含概念上的：</p>
+<pre class="text"><code>LoRA Weights
+LoRA Config
+Rank
+Alpha
+Target Modules
+Base Model Identity</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>最小的微调成果。</p>
+</blockquote>
+<hr />
+<h3 id="第二层tokenizer-protocol-artifact">第二层：Tokenizer / Protocol
+Artifact</h3>
+<p>至少锁定：</p>
+<pre class="text"><code>Tokenizer
+Chat Template
+Special Tokens
+EOS / EOT Policy
+System Prompt Policy</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>模型怎样“听懂请求”的协议。</p>
+</blockquote>
+<hr />
+<h3 id="第三层model-artifact">第三层：Model Artifact</h3>
+<p>可以有两种：</p>
+<pre class="text"><code>Base + Adapter</code></pre>
+<p>或：</p>
+<pre class="text"><code>Merged Model</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>真正用于推理的权重组合。</p>
+</blockquote>
+<hr />
+<h3 id="第四层release-manifest">第四层：Release Manifest</h3>
+<p>记录：</p>
+<pre class="text"><code>release_id
+base_model
+base_revision
+
+adapter_version
+adapter_hash
+
+tokenizer_revision
+chat_template_hash
+
+dataset_version
+training_run_id
+
+selected_checkpoint
+
+merge_dtype
+
+generation_config
+
+benchmark_version
+benchmark_result
+
+release_timestamp</code></pre>
+<p>这才让：</p>
+<h1 id="procurementlm_v0.1-2"><code>ProcurementLM_V0.1</code></h1>
+<p>成为一个能复现的模型版本。</p>
+<hr />
+<h1 id="七动态-adapter-模式应该怎样理解">七、动态 Adapter
+模式应该怎样理解？</h1>
+<p>部署逻辑：</p>
+<pre class="text"><code>Base Model
+    ↓
+加载
+    ↓
+挂载 Procurement Adapter
+    ↓
+Inference</code></pre>
+<p>概念代码类似：</p>
+<div class="sourceCode" id="cb983"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb983-1"><a href="#cb983-1" aria-hidden="true" tabindex="-1"></a>base_model <span class="op">=</span> load_base_model(BASE_MODEL_ID)</span>
+<span id="cb983-2"><a href="#cb983-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb983-3"><a href="#cb983-3" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> load_adapter(</span>
+<span id="cb983-4"><a href="#cb983-4" aria-hidden="true" tabindex="-1"></a>    base_model,</span>
+<span id="cb983-5"><a href="#cb983-5" aria-hidden="true" tabindex="-1"></a>    ADAPTER_PATH,</span>
+<span id="cb983-6"><a href="#cb983-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb983-7"><a href="#cb983-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb983-8"><a href="#cb983-8" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">eval</span>()</span></code></pre></div>
+<p>它的最大优势是：</p>
+<blockquote>
+<p><strong>一个 Base 可以挂不同 Adapter。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Base Model
+│
+├── Procurement-Risk-V0.1
+├── Procurement-Classification-V0.2
+└── Contract-Review-V0.1</code></pre>
+<p>这对于：</p>
+<pre class="text"><code>实验
+灰度测试
+多业务线
+快速回滚</code></pre>
+<p>特别方便。</p>
+<p>所以研究阶段和多 Adapter 系统：</p>
+<blockquote>
+<p>动态加载往往非常舒服。</p>
+</blockquote>
+<hr />
+<h1 id="八merged-model-模式什么时候更有吸引力">八、Merged Model
+模式什么时候更有吸引力？</h1>
+<p>如果生产环境只需要：</p>
+<blockquote>
+<p>一个固定的政府采购模型。</p>
+</blockquote>
+<p>那么：</p>
+<pre class="text"><code>Base
++
+Adapter</code></pre>
+<p>每次都动态组合，</p>
+<p>可能没有必要。</p>
+<p>Merge 后：</p>
+<pre class="text"><code>ProcurementLM_V0.1_Merged</code></pre>
+<p>可以更接近普通 Causal LM：</p>
+<pre class="text"><code>加载完整模型
+↓
+Tokenizer
+↓
+Generate</code></pre>
+<p>这样部署链更简单。</p>
+<p>但代价也很明确：</p>
+<blockquote>
+<p>完整模型文件会比 Adapter 大很多。</p>
+</blockquote>
+<p>同时：</p>
+<blockquote>
+<p>Adapter 不再可以简单关闭来恢复 Base 行为。</p>
+</blockquote>
+<p>因此两种路径本质上是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>l</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mspace width="1.0em"></mspace><mi>v</mi><mi>s</mi><mspace width="1.0em"></mspace><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>i</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Flexibility
+\quad vs \quad
+DeploymentSimplicity
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="九推理阶段最重要的不是-generate而是协议一致">九、推理阶段最重要的不是
+<code>generate()</code>，而是协议一致</h1>
+<p>假设训练时：</p>
+<pre class="text"><code>System
+↓
+User
+↓
+Assistant</code></pre>
+<p>使用某个原生 Chat Template。</p>
+<p>部署时就必须继续遵守同样协议。</p>
+<p>推理数据应该是：</p>
+<div class="sourceCode" id="cb990"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb990-1"><a href="#cb990-1" aria-hidden="true" tabindex="-1"></a>messages <span class="op">=</span> [</span>
+<span id="cb990-2"><a href="#cb990-2" aria-hidden="true" tabindex="-1"></a>    {</span>
+<span id="cb990-3"><a href="#cb990-3" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;role&quot;</span>: <span class="st">&quot;system&quot;</span>,</span>
+<span id="cb990-4"><a href="#cb990-4" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;content&quot;</span>: <span class="st">&quot;你是政府采购文件审查助手。&quot;</span></span>
+<span id="cb990-5"><a href="#cb990-5" aria-hidden="true" tabindex="-1"></a>    },</span>
+<span id="cb990-6"><a href="#cb990-6" aria-hidden="true" tabindex="-1"></a>    {</span>
+<span id="cb990-7"><a href="#cb990-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;role&quot;</span>: <span class="st">&quot;user&quot;</span>,</span>
+<span id="cb990-8"><a href="#cb990-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;content&quot;</span>: <span class="st">&quot;审查以下采购条款：...&quot;</span></span>
+<span id="cb990-9"><a href="#cb990-9" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb990-10"><a href="#cb990-10" aria-hidden="true" tabindex="-1"></a>]</span></code></pre></div>
+<p>然后概念上：</p>
+<div class="sourceCode" id="cb991"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb991-1"><a href="#cb991-1" aria-hidden="true" tabindex="-1"></a>inputs <span class="op">=</span> tokenizer.apply_chat_template(</span>
+<span id="cb991-2"><a href="#cb991-2" aria-hidden="true" tabindex="-1"></a>    messages,</span>
+<span id="cb991-3"><a href="#cb991-3" aria-hidden="true" tabindex="-1"></a>    tokenize<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb991-4"><a href="#cb991-4" aria-hidden="true" tabindex="-1"></a>    add_generation_prompt<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb991-5"><a href="#cb991-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>注意这里和训练不同。</p>
+<p>训练：</p>
+<pre class="text"><code>System
+User
+Assistant Gold Answer</code></pre>
+<p>因此通常：</p>
+<pre class="text"><code>add_generation_prompt=False</code></pre>
+<p>推理：</p>
+<pre class="text"><code>System
+User</code></pre>
+<p>还没有 Assistant Answer。</p>
+<p>所以通常需要：</p>
+<pre class="text"><code>add_generation_prompt=True</code></pre>
+<p>核心不是记布尔值。</p>
+<p>核心是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>训</mi><mi>练</mi><mi>和</mi><mi>推</mi><mi>理</mi><mi>使</mi><mi>用</mi><mi>同</mi><mi>一</mi><mi>对</mi><mi>话</mi><mi>协</mi><mi>议</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+训练和推理使用同一对话协议
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十正式验证-merge必须做-inference-parity-test">十、正式验证
+Merge，必须做 Inference Parity Test</h1>
+<p>Merge 完以后，不能直接说：</p>
+<blockquote>
+<p>“文件成功保存，所以完成。”</p>
+</blockquote>
+<p>至少选一组固定样本：</p>
+<pre class="text"><code>Normal Case
+Hard Positive
+Hard Negative
+Boundary Case
+Unknown / needs_review</code></pre>
+<p>分别跑：</p>
+<pre class="text"><code>A
+Base + Adapter
+
+B
+Merged Model</code></pre>
+<p>并保持：</p>
+<pre class="text"><code>同Tokenizer
+同Chat Template
+同Prompt
+同Generation Config</code></pre>
+<p>为了减少随机噪声，第一轮最好采用：</p>
+<pre class="text"><code>do_sample = False</code></pre>
+<p>或者其他确定性解码策略。</p>
+<p>然后比较：</p>
+<pre class="text"><code>输出结构
+风险分类
+理由
+停止位置
+业务结果</code></pre>
+<p>如果数值精度完全一致，输出往往应高度接近；如果 Merge、重新量化或不同
+kernel/dtype 被引入，则允许存在一定数值差异。</p>
+<p>所以真正的原则是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>需</mi><mi>要</mi><mi>行</mi><mi>为</mi><mi>验</mi><mi>证</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MergeSuccess
+需要行为验证
+}
+</annotation></semantics></math></p>
+<p>而不仅仅是：</p>
+<pre class="text"><code>save_pretrained() 没报错</code></pre>
+<hr />
+<h1 id="十一generation-config-也属于模型发布的一部分">十一、Generation
+Config 也属于模型发布的一部分</h1>
+<p>同一个模型：</p>
+<pre class="text"><code>temperature = 0</code></pre>
+<p>和：</p>
+<pre class="text"><code>temperature = 1.2</code></pre>
+<p>可能表现非常不同。</p>
+<p>因此不能把所有生成差异都归因于：</p>
+<blockquote>
+<p>模型 Weight。</p>
+</blockquote>
+<p>正式 Benchmark 应固定：</p>
+<pre class="text"><code>max_new_tokens
+temperature
+top_p
+top_k
+do_sample
+repetition_penalty
+stop / EOS policy</code></pre>
+<p>对于政府采购第一版评测：</p>
+<blockquote>
+<p>更适合先使用确定性或低随机性的 Generation Baseline。</p>
+</blockquote>
+<p>原因很简单：</p>
+<blockquote>
+<p>我们首先要比较模型能力，而不是抽样运气。</p>
+</blockquote>
+<p>最终生产环境是否加入 Sampling：</p>
+<blockquote>
+<p>再根据业务需求决定。</p>
+</blockquote>
+<hr />
+<h1 id="十二三个最重要的保存策略">十二、三个最重要的保存策略</h1>
+<p>对于 <code>ProcurementLM_V0.1</code>，不要只留一个文件夹。</p>
+<p>建议同时保留：</p>
+<pre class="text"><code>1. 原始 Best Adapter
+2. Merged Release Candidate
+3. Release Manifest</code></pre>
+<p>以及对应的：</p>
+<pre class="text"><code>Tokenizer
+Chat Template
+Benchmark Report
+Training Run ID</code></pre>
+<p>可以形成：</p>
+<pre class="text"><code>ProcurementLM_V0.1/
+│
+├── adapter/
+│
+├── merged/
+│
+├── tokenizer/
+│
+├── config/
+│
+├── benchmark/
+└── release_manifest.json</code></pre>
+<p>这样以后你可以：</p>
+<blockquote>
+<p>重新 Merge。</p>
+</blockquote>
+<p>也可以：</p>
+<blockquote>
+<p>恢复 Adapter 模式。</p>
+</blockquote>
+<p>还可以：</p>
+<blockquote>
+<p>对 merged 模型重新做另一种部署量化。</p>
+</blockquote>
+<p>这比只留一个最终大模型文件可靠得多。</p>
+<hr />
+<h1 id="十三这一阶段最危险的错误">十三、这一阶段最危险的错误</h1>
+<p>第一，<strong>训练完只保存 Adapter，却没有记录准确 Base
+Revision。</strong><br />
+以后可能根本无法重建相同模型。</p>
+<p>第二，<strong>Merge 完以后把原 Adapter 删除。</strong><br />
+你失去了最轻量、最灵活的训练成果原件。</p>
+<p>第三，<strong>QLoRA 训练完直接把“4-bit
+Base”与“最终部署量化”混为一件事。</strong><br />
+训练量化与部署量化应分开管理。</p>
+<p>第四，<strong>Merge 前后用不同 Tokenizer 或 Chat Template
+做测试。</strong><br />
+你测到的就不再是 Merge 差异，而是协议差异。</p>
+<p>第五，<strong>只验证模型能生成文字，不验证 Hard Negative 和 Boundary
+Case。</strong><br />
+“能说话”不是 ProcurementLM Release 标准。</p>
+<p>第六，<strong>把 Merge 当成一次新的训练。</strong><br />
+Merge 不产生新的监督信号。</p>
+<p>第七，<strong>只记录模型目录，不记录 Generation
+Config。</strong><br />
+以后相同模型也可能复现不出相同结果。</p>
+<hr />
+<h1
+id="十四本阶段工程产物procurementlmreleasebundle_v0.1">十四、本阶段工程产物：<code>ProcurementLMReleaseBundle_V0.1</code></h1>
+<p>最终发布包至少应该有：</p>
+<pre class="text"><code>release_id
+
+base_model_id
+base_model_revision
+
+adapter_checkpoint
+adapter_hash
+
+merged_model_path
+merge_dtype
+
+tokenizer_revision
+chat_template_hash
+
+system_prompt_version
+
+generation_config
+
+dataset_version
+training_run_id
+selected_checkpoint
+
+benchmark_version
+benchmark_results
+
+adapter_parity_test
+merged_parity_test
+
+release_status</code></pre>
+<p>其中：</p>
+<h1 id="release_status"><code>release_status</code></h1>
+<p>不要训练一结束就写：</p>
+<pre class="text"><code>production</code></pre>
+<p>更合理的是：</p>
+<pre class="text"><code>candidate</code></pre>
+<p>直到第 14 阶段完成：</p>
+<h1 id="baseline-vs-fine-tuned-model-正式对比">Baseline vs Fine-tuned
+Model 正式对比</h1>
+<p>才能决定是否：</p>
+<blockquote>
+<p>冻结为正式的 <code>ProcurementLM_V0.1</code>。</p>
+</blockquote>
+<hr />
+<h1 id="十五把整个第-13-阶段压成最精准的-5-句话">十五、把整个第 13
+阶段压成最精准的 5 句话</h1>
+<blockquote>
+<p><strong>第一，LoRA Merge 不是继续训练，而是把
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">sBA</annotation></semantics></math>
+提前加回 Base Weight，形成
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mtext mathvariant="normal">merged</mtext></msub><mo>=</mo><mi>W</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">W_{\text{merged}}=W+sBA</annotation></semantics></math>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Base + Adapter 与 Merged Model
+理论上表达相同微调行为，但前者更灵活、文件更小，后者更适合单一固定模型的简化部署。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，QLoRA 的 4-bit 是训练时 Base Weight 的内存策略；Merge
+与最终部署量化应该作为独立阶段处理，不要把三件事混在一起。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，模型产品绝不只是权重：Base
+Revision、Adapter、Tokenizer、Chat Template、Generation Config 和
+Release Manifest 都必须锁定。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Merge 成功的判据不是代码没报错，而是 Base+Adapter 与
+Merged Model 在同一推理协议和固定 Benchmark
+下通过行为一致性检查。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-2">本阶段最核心的一张图</h1>
+<pre class="text"><code>                    Best LoRA Checkpoint
+                            │
+                            ▼
+                    Adapter Artifact
+                            │
+             ┌──────────────┴──────────────┐
+             │                             │
+             ▼                             ▼
+      Dynamic Adapter Path             Merge Path
+             │                             │
+         Base Model                   Base Model
+             +                             +
+          Adapter                       ΔW=BA
+             │                             │
+             ▼                             ▼
+         Inference                 W_merged=W+ΔW
+             │                             │
+             │                             ▼
+             │                       Merged Model
+             │                             │
+             └──────────────┬──────────────┘
+                            ▼
+                   Same Tokenizer
+                   Same Chat Template
+                   Same Generation Config
+                            │
+                            ▼
+                    Inference Parity
+                            │
+                            ▼
+                    Procurement Benchmark
+                            │
+                            ▼
+                   Release Candidate</code></pre>
+<p>脑中只留一句：</p>
+<blockquote>
+<p><strong>训练产物是 Adapter，部署产物可以是 Adapter，也可以是
+Merge；真正的模型产品则是“权重 + 协议 + 版本 + 评测证据”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段掌握测试-1">本阶段掌握测试</h1>
+<p>不回看正文，你现在应该能够解释：LoRA Merge 数学上到底做了什么；为什么
+Merge 不等于继续训练；Base+Adapter 与 Merged Model
+在行为上是什么关系；为什么 Adapter 文件通常不能脱离 Base Model；为什么
+Merge 后文件会明显变大；什么时候动态 Adapter 更合理；什么时候 Merged
+Model 更方便；QLoRA 的 4-bit Base
+与最终部署量化为什么是两回事；为什么建议用较合适精度的同版本 Base
+重新加载 Adapter 再完成 Merge；为什么 Merge 后还必须保存原始
+Adapter；为什么 Tokenizer 和 Chat Template 是 Release
+的一部分；训练时和推理时 <code>add_generation_prompt</code>
+的逻辑为什么不同；为什么 Generation Config 必须固定；什么是 Inference
+Parity Test；以及为什么最终模型还不能在第 13 阶段直接宣布“成功”。</p>
+<p>如果这些能完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>13</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第13阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第五课-第-14-阶段">下一阶段：第五课 · 第 14 阶段</h1>
+<h1 id="baseline-vs-fine-tuned-model-正式对比-1">Baseline vs Fine-tuned
+Model 正式对比</h1>
+<h2
+id="我们花了整整一课训练模型究竟有没有真的把它变得更好">我们花了整整一课训练模型，究竟有没有真的把它变得更好？</h2>
+<p>第 14 阶段就是第五课真正的<strong>验收阶段</strong>。</p>
+<p>我们不再看：</p>
+<pre class="text"><code>Train Loss
+漂亮不漂亮</code></pre>
+<p>而是正式把：</p>
+<pre class="text"><code>Base Model
+        VS
+ProcurementLM_V0.1</code></pre>
+<p>放到同一套：</p>
+<pre class="text"><code>Normal Cases
+Hard Positives
+Hard Negatives
+Boundary Cases
+Unknown / needs_review
+Format Compliance
+General Capability Regression</code></pre>
+<p>上进行盲测和量化对比。</p>
+<p>最终要回答的只有一个问题：</p>
+<blockquote>
+<p><strong>SFT + LoRA / QLoRA
+到底给政府采购任务带来了哪些可验证的行为变化，又付出了什么代价？</strong></p>
+</blockquote>
+<p>而第 14 阶段结束时，我们才会真正得到第五课最终交付物：</p>
+<h1 id="procurementlm_v0.1-3"><code>ProcurementLM_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage12.html">← 第 12 阶段</a><a class="btn" href="stage14.html">第 14 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

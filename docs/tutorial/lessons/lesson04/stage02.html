@@ -1,0 +1,3424 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第2阶段：PDF、HTML、DOCX 到底怎样变成“可信文本”？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>文件里“看得见文字” ≠ 文件里真的存着可直接读取的文字</li><li>Extract Text ≠ Parse Document</li><li>文档解析真正要恢复的是： 文字 + 阅读顺序 + 结构 + 表格 + 来源位置</li></ul></div><h1 id="第四课-第-2-阶段pdfhtmldocx-到底怎样变成可信文本">第四课 · 第 2
+阶段：PDF、HTML、DOCX 到底怎样变成“可信文本”？</h1>
+<h2 id="为什么-extract_text-成功并不代表文档解析成功">为什么
+<code>extract_text()</code> 成功，并不代表文档解析成功？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>文件里“看得见文字” ≠
+文件里真的存着可直接读取的文字</strong></li>
+<li><strong>Extract Text ≠ Parse Document</strong></li>
+<li><strong>文档解析真正要恢复的是： 文字 + 阅读顺序 + 结构 + 表格 +
+来源位置</strong></li>
+<li><strong>OCR 是扫描页的后备方案， 不是所有PDF默认第一步</strong></li>
+<li><strong>原始文档解析时不要过早丢失：
+页码、位置、区块类型、来源信息</strong></li>
+<li><strong>解析质量不是看“程序有没有报错”，
+而是看“下游业务判断会不会被解析错误带偏”</strong></li>
+<li><strong>文件里“看得见文字”</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>OCR</code></td>
+<td>OCR：把扫描图像中的文字转换成机器可读文本</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Layout</code></td>
+<td>版面结构：文字块、表格、列、坐标和阅读顺序信息</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>OOD</code></td>
+<td>分布外数据：明显偏离训练/验证分布的新输入</td>
+</tr>
+<tr class="odd">
+<td><code>Raw Document</code></td>
+<td>原始文档：未经结构化处理的采购文件源材料</td>
+</tr>
+<tr class="even">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="odd">
+<td><code>Data Unit</code></td>
+<td>数据单元：从原始文件切出的可追踪业务片段</td>
+</tr>
+<tr class="even">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>上一阶段，我们先做了一件看起来“不像数据工程”，实际上最重要的事情：</p>
+<blockquote>
+<p><strong>先定义一条数据究竟是什么。</strong></p>
+</blockquote>
+<p>我们已经建立了这条主线：</p>
+<pre class="text"><code>Raw Document
+      ↓
+Data Unit
+      ↓
+Task Schema
+      ↓
+Training / Evaluation Sample</code></pre>
+<p>现在终于可以真正碰：</p>
+<h1 id="原始采购文件">原始采购文件</h1>
+<p>但这一阶段有一个特别容易踩的坑。</p>
+<p>很多人第一次做 PDF 处理时，会写：</p>
+<div class="sourceCode" id="cb188"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb188-1"><a href="#cb188-1" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> extract_text(<span class="st">&quot;招标文件.pdf&quot;</span>)</span></code></pre></div>
+<p>然后程序成功返回了一大段中文。</p>
+<p>于是宣布：</p>
+<blockquote>
+<p>“PDF 解析完成。”</p>
+</blockquote>
+<p>实际上：</p>
+<blockquote>
+<p><strong>很可能只是“拿到了一些字符”，距离“拿到可信文档”还差得很远。</strong></p>
+</blockquote>
+<p>今天这一阶段真正解决的问题只有一个：</p>
+<blockquote>
+<p><strong>机器怎样把 PDF、HTML、DOCX
+还原成一个足够可信、足够可追溯、能够继续切条款的数据结构？</strong></p>
+</blockquote>
+<hr />
+<h1 id="一本阶段先建立-6-个核心心智模型">一、本阶段先建立 6
+个核心心智模型</h1>
+<p>先把这六句话钉住：</p>
+<pre class="text"><code>① 文件里“看得见文字”
+   ≠
+   文件里真的存着可直接读取的文字
+
+② Extract Text
+   ≠
+   Parse Document
+
+③ 文档解析真正要恢复的是：
+   文字 + 阅读顺序 + 结构 + 表格 + 来源位置
+
+④ OCR 是扫描页的后备方案，
+   不是所有PDF默认第一步
+
+⑤ 原始文档解析时不要过早丢失：
+   页码、位置、区块类型、来源信息
+
+⑥ 解析质量不是看“程序有没有报错”，
+   而是看“下游业务判断会不会被解析错误带偏”</code></pre>
+<p>整个第 2 阶段，基本都围绕这六句话展开。</p>
+<hr />
+<h1 id="二先看最简单的误区">二、先看最简单的误区</h1>
+<p>假设人眼看到一页采购文件：</p>
+<pre class="text"><code>第三章 采购需求
+
+3.1 供应商资格条件
+
+1. 供应商应具有独立承担民事责任的能力。
+2. 供应商注册资本不得低于500万元。
+3. 供应商应在本市设立固定服务机构。
+
+第 37 页</code></pre>
+<p>人类非常自然地理解：</p>
+<pre class="text"><code>标题
+↓
+小节标题
+↓
+条款1
+↓
+条款2
+↓
+条款3
+↓
+页脚</code></pre>
+<p>但 PDF 内部：</p>
+<blockquote>
+<p><strong>不一定按照这个顺序存。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三pdf-本质上是什么">三、PDF 本质上是什么？</h1>
+<p>初学时非常容易把 PDF 想成：</p>
+<blockquote>
+<p>一个“只读版 Word”。</p>
+</blockquote>
+<p>其实这不准确。</p>
+<p>PDF 更接近：</p>
+<blockquote>
+<p><strong>一套告诉渲染器“页面上的东西应该画在哪里”的固定版式描述。</strong></p>
+</blockquote>
+<p>它首先关心的是：</p>
+<pre class="text"><code>这里画一个字
+那里画一条线
+这里放一张图
+那里放一个文本块</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>这是一级标题
+这是第二段
+这是表格第三行第二列
+这是资格条件</code></pre>
+<hr />
+<h1 id="四这就是-pdf-和-docx-的根本区别之一">四、这就是 PDF 和 DOCX
+的根本区别之一</h1>
+<p>DOCX 更偏：</p>
+<blockquote>
+<p><strong>文档结构。</strong></p>
+</blockquote>
+<p>PDF 更偏：</p>
+<blockquote>
+<p><strong>页面最终长什么样。</strong></p>
+</blockquote>
+<p>可以先这么理解：</p>
+<pre class="text"><code>DOCX
+更像“文章的结构说明”
+
+PDF
+更像“最终打印出来的页面”</code></pre>
+<hr />
+<h1 id="五所以-pdf-最擅长什么">五、所以 PDF 最擅长什么？</h1>
+<p>保持：</p>
+<ul>
+<li>字体；</li>
+<li>页面；</li>
+<li>位置；</li>
+<li>打印效果；</li>
+<li>跨设备视觉一致性。</li>
+</ul>
+<p>也正因为这样：</p>
+<blockquote>
+<p>它并不天然适合机器恢复语义结构。</p>
+</blockquote>
+<hr />
+<h1 id="六第一个核心心智模型">六、第一个核心心智模型</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>i</mi><mi>s</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>o</mi><mi>u</mi><mi>t</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VisualLayout
+\neq
+SemanticStructure
+}
+</annotation></semantics></math></p>
+<p>人眼看到：</p>
+<blockquote>
+<p>“这是标题。”</p>
+</blockquote>
+<p>PDF 可能只知道：</p>
+<blockquote>
+<p>“这一行字号 18、粗体、坐标在页面顶部。”</p>
+</blockquote>
+<hr />
+<h1 id="七先把-pdf-分成三类">七、先把 PDF 分成三类</h1>
+<p>政府采购文件里，我们至少会碰到：</p>
+<pre class="text"><code>① 文字型PDF
+
+② 扫描型PDF
+
+③ 混合型PDF</code></pre>
+<p>这三种必须分清。</p>
+<hr />
+<h1 id="八第一类文字型-pdf">八、第一类：文字型 PDF</h1>
+<p>比如：</p>
+<blockquote>
+<p>Word 导出 PDF。</p>
+</blockquote>
+<p>页面看起来是文字。</p>
+<p>内部通常也存在：</p>
+<blockquote>
+<p>Text Layer。</p>
+</blockquote>
+<p>你可以：</p>
+<ul>
+<li>鼠标选择文字；</li>
+<li>搜索关键字；</li>
+<li>复制粘贴。</li>
+</ul>
+<p>这种 PDF：</p>
+<blockquote>
+<p>通常优先做原生文字提取。</p>
+</blockquote>
+<hr />
+<h1 id="九第二类扫描型-pdf">九、第二类：扫描型 PDF</h1>
+<p>来源可能是：</p>
+<pre class="text"><code>纸质文件
+↓
+扫描仪
+↓
+PDF</code></pre>
+<p>这时候整页对机器来说可能只是：</p>
+<h1 id="image">Image</h1>
+<p>也就是：</p>
+<blockquote>
+<p>一张照片。</p>
+</blockquote>
+<hr />
+<h1 id="十你人眼看到的是">十、你人眼看到的是</h1>
+<pre class="text"><code>供应商应……</code></pre>
+<p>但 PDF 内部可能只有：</p>
+<pre class="text"><code>一张 2480 × 3508 像素图片</code></pre>
+<p>没有字符：</p>
+<pre class="text"><code>供
+应
+商</code></pre>
+<p>这个概念。</p>
+<hr />
+<h1 id="十一这时普通-extract_text-会怎样">十一、这时普通
+<code>extract_text()</code> 会怎样？</h1>
+<p>可能：</p>
+<pre class="text"><code>返回空字符串</code></pre>
+<p>或者：</p>
+<pre class="text"><code>几乎没有文字</code></pre>
+<hr />
+<h1 id="十二这种情况才真正需要-ocr">十二、这种情况才真正需要 OCR</h1>
+<p>OCR：</p>
+<h1 id="optical-character-recognition">Optical Character
+Recognition</h1>
+<p>光学字符识别。</p>
+<p>它做的是：</p>
+<pre class="text"><code>Pixel
+↓
+识别字形
+↓
+Character
+↓
+Text</code></pre>
+<hr />
+<h1 id="十三第三类混合型-pdf">十三、第三类：混合型 PDF</h1>
+<p>这其实很常见。</p>
+<p>例如：</p>
+<pre class="text"><code>第1～20页
+正常电子文本
+
+第21页
+扫描盖章文件
+
+第22～40页
+正常文本
+
+附件
+又是扫描件</code></pre>
+<p>所以：</p>
+<blockquote>
+<p><strong>不能只给整个 PDF 打一个“可提取/不可提取”的标签。</strong></p>
+</blockquote>
+<p>更合理的是：</p>
+<h1 id="page-level-detection">Page-level Detection</h1>
+<p>按页判断。</p>
+<hr />
+<h1 id="十四一个-100-页-pdf-可能长这样">十四、一个 100 页 PDF
+可能长这样</h1>
+<pre class="text"><code>Page 1   Native Text
+Page 2   Native Text
+Page 3   Native Text
+...
+Page 38  Scan
+Page 39  Scan
+Page 40  Native Text
+...
+Page 95  Native Text
+Page 96  Scan</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>OCR 策略应该可以精确到页。</p>
+</blockquote>
+<hr />
+<h1
+id="十五为什么我特别强调不要所有-pdf-都-ocr">十五、为什么我特别强调“不要所有
+PDF 都 OCR”？</h1>
+<p>因为很多人会觉得：</p>
+<blockquote>
+<p>“OCR 什么都能认，那我把所有页面先转图片再 OCR，不就统一了吗？”</p>
+</blockquote>
+<p>听起来很省事。</p>
+<p>实际通常不是最佳方案。</p>
+<hr />
+<h1 id="十六如果-pdf-本来就有高质量文字层">十六、如果 PDF
+本来就有高质量文字层</h1>
+<p>原生提取可以直接拿到：</p>
+<pre class="text"><code>政府采购法</code></pre>
+<p>OCR 却需要：</p>
+<pre class="text"><code>图片
+↓
+识别
+↓
+猜这是哪几个字</code></pre>
+<p>无端增加了一次：</p>
+<blockquote>
+<p>识别错误机会。</p>
+</blockquote>
+<hr />
+<h1
+id="十七尤其政府采购文件里有很多敏感字符">十七、尤其政府采购文件里有很多敏感字符</h1>
+<p>比如：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>OCR 如果变成：</p>
+<pre class="text"><code>S00万元</code></pre>
+<p>问题就非常大。</p>
+<hr />
+<h1 id="十八再比如">十八、再比如</h1>
+<p>原文：</p>
+<pre class="text"><code>≤3%</code></pre>
+<p>OCR：</p>
+<pre class="text"><code>&lt; 8%</code></pre>
+<p>对于普通文章：</p>
+<blockquote>
+<p>也许只是一个错字。</p>
+</blockquote>
+<p>对于：</p>
+<blockquote>
+<p>评分标准</p>
+</blockquote>
+<p>可能直接改变业务含义。</p>
+<hr />
+<h1 id="十九再比如型号">十九、再比如型号</h1>
+<pre class="text"><code>ZX-1080</code></pre>
+<p>可能被识别成：</p>
+<pre class="text"><code>ZX-I080</code></pre>
+<hr />
+<h1 id="二十再比如法律条款">二十、再比如法律条款</h1>
+<pre class="text"><code>第三十一条</code></pre>
+<p>变成：</p>
+<pre class="text"><code>第三十—条</code></pre>
+<p>RAG 检索：</p>
+<blockquote>
+<p>可能就被影响。</p>
+</blockquote>
+<hr />
+<h1 id="二十一所以-ocr-最重要的心智模型是">二十一、所以 OCR
+最重要的心智模型是</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>C</mi><mi>R</mi><mo>=</mo><mi>必</mi><mi>要</mi><mi>时</mi><mi>把</mi><mi>像</mi><mi>素</mi><mi>恢</mi><mi>复</mi><mi>成</mi><mi>文</mi><mi>字</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OCR
+=
+必要时把像素恢复成文字
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>C</mi><mi>R</mi><mo>=</mo><mi>所</mi><mi>有</mi><mi>文</mi><mi>档</mi><mi>解</mi><mi>析</mi><mi>第</mi><mi>一</mi><mi>步</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OCR
+=
+所有文档解析第一步
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十二这就是今天的第一个决策树">二十二、这就是今天的第一个决策树</h1>
+<pre class="text"><code>拿到PDF
+   │
+   ▼
+页面是否有可信文字层？
+   │
+   ├── 是
+   │    ↓
+   │  Native Text Extraction
+   │
+   └── 否
+        ↓
+       OCR</code></pre>
+<p>混合 PDF：</p>
+<blockquote>
+<p>每页单独判断。</p>
+</blockquote>
+<hr />
+<h1 id="二十三但注意">二十三、但注意</h1>
+<p>即使：</p>
+<pre class="text"><code>Native Text Extraction</code></pre>
+<p>成功，</p>
+<p>仍然不能说：</p>
+<blockquote>
+<p>文档解析完成。</p>
+</blockquote>
+<p>为什么？</p>
+<p>因为第二个大问题来了：</p>
+<h1 id="reading-order">Reading Order</h1>
+<hr />
+<h1 id="二十四阅读顺序是什么">二十四、阅读顺序是什么？</h1>
+<p>人类看文件时会自动知道：</p>
+<pre class="text"><code>先读标题
+再读正文
+从左到右
+从上到下</code></pre>
+<p>但复杂 PDF：</p>
+<blockquote>
+<p>阅读顺序可能被打乱。</p>
+</blockquote>
+<hr />
+<h1 id="二十五例如一页两栏">二十五、例如一页两栏</h1>
+<p>人眼看到：</p>
+<pre class="text"><code>左栏                    右栏
+
+1. 条件A               4. 条件D
+2. 条件B               5. 条件E
+3. 条件C               6. 条件F</code></pre>
+<p>正确顺序应该是：</p>
+<pre class="text"><code>A
+B
+C
+D
+E
+F</code></pre>
+<hr />
+<h1
+id="二十六某些简单提取器可能得到">二十六、某些简单提取器可能得到</h1>
+<pre class="text"><code>A
+D
+B
+E
+C
+F</code></pre>
+<p>为什么？</p>
+<p>因为它可能按：</p>
+<blockquote>
+<p>页面对象内部顺序</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>人类阅读顺序。</p>
+</blockquote>
+<hr />
+<h1 id="二十七于是文字都提取成功了">二十七、于是文字都“提取成功”了</h1>
+<p>一个字都没丢。</p>
+<p>但语义：</p>
+<blockquote>
+<p>已经乱了。</p>
+</blockquote>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mo>≠</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CharacterCorrect
+\neq
+DocumentCorrect
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十八这对采购数据有多危险">二十八、这对采购数据有多危险？</h1>
+<p>原本：</p>
+<pre class="text"><code>1. 供应商资格条件：
+供应商须具有……</code></pre>
+<p>解析后变成：</p>
+<pre class="text"><code>1. 供应商资格条件：
+评分标准：
+价格得分……</code></pre>
+<p>然后资格要求：</p>
+<blockquote>
+<p>跑到别处。</p>
+</blockquote>
+<hr />
+<h1 id="二十九以后条款切分会怎样">二十九、以后条款切分会怎样？</h1>
+<p>模型会把：</p>
+<blockquote>
+<p>评分内容</p>
+</blockquote>
+<p>误认为：</p>
+<blockquote>
+<p>资格条件。</p>
+</blockquote>
+<p>所以解析错误：</p>
+<blockquote>
+<p>会一路传到训练数据。</p>
+</blockquote>
+<hr />
+<h1
+id="三十这就是数据工程中的一个重要概念">三十、这就是数据工程中的一个重要概念</h1>
+<h1 id="upstream-error-propagation">Upstream Error Propagation</h1>
+<p>上游一个小错误：</p>
+<pre class="text"><code>阅读顺序错</code></pre>
+<p>会向下游传播成：</p>
+<pre class="text"><code>章节错
+↓
+条款错
+↓
+标签错
+↓
+训练样本错
+↓
+模型学错</code></pre>
+<hr />
+<h1 id="三十一所以-parsing-绝对不是辅助小工具">三十一、所以 Parsing
+绝对不是“辅助小工具”</h1>
+<p>它决定：</p>
+<blockquote>
+<p>你后面数据集到底是不是在描述真实文档。</p>
+</blockquote>
+<hr />
+<h1 id="三十二第三个大问题页眉页脚">三十二、第三个大问题：页眉页脚</h1>
+<p>采购文件经常每页都有：</p>
+<pre class="text"><code>某某政府采购中心
+项目编号：XXXX
+第 37 页 / 共 128 页</code></pre>
+<p>这些视觉上：</p>
+<blockquote>
+<p>很自然。</p>
+</blockquote>
+<p>人类几乎自动忽略。</p>
+<hr />
+<h1 id="三十三机器不会自动忽略">三十三、机器不会自动忽略</h1>
+<p>提取 128 页以后：</p>
+<pre class="text"><code>项目编号：XXXX
+项目编号：XXXX
+项目编号：XXXX
+……</code></pre>
+<p>可能出现：</p>
+<blockquote>
+<p>128 次。</p>
+</blockquote>
+<hr />
+<h1 id="三十四这会产生什么问题">三十四、这会产生什么问题？</h1>
+<p>首先：</p>
+<blockquote>
+<p>重复污染。</p>
+</blockquote>
+<hr />
+<h1 id="三十五其次-token-浪费">三十五、其次 Token 浪费</h1>
+<p>模型每次读长文档：</p>
+<blockquote>
+<p>都反复读无用页眉页脚。</p>
+</blockquote>
+<hr />
+<h1 id="三十六再次切分污染">三十六、再次，切分污染</h1>
+<p>原本：</p>
+<pre class="text"><code>条款A</code></pre>
+<p>跨页。</p>
+<p>中间突然变成：</p>
+<pre class="text"><code>条款A前半部分
+
+第37页
+某某采购中心
+项目编号XXX
+
+条款A后半部分</code></pre>
+<p>后续切条款：</p>
+<blockquote>
+<p>会被干扰。</p>
+</blockquote>
+<hr />
+<h1 id="三十七还有一个更隐蔽的问题">三十七、还有一个更隐蔽的问题</h1>
+<p>模型可能把：</p>
+<blockquote>
+<p>页眉里的项目名称</p>
+</blockquote>
+<p>错误拼进：</p>
+<blockquote>
+<p>正文句子。</p>
+</blockquote>
+<hr />
+<h1
+id="三十八所以去页眉页脚不是简单删除第一页和最后一页">三十八、所以“去页眉页脚”不是简单删除第一页和最后一页</h1>
+<p>而是：</p>
+<blockquote>
+<p><strong>识别页面中重复出现、位置稳定、语义上属于版式装饰的区域。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十九一个好的方法通常会利用">三十九、一个好的方法通常会利用</h1>
+<pre class="text"><code>多个页面之间
+重复文本
++
+相似位置</code></pre>
+<p>例如：</p>
+<pre class="text"><code>页面顶部 30px～60px
+连续80页出现相同字符串</code></pre>
+<p>很可能：</p>
+<blockquote>
+<p>Header。</p>
+</blockquote>
+<hr />
+<h1 id="四十同理-footer">四十、同理 Footer</h1>
+<pre class="text"><code>页面底部
++
+连续出现
++
+页码变化</code></pre>
+<p>可能：</p>
+<blockquote>
+<p>Footer。</p>
+</blockquote>
+<hr />
+<h1
+id="四十一但是不能机械删除页面顶部所有文字">四十一、但是不能机械删除“页面顶部所有文字”</h1>
+<p>因为第一页顶部可能就是：</p>
+<h1 id="项目名称">项目名称</h1>
+<p>甚至：</p>
+<h1 id="采购公告标题">采购公告标题</h1>
+<p>删掉：</p>
+<blockquote>
+<p>数据也坏了。</p>
+</blockquote>
+<hr />
+<h1 id="四十二所以这里再次体现">四十二、所以这里再次体现</h1>
+<h1 id="rules-context">Rules + Context</h1>
+<p>不能只：</p>
+<blockquote>
+<p>写死坐标。</p>
+</blockquote>
+<hr />
+<h1 id="四十三第四个大问题换行">四十三、第四个大问题：换行</h1>
+<p>PDF 经常是按视觉行存储。</p>
+<p>例如人眼看到：</p>
+<blockquote>
+<p>供应商不得以不合理条件对其他供应商实行差别待遇或者歧视待遇。</p>
+</blockquote>
+<p>提取以后可能变成：</p>
+<pre class="text"><code>供应商不得以不合理条件对其他供
+应商实行差别待遇或者歧视待遇。</code></pre>
+<hr />
+<h1
+id="四十四这里的换行是语义换行吗">四十四、这里的换行是语义换行吗？</h1>
+<p>不是。</p>
+<p>只是：</p>
+<blockquote>
+<p>页面宽度到了。</p>
+</blockquote>
+<hr />
+<h1
+id="四十五如果我们直接把每行当句子">四十五、如果我们直接把每行当句子</h1>
+<p>就会出现：</p>
+<pre class="text"><code>“供应商不得以不合理条件对其他供”</code></pre>
+<p>和：</p>
+<pre class="text"><code>“应商实行差别待遇或者歧视待遇。”</code></pre>
+<p>两个假样本。</p>
+<hr />
+<h1 id="四十六所以要区分">四十六、所以要区分</h1>
+<pre class="text"><code>Visual Line Break</code></pre>
+<p>和：</p>
+<pre class="text"><code>Semantic Paragraph Break</code></pre>
+<p>这两个不是一回事。</p>
+<hr />
+<h1
+id="四十七相反有时真正的段落边界">四十七、相反，有时真正的段落边界</h1>
+<p>可能没有空行。</p>
+<p>比如：</p>
+<pre class="text"><code>1. 资格要求……
+2. 本项目不接受联合体……
+3. 投标人不得……</code></pre>
+<p>机器必须识别：</p>
+<blockquote>
+<p>编号变化本身就是结构信号。</p>
+</blockquote>
+<hr />
+<h1 id="四十八所以正确的解析不是">四十八、所以正确的解析不是</h1>
+<pre class="text"><code>每出现换行
+→ 新段落</code></pre>
+<p>而是综合：</p>
+<pre class="text"><code>位置
+缩进
+字号
+编号
+标点
+行距
+文本内容</code></pre>
+<p>去判断。</p>
+<hr />
+<h1
+id="四十九第五个问题连字符与断词">四十九、第五个问题：连字符与断词</h1>
+<p>英文文档里特别明显。</p>
+<p>例如：</p>
+<pre class="text"><code>govern-
+ment</code></pre>
+<p>其实是：</p>
+<pre class="text"><code>government</code></pre>
+<p>中文里也可能出现：</p>
+<blockquote>
+<p>字符被版面拆开。</p>
+</blockquote>
+<hr />
+<h1 id="五十如果后续-embedding-rag-直接使用错误断词">五十、如果后续
+Embedding / RAG 直接使用错误断词</h1>
+<p>会影响：</p>
+<ul>
+<li>Tokenizer；</li>
+<li>搜索；</li>
+<li>去重；</li>
+<li>语义匹配。</li>
+</ul>
+<hr />
+<h1 id="五十一第六个问题字体编码">五十一、第六个问题：字体编码</h1>
+<p>有些 PDF 人眼显示完全正常。</p>
+<p>但内部并不是标准：</p>
+<pre class="text"><code>Unicode Text</code></pre>
+<p>可能用了：</p>
+<blockquote>
+<p>特殊字符映射。</p>
+</blockquote>
+<hr />
+<h1 id="五十二于是复制出来可能是">五十二、于是复制出来可能是</h1>
+<pre class="text"><code></code></pre>
+<p>甚至乱码。</p>
+<hr />
+<h1
+id="五十三人眼为什么还能看到中文">五十三、人眼为什么还能看到中文？</h1>
+<p>因为 PDF 里面可能告诉渲染器：</p>
+<blockquote>
+<p>“这个字符代码，用这个字体画成某个字形。”</p>
+</blockquote>
+<p>但未必保存了：</p>
+<blockquote>
+<p>正确 Unicode 对应关系。</p>
+</blockquote>
+<hr />
+<h1 id="五十四这种页面看起来是文字-pdf">五十四、这种页面看起来是“文字
+PDF”</h1>
+<p>却可能：</p>
+<blockquote>
+<p>无法可靠提取文字。</p>
+</blockquote>
+<p>这类页面有时也需要：</p>
+<blockquote>
+<p>转为图像后识别</p>
+</blockquote>
+<p>或者使用更适合该 PDF 的解析工具。</p>
+<hr />
+<h1 id="五十五所以判断文字型-pdf不能只靠">五十五、所以判断“文字型
+PDF”不能只靠</h1>
+<blockquote>
+<p>能不能鼠标框选。</p>
+</blockquote>
+<p>最好还检查：</p>
+<pre class="text"><code>提取出的Unicode是否合理</code></pre>
+<hr />
+<h1 id="五十六第七个问题隐藏文字层">五十六、第七个问题：隐藏文字层</h1>
+<p>扫描 PDF 有时已经做过 OCR。</p>
+<p>于是页面里同时有：</p>
+<pre class="text"><code>视觉图像
++
+不可见Text Layer</code></pre>
+<hr />
+<h1 id="五十七好消息">五十七、好消息</h1>
+<p>搜索：</p>
+<blockquote>
+<p>可以工作。</p>
+</blockquote>
+<hr />
+<h1 id="五十八坏消息">五十八、坏消息</h1>
+<p>这个隐藏 OCR 层：</p>
+<blockquote>
+<p>可能质量很差。</p>
+</blockquote>
+<p>于是：</p>
+<blockquote>
+<p><code>extract_text()</code> 有结果，</p>
+</blockquote>
+<p>但结果不是可信文本。</p>
+<hr />
+<h1 id="五十九所以不要只判断">五十九、所以不要只判断</h1>
+<pre class="text"><code>text_length &gt; 0</code></pre>
+<p>然后就说：</p>
+<blockquote>
+<p>Native Text 很好。</p>
+</blockquote>
+<p>还要做：</p>
+<h1 id="text-quality-check">Text Quality Check</h1>
+<hr />
+<h1 id="六十可以检查哪些简单信号">六十、可以检查哪些简单信号？</h1>
+<p>例如：</p>
+<pre class="text"><code>可打印字符比例
+中文字符比例
+乱码比例
+异常符号比例
+重复字符比例
+单字间异常空格</code></pre>
+<hr />
+<h1 id="六十一例如正常中文">六十一、例如正常中文：</h1>
+<pre class="text"><code>供应商应具有良好的商业信誉</code></pre>
+<p>异常 OCR/编码：</p>
+<pre class="text"><code>供 应 商 应 具 有 良 好 的 商 业 信 誉</code></pre>
+<p>如果每个字之间：</p>
+<blockquote>
+<p>都多一个空格，</p>
+</blockquote>
+<p>后续 Tokenizer：</p>
+<blockquote>
+<p>可能完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="六十二再例如">六十二、再例如</h1>
+<pre class="text"><code>供应商须……</code></pre>
+<p>被识别成：</p>
+<pre class="text"><code>供应商须……□□□□□□</code></pre>
+<p>这是一个明显：</p>
+<blockquote>
+<p>质量警报。</p>
+</blockquote>
+<hr />
+<h1 id="六十三于是-pdf-页可以有一个状态">六十三、于是 PDF
+页可以有一个状态</h1>
+<p>例如：</p>
+<pre class="text"><code>native_text_good
+
+native_text_suspicious
+
+image_only
+
+mixed</code></pre>
+<p>这样 Pipeline：</p>
+<blockquote>
+<p>再选择处理路线。</p>
+</blockquote>
+<hr />
+<h1
+id="六十四现在进入最麻烦的对象之一">六十四、现在进入最麻烦的对象之一</h1>
+<h1 id="table">Table</h1>
+<p>政府采购文件里：</p>
+<blockquote>
+<p>表格特别多。</p>
+</blockquote>
+<p>比如评分标准。</p>
+<hr />
+<h1 id="六十五人眼看到">六十五、人眼看到</h1>
+<table>
+<thead>
+<tr class="header">
+<th>评分因素</th>
+<th style="text-align: right;">分值</th>
+<th>评分标准</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>技术方案</td>
+<td style="text-align: right;">20</td>
+<td>根据方案完整性评分</td>
+</tr>
+<tr class="even">
+<td>项目经验</td>
+<td style="text-align: right;">10</td>
+<td>每提供一个案例得2分</td>
+</tr>
+<tr class="odd">
+<td>价格</td>
+<td style="text-align: right;">30</td>
+<td>按价格公式计算</td>
+</tr>
+</tbody>
+</table>
+<p>人类一下就懂：</p>
+<blockquote>
+<p>三列，三行。</p>
+</blockquote>
+<hr />
+<h1 id="六十六但-pdf-内部可能没有table这个概念">六十六、但 PDF
+内部可能没有“Table”这个概念</h1>
+<p>它可能只是：</p>
+<pre class="text"><code>画几条横线
+画几条竖线
+把文字摆在对应坐标</code></pre>
+<hr />
+<h1 id="六十七一个简单-text-extractor-可能输出">六十七、一个简单 Text
+Extractor 可能输出</h1>
+<pre class="text"><code>评分因素
+20
+技术方案
+项目经验
+10
+价格
+30
+根据方案完整性评分
+每提供一个案例得2分
+按价格公式计算</code></pre>
+<p>文字全部都在。</p>
+<p>结构：</p>
+<blockquote>
+<p>完全丢了。</p>
+</blockquote>
+<hr />
+<h1 id="六十八对评分标准审查来说">六十八、对评分标准审查来说</h1>
+<p>这几乎等于：</p>
+<blockquote>
+<p>数据损坏。</p>
+</blockquote>
+<p>因为：</p>
+<pre class="text"><code>“20”</code></pre>
+<p>到底对应：</p>
+<ul>
+<li>技术方案？</li>
+<li>价格？</li>
+<li>项目经验？</li>
+</ul>
+<p>已经不知道。</p>
+<hr />
+<h1
+id="六十九所以表格解析的目标不是">六十九、所以表格解析的目标不是</h1>
+<blockquote>
+<p>把所有 Cell 文字拿出来。</p>
+</blockquote>
+<p>而是恢复：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>w</mi><mo>×</mo><mi>C</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>m</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>h</mi><mi>i</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Row \times Column Relationship
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七十也就是">七十、也就是</h1>
+<pre class="text"><code>这个内容
+属于哪一行
+属于哪一列</code></pre>
+<hr />
+<h1 id="七十一表格还有更难的情况">七十一、表格还有更难的情况</h1>
+<h1 id="merged-cell">Merged Cell</h1>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>一级指标</th>
+<th>二级指标</th>
+<th style="text-align: right;">分值</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>技术</td>
+<td>方案</td>
+<td style="text-align: right;">10</td>
+</tr>
+<tr class="even">
+<td>技术</td>
+<td>人员</td>
+<td style="text-align: right;">10</td>
+</tr>
+</tbody>
+</table>
+<p>视觉上：</p>
+<blockquote>
+<p>“技术”可能纵向合并。</p>
+</blockquote>
+<hr />
+<h1 id="七十二解析时如果处理不好">七十二、解析时如果处理不好</h1>
+<p>可能：</p>
+<pre class="text"><code>第一行有“技术”
+第二行一级指标为空</code></pre>
+<p>后续你必须知道：</p>
+<blockquote>
+<p>空白不是缺失数据。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>继承合并单元格。</p>
+</blockquote>
+<hr />
+<h1 id="七十三还有跨页表格">七十三、还有跨页表格</h1>
+<p>第 1 页：</p>
+<pre class="text"><code>表格头
+行1
+行2
+行3</code></pre>
+<p>第 2 页：</p>
+<pre class="text"><code>表格头
+行4
+行5</code></pre>
+<p>机器需要判断：</p>
+<blockquote>
+<p>这是同一张表延续，</p>
+</blockquote>
+<p>还是：</p>
+<blockquote>
+<p>新表。</p>
+</blockquote>
+<hr />
+<h1 id="七十四还有表格嵌套">七十四、还有表格嵌套</h1>
+<p>单元格里面：</p>
+<ul>
+<li>多段文字；</li>
+<li>编号；</li>
+<li>子条款；</li>
+<li>换行。</li>
+</ul>
+<p>所以：</p>
+<blockquote>
+<p>表格是独立的文档解析问题。</p>
+</blockquote>
+<hr />
+<h1 id="七十五对于政府采购项目">七十五、对于政府采购项目</h1>
+<p>尤其需要重点保护：</p>
+<pre class="text"><code>资格审查表
+技术参数表
+评分标准表
+报价表
+合同条款表</code></pre>
+<p>因为这些通常：</p>
+<blockquote>
+<p>业务价值非常高。</p>
+</blockquote>
+<hr />
+<h1 id="七十六所以我们以后不能只有">七十六、所以我们以后不能只有</h1>
+<pre class="text"><code>plain_text</code></pre>
+<p>最好还要保留：</p>
+<h1 id="block-type">Block Type</h1>
+<hr />
+<h1 id="七十七例如一个解析后的-block-可以是">七十七、例如一个解析后的
+Block 可以是</h1>
+<pre class="text"><code>title
+
+paragraph
+
+list_item
+
+table
+
+table_cell
+
+header
+
+footer
+
+image
+
+caption</code></pre>
+<hr />
+<h1 id="七十八为什么保留类型很有用">七十八、为什么保留类型很有用？</h1>
+<p>以后第三阶段做：</p>
+<h1 id="document-structure-recovery">Document Structure Recovery</h1>
+<p>时我们可以更容易知道：</p>
+<blockquote>
+<p>哪些是标题、正文、表格、条款。</p>
+</blockquote>
+<hr />
+<h1 id="七十九如果第一步全部-flatten">七十九、如果第一步全部
+flatten</h1>
+<p>变成：</p>
+<pre class="text"><code>一条巨大字符串</code></pre>
+<p>结构就已经：</p>
+<blockquote>
+<p>提前丢掉了。</p>
+</blockquote>
+<p>后面想恢复：</p>
+<blockquote>
+<p>非常困难。</p>
+</blockquote>
+<hr />
+<h1
+id="八十这是本阶段一个非常重要的原则">八十、这是本阶段一个非常重要的原则</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>不</mi><mi>要</mi><mi>在</mi><mi>解</mi><mi>析</mi><mi>早</mi><mi>期</mi><mi>做</mi><mi>不</mi><mi>可</mi><mi>逆</mi><mi>的</mi><mi>信</mi><mi>息</mi><mi>丢</mi><mi>失</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+不要在解析早期做不可逆的信息丢失
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="八十一比如页面坐标要不要保留">八十一、比如页面坐标要不要保留？</h1>
+<p>建议：</p>
+<blockquote>
+<p>在原始 Parsed Layer 保留。</p>
+</blockquote>
+<p>例如：</p>
+<div class="sourceCode" id="cb264"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb264-1"><a href="#cb264-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb264-2"><a href="#cb264-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商资格条件&quot;</span><span class="fu">,</span></span>
+<span id="cb264-3"><a href="#cb264-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;page&quot;</span><span class="fu">:</span> <span class="dv">12</span><span class="fu">,</span></span>
+<span id="cb264-4"><a href="#cb264-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;bbox&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">72</span><span class="ot">,</span> <span class="dv">110</span><span class="ot">,</span> <span class="dv">320</span><span class="ot">,</span> <span class="dv">145</span><span class="ot">]</span></span>
+<span id="cb264-5"><a href="#cb264-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="八十二bbox-是什么">八十二、<code>bbox</code> 是什么？</h1>
+<p>Bounding Box。</p>
+<p>也就是：</p>
+<blockquote>
+<p>这个文本块在页面上的位置框。</p>
+</blockquote>
+<p>可以粗略理解为：</p>
+<pre class="text"><code>左边
+上边
+右边
+下边</code></pre>
+<hr />
+<h1 id="八十三为什么位置以后有用">八十三、为什么位置以后有用？</h1>
+<p>比如：</p>
+<blockquote>
+<p>连续 100 页都在页面顶部同一位置出现“项目编号”。</p>
+</blockquote>
+<p>很可能：</p>
+<blockquote>
+<p>Header。</p>
+</blockquote>
+<hr />
+<h1 id="八十四再比如">八十四、再比如</h1>
+<p>两个文本块：</p>
+<blockquote>
+<p>横向并排。</p>
+</blockquote>
+<p>可能：</p>
+<blockquote>
+<p>两栏排版。</p>
+</blockquote>
+<hr />
+<h1 id="八十五再比如表格">八十五、再比如表格</h1>
+<p>多个 Block：</p>
+<blockquote>
+<p>坐标规律排列。</p>
+</blockquote>
+<p>有助于：</p>
+<blockquote>
+<p>恢复行列。</p>
+</blockquote>
+<hr />
+<h1 id="八十六所以-position-不是无意义的版式垃圾">八十六、所以 Position
+不是无意义的版式垃圾</h1>
+<p>它是：</p>
+<blockquote>
+<p>恢复结构的证据。</p>
+</blockquote>
+<hr />
+<h1
+id="八十七但是最后训练模型时要不要把-bbox-喂进去">八十七、但是最后训练模型时要不要把
+bbox 喂进去？</h1>
+<p>通常文本模型：</p>
+<blockquote>
+<p>不一定需要。</p>
+</blockquote>
+<p>注意这两层：</p>
+<pre class="text"><code>Data Engineering需要位置
+≠
+LLM Training必须看位置</code></pre>
+<hr />
+<h1 id="八十八再次印证上一阶段">八十八、再次印证上一阶段</h1>
+<p>数据系统字段：</p>
+<blockquote>
+<p>可以比模型输入字段多很多。</p>
+</blockquote>
+<hr />
+<h1 id="八十九现在看-html">八十九、现在看 HTML</h1>
+<p>很多政府采购公告来自：</p>
+<blockquote>
+<p>网页。</p>
+</blockquote>
+<p>HTML 相比 PDF：</p>
+<blockquote>
+<p>通常更容易恢复结构。</p>
+</blockquote>
+<p>因为它本身可能有：</p>
+<div class="sourceCode" id="cb267"><pre
+class="sourceCode html"><code class="sourceCode html"><span id="cb267-1"><a href="#cb267-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">h1</span><span class="dt">&gt;</span></span>
+<span id="cb267-2"><a href="#cb267-2" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb267-3"><a href="#cb267-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">table</span><span class="dt">&gt;</span></span>
+<span id="cb267-4"><a href="#cb267-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">li</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>这样的 DOM 结构。</p>
+<hr />
+<h1 id="九十于是-html-理论上可以直接知道">九十、于是 HTML
+理论上可以直接知道</h1>
+<pre class="text"><code>标题
+段落
+列表
+表格
+链接</code></pre>
+<p>比 PDF：</p>
+<blockquote>
+<p>结构信息丰富得多。</p>
+</blockquote>
+<hr />
+<h1 id="九十一但-html-也不是无脑简单">九十一、但 HTML
+也不是无脑简单</h1>
+<p>网页里还可能有：</p>
+<pre class="text"><code>导航栏
+广告
+网站页脚
+分享按钮
+登录入口
+相关推荐
+版权信息
+面包屑导航</code></pre>
+<p>这些：</p>
+<blockquote>
+<p>不是采购正文。</p>
+</blockquote>
+<hr />
+<h1 id="九十二例如你抓下来一篇公告">九十二、例如你抓下来一篇公告</h1>
+<p>真正正文：</p>
+<pre class="text"><code>3000字</code></pre>
+<p>网站模板：</p>
+<pre class="text"><code>5000字</code></pre>
+<p>如果全部训练：</p>
+<blockquote>
+<p>大部分 Token 都是垃圾。</p>
+</blockquote>
+<hr />
+<h1 id="九十三所以-html-解析需要">九十三、所以 HTML 解析需要</h1>
+<h1 id="main-content-extraction">Main Content Extraction</h1>
+<p>也就是：</p>
+<blockquote>
+<p>找到真正正文 DOM 区域。</p>
+</blockquote>
+<hr />
+<h1 id="九十四html-还有一个问题">九十四、HTML 还有一个问题</h1>
+<p>有些页面内容：</p>
+<blockquote>
+<p>JavaScript 动态加载。</p>
+</blockquote>
+<p>下载最初 HTML：</p>
+<blockquote>
+<p>可能根本没有正文。</p>
+</blockquote>
+<p>浏览器运行 JS 后：</p>
+<blockquote>
+<p>才出现。</p>
+</blockquote>
+<hr />
+<h1 id="九十五所以浏览器能看到">九十五、所以“浏览器能看到”</h1>
+<p>并不一定意味着：</p>
+<pre class="text"><code>HTTP GET到的HTML</code></pre>
+<p>里面直接有。</p>
+<hr />
+<h1 id="九十六还有隐藏文本">九十六、还有隐藏文本</h1>
+<p>网页里可能：</p>
+<pre class="text"><code>display:none</code></pre>
+<p>或者：</p>
+<blockquote>
+<p>无障碍辅助文本。</p>
+</blockquote>
+<p>机器抓下来：</p>
+<blockquote>
+<p>可能看到了用户根本没看到的内容。</p>
+</blockquote>
+<hr />
+<h1 id="九十七所以-html-也要回答">九十七、所以 HTML 也要回答</h1>
+<pre class="text"><code>什么是正文？
+什么是模板？
+什么是隐藏内容？
+什么是脚本生成内容？</code></pre>
+<hr />
+<h1 id="九十八但是-html-最大优势依然明显">九十八、但是 HTML
+最大优势依然明显</h1>
+<p>如果网站语义标签规范：</p>
+<blockquote>
+<p>它可以比 PDF 更好地保存结构。</p>
+</blockquote>
+<p>所以同一公告如果同时有：</p>
+<pre class="text"><code>HTML正文
++
+PDF附件</code></pre>
+<p>不一定：</p>
+<blockquote>
+<p>PDF 永远优先。</p>
+</blockquote>
+<hr />
+<h1 id="九十九这引出-source-priority">九十九、这引出 Source
+Priority</h1>
+<p>对于每类文档，</p>
+<p>我们以后可能制定：</p>
+<blockquote>
+<p>哪种源最可信。</p>
+</blockquote>
+<hr />
+<h1 id="一百例如某些项目">一百、例如某些项目</h1>
+<p>公告正文：</p>
+<blockquote>
+<p>HTML 更干净。</p>
+</blockquote>
+<p>正式招标文件：</p>
+<blockquote>
+<p>PDF / DOCX 才完整。</p>
+</blockquote>
+<p>所以：</p>
+<blockquote>
+<p>不能一刀切。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一现在看-docx">一百零一、现在看 DOCX</h1>
+<p>DOCX 看起来像一个文件。</p>
+<p>实际上它本质上：</p>
+<blockquote>
+<p>是一组压缩后的 XML 等资源。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零二它通常保存很多真正的结构">一百零二、它通常保存很多真正的结构</h1>
+<p>例如：</p>
+<pre class="text"><code>Paragraph
+Style
+Table
+Header
+Footer
+Numbering</code></pre>
+<p>所以比 PDF：</p>
+<blockquote>
+<p>更容易解析语义结构。</p>
+</blockquote>
+<hr />
+<h1 id="一百零三例如标题可能有-style">一百零三、例如标题可能有
+Style</h1>
+<pre class="text"><code>Heading 1
+Heading 2
+Normal</code></pre>
+<p>如果原作者规范使用样式，</p>
+<p>我们几乎可以直接恢复：</p>
+<pre class="text"><code>章
+节
+正文</code></pre>
+<hr />
+<h1
+id="一百零四但现实中的采购-word-文件有多规范">一百零四、但现实中的采购
+Word 文件有多规范？</h1>
+<p>经常：</p>
+<blockquote>
+<p>不太规范。</p>
+</blockquote>
+<p>有人不用 Heading Style。</p>
+<p>只是：</p>
+<pre class="text"><code>字体变大
+加粗
+居中</code></pre>
+<p>来假装标题。</p>
+<hr />
+<h1 id="一百零五这时-docx-虽然有结构">一百零五、这时 DOCX
+虽然有结构</h1>
+<p>但结构信息：</p>
+<blockquote>
+<p>并不完全可信。</p>
+</blockquote>
+<hr />
+<h1 id="一百零六docx-还有文本框">一百零六、DOCX 还有文本框</h1>
+<p>例如一个重要说明放在：</p>
+<blockquote>
+<p>Text Box。</p>
+</blockquote>
+<p>某些简单解析库：</p>
+<blockquote>
+<p>可能根本读不到。</p>
+</blockquote>
+<hr />
+<h1 id="一百零七还有-header-footer">一百零七、还有 Header / Footer</h1>
+<p>和 PDF 一样：</p>
+<blockquote>
+<p>可能污染正文。</p>
+</blockquote>
+<hr />
+<h1 id="一百零八还有表格">一百零八、还有表格</h1>
+<p>DOCX 的表格结构通常比 PDF：</p>
+<blockquote>
+<p>更容易提取。</p>
+</blockquote>
+<p>因为内部确实存在：</p>
+<pre class="text"><code>row
+cell</code></pre>
+<p>概念。</p>
+<hr />
+<h1 id="一百零九但它也有合并单元格">一百零九、但它也有合并单元格</h1>
+<p>以及：</p>
+<ul>
+<li>嵌套表格；</li>
+<li>文本框；</li>
+<li>图片；</li>
+<li>批注；</li>
+<li>修订痕迹。</li>
+</ul>
+<p>所以：</p>
+<blockquote>
+<p>仍然需要明确解析策略。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十还有一个政府文件很常见的问题">一百一十、还有一个政府文件很常见的问题</h1>
+<h1 id="track-changes">Track Changes</h1>
+<p>修订模式。</p>
+<p>文档里可能同时包含：</p>
+<pre class="text"><code>删除前文字
++
+修改后文字</code></pre>
+<hr />
+<h1 id="一百一十一人眼可能看到">一百一十一、人眼可能看到</h1>
+<blockquote>
+<p>最终版本。</p>
+</blockquote>
+<p>解析程序却可能：</p>
+<blockquote>
+<p>把删除内容也抽出来。</p>
+</blockquote>
+<p>于是出现：</p>
+<pre class="text"><code>旧条款
+新条款</code></pre>
+<p>同时进入 Dataset。</p>
+<hr />
+<h1
+id="一百一十二这会制造非常隐蔽的数据污染">一百一十二、这会制造非常隐蔽的数据污染</h1>
+<p>尤其：</p>
+<blockquote>
+<p>更正文件、修改稿、征求意见稿。</p>
+</blockquote>
+<p>所以：</p>
+<h1 id="document-version">Document Version</h1>
+<p>以后也很重要。</p>
+<hr />
+<h1 id="一百一十三现在把-pdfhtmldocx-放一张表">一百一十三、现在把
+PDF、HTML、DOCX 放一张表</h1>
+<table>
+<thead>
+<tr class="header">
+<th>格式</th>
+<th>最大优势</th>
+<th>主要风险</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PDF</td>
+<td>页面视觉稳定</td>
+<td>语义结构弱、阅读顺序、扫描、表格</td>
+</tr>
+<tr class="even">
+<td>HTML</td>
+<td>DOM 结构丰富</td>
+<td>网站模板、动态加载、隐藏内容</td>
+</tr>
+<tr class="odd">
+<td>DOCX</td>
+<td>段落/样式/表格结构较好</td>
+<td>样式不规范、文本框、修订、复杂对象</td>
+</tr>
+</tbody>
+</table>
+<p>没有哪个格式：</p>
+<blockquote>
+<p>永远最好。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十四因此真正专业的-pipeline">一百一十四、因此真正专业的
+Pipeline</h1>
+<p>不是：</p>
+<pre class="text"><code>所有文件
+↓
+一个extract_text()</code></pre>
+<p>而是：</p>
+<pre class="text"><code>识别文件类型
+↓
+选择对应Parser
+↓
+进行质量检查
+↓
+统一转换为内部数据模型</code></pre>
+<hr />
+<h1 id="一百一十五这叫-adapter-思维">一百一十五、这叫 Adapter 思维</h1>
+<p>外部格式可能很多：</p>
+<pre class="text"><code>PDF
+HTML
+DOCX
+TXT</code></pre>
+<p>但内部统一变成：</p>
+<h1 id="parseddocument">ParsedDocument</h1>
+<hr />
+<h1 id="一百一十六这特别重要">一百一十六、这特别重要</h1>
+<p>因为后续：</p>
+<ul>
+<li>清洗；</li>
+<li>结构恢复；</li>
+<li>条款切分；</li>
+<li>去重；</li>
+</ul>
+<p>不应该每一步都重新判断：</p>
+<blockquote>
+<p>这是 PDF 还是 DOCX。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十七我们希望形成">一百一十七、我们希望形成</h1>
+<pre class="text"><code>PDF Parser ───┐
+              │
+HTML Parser ──┼──→ ParsedDocument
+              │
+DOCX Parser ──┘</code></pre>
+<p>然后后面：</p>
+<blockquote>
+<p>统一处理。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十八现在第一次设计-parseddocument_v0.1">一百一十八、现在第一次设计
+<code>ParsedDocument_V0.1</code></h1>
+<p>先不要追求完美。</p>
+<p>一个文档可以有：</p>
+<pre class="text"><code>document_id
+source_file
+file_type
+file_hash
+parser_version
+pages
+warnings</code></pre>
+<hr />
+<h1 id="一百一十九为什么-file_hash-很重要">一百一十九、为什么
+<code>file_hash</code> 很重要？</h1>
+<p>例如：</p>
+<h1 id="sha-256">SHA-256</h1>
+<p>可以把一个文件内容：</p>
+<blockquote>
+<p>算成固定指纹。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十同一个-pdf-被重命名">一百二十、同一个 PDF 被重命名</h1>
+<pre class="text"><code>招标文件.pdf</code></pre>
+<p>变成：</p>
+<pre class="text"><code>最终版招标文件.pdf</code></pre>
+<p>文件名不同。</p>
+<p>如果内容一样：</p>
+<blockquote>
+<p>Hash 一样。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十一以后去重时特别有价值">一百二十一、以后去重时特别有价值</h1>
+<p>你可以先快速发现：</p>
+<h1 id="exact-duplicate">Exact Duplicate</h1>
+<p>完全重复文件。</p>
+<hr />
+<h1 id="一百二十二为什么-parser_version-很重要">一百二十二、为什么
+<code>parser_version</code> 很重要？</h1>
+<p>今天：</p>
+<pre class="text"><code>parser_v0.1</code></pre>
+<p>半年后改进阅读顺序：</p>
+<pre class="text"><code>parser_v0.3</code></pre>
+<p>同一个 PDF：</p>
+<blockquote>
+<p>解析结果可能不同。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十三如果不记录-parser-version">一百二十三、如果不记录
+Parser Version</h1>
+<p>未来看到一条异常数据：</p>
+<blockquote>
+<p>根本不知道当初用哪套规则解析的。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十四这又回到了">一百二十四、这又回到了</h1>
+<h1 id="reproducibility">Reproducibility</h1>
+<p>数据工程同样需要复现。</p>
+<hr />
+<h1 id="一百二十五page-应该有哪些东西">一百二十五、Page
+应该有哪些东西？</h1>
+<p>可以先想成：</p>
+<pre class="text"><code>page_number
+width
+height
+page_type
+blocks
+warnings</code></pre>
+<hr />
+<h1 id="一百二十六page_type">一百二十六、<code>page_type</code></h1>
+<p>比如：</p>
+<pre class="text"><code>native_text
+scan
+mixed</code></pre>
+<hr />
+<h1 id="一百二十七block-可以是什么">一百二十七、Block 可以是什么？</h1>
+<p>例如：</p>
+<div class="sourceCode" id="cb294"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb294-1"><a href="#cb294-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb294-2"><a href="#cb294-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;block_id&quot;</span><span class="fu">:</span> <span class="st">&quot;B00031&quot;</span><span class="fu">,</span></span>
+<span id="cb294-3"><a href="#cb294-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;paragraph&quot;</span><span class="fu">,</span></span>
+<span id="cb294-4"><a href="#cb294-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应具有……&quot;</span><span class="fu">,</span></span>
+<span id="cb294-5"><a href="#cb294-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;bbox&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">72</span><span class="ot">,</span> <span class="dv">154</span><span class="ot">,</span> <span class="dv">510</span><span class="ot">,</span> <span class="dv">208</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb294-6"><a href="#cb294-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;reading_order&quot;</span><span class="fu">:</span> <span class="dv">7</span><span class="fu">,</span></span>
+<span id="cb294-7"><a href="#cb294-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;extraction_method&quot;</span><span class="fu">:</span> <span class="st">&quot;native&quot;</span><span class="fu">,</span></span>
+<span id="cb294-8"><a href="#cb294-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;confidence&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.</span><span class="dv">99</span></span>
+<span id="cb294-9"><a href="#cb294-9" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1
+id="一百二十八这里最重要的不是-json-写法">一百二十八、这里最重要的不是
+JSON 写法</h1>
+<p>而是我们没有把信息压成：</p>
+<pre class="text"><code>一个巨大字符串</code></pre>
+<hr />
+<h1
+id="一百二十九reading_order">一百二十九、<code>reading_order</code></h1>
+<p>就是：</p>
+<blockquote>
+<p>这个 Block 应该第几个读。</p>
+</blockquote>
+<p>后续重新构建正文：</p>
+<blockquote>
+<p>按它排序。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十extraction_method">一百三十、<code>extraction_method</code></h1>
+<p>告诉我们：</p>
+<pre class="text"><code>native
+ocr
+table_parser</code></pre>
+<p>文本到底怎么来的。</p>
+<hr />
+<h1 id="一百三十一为什么要记录它">一百三十一、为什么要记录它？</h1>
+<p>假设一个金额：</p>
+<pre class="text"><code>5000万元</code></pre>
+<p>模型后面出现异常。</p>
+<p>我们可以看到：</p>
+<pre class="text"><code>extraction_method = OCR
+confidence = low</code></pre>
+<p>马上知道：</p>
+<blockquote>
+<p>可能是 OCR 错误。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十二这叫-provenance">一百三十二、这叫 Provenance</h1>
+<p>来源可追溯性。</p>
+<p>我们不仅保存：</p>
+<blockquote>
+<p>“这句话是什么。”</p>
+</blockquote>
+<p>还保存：</p>
+<blockquote>
+<p>“这句话是怎么来的。”</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十三这对专业数据非常重要">一百三十三、这对专业数据非常重要</h1>
+<p>因为数据错误最终要能够回答：</p>
+<pre class="text"><code>原文件是什么？
+第几页？
+哪个坐标？
+哪个Parser？
+是否OCR？
+什么版本？</code></pre>
+<hr />
+<h1 id="一百三十四以后专家如果说">一百三十四、以后专家如果说</h1>
+<blockquote>
+<p>“这条训练样本原文是不是错了？”</p>
+</blockquote>
+<p>我们不是：</p>
+<blockquote>
+<p>到 2TB 文件夹里人工找。</p>
+</blockquote>
+<p>而是直接：</p>
+<pre class="text"><code>sample
+↓
+clause
+↓
+block
+↓
+page 37
+↓
+raw PDF</code></pre>
+<hr />
+<h1 id="一百三十五这就是-data-lineage-的基础">一百三十五、这就是 Data
+Lineage 的基础</h1>
+<p>第四课第一阶段刚讲过。</p>
+<p>现在它开始真正落地。</p>
+<hr />
+<h1
+id="一百三十六parseddocument-可以形成这样的结构">一百三十六、ParsedDocument
+可以形成这样的结构</h1>
+<pre class="text"><code>ParsedDocument
+│
+├── Metadata
+│   ├── document_id
+│   ├── source
+│   ├── file_type
+│   ├── file_hash
+│   └── parser_version
+│
+├── Page 1
+│   ├── Block 1
+│   ├── Block 2
+│   └── Table 1
+│
+├── Page 2
+│   ├── Block 3
+│   └── Block 4
+│
+└── Warnings</code></pre>
+<hr />
+<h1
+id="一百三十七注意这一阶段我们还没做真正的条款识别">一百三十七、注意：这一阶段我们还没做真正的“条款识别”</h1>
+<p>现在只做到：</p>
+<blockquote>
+<p>页面内容可信恢复。</p>
+</blockquote>
+<p>下一阶段才会做：</p>
+<pre class="text"><code>Block
+↓
+Heading
+↓
+Section
+↓
+Clause</code></pre>
+<p>不要把阶段混在一起。</p>
+<hr />
+<h1
+id="一百三十八这是一个很重要的数据工程习惯">一百三十八、这是一个很重要的数据工程习惯</h1>
+<h1 id="separate-concerns">Separate Concerns</h1>
+<p>把不同问题拆开。</p>
+<hr />
+<h1 id="一百三十九第一层问题">一百三十九、第一层问题</h1>
+<blockquote>
+<p>我到底有没有把文档内容正确拿出来？</p>
+</blockquote>
+<p>这是：</p>
+<h1 id="parsing">Parsing</h1>
+<hr />
+<h1 id="一百四十第二层问题">一百四十、第二层问题</h1>
+<blockquote>
+<p>哪些 Block 属于同一个章节？</p>
+</blockquote>
+<p>这是：</p>
+<h1 id="structure-recovery">Structure Recovery</h1>
+<hr />
+<h1 id="一百四十一第三层问题">一百四十一、第三层问题</h1>
+<blockquote>
+<p>哪一段是一条采购条件？</p>
+</blockquote>
+<p>这是：</p>
+<h1 id="clause-segmentation">Clause Segmentation</h1>
+<hr />
+<h1 id="一百四十二第四层问题">一百四十二、第四层问题</h1>
+<blockquote>
+<p>这条条件有没有风险？</p>
+</blockquote>
+<p>这是：</p>
+<h1 id="annotation-modeling">Annotation / Modeling</h1>
+<hr />
+<h1
+id="一百四十三如果四层一次全部做">一百四十三、如果四层一次全部做</h1>
+<p>出错以后：</p>
+<blockquote>
+<p>很难定位。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十四比如模型说错了">一百四十四、比如模型说错了</h1>
+<p>可能是：</p>
+<pre class="text"><code>模型不会判断</code></pre>
+<p>也可能其实是：</p>
+<pre class="text"><code>PDF漏了一行</code></pre>
+<p>甚至：</p>
+<pre class="text"><code>表格列错位</code></pre>
+<p>如果 Pipeline 不分层：</p>
+<blockquote>
+<p>你会把数据错误误判成模型错误。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十五这就是一个非常重要的工程原则">一百四十五、这就是一个非常重要的工程原则</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>先</mi><mi>证</mi><mi>明</mi><mi>输</mi><mi>入</mi><mi>正</mi><mi>确</mi><mi>再</mi><mi>讨</mi><mi>论</mi><mi>模</mi><mi>型</mi><mi>为</mi><mi>什</mi><mi>么</mi><mi>错</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+先证明输入正确
+再讨论模型为什么错
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百四十六现在说-parser-confidence">一百四十六、现在说 Parser
+Confidence</h1>
+<p>很多系统喜欢给：</p>
+<pre class="text"><code>0.97</code></pre>
+<p>一个数字。</p>
+<p>但要谨慎。</p>
+<hr />
+<h1 id="一百四十七这个-0.97-到底代表什么">一百四十七、这个 0.97
+到底代表什么？</h1>
+<p>可能：</p>
+<ul>
+<li>OCR 字符置信度；</li>
+<li>Layout 模型置信度；</li>
+<li>Table 检测置信度。</li>
+</ul>
+<p>它们：</p>
+<blockquote>
+<p>不是同一个概念。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十八所以不要把所有东西混成一个">一百四十八、所以不要把所有东西混成一个</h1>
+<pre class="text"><code>confidence = 0.92</code></pre>
+<p>然后觉得：</p>
+<blockquote>
+<p>文档 92% 正确。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十九更好的做法">一百四十九、更好的做法</h1>
+<p>分别记录：</p>
+<pre class="text"><code>text_quality
+ocr_confidence
+layout_confidence
+table_warning</code></pre>
+<p>至少：</p>
+<blockquote>
+<p>含义明确。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十尤其业务关键字段要额外验证">一百五十、尤其业务关键字段要额外验证</h1>
+<p>比如：</p>
+<pre class="text"><code>预算金额
+百分比
+日期
+项目编号
+法律条号
+评分分值
+品牌型号</code></pre>
+<p>这些字段：</p>
+<blockquote>
+<p>一个字符错了，业务意义可能完全变。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十一我们可以把它们叫">一百五十一、我们可以把它们叫</h1>
+<h1 id="high-risk-tokens">High-risk Tokens</h1>
+<p>不是机器学习里的风险 Token。</p>
+<p>只是数据工程意义上：</p>
+<blockquote>
+<p>特别需要保护的文本。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十二比如">一百五十二、比如</h1>
+<p>原文：</p>
+<pre class="text"><code>不得超过10%</code></pre>
+<p>解析：</p>
+<pre class="text"><code>不得超过70%</code></pre>
+<p>只错一个字符。</p>
+<p>业务含义：</p>
+<blockquote>
+<p>天差地别。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十三再比如">一百五十三、再比如</h1>
+<pre class="text"><code>500万元</code></pre>
+<p>变成：</p>
+<pre class="text"><code>5000万元</code></pre>
+<p>一个 <code>0</code>。</p>
+<p>模型可能得出：</p>
+<blockquote>
+<p>完全不同的合规判断。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十四所以采购-parsing-quality-不能只用">一百五十四、所以采购
+Parsing Quality 不能只用</h1>
+<h1 id="character-accuracy">Character Accuracy</h1>
+<p>还要看：</p>
+<blockquote>
+<p>业务关键字段准确率。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十五我们可以以后做一个-parsing-gold-set">一百五十五、我们可以以后做一个
+Parsing Gold Set</h1>
+<p>人工选：</p>
+<pre class="text"><code>50份
+100份</code></pre>
+<p>典型采购文件。</p>
+<hr />
+<h1 id="一百五十六覆盖">一百五十六、覆盖</h1>
+<pre class="text"><code>文字PDF
+扫描PDF
+双栏
+复杂表格
+跨页表格
+盖章扫描
+DOCX
+HTML</code></pre>
+<hr />
+<h1 id="一百五十七然后人工确认">一百五十七、然后人工确认</h1>
+<p>这些文档的：</p>
+<pre class="text"><code>正文
+阅读顺序
+表格
+标题
+关键数字</code></pre>
+<hr />
+<h1 id="一百五十八每次-parser-更新">一百五十八、每次 Parser 更新</h1>
+<p>重新跑：</p>
+<blockquote>
+<p>Parsing Benchmark。</p>
+</blockquote>
+<p>这样才知道：</p>
+<pre class="text"><code>parser_v0.3</code></pre>
+<p>到底比：</p>
+<pre class="text"><code>parser_v0.2</code></pre>
+<p>好没好。</p>
+<hr />
+<h1
+id="一百五十九不要靠我随便看了两页感觉不错">一百五十九、不要靠“我随便看了两页，感觉不错”</h1>
+<p>这和模型评测一样。</p>
+<p>Parser：</p>
+<blockquote>
+<p>也要 Benchmark。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十现在看一个失败案例">一百六十、现在看一个失败案例</h1>
+<p>原页面：</p>
+<pre class="text"><code>评分标准
+
+技术方案       20分
+项目经验       10分
+价格           30分</code></pre>
+<p>Parser 输出：</p>
+<pre class="text"><code>评分标准
+技术方案
+项目经验
+价格
+20
+10
+30</code></pre>
+<hr />
+<h1 id="一百六十一从字符层面看">一百六十一、从字符层面看</h1>
+<p>一个字都没丢。</p>
+<p>如果计算：</p>
+<blockquote>
+<p>文本召回率</p>
+</blockquote>
+<p>可能 100%。</p>
+<hr />
+<h1 id="一百六十二从业务层面看">一百六十二、从业务层面看</h1>
+<p>它已经：</p>
+<blockquote>
+<p>不可信。</p>
+</blockquote>
+<p>因为行列关系丢了。</p>
+<hr />
+<h1
+id="一百六十三所以第六个核心心智模型">一百六十三、所以第六个核心心智模型</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>由</mi><mi>下</mi><mi>游</mi><mi>任</mi><mi>务</mi><mi>定</mi><mi>义</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ParsingQuality
+必须由下游任务定义
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百六十四对普通文章摘要">一百六十四、对普通文章摘要</h1>
+<p>可能：</p>
+<blockquote>
+<p>表格稍微乱一点也能接受。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十五对评分标准审查">一百六十五、对评分标准审查</h1>
+<p>表格错一列：</p>
+<blockquote>
+<p>不可接受。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十六所以不同文档区域还可能有不同质量门槛">一百六十六、所以不同文档区域还可能有不同质量门槛</h1>
+<p>比如：</p>
+<pre class="text"><code>正文段落
+容忍少量版式差异
+
+评分表
+要求高结构准确率
+
+金额/分值
+要求极高字符准确率</code></pre>
+<hr />
+<h1 id="一百六十七这就是-risk-based-data-engineering">一百六十七、这就是
+Risk-based Data Engineering</h1>
+<p>把质量控制资源：</p>
+<blockquote>
+<p>花在最可能影响业务判断的地方。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十八现在谈扫描页-ocr-后最容易出现的错误类型">一百六十八、现在谈扫描页
+OCR 后最容易出现的错误类型</h1>
+<p>可以大致分：</p>
+<pre class="text"><code>字符错误
+空格错误
+换行错误
+阅读顺序错误
+表格结构错误
+漏字
+多字</code></pre>
+<hr />
+<h1 id="一百六十九字符错误">一百六十九、字符错误</h1>
+<p>例如：</p>
+<pre class="text"><code>0 ↔ O
+
+1 ↔ I
+
+5 ↔ S</code></pre>
+<p>中文也会出现：</p>
+<blockquote>
+<p>形近字。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十空格错误">一百七十、空格错误</h1>
+<pre class="text"><code>供 应 商</code></pre>
+<p>或者：</p>
+<pre class="text"><code>供应商须具 有</code></pre>
+<hr />
+<h1 id="一百七十一换行错误">一百七十一、换行错误</h1>
+<p>一条完整条款：</p>
+<blockquote>
+<p>被拆成好几段。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十二阅读顺序错误">一百七十二、阅读顺序错误</h1>
+<p>两栏：</p>
+<blockquote>
+<p>左右交叉。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十三表格错误">一百七十三、表格错误</h1>
+<p>单元格：</p>
+<blockquote>
+<p>顺序打乱。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十四漏字">一百七十四、漏字</h1>
+<p>原文：</p>
+<pre class="text"><code>不得低于500万元</code></pre>
+<p>OCR：</p>
+<pre class="text"><code>低于500万元</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>“不得”被漏掉。</p>
+</blockquote>
+<p>意思：</p>
+<blockquote>
+<p>几乎反转。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十五这类错误特别危险">一百七十五、这类错误特别危险</h1>
+<p>因为它不是：</p>
+<blockquote>
+<p>随便少了一个形容词。</p>
+</blockquote>
+<p>而是：</p>
+<h1 id="negation-error">Negation Error</h1>
+<p>否定词错误。</p>
+<hr />
+<h1
+id="一百七十六所以业务关键词也需要重点关注">一百七十六、所以业务关键词也需要重点关注</h1>
+<p>例如：</p>
+<pre class="text"><code>不得
+不应
+必须
+应当
+可以
+不得超过
+不得低于
+不少于
+不高于</code></pre>
+<p>这些：</p>
+<blockquote>
+<p>对规则意义非常重要。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十七以后可以设计规则检查">一百七十七、以后可以设计规则检查</h1>
+<p>如果 OCR 页面里：</p>
+<blockquote>
+<p>否定词附近置信度很低，</p>
+</blockquote>
+<p>可以：</p>
+<blockquote>
+<p>标记人工复核。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十八这比整页重新人工检查">一百七十八、这比“整页重新人工检查”</h1>
+<p>更经济。</p>
+<hr />
+<h1 id="一百七十九所以-parser-可以输出-warning">一百七十九、所以 Parser
+可以输出 Warning</h1>
+<p>比如：</p>
+<pre class="text"><code>LOW_OCR_CONFIDENCE
+
+TABLE_STRUCTURE_UNCERTAIN
+
+READING_ORDER_AMBIGUOUS
+
+ENCODING_SUSPECT
+
+HEADER_FOOTER_UNCERTAIN</code></pre>
+<hr />
+<h1 id="一百八十为什么-warning-不应该直接丢">一百八十、为什么 Warning
+不应该直接丢？</h1>
+<p>因为后面生成 Dataset 时：</p>
+<blockquote>
+<p>可以根据质量筛选。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十一例如-gold-set">一百八十一、例如 Gold Set</h1>
+<p>可能只允许：</p>
+<pre class="text"><code>parse_quality = verified</code></pre>
+<p>的样本进入。</p>
+<hr />
+<h1 id="一百八十二而-cpt-语料">一百八十二、而 CPT 语料</h1>
+<p>可能允许：</p>
+<blockquote>
+<p>稍低一些的格式质量。</p>
+</blockquote>
+<p>不同用途：</p>
+<blockquote>
+<p>数据质量门槛可以不同。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十三这再次说明">一百八十三、这再次说明</h1>
+<h1 id="dataset-purpose-matters">Dataset Purpose Matters</h1>
+<p>同一份 Parsed Data：</p>
+<blockquote>
+<p>可以派生不同质量要求的数据集。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十四现在设计一次完整的文档解析流水线">一百八十四、现在设计一次完整的文档解析流水线</h1>
+<p>先看总图：</p>
+<pre class="text"><code>Raw File
+   │
+   ▼
+File Validation
+   │
+   ▼
+Type Detection
+   │
+   ├── PDF
+   ├── HTML
+   └── DOCX
+   │
+   ▼
+Parser Adapter
+   │
+   ▼
+Page / Block Extraction
+   │
+   ▼
+Native Text Quality Check
+   │
+   ├── Good → 保留
+   │
+   └── Bad/Image → OCR
+   │
+   ▼
+Layout / Reading Order
+   │
+   ▼
+Table Recovery
+   │
+   ▼
+Header / Footer Marking
+   │
+   ▼
+Quality Validation
+   │
+   ▼
+ParsedDocument_V0.1</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>这里只是概念流程。</p>
+</blockquote>
+<p>实际不同格式：</p>
+<blockquote>
+<p>某些步骤顺序会不同。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十五第一步-file-validation">一百八十五、第一步 File
+Validation</h1>
+<p>我们先确认：</p>
+<pre class="text"><code>文件能不能打开？
+是否损坏？
+是否加密？
+文件类型和扩展名一致吗？</code></pre>
+<hr />
+<h1
+id="一百八十六为什么扩展名不能完全相信">一百八十六、为什么扩展名不能完全相信？</h1>
+<p>一个文件叫：</p>
+<pre class="text"><code>abc.pdf</code></pre>
+<p>并不意味着：</p>
+<blockquote>
+<p>内部一定是真 PDF。</p>
+</blockquote>
+<p>有时下载接口甚至返回：</p>
+<pre class="text"><code>HTML错误页面</code></pre>
+<p>但文件名：</p>
+<blockquote>
+<p>仍然 <code>.pdf</code>。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十七所以最好检查">一百八十七、所以最好检查</h1>
+<h1 id="mime-file-signature">MIME / File Signature</h1>
+<p>而不是：</p>
+<blockquote>
+<p>只看后缀。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十八第二步-hash">一百八十八、第二步 Hash</h1>
+<p>给原始文件生成：</p>
+<blockquote>
+<p>内容指纹。</p>
+</blockquote>
+<p>以后：</p>
+<ul>
+<li>去重；</li>
+<li>版本；</li>
+<li>来源审计；</li>
+</ul>
+<p>都能用。</p>
+<hr />
+<h1 id="一百八十九第三步选择-parser">一百八十九、第三步选择 Parser</h1>
+<pre class="text"><code>PDF
+→ PDF Adapter
+
+HTML
+→ HTML Adapter
+
+DOCX
+→ DOCX Adapter</code></pre>
+<hr />
+<h1 id="一百九十第四步做内容恢复">一百九十、第四步做内容恢复</h1>
+<p>不要急着清洗。</p>
+<p>先尽量：</p>
+<blockquote>
+<p>忠实保留。</p>
+</blockquote>
+<hr />
+<h1
+id="一百九十一为什么清洗不能太早">一百九十一、为什么“清洗”不能太早？</h1>
+<p>假设你看到：</p>
+<pre class="text"><code>第 37 页</code></pre>
+<p>马上删除。</p>
+<p>后面才发现：</p>
+<blockquote>
+<p>其实这是正文中的某个引用。</p>
+</blockquote>
+<p>已经找不回来了。</p>
+<hr />
+<h1 id="一百九十二所以推荐一个思想">一百九十二、所以推荐一个思想</h1>
+<h1 id="extract-first-normalize-later">Extract First, Normalize
+Later</h1>
+<p>先保留：</p>
+<blockquote>
+<p>原始解析层。</p>
+</blockquote>
+<p>然后生成：</p>
+<blockquote>
+<p>清洗层。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十三可以拥有两个版本">一百九十三、可以拥有两个版本</h1>
+<pre class="text"><code>Raw Parsed Blocks</code></pre>
+<p>和：</p>
+<pre class="text"><code>Normalized Text</code></pre>
+<p>前者：</p>
+<blockquote>
+<p>用于追溯。</p>
+</blockquote>
+<p>后者：</p>
+<blockquote>
+<p>用于下游任务。</p>
+</blockquote>
+<hr />
+<h1
+id="一百九十四千万不要只有最终清洗文本">一百九十四、千万不要只有最终清洗文本</h1>
+<p>否则一旦清洗错了：</p>
+<blockquote>
+<p>无法诊断。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十五这像照片修图">一百九十五、这像照片修图</h1>
+<p>应该保留：</p>
+<pre class="text"><code>原片</code></pre>
+<p>然后产生：</p>
+<pre class="text"><code>编辑版</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>直接覆盖原片。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十六数据工程也一样">一百九十六、数据工程也一样</h1>
+<pre class="text"><code>Raw
+↓
+Parsed
+↓
+Normalized
+↓
+Structured
+↓
+Task Sample</code></pre>
+<p>每一层最好：</p>
+<blockquote>
+<p>有清楚边界。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十七这就是-data-layering">一百九十七、这就是 Data
+Layering</h1>
+<p>分层数据架构。</p>
+<hr />
+<h1
+id="一百九十八采购数据以后可以至少有">一百九十八、采购数据以后可以至少有</h1>
+<pre class="text"><code>L0 Raw File
+
+L1 Parsed Document
+
+L2 Clean Document
+
+L3 Structured Clause
+
+L4 Annotated Sample
+
+L5 Train / Gold Dataset</code></pre>
+<hr />
+<h1 id="一百九十九每层解决不同问题">一百九十九、每层解决不同问题</h1>
+<h3 id="l0">L0</h3>
+<blockquote>
+<p>原文件到底是什么？</p>
+</blockquote>
+<h3 id="l1">L1</h3>
+<blockquote>
+<p>文件里有什么？</p>
+</blockquote>
+<h3 id="l2">L2</h3>
+<blockquote>
+<p>去掉明显版式噪声后是什么？</p>
+</blockquote>
+<h3 id="l3">L3</h3>
+<blockquote>
+<p>文档业务结构是什么？</p>
+</blockquote>
+<h3 id="l4">L4</h3>
+<blockquote>
+<p>专家怎么判断？</p>
+</blockquote>
+<h3 id="l5">L5</h3>
+<blockquote>
+<p>哪些数据真正用于模型？</p>
+</blockquote>
+<hr />
+<h1
+id="二百这样以后发现问题可以定位">二百、这样以后发现问题可以定位</h1>
+<p>例如：</p>
+<pre class="text"><code>模型输出错误</code></pre>
+<p>一路回溯：</p>
+<pre class="text"><code>Label对吗？
+↓
+Clause切对吗？
+↓
+Clean文本对吗？
+↓
+Parsed Block对吗？
+↓
+原PDF是什么？</code></pre>
+<hr />
+<h1
+id="二百零一这就是专业的数据可追溯链">二百零一、这就是专业的数据可追溯链</h1>
+<p>而不是：</p>
+<blockquote>
+<p>一个 CSV 放 100 万行文本，没人知道从哪里来的。</p>
+</blockquote>
+<hr />
+<h1 id="二百零二现在看一个采购-pdf-的完整例子">二百零二、现在看一个采购
+PDF 的完整例子</h1>
+<p>人眼页面：</p>
+<pre class="text"><code>第三章 采购需求
+
+3.2 售后服务
+
+供应商须在项目所在地设立固定服务机构，
+并保证故障发生后2小时内到达现场。
+
+—— 第42页 ——</code></pre>
+<hr />
+<h1 id="二百零三一个差-parser-可能输出">二百零三、一个差 Parser
+可能输出</h1>
+<pre class="text"><code>第三章采购需求供应商须在项目
+第42页
+3.2售后服务所在地设立固定服务机构
+并保证故障发生后2小时内到达现场</code></pre>
+<p>字基本都在。</p>
+<p>但：</p>
+<blockquote>
+<p>顺序坏了。</p>
+</blockquote>
+<hr />
+<h1 id="二百零四一个较好的-parsed-layer">二百零四、一个较好的 Parsed
+Layer</h1>
+<p>可能是：</p>
+<pre class="text"><code>Block 1
+type=heading
+text=第三章 采购需求
+
+Block 2
+type=heading
+text=3.2 售后服务
+
+Block 3
+type=paragraph
+text=供应商须在项目所在地设立固定服务机构，并保证故障发生后2小时内到达现场。
+
+Block 4
+type=footer
+text=第42页</code></pre>
+<hr />
+<h1 id="二百零五下一阶段再进一步">二百零五、下一阶段再进一步</h1>
+<pre class="text"><code>第三章 采购需求
+   ↓
+3.2 售后服务
+   ↓
+目标条款</code></pre>
+<p>这就开始产生：</p>
+<h1 id="clause-unit">Clause Unit</h1>
+<hr />
+<h1 id="二百零六看出课程设计了吗">二百零六、看出课程设计了吗？</h1>
+<p>第四课现在是：</p>
+<pre class="text"><code>Stage 1
+定义Sample
+
+Stage 2
+恢复可信文本
+
+Stage 3
+恢复业务结构
+
+Stage 4
+清洗和规范化
+
+Stage 5
+去重
+
+Stage 6
+切Train / Val / Test
+
+Stage 7
+防数据泄漏
+
+Stage 8
+Label Schema
+
+Stage 9
+专家标注与一致性
+
+Stage 10
+Hard Negative
+
+Stage 11
+Version / Lineage
+
+Stage 12
+ProcurementDataset_V0.1</code></pre>
+<p>是一条完整流水线。</p>
+<hr />
+<h1
+id="二百零七现在说一个非常重要的工程原则">二百零七、现在说一个非常重要的工程原则</h1>
+<h1 id="never-trust-a-successful-parse">Never Trust a Successful
+Parse</h1>
+<p>程序返回：</p>
+<pre class="text"><code>status = success</code></pre>
+<p>只能说明：</p>
+<blockquote>
+<p>程序没有崩。</p>
+</blockquote>
+<p>不能说明：</p>
+<blockquote>
+<p>内容正确。</p>
+</blockquote>
+<hr />
+<h1 id="二百零八比如">二百零八、比如</h1>
+<pre class="text"><code>extract_text()</code></pre>
+<p>返回 50,000 字。</p>
+<p>从程序角度：</p>
+<blockquote>
+<p>成功。</p>
+</blockquote>
+<p>但如果：</p>
+<ul>
+<li>两栏打乱；</li>
+<li>表格全部 flatten；</li>
+<li>数字错位；</li>
+<li>页脚反复插入；</li>
+</ul>
+<p>业务角度：</p>
+<blockquote>
+<p>失败。</p>
+</blockquote>
+<hr />
+<h1 id="二百零九所以我们需要">二百零九、所以我们需要</h1>
+<h1 id="semantic-validation">Semantic Validation</h1>
+<p>至少抽样检查：</p>
+<blockquote>
+<p>人眼看到的文档意义有没有保留下来。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十自动质量检查可以做什么">二百一十、自动质量检查可以做什么？</h1>
+<p>例如：</p>
+<pre class="text"><code>页面文字长度异常？
+
+某页突然0字符？
+
+乱码率异常？
+
+重复页眉比例异常？
+
+页号突然乱序？
+
+表格数量异常？
+
+OCR置信度异常？</code></pre>
+<hr />
+<h1 id="二百一十一这些可以形成">二百一十一、这些可以形成</h1>
+<h1 id="quality-flags">Quality Flags</h1>
+<p>例如：</p>
+<pre class="text"><code>EMPTY_PAGE
+TEXT_TOO_SHORT
+GARBLED_TEXT
+POSSIBLE_SCAN
+TABLE_DETECTED
+OCR_LOW_CONFIDENCE</code></pre>
+<hr />
+<h1
+id="二百一十二然后不是全部人工检查">二百一十二、然后不是全部人工检查</h1>
+<p>而是：</p>
+<blockquote>
+<p>优先检查 Warning 多的文档。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十三这就是自动化数据质检的价值">二百一十三、这就是自动化数据质检的价值</h1>
+<p>不是：</p>
+<blockquote>
+<p>机器保证100%正确。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>把有限的人力集中在高风险样本。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十四政府采购文件还有一个特殊问题">二百一十四、政府采购文件还有一个特殊问题</h1>
+<h1 id="stamp-seal">Stamp / Seal</h1>
+<p>扫描件可能有：</p>
+<blockquote>
+<p>红色公章</p>
+</blockquote>
+<p>压住文字。</p>
+<hr />
+<h1 id="二百一十五ocr-可能把公章字符混进正文">二百一十五、OCR
+可能把公章字符混进正文</h1>
+<p>例如：</p>
+<pre class="text"><code>某某市财政局</code></pre>
+<p>盖在正文上。</p>
+<p>机器可能：</p>
+<blockquote>
+<p>把它当句子的一部分。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十六还有手写签字">二百一十六、还有手写签字</h1>
+<p>可能：</p>
+<blockquote>
+<p>被 OCR 成奇怪文字。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十七所以图像页-ocr-之后">二百一十七、所以图像页 OCR
+之后</h1>
+<p>最好还保留：</p>
+<blockquote>
+<p>页面图像引用 / 页码。</p>
+</blockquote>
+<p>对于重要样本：</p>
+<blockquote>
+<p>可以人工回看原页。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十八另一个特殊问题">二百一十八、另一个特殊问题</h1>
+<h1 id="redaction-mask">Redaction / Mask</h1>
+<p>有些文件可能：</p>
+<blockquote>
+<p>用黑框遮住敏感信息。</p>
+</blockquote>
+<p>视觉上看不到。</p>
+<p>但底层文字层：</p>
+<blockquote>
+<p>有时仍存在。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十九数据治理上不能假设">二百一十九、数据治理上不能假设</h1>
+<blockquote>
+<p>“页面看不见，所以机器也拿不到。”</p>
+</blockquote>
+<p>对于敏感信息：</p>
+<blockquote>
+<p>必须做专门检查。</p>
+</blockquote>
+<hr />
+<h1
+id="二百二十这和模型训练有什么关系">二百二十、这和模型训练有什么关系？</h1>
+<p>如果隐藏文字层里包含：</p>
+<ul>
+<li>联系电话；</li>
+<li>身份信息；</li>
+<li>账号；</li>
+<li>其它不应进入训练的数据；</li>
+</ul>
+<p>解析器可能：</p>
+<blockquote>
+<p>无意提取出来。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十一所以-parsed-layer-之后还需要">二百二十一、所以 Parsed
+Layer 之后还需要</h1>
+<h1 id="privacy-sensitive-data-filtering">Privacy / Sensitive Data
+Filtering</h1>
+<p>这不是本阶段重点。</p>
+<p>但必须知道：</p>
+<blockquote>
+<p>后面有这一层。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十二再谈来源-url">二百二十二、再谈来源 URL</h1>
+<p>如果文档来自网站，</p>
+<p>最好保留：</p>
+<pre class="text"><code>source_url
+download_time</code></pre>
+<p>为什么？</p>
+<hr />
+<h1
+id="二百二十三半年以后法规或公告页面变化">二百二十三、半年以后法规或公告页面变化</h1>
+<p>你至少知道：</p>
+<blockquote>
+<p>当初从哪里拿的。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十四对于法律法规">二百二十四、对于法律法规</h1>
+<p>还可能需要：</p>
+<pre class="text"><code>发布日期
+生效日期
+失效日期
+发布机关</code></pre>
+<p>这些以后：</p>
+<blockquote>
+<p>对 RAG 非常重要。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十五但是不要在-parser-里做所有事情">二百二十五、但是不要在
+Parser 里做所有事情</h1>
+<p>Parser 的职责先保持清楚：</p>
+<blockquote>
+<p><strong>忠实恢复内容和来源。</strong></p>
+</blockquote>
+<p>法规有效性判断：</p>
+<blockquote>
+<p>后面 Knowledge Engineering 再做。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十六这就是边界意识">二百二十六、这就是边界意识</h1>
+<p>一个模块职责越明确：</p>
+<blockquote>
+<p>越容易测试。</p>
+</blockquote>
+<hr />
+<h1
+id="二百二十七现在给-parseddocument_v0.1-一个概念-schema">二百二十七、现在给
+<code>ParsedDocument_V0.1</code> 一个概念 Schema</h1>
+<div class="sourceCode" id="cb357"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb357-1"><a href="#cb357-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb357-2"><a href="#cb357-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC-00152-01&quot;</span><span class="fu">,</span></span>
+<span id="cb357-3"><a href="#cb357-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;file_type&quot;</span><span class="fu">:</span> <span class="st">&quot;pdf&quot;</span><span class="fu">,</span></span>
+<span id="cb357-4"><a href="#cb357-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;file_hash&quot;</span><span class="fu">:</span> <span class="st">&quot;sha256:...&quot;</span><span class="fu">,</span></span>
+<span id="cb357-5"><a href="#cb357-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parser_version&quot;</span><span class="fu">:</span> <span class="st">&quot;parser_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb357-6"><a href="#cb357-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_url&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb357-7"><a href="#cb357-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb357-8"><a href="#cb357-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pages&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb357-9"><a href="#cb357-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb357-10"><a href="#cb357-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;page_number&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb357-11"><a href="#cb357-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;page_type&quot;</span><span class="fu">:</span> <span class="st">&quot;native_text&quot;</span><span class="fu">,</span></span>
+<span id="cb357-12"><a href="#cb357-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;blocks&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb357-13"><a href="#cb357-13" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb357-14"><a href="#cb357-14" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;block_id&quot;</span><span class="fu">:</span> <span class="st">&quot;B0001&quot;</span><span class="fu">,</span></span>
+<span id="cb357-15"><a href="#cb357-15" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;heading&quot;</span><span class="fu">,</span></span>
+<span id="cb357-16"><a href="#cb357-16" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;第三章 采购需求&quot;</span><span class="fu">,</span></span>
+<span id="cb357-17"><a href="#cb357-17" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;bbox&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">72</span><span class="ot">,</span> <span class="dv">90</span><span class="ot">,</span> <span class="dv">400</span><span class="ot">,</span> <span class="dv">130</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb357-18"><a href="#cb357-18" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;reading_order&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb357-19"><a href="#cb357-19" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;extraction_method&quot;</span><span class="fu">:</span> <span class="st">&quot;native&quot;</span></span>
+<span id="cb357-20"><a href="#cb357-20" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb357-21"><a href="#cb357-21" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb357-22"><a href="#cb357-22" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;warnings&quot;</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb357-23"><a href="#cb357-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb357-24"><a href="#cb357-24" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb357-25"><a href="#cb357-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb357-26"><a href="#cb357-26" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_warnings&quot;</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb357-27"><a href="#cb357-27" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这是：</p>
+<blockquote>
+<p>结构思想。</p>
+</blockquote>
+<p>不是最终数据库实现。</p>
+<hr />
+<h1 id="二百二十八为什么不直接保存">二百二十八、为什么不直接保存</h1>
+<div class="sourceCode" id="cb358"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb358-1"><a href="#cb358-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb358-2"><a href="#cb358-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;整本文件全部正文……&quot;</span></span>
+<span id="cb358-3"><a href="#cb358-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>因为你会失去：</p>
+<ul>
+<li>Page；</li>
+<li>Block；</li>
+<li>Position；</li>
+<li>Type；</li>
+<li>Provenance；</li>
+<li>Warning。</li>
+</ul>
+<hr />
+<h1
+id="二百二十九以后如果真的只需要全文">二百二十九、以后如果真的只需要全文</h1>
+<p>完全可以从 Block：</p>
+<blockquote>
+<p>重新拼接。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十但反过来">二百三十、但反过来</h1>
+<p>如果一开始只保存全文：</p>
+<blockquote>
+<p>无法可靠恢复 Block。</p>
+</blockquote>
+<p>所以还是那个原则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>早</mi><mi>期</mi><mi>保</mi><mi>留</mi><mi>信</mi><mi>息</mi><mi>晚</mi><mi>期</mi><mi>按</mi><mi>需</mi><mi>简</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+早期保留信息
+晚期按需简化
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二百三十一一个很好用的数据工程习惯">二百三十一、一个很好用的数据工程习惯</h1>
+<h1 id="lossless-first">Lossless First</h1>
+<p>先尽量：</p>
+<blockquote>
+<p>无损保留。</p>
+</blockquote>
+<p>然后再建立：</p>
+<h1 id="task-specific-view">Task-specific View</h1>
+<hr />
+<h1 id="二百三十二第四课第-1-阶段已经讲过">二百三十二、第四课第 1
+阶段已经讲过</h1>
+<pre class="text"><code>Master Dataset
+↓
+Classification View
+SFT View
+RAG View</code></pre>
+<p>现在 Parsed Data 也同理：</p>
+<pre class="text"><code>Rich Parsed Document
+↓
+Plain Text View
+Table View
+Clause View</code></pre>
+<hr />
+<h1 id="二百三十三同一个-rich-representation">二百三十三、同一个 Rich
+Representation</h1>
+<p>可以支持：</p>
+<blockquote>
+<p>多个下游任务。</p>
+</blockquote>
+<p>这比不断重新解析原始文件：</p>
+<blockquote>
+<p>更可靠。</p>
+</blockquote>
+<hr />
+<h1
+id="二百三十四现在说一个未来非常实用的问题">二百三十四、现在说一个未来非常实用的问题</h1>
+<p>假设同一项目同时有：</p>
+<pre class="text"><code>招标文件.docx
+招标文件.pdf</code></pre>
+<p>应该选哪个？</p>
+<hr />
+<h1 id="二百三十五不能机械说">二百三十五、不能机械说</h1>
+<blockquote>
+<p>DOCX 永远优先。</p>
+</blockquote>
+<p>但通常可以比较：</p>
+<pre class="text"><code>内容完整性
+结构质量
+版本时间
+是否最终发布版本
+是否与官网正式附件一致</code></pre>
+<hr />
+<h1 id="二百三十六比如-docx-是工作稿">二百三十六、比如 DOCX
+是工作稿</h1>
+<p>PDF 是：</p>
+<blockquote>
+<p>正式发布版。</p>
+</blockquote>
+<p>那正式内容：</p>
+<blockquote>
+<p>应以 PDF 为准。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十七所以-source-authority">二百三十七、所以 Source
+Authority</h1>
+<p>来源权威性：</p>
+<blockquote>
+<p>和 Parsing Quality 是两个维度。</p>
+</blockquote>
+<hr />
+<h1
+id="二百三十八一个来源解析得特别干净">二百三十八、一个来源解析得特别干净</h1>
+<p>但它是：</p>
+<blockquote>
+<p>草稿。</p>
+</blockquote>
+<p>另一个解析困难：</p>
+<blockquote>
+<p>却是正式版。</p>
+</blockquote>
+<p>不能因为 Parser 方便：</p>
+<blockquote>
+<p>就选草稿当真相。</p>
+</blockquote>
+<hr />
+<h1
+id="二百三十九所以最终数据质量至少有两条轴">二百三十九、所以最终数据质量至少有两条轴</h1>
+<pre class="text"><code>Source Authority</code></pre>
+<p>和：</p>
+<pre class="text"><code>Parse Quality</code></pre>
+<hr />
+<h1 id="二百四十可以想象四象限">二百四十、可以想象四象限</h1>
+<pre class="text"><code>                  Parse Quality 高
+                         ▲
+                         │
+正式来源 + 高质量解析   │   非正式来源 + 高质量解析
+                         │
+─────────────────────────┼────────────→
+                         │
+正式来源 + 低质量解析   │   非正式来源 + 低质量解析
+                         │</code></pre>
+<p>真正 Gold Data：</p>
+<blockquote>
+<p>尽量来自左上。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十一如果正式来源解析质量低怎么办">二百四十一、如果正式来源解析质量低怎么办？</h1>
+<p>不是：</p>
+<blockquote>
+<p>换一个不可靠来源。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>提升解析、人工复核。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十二这就是专业数据工程和抓网页文本的区别">二百四十二、这就是专业数据工程和“抓网页文本”的区别</h1>
+<p>我们不仅关心：</p>
+<blockquote>
+<p>有没有字。</p>
+</blockquote>
+<p>还关心：</p>
+<pre class="text"><code>字对不对？
+顺序对不对？
+结构对不对？
+来源对不对？
+能不能追溯？</code></pre>
+<hr />
+<h1 id="二百四十三本阶段-6-个核心心智模型总结">二百四十三、本阶段 6
+个核心心智模型总结</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>核心心智模型</th>
+<th>真正含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① 看得见 ≠ 有文字层</strong></td>
+<td>扫描 PDF 可能只是图像</td>
+</tr>
+<tr class="even">
+<td><strong>② Extract ≠ Parse</strong></td>
+<td>拿到字符不代表阅读顺序和结构正确</td>
+</tr>
+<tr class="odd">
+<td><strong>③ Parsing = 内容 + 结构 + 来源位置</strong></td>
+<td>不能只保存大字符串</td>
+</tr>
+<tr class="even">
+<td><strong>④ OCR 是后备方案</strong></td>
+<td>有可信原生文字时优先原生提取</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ 早期不要丢 Provenance</strong></td>
+<td>页码、bbox、来源、Parser 版本以后都很有价值</td>
+</tr>
+<tr class="even">
+<td><strong>⑥ Parsing Quality 由业务决定</strong></td>
+<td>对评分表、金额、法规引用等要更严格</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="二百四十四再加-4-个辅助心智模型">二百四十四、再加 4
+个辅助心智模型</h1>
+<h3 id="辅助模型-a">辅助模型 A</h3>
+<pre class="text"><code>Character Correct
+≠
+Document Correct</code></pre>
+<hr />
+<h3 id="辅助模型-b">辅助模型 B</h3>
+<pre class="text"><code>Parser Success
+≠
+Business Success</code></pre>
+<hr />
+<h3 id="辅助模型-c">辅助模型 C</h3>
+<pre class="text"><code>Visual Line
+≠
+Semantic Paragraph</code></pre>
+<hr />
+<h3 id="辅助模型-d">辅助模型 D</h3>
+<pre class="text"><code>Source Authority
+≠
+Parse Quality</code></pre>
+<p>这四个也很重要。</p>
+<hr />
+<h1 id="二百四十五思维实验-a">二百四十五、思维实验 A</h1>
+<p>一份 PDF：</p>
+<blockquote>
+<p>可以搜索文字。</p>
+</blockquote>
+<p>是不是一定不需要 OCR？</p>
+<p>不一定。</p>
+<p>因为：</p>
+<blockquote>
+<p>隐藏 OCR Text Layer 也可能质量很差。</p>
+</blockquote>
+<p>要先：</p>
+<blockquote>
+<p>检查文字质量。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十六思维实验-b">二百四十六、思维实验 B</h1>
+<p><code>extract_text()</code> 返回 80,000 字。</p>
+<p>是不是说明：</p>
+<blockquote>
+<p>解析非常成功？</p>
+</blockquote>
+<p>不是。</p>
+<p>还要检查：</p>
+<ul>
+<li>顺序；</li>
+<li>表格；</li>
+<li>页眉；</li>
+<li>字符；</li>
+<li>结构。</li>
+</ul>
+<hr />
+<h1 id="二百四十七思维实验-c">二百四十七、思维实验 C</h1>
+<p>两栏页面：</p>
+<blockquote>
+<p>所有字符都被正确提取。</p>
+</blockquote>
+<p>但顺序是：</p>
+<pre class="text"><code>左1
+右1
+左2
+右2</code></pre>
+<p>解析成功吗？</p>
+<blockquote>
+<p>对业务而言可能失败。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十八思维实验-d">二百四十八、思维实验 D</h1>
+<p>扫描 PDF 全部先 OCR。</p>
+<p>是不是最统一、最专业？</p>
+<p>不是。</p>
+<p>有高质量原生文字层：</p>
+<blockquote>
+<p>没必要主动引入 OCR 误差。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十九思维实验-e">二百四十九、思维实验 E</h1>
+<p>一个评分表：</p>
+<blockquote>
+<p>所有文字提取正确，</p>
+</blockquote>
+<p>但行列关系丢了。</p>
+<p>是不是还能直接拿去训练评分标准审查？</p>
+<blockquote>
+<p>通常不能。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十思维实验-f">二百五十、思维实验 F</h1>
+<p>页眉每页重复 100 次。</p>
+<p>为什么不直接在原始解析阶段永久删除？</p>
+<p>因为最好：</p>
+<blockquote>
+<p>先标记和保留原始层，</p>
+</blockquote>
+<p>再在 Normalization 层处理。</p>
+<hr />
+<h1 id="二百五十一思维实验-g">二百五十一、思维实验 G</h1>
+<p>DOCX 一定比 PDF 更可信？</p>
+<p>不是。</p>
+<p>DOCX：</p>
+<blockquote>
+<p>可能是内部工作稿。</p>
+</blockquote>
+<p>PDF：</p>
+<blockquote>
+<p>可能是正式发布版。</p>
+</blockquote>
+<p>来源权威性：</p>
+<blockquote>
+<p>必须单独判断。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十二思维实验-h">二百五十二、思维实验 H</h1>
+<p>一个 OCR 字符准确率 99.9%。</p>
+<p>是不是对采购业务一定足够？</p>
+<p>不一定。</p>
+<p>剩下的 0.1%：</p>
+<blockquote>
+<p>如果集中在金额、否定词、分值、法律条号，</p>
+</blockquote>
+<p>就可能非常严重。</p>
+<hr />
+<h1
+id="二百五十三本阶段最容易犯的-12-个错误">二百五十三、本阶段最容易犯的
+12 个错误</h1>
+<h3 id="错误-1-1">错误 1</h3>
+<blockquote>
+<p>PDF 就是只读 Word。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-2-1">错误 2</h3>
+<blockquote>
+<p>PDF 能复制文字就一定解析可靠。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-3-1">错误 3</h3>
+<blockquote>
+<p>有 OCR 就不需要 Native Parsing。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-4-1">错误 4</h3>
+<blockquote>
+<p>OCR 越早越好。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-5-1">错误 5</h3>
+<blockquote>
+<p>字都提出来了，结构就不重要。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-6-1">错误 6</h3>
+<blockquote>
+<p>每个换行都是新段落。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-7-1">错误 7</h3>
+<blockquote>
+<p>表格只是普通文字。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-8-1">错误 8</h3>
+<blockquote>
+<p>页眉页脚直接全部删就行。</p>
+</blockquote>
+<p>危险。</p>
+<h3 id="错误-9-1">错误 9</h3>
+<blockquote>
+<p>HTML 一定天然干净。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-10-1">错误 10</h3>
+<blockquote>
+<p>DOCX 一定天然有完美结构。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-11">错误 11</h3>
+<blockquote>
+<p>Parser 没报错就是成功。</p>
+</blockquote>
+<p>错。</p>
+<h3 id="错误-12">错误 12</h3>
+<blockquote>
+<p>最终只保存 plain text 就足够。</p>
+</blockquote>
+<p>对我们的长期项目来说：</p>
+<blockquote>
+<p>通常太早丢失信息。</p>
+</blockquote>
+<hr />
+<h1
+id="二百五十四本阶段最重要的一张故障树">二百五十四、本阶段最重要的一张故障树</h1>
+<p>以后遇到“解析文本有问题”，不要乱修。</p>
+<p>可以这样问：</p>
+<pre class="text"><code>解析结果异常
+   │
+   ├─ 原文件损坏？
+   │
+   ├─ 扫描页？
+   │      ↓
+   │     OCR
+   │
+   ├─ Text Layer乱码？
+   │      ↓
+   │     Encoding / OCR fallback
+   │
+   ├─ 阅读顺序错？
+   │      ↓
+   │     Layout Analysis
+   │
+   ├─ 表格错？
+   │      ↓
+   │     Table Recovery
+   │
+   ├─ 页眉页脚污染？
+   │      ↓
+   │     Repetition + Position
+   │
+   └─ 清洗规则误删？
+          ↓
+        回到Raw Parsed Layer</code></pre>
+<p>这比：</p>
+<blockquote>
+<p>“换一个 PDF 库试试”</p>
+</blockquote>
+<p>专业很多。</p>
+<hr />
+<h1
+id="二百五十五这一阶段之后我们已经有两个重要对象">二百五十五、这一阶段之后，我们已经有两个重要对象</h1>
+<p>Stage 1：</p>
+<pre class="text"><code>Task Schema</code></pre>
+<p>回答：</p>
+<blockquote>
+<p><strong>最后训练样本应该长什么样？</strong></p>
+</blockquote>
+<p>Stage 2：</p>
+<pre class="text"><code>ParsedDocument</code></pre>
+<p>回答：</p>
+<blockquote>
+<p><strong>原始文件怎样变成可信的机器可读内容？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二百五十六但中间还缺一座桥">二百五十六、但中间还缺一座桥</h1>
+<p>现在 ParsedDocument 里只有：</p>
+<pre class="text"><code>Page
+Block
+Table</code></pre>
+<p>我们还没真正知道：</p>
+<pre class="text"><code>哪一个是章标题？
+
+哪一个是资格条件？
+
+哪一个是技术参数？
+
+哪几个Block其实属于同一条条款？</code></pre>
+<p>这就是下一阶段。</p>
+<hr />
+<h1 id="二百五十七第-2-阶段掌握标准">二百五十七、第 2 阶段掌握标准</h1>
+<p>如果现在不看前文，你能够自己回答下面这些问题，本阶段就算真正掌握：</p>
+<blockquote>
+<p>为什么 PDF 不能简单理解成只读 Word？</p>
+</blockquote>
+<blockquote>
+<p>为什么人眼能看到文字，不代表 PDF 内存在可靠 Text Layer？</p>
+</blockquote>
+<blockquote>
+<p>什么是文字型 PDF、扫描型 PDF、混合型 PDF？</p>
+</blockquote>
+<blockquote>
+<p>为什么混合 PDF 最好按页决定是否 OCR？</p>
+</blockquote>
+<blockquote>
+<p>为什么 OCR 不应该成为所有 PDF 的默认第一步？</p>
+</blockquote>
+<blockquote>
+<p><code>extract_text()</code> 成功为什么不等于文档解析成功？</p>
+</blockquote>
+<blockquote>
+<p>Reading Order 为什么重要？</p>
+</blockquote>
+<blockquote>
+<p>两栏 PDF 为什么容易产生顺序错误？</p>
+</blockquote>
+<blockquote>
+<p>Character Correct 和 Document Correct 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>页眉页脚为什么会污染训练语料？</p>
+</blockquote>
+<blockquote>
+<p>Visual Line Break 和 Semantic Paragraph Break 为什么不同？</p>
+</blockquote>
+<blockquote>
+<p>为什么表格不能只 flatten 成普通字符串？</p>
+</blockquote>
+<blockquote>
+<p>为什么评分标准表尤其需要保存行列关系？</p>
+</blockquote>
+<blockquote>
+<p>为什么要保存 Block Type？</p>
+</blockquote>
+<blockquote>
+<p>为什么 bbox / 页面坐标对结构恢复有帮助？</p>
+</blockquote>
+<blockquote>
+<p>为什么训练模型未必需要 bbox，但数据工程应该保留？</p>
+</blockquote>
+<blockquote>
+<p>HTML 相比 PDF 有什么结构优势？</p>
+</blockquote>
+<blockquote>
+<p>HTML 为什么仍然需要正文抽取？</p>
+</blockquote>
+<blockquote>
+<p>DOCX 为什么通常比 PDF 更容易恢复结构？</p>
+</blockquote>
+<blockquote>
+<p>DOCX 又有哪些文本框、修订、表格等陷阱？</p>
+</blockquote>
+<blockquote>
+<p>为什么解析时应该记录 file hash？</p>
+</blockquote>
+<blockquote>
+<p>为什么 parser_version 需要版本化？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>extraction_method=native/ocr</code> 值得保存？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Provenance？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Parsed Layer 不应该只保存一条全文字符串？</p>
+</blockquote>
+<blockquote>
+<p>为什么要区分 Raw、Parsed、Normalized、Structured、Annotated？</p>
+</blockquote>
+<blockquote>
+<p>为什么程序 <code>success=True</code> 不能证明业务解析成功？</p>
+</blockquote>
+<blockquote>
+<p>为什么金额、分值、否定词和法规条号需要更严格的准确性？</p>
+</blockquote>
+<blockquote>
+<p>为什么 OCR 99.9% 字符准确率仍可能在采购业务中不够？</p>
+</blockquote>
+<blockquote>
+<p>Source Authority 和 Parse Quality 为什么是两个不同维度？</p>
+</blockquote>
+<p>如果这些你都可以自己解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>2</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第2阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二百五十八本阶段最终只记一句话">二百五十八、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>文档解析的目标不是“从文件里抠出一大段文字”，而是尽可能忠实地恢复人类实际看到和理解的内容关系：文字是什么、先后怎么读、属于什么版式结构、表格怎样对应、它来自哪一页哪一个位置，以及这段文字究竟是原生提取还是
+OCR 得到的。</strong></p>
+</blockquote>
+<p>最后压成一张图：</p>
+<pre class="text"><code>                  Raw Document
+                       │
+         ┌─────────────┼─────────────┐
+         ▼             ▼             ▼
+        PDF           HTML          DOCX
+         │             │             │
+         └─────────────┼─────────────┘
+                       ▼
+                 Format Adapter
+                       │
+                       ▼
+              Text / Block Extraction
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+       Native Text Good     Scan / Bad Text
+              │                 │
+              │                 ▼
+              │                OCR
+              │                 │
+              └────────┬────────┘
+                       ▼
+                 Layout Recovery
+                       │
+                       ▼
+                 Reading Order
+                       │
+                       ▼
+                  Table Recovery
+                       │
+                       ▼
+               Quality Validation
+                       │
+                       ▼
+              ParsedDocument_V0.1</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-3-阶段">下一阶段：第四课 · 第 3 阶段</h1>
+<h2
+id="文档结构恢复与-clause-segmentation机器拿到正确文字之后怎样知道哪里是章节表格资格条件以及一条采购条款到底从哪里开始在哪里结束">文档结构恢复与
+Clause
+Segmentation——机器拿到“正确文字”之后，怎样知道哪里是章、节、表格、资格条件，以及“一条采购条款”到底从哪里开始、在哪里结束？</h2>
+<p>第 3 阶段我们会处理一个很有意思的问题：</p>
+<p>假设 Parser 已经完美给出了：</p>
+<pre class="text"><code>第三章 采购需求
+3.1 资格条件
+1. 供应商……
+2. 供应商……
+3.2 技术要求
+1. 设备……
+2. 系统……</code></pre>
+<p>机器仍然只看到：</p>
+<blockquote>
+<p>一系列 Block。</p>
+</blockquote>
+<p>我们要第一次把它恢复成：</p>
+<pre class="text"><code>Project
+  ↓
+Document
+  ↓
+Section
+  ↓
+Subsection
+  ↓
+Clause</code></pre>
+<p>并真正产生第一批：</p>
+<h1 id="clauseunit_v0.1"><code>ClauseUnit_V0.1</code></h1>
+<p>也就是说，第 2 阶段解决：</p>
+<blockquote>
+<p><strong>“文字拿对了吗？”</strong></p>
+</blockquote>
+<p>第 3 阶段开始解决：</p>
+<blockquote>
+<p><strong>“这些文字在业务上到底属于哪里？”</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

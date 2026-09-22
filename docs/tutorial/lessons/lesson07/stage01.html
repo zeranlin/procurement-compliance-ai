@@ -1,0 +1,955 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第1阶段：Agent 到底是什么？从一次性生成到 Observe → Decide → Act</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第1阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，Agent 不是“更会聊天的 LLM”，而是 Model + State + Tools + Policy + Loop 组成的任务执行系统。</li><li>第二，普通 LLM 是 Prompt → Generate，RAG 通常是固定的 Retrieve → Generate Pipeline；Agent 的关键升级是模型可以根据 Observation 动态决定下一步 Action。</li><li>第三，真正的 Agent Action 必须由 Tool Runtime 实际执行；模型说“我执行了”不等于真实世界已经执行。</li></ul></div><h1 id="第七课-第-1-阶段">第七课 · 第 1 阶段</h1>
+<h1 id="agent-到底是什么从一次性生成到-observe-decide-act">Agent
+到底是什么？从一次性生成到 Observe → Decide → Act</h1>
+<h2
+id="为什么-procurementrag_v0.1-会回答问题却还不等于一个真正能完成任务的-agent">为什么
+<code>ProcurementRAG_V0.1</code>
+会回答问题，却还不等于一个真正能完成任务的 Agent？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Agent 不是“更会聊天的 LLM”，而是 Model + State + Tools
++ Policy + Loop 组成的任务执行系统。</strong></li>
+<li><strong>第二，普通 LLM 是 Prompt → Generate，RAG 通常是固定的
+Retrieve → Generate Pipeline；Agent 的关键升级是模型可以根据 Observation
+动态决定下一步 Action。</strong></li>
+<li><strong>第三，真正的 Agent Action 必须由 Tool Runtime
+实际执行；模型说“我执行了”不等于真实世界已经执行。</strong></li>
+<li><strong>第四，Workflow 与 Agent
+的核心区别不是步骤多少，而是谁决定下一步：Workflow
+主要由预定义控制流决定，Agent
+允许模型在受控范围内动态决策。</strong></li>
+<li><strong>第五，Agent 必须维护 State、拥有 Stop Condition，并受 Policy
+与 Human Approval 约束；自主程度越高不代表工程质量越高。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Decide</code></td>
+<td>Decide/决策：根据目标和状态选择下一步动作</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="odd">
+<td><code>Observe</code></td>
+<td>Observe/观察：读取当前状态和工具结果</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第六课结束时，我们已经得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementRAG\_V0.1
+}
+</annotation></semantics></math></p>
+<p>它已经能够：</p>
+<pre class="text"><code>理解用户问题
+↓
+检索外部知识
+↓
+找到证据
+↓
+组织Context
+↓
+生成带Citation的回答</code></pre>
+<p>这已经比普通 LLM 强很多。</p>
+<p>但假设用户提出一个更真实的任务：</p>
+<blockquote>
+<p>“请审查这份采购文件，找出资格条件中的潜在风险；如果发现疑似本地化限制，再检索适用规则；最后生成一份结构化审查报告，并把无法确定的问题标记给人工复核。”</p>
+</blockquote>
+<p>这时系统不只需要：</p>
+<blockquote>
+<p><strong>回答一个问题。</strong></p>
+</blockquote>
+<p>它还需要自己决定：</p>
+<pre class="text"><code>先读什么
+再查什么
+要不要调用工具
+工具返回以后下一步做什么
+什么时候继续
+什么时候停止
+什么时候必须交给人</code></pre>
+<p>所以第七课开始，我们正式从：</p>
+<h1 id="answering-system">Answering System</h1>
+<p>走向：</p>
+<h1 id="acting-system">Acting System</h1>
+<p>也就是：</p>
+<h1 id="agent">Agent</h1>
+<h2 id="智能体-任务执行系统">智能体 / 任务执行系统</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementagentboundarymodel_v0.1"><code>ProcurementAgentBoundaryModel_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话">一、先锁死本阶段最重要的一句话</h1>
+<p>Agent 的本质不是：</p>
+<blockquote>
+<p><strong>“一个更聪明的聊天机器人。”</strong></p>
+</blockquote>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>s</mi><mo>+</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>L</mi><mi>o</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Agent
+=
+Model
++
+State
++
+Tools
++
+Policy
++
+Loop
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><strong>Model</strong>：判断下一步做什么；</li>
+<li><strong>State</strong>：保存任务当前进度；</li>
+<li><strong>Tools</strong>：对外部世界执行动作；</li>
+<li><strong>Policy</strong>：限制什么能做、什么不能做；</li>
+<li><strong>Loop</strong>：观察结果以后继续决策，直到任务结束。</li>
+</ul>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>L</mi><mi>M</mi><mo>≠</mo><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LLM
+\neq
+Agent
+}
+</annotation></semantics></math></p>
+<p>LLM 是 Agent 里的一个决策组件。</p>
+<hr />
+<h1 id="二普通-llm-为什么还不是-agent">二、普通 LLM 为什么还不是
+Agent？</h1>
+<p>普通 LLM 的最小工作方式是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi><mo>→</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Prompt
+\rightarrow
+Generate
+\rightarrow
+Answer
+</annotation></semantics></math></p>
+<p>用户输入一次，</p>
+<p>模型输出一次。</p>
+<p>例如：</p>
+<pre class="text"><code>User:
+判断下面资格条件是否有风险。
+
+LLM:
+这项条件可能存在……</code></pre>
+<p>这属于：</p>
+<h1 id="one-shot-generation">One-shot Generation</h1>
+<h2 id="一次性生成">一次性生成</h2>
+<p>模型不会天然拥有：</p>
+<pre class="text"><code>外部工具
+真实任务状态
+执行反馈
+重试机制
+停止条件
+权限系统</code></pre>
+<p>它只是：</p>
+<blockquote>
+<p><strong>根据当前 Context 预测接下来该输出哪些 Token。</strong></p>
+</blockquote>
+<p>所以即使语言非常像“在计划”，</p>
+<p>也不等于它真的：</p>
+<blockquote>
+<p>执行了计划。</p>
+</blockquote>
+<hr />
+<h1 id="三rag-为什么也还不等于-agent">三、RAG 为什么也还不等于
+Agent？</h1>
+<p>第六课的 RAG 链是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Query
+\rightarrow
+Retrieve
+\rightarrow
+Context
+\rightarrow
+Generate
+</annotation></semantics></math></p>
+<p>它已经比普通 LLM 多了一步：</p>
+<h1 id="retrieval">Retrieval</h1>
+<h2 id="外部知识检索">外部知识检索</h2>
+<p>但它通常仍然是：</p>
+<blockquote>
+<p><strong>固定 Pipeline。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>每次都：
+Query Processing
+→ Retrieval
+→ Rerank
+→ Context
+→ LLM</code></pre>
+<p>真正决定流程的是：</p>
+<blockquote>
+<p><strong>工程师预先写好的程序。</strong></p>
+</blockquote>
+<p>模型本身通常没有在运行时决定：</p>
+<pre class="text"><code>这次需不需要检索？
+是否需要先解析文件？
+是否要先算金额？
+检索失败后是不是换一种策略？
+是否应该请求人工确认？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>可</mi><mi>以</mi><mi>成</mi><mi>为</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>的</mi><mi>一</mi><mi>个</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>但</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>本</mi><mi>身</mi><mi>不</mi><mi>必</mi><mi>然</mi><mi>是</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAG
+可以成为Agent的一个Tool
+但RAG本身不必然是Agent
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四workflow-和-agent-到底差在哪里">四、Workflow 和 Agent
+到底差在哪里？</h1>
+<p>这是第七课必须先切清楚的边界。</p>
+<h2 id="workflow">Workflow</h2>
+<h3 id="工作流">工作流</h3>
+<p>流程主要由程序提前确定：</p>
+<pre class="text"><code>Step 1
+读取文件
+
+Step 2
+抽取资格条件
+
+Step 3
+检索法规
+
+Step 4
+生成报告</code></pre>
+<p>无论输入是什么，</p>
+<p>大体都按这个顺序走。</p>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>f</mi><mi>l</mi><mi>o</mi><mi>w</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>F</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Workflow
+=
+PredefinedControlFlow
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="agent-1">Agent</h2>
+<h3 id="智能体">智能体</h3>
+<p>部分控制流由模型根据当前状态动态决定：</p>
+<pre class="text"><code>先观察当前任务状态
+↓
+决定下一步
+↓
+执行动作
+↓
+读取结果
+↓
+重新决定</code></pre>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>D</mi><mi>y</mi><mi>n</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>c</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>I</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>L</mi><mi>o</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Agent
+=
+DynamicDecisionInsideControlLoop
+}
+</annotation></semantics></math></p>
+<p>最重要的区别不是：</p>
+<blockquote>
+<p>有没有很多步骤。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>下一步是谁决定的。</strong></p>
+</blockquote>
+<hr />
+<h1 id="五agent-的核心循环observe-decide-act">五、Agent
+的核心循环：Observe → Decide → Act</h1>
+<p>Agent 最小闭环可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>d</mi><mi>e</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Observe
+\rightarrow
+Decide
+\rightarrow
+Act
+}
+</annotation></semantics></math></p>
+<p>然后继续：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><msub><mi>e</mi><mi>t</mi></msub><mo>→</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>d</mi><msub><mi>e</mi><mi>t</mi></msub><mo>→</mo><mi>A</mi><mi>c</mi><msub><mi>t</mi><mi>t</mi></msub><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><msub><mi>e</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">
+Observe_{t}
+\rightarrow
+Decide_{t}
+\rightarrow
+Act_{t}
+\rightarrow
+Observe_{t+1}
+</annotation></semantics></math></p>
+<p>直到停止。</p>
+<hr />
+<h2 id="observe">Observe</h2>
+<h3 id="观察">观察</h3>
+<p>Agent 读取当前可见状态，例如：</p>
+<pre class="text"><code>用户目标
+当前任务进度
+工具返回结果
+检索证据
+文件内容
+错误信息
+人工确认结果</code></pre>
+<hr />
+<h2 id="decide">Decide</h2>
+<h3 id="决策">决策</h3>
+<p>模型判断：</p>
+<pre class="text"><code>下一步要不要行动？
+调用哪个Tool？
+参数是什么？
+是否需要换策略？
+是否已经可以结束？
+是否需要人工确认？</code></pre>
+<hr />
+<h2 id="act">Act</h2>
+<h3 id="行动">行动</h3>
+<p>真正执行：</p>
+<pre class="text"><code>搜索
+读取文件
+调用数据库
+运行计算
+保存结果
+请求审批
+生成最终报告</code></pre>
+<p>关键点是：</p>
+<blockquote>
+<p><strong>Act 不是“模型说自己做了”。</strong></p>
+</blockquote>
+<p>Act 必须由真实执行系统完成。</p>
+<hr />
+<h1
+id="六我已经执行了与真的执行了是两回事">六、“我已经执行了”与“真的执行了”是两回事</h1>
+<p>这是 Agent 工程里极其重要的一条边界。</p>
+<p>模型可能生成：</p>
+<blockquote>
+<p>“我已经查询了数据库，发现有 17 条记录。”</p>
+</blockquote>
+<p>但如果系统实际上没有调用数据库：</p>
+<blockquote>
+<p>这只是文本生成。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClaimedAction
+\neq
+ExecutedAction
+}
+</annotation></semantics></math></p>
+<p>真实 Agent 必须形成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+ModelDecision
+\rightarrow
+ToolExecution
+\rightarrow
+ToolResult
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>s</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+ModelDecision
+\rightarrow
+ModelPretendsResult
+</annotation></semantics></math></p>
+<p>因此以后我们判断一个系统是不是 Agent，</p>
+<p>不能只看：</p>
+<blockquote>
+<p>它说话像不像 Agent。</p>
+</blockquote>
+<p>而要看：</p>
+<blockquote>
+<p><strong>它是否真的拥有受控的行动通道。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七environmentagent-不是活在纯-prompt-里">七、Environment：Agent
+不是活在纯 Prompt 里</h1>
+<p>Agent 要完成真实任务，</p>
+<p>一定存在一个：</p>
+<h1 id="environment">Environment</h1>
+<h2 id="环境">环境</h2>
+<p>环境可能包括：</p>
+<pre class="text"><code>本地文件
+知识库
+数据库
+API
+搜索系统
+计算器
+审批系统
+业务系统
+用户
+其他Agent</code></pre>
+<p>Agent 的动作会改变或查询 Environment。</p>
+<p>例如：</p>
+<pre class="text"><code>read_procurement_file
+search_regulation
+calculate_score
+query_supplier_database
+create_review_report
+request_human_approval</code></pre>
+<p>所以更完整的闭环是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><msub><mi>e</mi><mi>t</mi></msub><mo>+</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mi>t</mi></msub><mo>→</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mi>t</mi></msub><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mi>t</mi></msub><mo>→</mo><mi>E</mi><mi>n</mi><mi>v</mi><mi>i</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><msub><mi>n</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">
+AgentState_t
++
+Observation_t
+\rightarrow
+Decision_t
+\rightarrow
+Action_t
+\rightarrow
+Environment
+\rightarrow
+Observation_{t+1}
+</annotation></semantics></math></p>
+<p>这时 Agent 才真正从：</p>
+<blockquote>
+<p>文本生成系统</p>
+</blockquote>
+<p>变成：</p>
+<blockquote>
+<p><strong>和外部世界交互的任务系统。</strong></p>
+</blockquote>
+<hr />
+<h1 id="八state为什么-agent-必须知道自己做到哪一步了">八、State：为什么
+Agent 必须知道“自己做到哪一步了”？</h1>
+<p>假设采购文件审查需要：</p>
+<pre class="text"><code>审查资格条件
+审查技术参数
+审查评分标准
+审查履约要求
+生成最终报告</code></pre>
+<p>如果系统每一步都忘记之前发生过什么，</p>
+<p>就会：</p>
+<pre class="text"><code>重复调用工具
+重复分析
+漏掉子任务
+无法恢复失败
+不知道是否已经完成</code></pre>
+<p>所以需要：</p>
+<h1 id="state">State</h1>
+<h2 id="状态">状态</h2>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>S</mi><mi>t</mi></msub><mo>=</mo><mo stretchy="false" form="prefix">{</mo><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi><mo>,</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>,</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mo>,</mo><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>s</mi><mo>,</mo><mi>P</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">
+S_t
+=
+\{
+Goal,
+Progress,
+Observations,
+Artifacts,
+PendingActions
+\}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;goal&quot;</span><span class="fu">:</span> <span class="st">&quot;审查采购文件&quot;</span><span class="fu">,</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;completed&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;qualification_review&quot;</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pending&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;scoring_review&quot;</span><span class="ot">,</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;contract_review&quot;</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_found&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E1&quot;</span><span class="ot">,</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;E2&quot;</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">false</span></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Agent 不是只拥有聊天历史。</p>
+<p>它还需要：</p>
+<blockquote>
+<p><strong>任务状态。</strong></p>
+</blockquote>
+<hr />
+<h1 id="九agent-不是自由发挥越多越好">九、Agent
+不是“自由发挥越多越好”</h1>
+<p>一个常见误区是：</p>
+<blockquote>
+<p>Agent 越自主越高级。</p>
+</blockquote>
+<p>不一定。</p>
+<p>如果任务高度稳定：</p>
+<pre class="text"><code>固定读取文件
+固定字段抽取
+固定规则校验
+固定生成报告</code></pre>
+<p>那传统 Workflow 往往：</p>
+<blockquote>
+<p>更稳定、更便宜、更容易审计。</p>
+</blockquote>
+<p>只有当下一步确实依赖当前观察结果时，</p>
+<p>动态 Agent 决策才真正有价值。</p>
+<p>例如：</p>
+<pre class="text"><code>如果发现文号
+→ 精确检索文件
+
+如果没有文号
+→ 语义检索
+
+如果证据冲突
+→ 检索版本链
+
+如果仍无法判断
+→ 请求人工确认</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>n</mi><mi>o</mi><mi>m</mi><mi>y</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>E</mi><mi>n</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreAutonomy
+\neq
+BetterEngineering
+}
+</annotation></semantics></math></p>
+<p>最好的系统经常是：</p>
+<blockquote>
+<p><strong>确定性 Workflow + 局部 Agent Decision。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十agent-的自主程度其实是一条连续谱">十、Agent
+的自主程度其实是一条连续谱</h1>
+<p>不要把系统粗暴分成：</p>
+<pre class="text"><code>不是Agent
+vs
+是Agent</code></pre>
+<p>更准确的是一条：</p>
+<h1 id="autonomy-spectrum">Autonomy Spectrum</h1>
+<h2 id="自主程度连续谱">自主程度连续谱</h2>
+<p>例如：</p>
+<pre class="text"><code>Level 0
+纯LLM回答
+
+Level 1
+固定RAG Pipeline
+
+Level 2
+模型可以选择是否调用一个Tool
+
+Level 3
+模型可以在多个Tool之间选择
+
+Level 4
+模型可以做多步循环和重试
+
+Level 5
+模型可以拆任务、维护State、请求审批并恢复失败</code></pre>
+<p>并不是 Level 越高越好。</p>
+<p>真正要问：</p>
+<blockquote>
+<p><strong>这个业务需要多大自主性？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十一stopping-conditionagent-最后必须知道什么时候停">十一、Stopping
+Condition：Agent 最后必须知道什么时候停</h1>
+<p>如果没有停止规则，</p>
+<p>Agent Loop 可能出现：</p>
+<pre class="text"><code>继续搜索
+↓
+再搜索
+↓
+再调用工具
+↓
+再重新计划
+↓
+永远不结束</code></pre>
+<p>所以 Agent 必须有：</p>
+<h1 id="stop-condition">Stop Condition</h1>
+<h2 id="停止条件">停止条件</h2>
+<p>例如：</p>
+<pre class="text"><code>任务已经完成
+
+达到最大步骤数
+
+达到成本预算
+
+找到足够证据
+
+继续搜索没有新增信息
+
+工具连续失败
+
+必须等待人工确认</code></pre>
+<p>可以概念化为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>S</mi><mi>t</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Stop(S_t)=True
+</annotation></semantics></math></p>
+<p>一旦成立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>o</mi><mi>o</mi><mi>p</mi><mo>→</mo><mi>T</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Loop
+\rightarrow
+Terminate
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>不</mi><mi>仅</mi><mi>要</mi><mi>会</mi><mi>行</mi><mi>动</mi><mi>还</mi><mi>必</mi><mi>须</mi><mi>会</mi><mi>停</mi><mi>止</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Agent
+不仅要会行动
+还必须会停止
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十二human-in-the-loop有些动作本来就不应该自动做">十二、Human-in-the-loop：有些动作本来就不应该自动做</h1>
+<p>假设 Agent 发现：</p>
+<blockquote>
+<p>某采购条件疑似存在重大合规风险。</p>
+</blockquote>
+<p>它可以：</p>
+<pre class="text"><code>检索
+分析
+整理证据
+生成建议</code></pre>
+<p>但如果下一步是：</p>
+<pre class="text"><code>正式修改采购文件
+发布公告
+发送正式函件
+提交审批</code></pre>
+<p>这些动作可能需要：</p>
+<h1 id="human-approval">Human Approval</h1>
+<h2 id="人工批准">人工批准</h2>
+<p>所以 Agent Policy 必须能够定义：</p>
+<pre class="text"><code>Read-only Action
+可以自动执行
+
+Low-risk Action
+可以自动执行并记录
+
+High-impact Action
+必须先请求人工确认</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>n</mi><mi>o</mi><mi>m</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>受</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>约</mi><mi>束</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AgentAutonomy
+必须受Policy约束
+}
+</annotation></semantics></math></p>
+<p>这会在第 10 阶段正式展开安全设计。</p>
+<hr />
+<h1
+id="十三用一个政府采购任务看完整-agent-loop">十三、用一个政府采购任务看完整
+Agent Loop</h1>
+<p>用户目标：</p>
+<blockquote>
+<p>“审查这份采购文件中的资格条件，并生成带依据的风险报告。”</p>
+</blockquote>
+<p>Agent 第一次 Observe：</p>
+<pre class="text"><code>Goal:
+审查资格条件
+
+Available:
+采购文件
+RAG
+结构化抽取工具
+报告生成工具</code></pre>
+<p>第一次 Decide：</p>
+<blockquote>
+<p>先读取采购文件并抽取资格条件。</p>
+</blockquote>
+<p>Act：</p>
+<pre class="text"><code>read_file
++
+extract_qualification_requirements</code></pre>
+<p>新的 Observation：</p>
+<pre class="text"><code>发现：
+1. 投标前须有本地办事处
+2. 注册满3年
+3. 某认证要求</code></pre>
+<p>第二次 Decide：</p>
+<blockquote>
+<p>需要分别检索三类规则。</p>
+</blockquote>
+<p>Act：</p>
+<pre class="text"><code>search_regulation(local_presence)
+search_regulation(operation_years)
+search_regulation(certification)</code></pre>
+<p>新的 Observation：</p>
+<pre class="text"><code>条件1：
+找到强相关规则
+
+条件2：
+找到强相关规则
+
+条件3：
+证据不足</code></pre>
+<p>下一次 Decide：</p>
+<pre class="text"><code>条件1、2
+可以形成初步判断
+
+条件3
+需要needs_review</code></pre>
+<p>最后 Act：</p>
+<pre class="text"><code>create_review_report</code></pre>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Stop=True
+</annotation></semantics></math></p>
+<p>这才是：</p>
+<blockquote>
+<p><strong>真正的多步任务执行。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十四本阶段的错误分类agent-会在哪一层失败">十四、本阶段的错误分类：Agent
+会在哪一层失败？</h1>
+<p>从第一阶段开始，我们就要建立 Agent Error Taxonomy。</p>
+<p>至少有：</p>
+<pre class="text"><code>1. Observation Error
+没有正确理解Tool Result或当前状态
+
+2. Decision Error
+下一步选错了
+
+3. Tool Selection Error
+应该调用A，却调用了B
+
+4. Argument Error
+Tool选对，但参数错了
+
+5. Execution Error
+Tool本身执行失败
+
+6. State Error
+任务进度记录错了
+
+7. Loop Error
+重复、死循环、过早停止
+
+8. Policy Error
+执行了不该自动执行的动作
+
+9. Completion Error
+看起来结束了，但真实任务并没有完成</code></pre>
+<p>这张错误地图很重要。</p>
+<p>以后最终结果错了，</p>
+<p>不能只说：</p>
+<blockquote>
+<p>“Agent 推理能力不行。”</p>
+</blockquote>
+<p>必须知道：</p>
+<blockquote>
+<p><strong>到底是哪一层出了问题。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十五本阶段工程产物procurementagentboundarymodel_v0.1">十五、本阶段工程产物：<code>ProcurementAgentBoundaryModel_V0.1</code></h1>
+<p>第一版边界模型至少锁定：</p>
+<pre class="text"><code>agent_goal
+
+environment
+
+available_tools
+
+state_schema
+
+observation_schema
+
+decision_schema
+
+action_schema
+
+policy_boundary
+
+approval_required_actions
+
+stop_conditions
+
+max_steps
+
+failure_states
+
+trace_required
+=
+true</code></pre>
+<p>并明确系统架构：</p>
+<pre class="text"><code>LLM
+负责：
+Decision
+
+Tool Runtime
+负责：
+Execution
+
+State Store
+负责：
+Progress
+
+Policy Layer
+负责：
+Permission
+
+Evaluator
+负责：
+Completion Check</code></pre>
+<p>这就是第七课后面所有阶段共同使用的 Agent 最小骨架。</p>
+<hr />
+<h1 id="十六把本阶段压成最精准的-6-句话">十六、把本阶段压成最精准的 6
+句话</h1>
+<blockquote>
+<p><strong>第一，Agent 不是“更会聊天的 LLM”，而是
+<code>Model + State + Tools + Policy + Loop</code>
+组成的任务执行系统。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，普通 LLM 是 <code>Prompt → Generate</code>，RAG
+通常是固定的 <code>Retrieve → Generate</code> Pipeline；Agent
+的关键升级是模型可以根据 Observation 动态决定下一步
+Action。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，真正的 Agent Action 必须由 Tool Runtime
+实际执行；模型说“我执行了”不等于真实世界已经执行。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Workflow 与 Agent
+的核心区别不是步骤多少，而是谁决定下一步：Workflow
+主要由预定义控制流决定，Agent
+允许模型在受控范围内动态决策。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Agent 必须维护 State、拥有 Stop Condition，并受 Policy
+与 Human Approval 约束；自主程度越高不代表工程质量越高。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，Agent 的最终质量必须分别检查
+Observation、Decision、Tool、Argument、Execution、State、Loop、Policy 和
+Completion，而不能只看最终一句回答。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         User Goal
+                            │
+                            ▼
+                        Agent State
+                            │
+                            ▼
+                         Observe
+                            │
+                            ▼
+                          Decide
+                            │
+                     ┌──────┴──────┐
+                     │             │
+                     ▼             ▼
+                   Action        Finish?
+                     │             │
+                     ▼             │
+                 Tool Runtime      │
+                     │             │
+                     ▼             │
+                 Environment       │
+                     │             │
+                     ▼             │
+                New Observation    │
+                     │             │
+                     └──────┬──────┘
+                            │
+                            ▼
+                        Update State
+                            │
+                            ▼
+                    Continue / Stop</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Agent
+的本质不是“会想很多步”，而是“能够在受控循环里观察真实结果、决定下一步、执行真实动作，并在任务真正完成时停止”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-1-阶段掌握测试">第七课 · 第 1 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么普通 LLM 不等于 Agent；为什么
+RAG 也不必然等于 Agent；Workflow 与 Agent 的根本区别是什么；什么是
+Observe、Decide、Act；为什么模型声称执行和真实 Tool Execution
+必须分开；Environment 在 Agent 中是什么；为什么 Agent 需要独立的 Task
+State；为什么更多 Autonomy 不一定更好；什么是 Autonomy Spectrum；为什么
+Stop Condition 是 Agent 必备组件；哪些动作需要
+Human-in-the-loop；以及为什么 Agent Error
+不能只归结为“模型推理错了”。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>1</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第1阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第七课-第-2-阶段">下一阶段：第七课 · 第 2 阶段</h1>
+<h1 id="tool-callingllm-为什么可以调用函数">Tool Calling：LLM
+为什么可以“调用函数”？</h1>
+<h2
+id="模型明明只能生成-token为什么最后却能真的读文件查数据库调用-api">模型明明只能生成
+Token，为什么最后却能真的读文件、查数据库、调用 API？</h2>
+<p>下一阶段我们会正式拆开：</p>
+<pre class="text"><code>Tool Definition
+Function Schema
+Tool Selection
+Arguments
+Tool Call
+Tool Runtime
+Tool Result
+Tool Message
+Second Model Turn</code></pre>
+<p>并回答第七课最关键的底层问题之一：</p>
+<blockquote>
+<p><strong>模型到底有没有“直接执行函数”？</strong></p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p><strong>Function Calling 为什么本质上仍然是结构化 Token Generation +
+外部 Runtime Execution？</strong></p>
+</blockquote>
+<p>下一阶段会建立：</p>
+<h1
+id="procurementtoolcallingprotocol_v0.1"><code>ProcurementToolCallingProtocol_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="../lesson06/stage11.html">← 第 6 课最后阶段</a><a class="btn" href="stage02.html">第 2 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

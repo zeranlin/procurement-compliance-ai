@@ -1,0 +1,3163 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第2课 · 第9阶段：Tokenizer 与 Subword</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第2课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>解释 Transformer/LLM 内部机制，定位 Attention、Token、KV Cache 等架构问题。<ul><li>Token ≠ Word ≠ Concept。Tokenizer 切出来的是模型计算单位，不是天然语言学词或完整知识概念。</li><li>Subword Tokenization 在词表大小与序列长度之间做折中，使模型能处理未登录词和组合词。</li><li>Tokenizer 是模型协议的一部分；训练、推理和微调必须使用与模型匹配的 Tokenizer。</li></ul></div><h1 id="第二课-第-9-阶段tokenizer-与-subword">第二课 · 第 9
+阶段：Tokenizer 与 Subword</h1>
+<h2
+id="供应商注册资本不得低于5000万元模型究竟凭什么决定切成哪些-token">“供应商注册资本不得低于5000万元”，模型究竟凭什么决定切成哪些
+Token？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Token ≠ Word ≠ Concept。Tokenizer
+切出来的是模型计算单位，不是天然语言学词或完整知识概念。</strong></li>
+<li><strong>Subword Tokenization
+在词表大小与序列长度之间做折中，使模型能处理未登录词和组合词。</strong></li>
+<li><strong>Tokenizer
+是模型协议的一部分；训练、推理和微调必须使用与模型匹配的
+Tokenizer。</strong></li>
+<li><strong>Tokenization 直接影响 Context
+占用、训练成本、数字/法规文号切分和领域术语效率。</strong></li>
+<li><strong>随意更换或扩展 Tokenizer 可能导致 Embedding/LM Head
+尺寸和已学参数失配，需要专门训练与兼容性验证。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>Tokenization</code></td>
+<td>Token 化：把文本转换成 Token 序列</td>
+</tr>
+<tr class="odd">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="even">
+<td><code>Normalization</code></td>
+<td>规范化：稳定中间激活与训练过程</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Self-Attention</code></td>
+<td>自注意力：同一序列内部各位置计算相关性并聚合</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="even">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+<tr class="odd">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 8 阶段，我们已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenID
+\rightarrow
+EmbeddingVector
+}
+</annotation></semantics></math></p>
+<p>但是我们故意跳过了一个问题：</p>
+<blockquote>
+<p><strong>Token ID 从哪里来？</strong></p>
+</blockquote>
+<p>真正输入明明是字符串：</p>
+<blockquote>
+<p>“供应商注册资本不得低于5000万元。”</p>
+</blockquote>
+<p>模型却最终拿到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>28731</mn><mo>,</mo><mn>1152</mn><mo>,</mo><mn>9034</mn><mo>,</mo><mi>…</mi><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[28731,1152,9034,\ldots]
+</annotation></semantics></math></p>
+<p>中间一定发生了某种转换。</p>
+<p>这就是今天的主角：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenizer
+}
+</annotation></semantics></math></p>
+<p>完整链条：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawText
+\rightarrow
+Normalization
+\rightarrow
+Segmentation
+\rightarrow
+Tokens
+\rightarrow
+TokenIDs
+}
+</annotation></semantics></math></p>
+<p>今天最重要的不是记住几个 Tokenizer 名字，而是理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>实</mi><mi>际</mi><mi>上</mi><mi>定</mi><mi>义</mi><mi>了</mi><mi>L</mi><mi>L</mi><mi>M</mi><mi>看</mi><mi>到</mi><mi>语</mi><mi>言</mi><mi>时</mi><mi>的</mi><mo>“</mo><mi>最</mi><mi>小</mi><mi>积</mi><mi>木</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenizer
+实际上定义了LLM看到语言时的“最小积木”
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="先明确token-不等于单词">1. 先明确：Token 不等于“单词”</h2>
+<p>这是第一个必须拆掉的误区。</p>
+<p>很多人第一次听 Token，会理解为：</p>
+<blockquote>
+<p>一个 Token = 一个词。</p>
+</blockquote>
+<p>不对。</p>
+<p>一个 Token 可能是：</p>
+<ul>
+<li>一个汉字；</li>
+<li>一个词；</li>
+<li>一个词的一部分；</li>
+<li>数字的一部分；</li>
+<li>标点；</li>
+<li>空格；</li>
+<li>几个字节；</li>
+<li>一段常见字符串。</li>
+</ul>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mo>≠</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Token
+\neq
+Word
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="tokenizer-到底做什么">2. Tokenizer 到底做什么？</h2>
+<p>给定：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Text
+</annotation></semantics></math></p>
+<p>Tokenizer 定义一个映射：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>t</mi><mn>1</mn></msub><mo>,</mo><msub><mi>t</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>t</mi><mi>n</mi></msub><mo stretchy="true" form="postfix">]</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+T(Text)
+=
+[t_1,t_2,\ldots,t_n]
+}
+</annotation></semantics></math></p>
+<p>然后 Vocabulary 再将 Token 映射为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mi>i</mi><msub><mi>d</mi><mn>1</mn></msub><mo>,</mo><mi>i</mi><msub><mi>d</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><mi>i</mi><msub><mi>d</mi><mi>n</mi></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[id_1,id_2,\ldots,id_n]
+</annotation></semantics></math></p>
+<hr />
+<h2 id="一个简单例子-1">3. 一个简单例子</h2>
+<p>输入：</p>
+<blockquote>
+<p>供应商必须在本市注册</p>
+</blockquote>
+<p>Tokenizer A 可能产生：</p>
+<pre class="text"><code>供应商
+必须
+在
+本市
+注册</code></pre>
+<p>Tokenizer B 可能产生：</p>
+<pre class="text"><code>供应
+商
+必须
+在
+本
+市
+注册</code></pre>
+<p>Tokenizer C 甚至可能产生：</p>
+<pre class="text"><code>供
+应
+商
+必
+须
+在
+本
+市
+注
+册</code></pre>
+<p>三个都合法。</p>
+<hr />
+<h2 id="模型看到的其实不是原始文本">4. 模型看到的其实不是原始文本</h2>
+<p>模型真正收到的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+TokenIDs
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>217</mn><mo>,</mo><mn>8912</mn><mo>,</mo><mn>71</mn><mo>,</mo><mn>355</mn><mo>,</mo><mi>…</mi><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[217,8912,71,355,\ldots]
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mi>的</mi><mi>语</mi><mi>言</mi><mi>世</mi><mi>界</mi><mi>首</mi><mi>先</mi><mi>经</mi><mi>过</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>过</mi><mi>滤</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+模型的语言世界首先经过Tokenizer过滤
+}
+</annotation></semantics></math></p>
+<p>这句话非常重要。</p>
+<hr />
+<h2 id="第一个核心心智模型-8">5. 第一个核心心智模型</h2>
+<h3 id="心智模型-①tokenizer-是模型与原始语言之间的接口协议">心智模型
+①：Tokenizer 是模型与原始语言之间的“接口协议”</h3>
+<p>人看到：</p>
+<blockquote>
+<p>“中小企业声明函”</p>
+</blockquote>
+<p>模型可能看到：</p>
+<pre class="text"><code>中小企业
+声明
+函</code></pre>
+<p>也可能：</p>
+<pre class="text"><code>中
+小
+企业
+声明
+函</code></pre>
+<p>所以模型的基本输入世界：</p>
+<blockquote>
+<p>不是字符世界，也不是人类词典世界。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>定</mi><mi>义</mi><mi>的</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>世</mi><mi>界</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenizer定义的Token世界
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一为什么不直接-character-level">一、为什么不直接
+Character-Level？</h1>
+<h2 id="最简单思路一个字符一个-token">6. 最简单思路：一个字符一个
+Token</h2>
+<p>中文：</p>
+<blockquote>
+<p>供应商</p>
+</blockquote>
+<p>可以直接：</p>
+<pre class="text"><code>供
+应
+商</code></pre>
+<p>这叫：</p>
+<h1 id="character-level-tokenization">Character-Level Tokenization</h1>
+<hr />
+<h2 id="它有什么优点">7. 它有什么优点？</h2>
+<p>字符集合相对有限。</p>
+<p>中文常用字符虽然不少，但远小于：</p>
+<blockquote>
+<p>所有可能词语。</p>
+</blockquote>
+<p>因此：</p>
+<blockquote>
+<p>Vocabulary 可以相对可控。</p>
+</blockquote>
+<hr />
+<h2 id="还几乎不会出现未知词问题">8. 还几乎不会出现未知词问题</h2>
+<p>例如新词：</p>
+<blockquote>
+<p>“政采贷”</p>
+</blockquote>
+<p>即使 Vocabulary 没有整个词，</p>
+<p>仍然可以：</p>
+<pre class="text"><code>政
+采
+贷</code></pre>
+<p>所以模型至少：</p>
+<blockquote>
+<p>能表示它。</p>
+</blockquote>
+<hr />
+<h2 id="那为什么不全部按字符">9. 那为什么不全部按字符？</h2>
+<p>最大问题：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SequenceLength
+}
+</annotation></semantics></math></p>
+<p>会变长。</p>
+<hr />
+<h2 id="假设一句话">10. 假设一句话</h2>
+<blockquote>
+<p>“政府采购框架协议采购方式管理暂行办法”</p>
+</blockquote>
+<p>按词或常见片段：</p>
+<pre class="text"><code>政府采购
+框架协议
+采购方式
+管理
+暂行办法</code></pre>
+<p>可能只有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>5</mn><annotation encoding="application/x-tex">
+5
+</annotation></semantics></math></p>
+<p>个 Token。</p>
+<hr />
+<h2 id="如果按汉字">11. 如果按汉字</h2>
+<p>可能变成：</p>
+<pre class="text"><code>政 府 采 购 框 架 协 议 采 购 方 式 管 理 暂 行 办 法</code></pre>
+<p>大约：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>18</mn><annotation encoding="application/x-tex">
+18
+</annotation></semantics></math></p>
+<p>个 Token。</p>
+<p>序列明显更长。</p>
+<hr />
+<h2 id="为什么-sequence-length-很重要">12. 为什么 Sequence Length
+很重要？</h2>
+<p>标准 Self-Attention 的核心矩阵：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+QK^T
+</annotation></semantics></math></p>
+<p>如果序列长度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>S</mi><annotation encoding="application/x-tex">
+S
+</annotation></semantics></math></p>
+<p>Attention Score Matrix 大约是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mo>×</mo><mi>S</mi></mrow><annotation encoding="application/x-tex">
+S\times S
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以基础-attention-计算量大致有">13. 所以基础 Attention
+计算量大致有</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mrow><mo stretchy="true" form="prefix">(</mo><msup><mi>S</mi><mn>2</mn></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+O(S^2)
+}
+</annotation></semantics></math></p>
+<p>这一项。</p>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>S</mi><annotation encoding="application/x-tex">
+S
+</annotation></semantics></math></p>
+<p>翻倍，</p>
+<p>这部分计算：</p>
+<blockquote>
+<p>可能接近 4 倍。</p>
+</blockquote>
+<hr />
+<h2 id="这意味着-tokenizer-会影响-gpu-成本">14. 这意味着 Tokenizer
+会影响 GPU 成本</h2>
+<p>同一份政府采购文件：</p>
+<p>Tokenizer A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3000</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+3000\ Tokens
+</annotation></semantics></math></p>
+<p>Tokenizer B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>6000</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+6000\ Tokens
+</annotation></semantics></math></p>
+<p>即使模型完全一样：</p>
+<blockquote>
+<p>推理成本也可能明显不同。</p>
+</blockquote>
+<hr />
+<h2 id="第二个核心心智模型-8">15. 第二个核心心智模型</h2>
+<h3 id="心智模型-②tokenizer-不只是语言问题它也是计算成本问题">心智模型
+②：Tokenizer 不只是语言问题，它也是计算成本问题</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenization
+\rightarrow
+SequenceLength
+\rightarrow
+Compute
++
+Memory
++
+Latency
+}
+</annotation></semantics></math></p>
+<p>所以 Tokenizer 是：</p>
+<blockquote>
+<p>模型架构与系统工程的一部分。</p>
+</blockquote>
+<hr />
+<h1 id="二那为什么不一个-word-一个-token">二、那为什么不一个 Word 一个
+Token？</h1>
+<h2 id="另一个极端">16. 另一个极端</h2>
+<p>把：</p>
+<blockquote>
+<p>“供应商”</p>
+</blockquote>
+<p>作为一个 Token。</p>
+<blockquote>
+<p>“注册资本”</p>
+</blockquote>
+<p>一个 Token。</p>
+<blockquote>
+<p>“框架协议”</p>
+</blockquote>
+<p>一个 Token。</p>
+<p>这叫：</p>
+<h1 id="word-level">Word-Level</h1>
+<hr />
+<h2 id="看起来很自然">17. 看起来很自然</h2>
+<p>因为人类也经常：</p>
+<blockquote>
+<p>按词理解语言。</p>
+</blockquote>
+<p>而且序列：</p>
+<blockquote>
+<p>比字符级短。</p>
+</blockquote>
+<hr />
+<h2 id="但-word-level-遇到一个巨大问题">18. 但 Word-Level
+遇到一个巨大问题</h2>
+<p>语言中的可能词：</p>
+<blockquote>
+<p>几乎无限。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>采购
+采购人
+采购项目
+采购需求
+采购文件
+采购代理机构
+采购实施计划</code></pre>
+<p>每一个都放进 Vocabulary：</p>
+<blockquote>
+<p>很快膨胀。</p>
+</blockquote>
+<hr />
+<h2 id="还有新词">19. 还有新词</h2>
+<p>训练 Vocabulary 时没见过：</p>
+<blockquote>
+<p>“智能政采云审查引擎”</p>
+</blockquote>
+<p>怎么办？</p>
+<hr />
+<h2 id="传统系统会出现">20. 传统系统会出现</h2>
+<h1 id="oov">OOV</h1>
+<p>Out Of Vocabulary。</p>
+<p>即：</p>
+<blockquote>
+<p>词表外词。</p>
+</blockquote>
+<hr />
+<h2 id="一种旧方案是-unk">21. 一种旧方案是 <code>[UNK]</code></h2>
+<p>例如：</p>
+<pre class="text"><code>智能政采云审查引擎
+→
+[UNK]</code></pre>
+<p>问题很明显。</p>
+<p>大量不同未知词：</p>
+<blockquote>
+<p>全部变成一个 Token。</p>
+</blockquote>
+<p>信息损失极大。</p>
+<hr />
+<h2 id="所以我们陷入两难">22. 所以我们陷入两难</h2>
+<p>Character：</p>
+<blockquote>
+<p>Vocabulary 小，但 Sequence 长。</p>
+</blockquote>
+<p>Word：</p>
+<blockquote>
+<p>Sequence 短，但 Vocabulary 巨大，而且 OOV 严重。</p>
+</blockquote>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>u</mi><mi>b</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Subword
+}
+</annotation></semantics></math></p>
+<p>出现了。</p>
+<hr />
+<h1 id="三subword-的核心思想">三、Subword 的核心思想</h1>
+<h2 id="subword-是什么">23. Subword 是什么？</h2>
+<p>不要强迫：</p>
+<blockquote>
+<p>一个 Token 一定是完整词。</p>
+</blockquote>
+<p>也不要强迫：</p>
+<blockquote>
+<p>一个 Token 一定只是一个字符。</p>
+</blockquote>
+<p>而是在中间找平衡。</p>
+<hr />
+<h2 id="例如-3">24. 例如</h2>
+<p>“中小企业声明函”可能：</p>
+<pre class="text"><code>中小企业
+声明
+函</code></pre>
+<p>这里：</p>
+<blockquote>
+<p>“中小企业”</p>
+</blockquote>
+<p>是常见片段。</p>
+<blockquote>
+<p>“声明”</p>
+</blockquote>
+<p>也是常见片段。</p>
+<hr />
+<h2 id="一个罕见词">25. 一个罕见词</h2>
+<p>假设：</p>
+<blockquote>
+<p>超智慧政采审查器</p>
+</blockquote>
+<p>词表里没有整个词。</p>
+<p>仍可拆成：</p>
+<pre class="text"><code>超
+智慧
+政采
+审查
+器</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>不必 <code>[UNK]</code>。</p>
+</blockquote>
+<hr />
+<h2 id="subword-的核心原则">26. Subword 的核心原则</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>常</mi><mi>见</mi><mi>字</mi><mi>符</mi><mi>串</mi><mo>→</mo><mi>较</mi><mi>大</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+常见字符串
+\rightarrow
+较大Token
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>罕</mi><mi>见</mi><mi>字</mi><mi>符</mi><mi>串</mi><mo>→</mo><mi>拆</mi><mi>成</mi><mi>较</mi><mi>小</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+罕见字符串
+\rightarrow
+拆成较小Token
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这是一种压缩式思想">27. 这是一种压缩式思想</h2>
+<p>频繁出现：</p>
+<blockquote>
+<p>“政府采购”</p>
+</blockquote>
+<p>可以值得一个 Token。</p>
+<p>很少出现：</p>
+<blockquote>
+<p>“超量子采购银河审核系统”</p>
+</blockquote>
+<p>没必要为整个字符串浪费 Vocabulary Entry。</p>
+<hr />
+<h2 id="第三个核心心智模型-8">28. 第三个核心心智模型</h2>
+<h3 id="心智模型-③subword-是词表大小和序列长度之间的压缩折中">心智模型
+③：Subword 是“词表大小”和“序列长度”之间的压缩折中</h3>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>↔</mo><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VocabularySize
+\leftrightarrow
+SequenceLength
+}
+</annotation></semantics></math></p>
+<p>Tokenizer 设计就是在决定：</p>
+<blockquote>
+<p>哪些字符串值得成为一块“大积木”。</p>
+</blockquote>
+<hr />
+<h1 id="四vocabulary-到底是什么">四、Vocabulary 到底是什么？</h1>
+<h2 id="vocabulary-就是一张-token-表">29. Vocabulary 就是一张 Token
+表</h2>
+<p>例如：</p>
+<pre class="text"><code>ID 0    &lt;pad&gt;
+ID 1    &lt;bos&gt;
+ID 2    &lt;eos&gt;
+ID 3    供应
+ID 4    商
+ID 5    供应商
+ID 6    采购
+ID 7    政府采购
+...</code></pre>
+<hr />
+<h2 id="vocabulary-size">30. Vocabulary Size</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>=</mo><mn>100000</mn></mrow><annotation encoding="application/x-tex">
+V=100000
+</annotation></semantics></math></p>
+<p>说明：</p>
+<blockquote>
+<p>一共有 10 万个可用 Token ID。</p>
+</blockquote>
+<hr />
+<h2 id="它和第-8-阶段-embedding-直接相连">31. 它和第 8 阶段 Embedding
+直接相连</h2>
+<p>Embedding Matrix：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><mi>V</mi><mo>×</mo><mi>d</mi></mrow></msup></mrow><annotation encoding="application/x-tex">
+E\in\mathbb R^{V\times d}
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+V\uparrow
+</annotation></semantics></math></p>
+<p>Embedding 参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+Vd
+</annotation></semantics></math></p>
+<p>也随之增加。</p>
+<hr />
+<h2 id="vocabulary-是谁设计的">32. Vocabulary 是谁设计的？</h2>
+<p>早期可以：</p>
+<blockquote>
+<p>人工定义。</p>
+</blockquote>
+<p>现代大模型通常：</p>
+<blockquote>
+<p>用算法从大规模训练语料里学习 Vocabulary。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="tokenizer-training">Tokenizer Training</h1>
+<hr />
+<h1 id="五tokenizer-训练和-llm-训练不是一回事">五、Tokenizer 训练和 LLM
+训练不是一回事</h1>
+<h2 id="一个非常重要的区别">33. 一个非常重要的区别</h2>
+<p>Tokenizer 的“训练”通常是：</p>
+<blockquote>
+<p>根据语料统计，构造 Vocabulary 和切分规则。</p>
+</blockquote>
+<p>LLM 训练：</p>
+<blockquote>
+<p>通过 Gradient Descent 学 Weight。</p>
+</blockquote>
+<hr />
+<h2 id="tokenizer-通常不是每个-gradient-step-都改变">34. Tokenizer
+通常不是每个 Gradient Step 都改变</h2>
+<p>模型训练过程中：</p>
+<p>Vocabulary 通常：</p>
+<blockquote>
+<p>已经固定。</p>
+</blockquote>
+<p>Token ID 体系也：</p>
+<blockquote>
+<p>固定。</p>
+</blockquote>
+<hr />
+<h2 id="为什么必须固定">35. 为什么必须固定？</h2>
+<p>假设今天：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>D</mi><mo>=</mo><mn>583</mn></mrow><annotation encoding="application/x-tex">
+ID=583
+</annotation></semantics></math></p>
+<p>代表：</p>
+<blockquote>
+<p>“供应商”</p>
+</blockquote>
+<p>明天突然代表：</p>
+<blockquote>
+<p>“合同”</p>
+</blockquote>
+<p>Embedding Matrix 第 583 行：</p>
+<blockquote>
+<p>就全部乱套了。</p>
+</blockquote>
+<p>所以模型与 Tokenizer 必须保持一致。</p>
+<hr />
+<h2 id="这非常像数据库-schema">36. 这非常像数据库 Schema</h2>
+<p>Tokenizer 定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mo>↔</mo><mi>I</mi><mi>D</mi></mrow><annotation encoding="application/x-tex">
+Token\leftrightarrow ID
+</annotation></semantics></math></p>
+<p>Embedding 定义：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>D</mi><mo>↔</mo><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+ID\leftrightarrow Vector
+</annotation></semantics></math></p>
+<p>两者必须：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>严</mi><mi>格</mi><mi>对</mi><mi>齐</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+严格对齐
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第四个核心心智模型-8">37. 第四个核心心智模型</h2>
+<h3
+id="心智模型-④tokenizer-与模型-weight-是绑定资产不能随便替换">心智模型
+④：Tokenizer 与模型 Weight 是绑定资产，不能随便替换</h3>
+<p>不是说：</p>
+<blockquote>
+<p>模型中文不好，我随便换一个中文 Tokenizer。</p>
+</blockquote>
+<p>这样 Token ID：</p>
+<blockquote>
+<p>完全变了。</p>
+</blockquote>
+<p>模型原来的 Embedding：</p>
+<blockquote>
+<p>基本失效。</p>
+</blockquote>
+<hr />
+<h1 id="六从最经典的-bpe-开始">六、从最经典的 BPE 开始</h1>
+<h2 id="bpe-全称">38. BPE 全称</h2>
+<h1 id="byte-pair-encoding">Byte Pair Encoding</h1>
+<p>最初是一种：</p>
+<blockquote>
+<p>数据压缩算法。</p>
+</blockquote>
+<p>后来被引入 Subword Tokenization。</p>
+<hr />
+<h2 id="核心思想非常简单">39. 核心思想非常简单</h2>
+<p>从：</p>
+<blockquote>
+<p>很小的基本单位</p>
+</blockquote>
+<p>开始。</p>
+<p>然后反复寻找：</p>
+<blockquote>
+<p>最常一起出现的相邻 pair。</p>
+</blockquote>
+<p>把它们合并。</p>
+<hr />
+<h2 id="一个玩具例子">40. 一个玩具例子</h2>
+<p>语料中经常出现：</p>
+<pre class="text"><code>采 购
+采 购
+采 购
+采 购
+采 用</code></pre>
+<p>最频繁 pair 可能是：</p>
+<pre class="text"><code>采 + 购</code></pre>
+<hr />
+<h2 id="第一次-merge">41. 第一次 merge</h2>
+<p>创建新 Token：</p>
+<pre class="text"><code>采购</code></pre>
+<p>以后：</p>
+<pre class="text"><code>采 购</code></pre>
+<p>可以变成：</p>
+<pre class="text"><code>采购</code></pre>
+<hr />
+<h2 id="然后继续统计">42. 然后继续统计</h2>
+<p>可能发现：</p>
+<pre class="text"><code>政府 + 采购</code></pre>
+<p>非常频繁。</p>
+<p>于是再创建：</p>
+<pre class="text"><code>政府采购</code></pre>
+<hr />
+<h2 id="又发现">43. 又发现</h2>
+<pre class="text"><code>框架 + 协议</code></pre>
+<p>很频繁。</p>
+<p>于是：</p>
+<pre class="text"><code>框架协议</code></pre>
+<p>成为 Token。</p>
+<hr />
+<h2 id="bpe-的训练过程因此可以理解成">44. BPE
+的训练过程因此可以理解成</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>s</mi><mo>→</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>P</mi><mi>a</mi><mi>i</mi><mi>r</mi><mi>s</mi><mo>→</mo><mi>M</mi><mi>e</mi><mi>r</mi><mi>g</mi><mi>e</mi><mo>→</mo><mi>L</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SmallUnits
+\rightarrow
+FrequentPairs
+\rightarrow
+Merge
+\rightarrow
+LargerUnits
+}
+</annotation></semantics></math></p>
+<p>不断重复。</p>
+<hr />
+<h2 id="vocabulary-size-怎么控制">45. Vocabulary Size 怎么控制？</h2>
+<p>每 Merge 一次：</p>
+<blockquote>
+<p>新增一个 Token。</p>
+</blockquote>
+<p>所以如果目标 Vocabulary Size：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>V</mi><annotation encoding="application/x-tex">
+V
+</annotation></semantics></math></p>
+<p>达到指定规模后：</p>
+<blockquote>
+<p>停止 Merge。</p>
+</blockquote>
+<hr />
+<h1 id="七手算一个小-bpe">七、手算一个小 BPE</h1>
+<h2 id="假设语料">46. 假设语料</h2>
+<p>为了理解算法，我们用英文式符号：</p>
+<pre class="text"><code>AB
+AB
+AB
+AC</code></pre>
+<p>初始 Token：</p>
+<pre class="text"><code>A B
+A B
+A B
+A C</code></pre>
+<hr />
+<h2 id="统计相邻-pair">47. 统计相邻 Pair</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(A,B)
+</annotation></semantics></math></p>
+<p>出现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>3</mn><annotation encoding="application/x-tex">
+3
+</annotation></semantics></math></p>
+<p>次。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>A</mi><mo>,</mo><mi>C</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(A,C)
+</annotation></semantics></math></p>
+<p>出现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1</mn><annotation encoding="application/x-tex">
+1
+</annotation></semantics></math></p>
+<p>次。</p>
+<hr />
+<h2 id="所以先-merge">48. 所以先 merge</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>+</mo><mi>B</mi><mo>→</mo><mi>A</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+A+B\rightarrow AB
+</annotation></semantics></math></p>
+<p>语料变成：</p>
+<pre class="text"><code>AB
+AB
+AB
+A C</code></pre>
+<p>Vocabulary 新增：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+AB
+</annotation></semantics></math></p>
+<hr />
+<h2 id="这就是最基本的-bpe">49. 这就是最基本的 BPE</h2>
+<p>它没有人工理解：</p>
+<blockquote>
+<p>“AB 是一个词。”</p>
+</blockquote>
+<p>只是发现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>B</mi><mi>频</mi><mi>繁</mi><mi>共</mi><mi>同</mi><mi>出</mi><mi>现</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AB频繁共同出现
+}
+</annotation></semantics></math></p>
+<p>所以把它作为更大的单位更划算。</p>
+<hr />
+<h2 id="这和信息压缩有什么关系">50. 这和信息压缩有什么关系？</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>,</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">
+A,B
+</annotation></semantics></math></p>
+<p>经常一起出现，</p>
+<p>每次都写两个 Symbol：</p>
+<blockquote>
+<p>浪费。</p>
+</blockquote>
+<p>合成一个 Symbol：</p>
+<blockquote>
+<p>可以缩短表示。</p>
+</blockquote>
+<p>Tokenizer 本质上也在做：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>r</mi><mi>p</mi><mi>u</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CorpusCompression
+}
+</annotation></semantics></math></p>
+<p>的一种近似。</p>
+<hr />
+<h1 id="八bpe-的重要特征">八、BPE 的重要特征</h1>
+<h2 id="高频片段容易成为单独-token">51. 高频片段容易成为单独 Token</h2>
+<p>例如政府采购语料很多时：</p>
+<blockquote>
+<p>“采购人”</p>
+</blockquote>
+<blockquote>
+<p>“供应商”</p>
+</blockquote>
+<blockquote>
+<p>“采购文件”</p>
+</blockquote>
+<p>有可能被学成较完整 Token。</p>
+<hr />
+<h2 id="低频长词会拆分">52. 低频长词会拆分</h2>
+<p>例如非常罕见：</p>
+<blockquote>
+<p>“超级智能电子化履约辅助平台”</p>
+</blockquote>
+<p>可能被拆成：</p>
+<pre class="text"><code>超级
+智能
+电子
+化
+履约
+辅助
+平台</code></pre>
+<p>甚至更细。</p>
+<hr />
+<h2 id="这正是我们想要的平衡">53. 这正是我们想要的平衡</h2>
+<p>常见内容：</p>
+<blockquote>
+<p>更高效。</p>
+</blockquote>
+<p>罕见内容：</p>
+<blockquote>
+<p>仍然可表达。</p>
+</blockquote>
+<hr />
+<h1 id="九经典-bpe-和-byte-level-bpe-不是完全一回事">九、经典 BPE 和
+Byte-Level BPE 不是完全一回事</h1>
+<h2 id="名字里有-byte容易造成混淆">54. 名字里有 Byte，容易造成混淆</h2>
+<p>原始 Byte Pair Encoding：</p>
+<blockquote>
+<p>是压缩算法名称。</p>
+</blockquote>
+<p>NLP 里的 BPE：</p>
+<blockquote>
+<p>可以从字符等符号开始做 merge。</p>
+</blockquote>
+<hr />
+<h2 id="现代-gpt-风格经常使用">55. 现代 GPT 风格经常使用</h2>
+<h1 id="byte-level-bpe">Byte-Level BPE</h1>
+<p>这时基础单位进一步变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>y</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Byte
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十为什么从-byte-开始">十、为什么从 Byte 开始？</h1>
+<h2 id="计算机里的文本最终都是编码后的字节">56.
+计算机里的文本最终都是编码后的字节</h2>
+<p>例如 UTF-8。</p>
+<p>一个汉字通常：</p>
+<blockquote>
+<p>会编码为多个 Byte。</p>
+</blockquote>
+<hr />
+<h2 id="byte-的取值只有">57. Byte 的取值只有</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>256</mn><annotation encoding="application/x-tex">
+256
+</annotation></semantics></math></p>
+<p>种：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>∼</mo><mn>255</mn></mrow><annotation encoding="application/x-tex">
+0\sim255
+</annotation></semantics></math></p>
+<p>所以：</p>
+<blockquote>
+<p>任何文件里的字节都可以表示。</p>
+</blockquote>
+<hr />
+<h2 id="这带来一个巨大优势">58. 这带来一个巨大优势</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>几</mi><mi>乎</mi><mi>不</mi><mi>存</mi><mi>在</mi><mi>真</mi><mi>正</mi><mi>无</mi><mi>法</mi><mi>表</mi><mi>示</mi><mi>的</mi><mi>字</mi><mi>符</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+几乎不存在真正无法表示的字符
+}
+</annotation></semantics></math></p>
+<p>因为任何 Unicode 字符最终：</p>
+<blockquote>
+<p>都可以分解到 Byte。</p>
+</blockquote>
+<hr />
+<h2 id="也就是说-byte-level-提供极强-coverage">59. 也就是说 Byte-Level
+提供极强 Coverage</h2>
+<p>罕见汉字：</p>
+<blockquote>
+<p>能表示。</p>
+</blockquote>
+<p>Emoji：</p>
+<blockquote>
+<p>能表示。</p>
+</blockquote>
+<p>奇怪符号：</p>
+<blockquote>
+<p>能表示。</p>
+</blockquote>
+<p>代码字符：</p>
+<blockquote>
+<p>能表示。</p>
+</blockquote>
+<hr />
+<h2 id="如果整个字符串很常见">60. 如果整个字符串很常见</h2>
+<p>BPE Merge 又可以：</p>
+<blockquote>
+<p>把这些 Byte/字符组合成较大的 Token。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>y</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>u</mi><mi>b</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ByteCoverage
++
+SubwordCompression
+}
+</annotation></semantics></math></p>
+<p>两边兼得。</p>
+<hr />
+<h2 id="第五个核心心智模型-8">61. 第五个核心心智模型</h2>
+<h3
+id="心智模型-⑤byte-level-tokenization-的底线是任何文本都能被表示bpe-merge-再负责让常见文本变得高效">心智模型
+⑤：Byte-Level Tokenization 的底线是“任何文本都能被表示”，BPE Merge
+再负责让常见文本变得高效</h3>
+<p>这是一种：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>F</mi><mi>i</mi><mi>r</mi><mi>s</mi><mi>t</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CoverageFirst
++
+CompressionLater
+}
+</annotation></semantics></math></p>
+<p>的设计。</p>
+<hr />
+<h1 id="十一utf-8-为什么需要一点概念">十一、UTF-8
+为什么需要一点概念？</h1>
+<h2 id="中文字符不是一个-byte">62. 中文字符不是一个 Byte</h2>
+<p>例如一个常见汉字在 UTF-8 中：</p>
+<blockquote>
+<p>通常使用 3 个 Byte。</p>
+</blockquote>
+<p>Emoji：</p>
+<blockquote>
+<p>可能使用更多 Byte。</p>
+</blockquote>
+<hr />
+<h2 id="所以极端情况下">63. 所以极端情况下</h2>
+<p>一个罕见字符如果没有合适 merge：</p>
+<blockquote>
+<p>可能变成多个底层 Token 单位。</p>
+</blockquote>
+<hr />
+<h2 id="这意味着什么-4">64. 这意味着什么？</h2>
+<p>Tokenizer 对某种语言支持差时：</p>
+<p>同样一段人类文字：</p>
+<blockquote>
+<p>Token 数会很高。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="tokenization-inefficiency">Tokenization Inefficiency</h1>
+<hr />
+<h1 id="十二token-fertility">十二、Token Fertility</h1>
+<h2 id="一个非常实用的指标">65. 一个非常实用的指标</h2>
+<p>可以研究：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>F</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenFertility
+}
+</annotation></semantics></math></p>
+<p>粗略说：</p>
+<blockquote>
+<p>一个词、字符或文本单位平均被切成多少 Token。</p>
+</blockquote>
+<hr />
+<h2 id="例如-4">66. 例如</h2>
+<p>100 个中文字符：</p>
+<p>Tokenizer A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>120</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+120\ Tokens
+</annotation></semantics></math></p>
+<p>Tokenizer B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>250</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+250\ Tokens
+</annotation></semantics></math></p>
+<p>显然：</p>
+<blockquote>
+<p>B 对这段中文更“费 Token”。</p>
+</blockquote>
+<hr />
+<h2 id="采购领域也可以测">67. 采购领域也可以测</h2>
+<p>例如建立一个语料集：</p>
+<ul>
+<li>招标公告；</li>
+<li>招标文件；</li>
+<li>采购需求；</li>
+<li>质疑答复；</li>
+<li>投诉处理决定；</li>
+<li>政策法规。</li>
+</ul>
+<p>然后统计：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokensPerChineseCharacter
+}
+</annotation></semantics></math></p>
+<p>或：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokensPerDocument
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么这个指标很重要">68. 为什么这个指标很重要？</h2>
+<p>同样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">
+128K
+</annotation></semantics></math></p>
+<p>Context Window，</p>
+<p>如果一份文档 Token 化效率低：</p>
+<blockquote>
+<p>能装下的中文正文就更少。</p>
+</blockquote>
+<hr />
+<h2 id="所以-context-window-不是纯粹字符数">69. 所以 Context Window
+不是纯粹字符数</h2>
+<p>模型说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128</mn><mi>K</mi><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+128K\ Tokens
+</annotation></semantics></math></p>
+<p>不是：</p>
+<blockquote>
+<p>128K 个汉字。</p>
+</blockquote>
+<p>能装多少文字：</p>
+<blockquote>
+<p>取决于 Tokenizer。</p>
+</blockquote>
+<hr />
+<h1 id="十三wordpiece">十三、WordPiece</h1>
+<h2 id="第二个常见名字">70. 第二个常见名字</h2>
+<h1 id="wordpiece">WordPiece</h1>
+<p>它因 BERT 等模型而广为人知。</p>
+<hr />
+<h2 id="wordpiece-和-bpe-很像吗">71. WordPiece 和 BPE 很像吗？</h2>
+<p>高层直觉：</p>
+<blockquote>
+<p>都是 Subword。</p>
+</blockquote>
+<p>都希望：</p>
+<blockquote>
+<p>高频有意义片段形成较大单元。</p>
+</blockquote>
+<hr />
+<h2 id="但它选择合并的标准不同">72. 但它选择合并的标准不同</h2>
+<p>BPE 的经典直觉：</p>
+<blockquote>
+<p>找最频繁 pair。</p>
+</blockquote>
+<p>WordPiece 的经典设计更偏向：</p>
+<blockquote>
+<p>选择能够较好提升语言建模/词表解释能力的组合。</p>
+</blockquote>
+<hr />
+<h2 id="所以不要死记成">73. 所以不要死记成</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>P</mi><mi>i</mi><mi>e</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>B</mi><mi>P</mi><mi>E</mi></mrow><annotation encoding="application/x-tex">
+WordPiece=BPE
+</annotation></semantics></math></p>
+<p>更准确：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>两</mi><mi>者</mi><mi>都</mi><mi>属</mi><mi>于</mi><mi>S</mi><mi>u</mi><mi>b</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>家</mi><mi>族</mi><mi>，</mi><mi>但</mi><mi>V</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>学</mi><mi>习</mi><mi>目</mi><mi>标</mi><mi>和</mi><mi>细</mi><mi>节</mi><mi>不</mi><mi>同</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+两者都属于Subword家族，
+但Vocabulary学习目标和细节不同
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="wordpiece-常见视觉特征">74. WordPiece 常见视觉特征</h2>
+<p>在一些实现中会看到：</p>
+<pre class="text"><code>play
+##ing</code></pre>
+<p><code>##</code> 表示：</p>
+<blockquote>
+<p>这是词内部续接片段。</p>
+</blockquote>
+<hr />
+<h2 id="中文中这个现象看起来没那么直观">75.
+中文中这个现象看起来没那么直观</h2>
+<p>因为中文天然：</p>
+<blockquote>
+<p>不靠空格划词。</p>
+</blockquote>
+<p>但 WordPiece 同样可以：</p>
+<blockquote>
+<p>把中文字符或片段作为 Vocabulary Entry。</p>
+</blockquote>
+<hr />
+<h1 id="十四sentencepiece">十四、SentencePiece</h1>
+<h2 id="第三个经常被误解的名字">76. 第三个经常被误解的名字</h2>
+<h1 id="sentencepiece">SentencePiece</h1>
+<p>很多人以为 SentencePiece 是：</p>
+<blockquote>
+<p>和 BPE 完全并列的单一算法。</p>
+</blockquote>
+<p>其实更准确：</p>
+<blockquote>
+<p>它是一套直接从原始文本训练和执行 Subword Tokenization 的框架。</p>
+</blockquote>
+<hr />
+<h2 id="sentencepiece-可以使用不同模型">77. SentencePiece
+可以使用不同模型</h2>
+<p>例如：</p>
+<ul>
+<li>BPE；</li>
+<li>Unigram Language Model。</li>
+</ul>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>P</mi><mi>i</mi><mi>e</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>只</mi><mi>有</mi><mi>一</mi><mi>种</mi><mi>S</mi><mi>u</mi><mi>b</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>算</mi><mi>法</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SentencePiece
+\neq
+只有一种Subword算法
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="sentencepiece-一个重要设计">78. SentencePiece 一个重要设计</h2>
+<p>它可以：</p>
+<blockquote>
+<p>直接从 raw text 学习。</p>
+</blockquote>
+<p>不强制依赖：</p>
+<blockquote>
+<p>语言特定的预分词器。</p>
+</blockquote>
+<p>这对：</p>
+<ul>
+<li>中文；</li>
+<li>日文；</li>
+<li>多语言；</li>
+</ul>
+<p>特别有吸引力。</p>
+<hr />
+<h1 id="十五为什么空格也是信息">十五、为什么空格也是信息？</h1>
+<h2 id="英文里">79. 英文里</h2>
+<pre class="text"><code>government procurement</code></pre>
+<p>空格：</p>
+<blockquote>
+<p>是很重要的词边界。</p>
+</blockquote>
+<hr />
+<h2 id="中文里">80. 中文里</h2>
+<blockquote>
+<p>政府采购</p>
+</blockquote>
+<p>通常：</p>
+<blockquote>
+<p>没有空格。</p>
+</blockquote>
+<p>所以如果 Tokenizer 设计严重依赖英文空格：</p>
+<blockquote>
+<p>跨语言表现会很奇怪。</p>
+</blockquote>
+<hr />
+<h2 id="sentencepiece-常把空格编码成一个可见符号概念">81. SentencePiece
+常把空格编码成一个可见符号概念</h2>
+<p>例如常见表示：</p>
+<pre class="text"><code>▁government</code></pre>
+<p>前面的：</p>
+<p><code>▁</code></p>
+<p>表示：</p>
+<blockquote>
+<p>前面存在空格/词边界。</p>
+</blockquote>
+<hr />
+<h2 id="这让空格本身也进入统一符号系统">82.
+这让空格本身也进入统一符号系统</h2>
+<p>所以：</p>
+<blockquote>
+<p>不需要依赖外部英文式分词规则。</p>
+</blockquote>
+<hr />
+<h1 id="十六unigram-language-model-tokenizer">十六、Unigram Language
+Model Tokenizer</h1>
+<h2 id="sentencepiece-常见另一种算法">83. SentencePiece
+常见另一种算法</h2>
+<h1 id="unigram">Unigram</h1>
+<p>思路和 BPE 很不一样。</p>
+<hr />
+<h2 id="bpe-是从小到大">84. BPE 是从小到大</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>s</mi><mo>→</mo><mi>M</mi><mi>e</mi><mi>r</mi><mi>g</mi><mi>e</mi><mo>→</mo><mi>L</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+SmallUnits
+\rightarrow
+Merge
+\rightarrow
+LargeUnits
+</annotation></semantics></math></p>
+<hr />
+<h2 id="unigram-更接近从一个较大候选集合开始">85. Unigram
+更接近从一个较大候选集合开始</h2>
+<p>然后评估：</p>
+<blockquote>
+<p>哪些 Token 对解释训练语料最重要。</p>
+</blockquote>
+<p>逐步删除：</p>
+<blockquote>
+<p>价值较低的 Token。</p>
+</blockquote>
+<hr />
+<h2 id="可以把它粗略理解成">86. 可以把它粗略理解成</h2>
+<p>BPE：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>o</mi><mi>t</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>U</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BottomUp
+}
+</annotation></semantics></math></p>
+<p>Unigram：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>p</mi><mi>D</mi><mi>o</mi><mi>w</mi><mi>n</mi><mi>P</mi><mi>r</mi><mi>u</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TopDownPruning
+}
+</annotation></semantics></math></p>
+<p>这只是帮助理解。</p>
+<hr />
+<h2 id="unigram-还有一个有趣能力">87. Unigram 还有一个有趣能力</h2>
+<p>同一个字符串：</p>
+<blockquote>
+<p>可能有多种合法切法。</p>
+</blockquote>
+<p>训练时可以：</p>
+<blockquote>
+<p>对不同切分进行采样。</p>
+</blockquote>
+<p>这可以形成：</p>
+<h1 id="subword-regularization">Subword Regularization</h1>
+<hr />
+<h2 id="为什么随机切分可能有帮助">88. 为什么随机切分可能有帮助？</h2>
+<p>假设某词总是：</p>
+<blockquote>
+<p>只以一个固定大 Token 出现。</p>
+</blockquote>
+<p>模型可能过度依赖：</p>
+<blockquote>
+<p>单一切法。</p>
+</blockquote>
+<p>偶尔拆成更小单元：</p>
+<blockquote>
+<p>可以增强组合鲁棒性。</p>
+</blockquote>
+<hr />
+<h1
+id="十七tokenizer-通常包含的不只是-subword-algorithm">十七、Tokenizer
+通常包含的不只是 Subword Algorithm</h1>
+<h2 id="一个完整-tokenizer-pipeline-可能有">89. 一个完整 Tokenizer
+Pipeline 可能有</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>S</mi><mi>u</mi><mi>b</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>→</mo><mi>P</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Normalization
+\rightarrow
+PreTokenization
+\rightarrow
+SubwordModel
+\rightarrow
+PostProcessing
+}
+</annotation></semantics></math></p>
+<p>不能只盯着：</p>
+<blockquote>
+<p>BPE 三个字母。</p>
+</blockquote>
+<hr />
+<h1 id="十八normalization">十八、Normalization</h1>
+<h2 id="文本看起来一样底层编码可能不同">90.
+文本看起来一样，底层编码可能不同</h2>
+<p>Unicode 世界里：</p>
+<blockquote>
+<p>某些视觉上类似或等价的字符串</p>
+</blockquote>
+<p>可能存在不同编码形式。</p>
+<hr />
+<h2 id="tokenizer-可以先做-normalization">91. Tokenizer 可以先做
+Normalization</h2>
+<p>例如某些配置可能：</p>
+<ul>
+<li>Unicode Normalization；</li>
+<li>大小写处理；</li>
+<li>空格处理；</li>
+<li>特殊字符标准化。</li>
+</ul>
+<hr />
+<h2 id="但-normalization-是有损风险的">92. 但 Normalization
+是有损风险的</h2>
+<p>例如：</p>
+<blockquote>
+<p>大小写</p>
+</blockquote>
+<p>对于某些任务：</p>
+<blockquote>
+<p>有意义。</p>
+</blockquote>
+<p>全角/半角：</p>
+<blockquote>
+<p>有时有意义。</p>
+</blockquote>
+<p>法律文书里的原始符号：</p>
+<blockquote>
+<p>有时也可能有意义。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>D</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Normalization
+=
+DesignDecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="政府采购尤其要注意数字和符号">93.
+政府采购尤其要注意数字和符号</h2>
+<p>例如：</p>
+<pre class="text"><code>7×24
+7*24
+7x24</code></pre>
+<p>人可能理解为相近。</p>
+<p>Tokenizer：</p>
+<blockquote>
+<p>可能完全不同。</p>
+</blockquote>
+<hr />
+<h2 id="再比如-1">94. 再比如</h2>
+<pre class="text"><code>5000万元
+5,000万元
+5000 万元
+伍仟万元</code></pre>
+<p>语义可能有关联。</p>
+<p>表面字符：</p>
+<blockquote>
+<p>非常不同。</p>
+</blockquote>
+<hr />
+<h2 id="tokenizer-不负责自动证明它们相等">95. Tokenizer
+不负责自动证明它们相等</h2>
+<p>Tokenizer 只是：</p>
+<blockquote>
+<p>编码输入。</p>
+</blockquote>
+<p>真正语义归一：</p>
+<blockquote>
+<p>可能需要模型能力、数据处理或规则系统。</p>
+</blockquote>
+<hr />
+<h1 id="十九pre-tokenization">十九、Pre-tokenization</h1>
+<h2 id="一些-tokenizer-在-subword-前会先粗切">96. 一些 Tokenizer 在
+Subword 前会先粗切</h2>
+<p>例如按照：</p>
+<ul>
+<li>空格；</li>
+<li>标点；</li>
+<li>数字；</li>
+<li>字母；</li>
+</ul>
+<p>先划分片段。</p>
+<p>这叫：</p>
+<h1 id="pre-tokenization">Pre-tokenization</h1>
+<hr />
+<h2 id="然后才在片段内部做-bpe-等算法">97. 然后才在片段内部做 BPE
+等算法</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+RawText
+</annotation></semantics></math></p>
+<p>可能先：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Pretokens
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>u</mi><mi>b</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+SubwordTokens
+</annotation></semantics></math></p>
+<hr />
+<h2 id="不同-pre-tokenizer-会明显改变结果">98. 不同 Pre-tokenizer
+会明显改变结果</h2>
+<p>特别是：</p>
+<ul>
+<li>数字；</li>
+<li>URL；</li>
+<li>代码；</li>
+<li>中文标点；</li>
+<li>混合中英文。</li>
+</ul>
+<hr />
+<h1 id="二十数字为什么是-tokenizer-的硬骨头">二十、数字为什么是
+Tokenizer 的硬骨头？</h1>
+<h2 id="看这个采购例子">99. 看这个采购例子</h2>
+<blockquote>
+<p>注册资本不得低于5000万元</p>
+</blockquote>
+<p>Tokenizer 可能产生：</p>
+<pre class="text"><code>注册资本
+不得
+低于
+5000
+万元</code></pre>
+<p>这非常舒服。</p>
+<hr />
+<h2 id="也可能">100. 也可能</h2>
+<pre class="text"><code>注册
+资本
+不得
+低于
+500
+0
+万
+元</code></pre>
+<hr />
+<h2 id="甚至不同数字长度切法不同">101. 甚至不同数字长度切法不同</h2>
+<pre class="text"><code>50
+500
+5000
+50000</code></pre>
+<p>可能并不拥有：</p>
+<blockquote>
+<p>一致的数字结构。</p>
+</blockquote>
+<hr />
+<h2 id="这会影响模型算数吗">102. 这会影响模型算数吗？</h2>
+<p>Tokenizer 是原因之一，但不是全部。</p>
+<p>如果：</p>
+<blockquote>
+<p>相似数字被切成非常不同的 Token 序列，</p>
+</blockquote>
+<p>模型学习数值规律：</p>
+<blockquote>
+<p>会更困难。</p>
+</blockquote>
+<hr />
+<h2 id="为什么-llm-有时对数字很奇怪">103. 为什么 LLM
+有时对数字很奇怪？</h2>
+<p>因为模型并不是天然接收：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+RealNumber
+</annotation></semantics></math></p>
+<p>它接收：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+TokenSequence
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>5000</mn><annotation encoding="application/x-tex">
+5000
+</annotation></semantics></math></p>
+<p>首先是一段：</p>
+<blockquote>
+<p>Token 模式。</p>
+</blockquote>
+<hr />
+<h2 id="所以数字理解不是普通计算器式输入">104.
+所以“数字理解”不是普通计算器式输入</h2>
+<p>计算器看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>5000</mn><annotation encoding="application/x-tex">
+5000
+</annotation></semantics></math></p>
+<p>可能直接当整数。</p>
+<p>LLM 首先看到：</p>
+<blockquote>
+<p>若干 Token ID。</p>
+</blockquote>
+<p>这是一条非常重要的差异。</p>
+<hr />
+<h1
+id="二十一政府采购金额尤其值得测试">二十一、政府采购金额尤其值得测试</h1>
+<h2 id="例如-5">105. 例如</h2>
+<pre class="text"><code>400万元
+4000万元
+40000万元</code></pre>
+<p>从业务上：</p>
+<blockquote>
+<p>差一个数量级非常重要。</p>
+</blockquote>
+<p>Tokenizer 是否：</p>
+<blockquote>
+<p>对这些数字形成稳定可学习结构，</p>
+</blockquote>
+<p>值得专门评测。</p>
+<hr />
+<h2 id="还有百分比">106. 还有百分比</h2>
+<pre class="text"><code>10%
+0.1
+百分之十
+10％</code></pre>
+<p>表面形式：</p>
+<blockquote>
+<p>多种多样。</p>
+</blockquote>
+<hr />
+<h2 id="日期也是一样">107. 日期也是一样</h2>
+<pre class="text"><code>2026-09-11
+2026年9月11日
+2026/09/11</code></pre>
+<p>法律和采购文件中：</p>
+<blockquote>
+<p>日期信息非常关键。</p>
+</blockquote>
+<hr />
+<h1 id="二十二tokenizer-会不会理解法律术语">二十二、Tokenizer
+会不会理解法律术语？</h1>
+<h2 id="不会以业务意义理解">108. 不会以业务意义“理解”</h2>
+<p>它可能把：</p>
+<blockquote>
+<p>“政府采购法”</p>
+</blockquote>
+<p>作为完整 Token。</p>
+<p>但这不表示：</p>
+<blockquote>
+<p>Tokenizer 知道这是一部法律。</p>
+</blockquote>
+<hr />
+<h2 id="tokenizer-学的是统计切分价值">109. Tokenizer
+学的是统计切分价值</h2>
+<p>例如字符串非常常见：</p>
+<blockquote>
+<p>值得作为较大 Token。</p>
+</blockquote>
+<p>至于真正语义：</p>
+<blockquote>
+<p>由模型训练负责。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>F</mi><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>U</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizationFrequency
+\neq
+SemanticUnderstanding
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十三一个专业词被拆开是不是模型就一定不认识">二十三、一个专业词被拆开，是不是模型就一定不认识？</h1>
+<h2 id="不是">110. 不是</h2>
+<p>假设：</p>
+<blockquote>
+<p>“履约验收”</p>
+</blockquote>
+<p>被切成：</p>
+<pre class="text"><code>履约
+验收</code></pre>
+<p>模型完全可以：</p>
+<blockquote>
+<p>通过组合理解整个概念。</p>
+</blockquote>
+<hr />
+<h2 id="就算拆成">111. 就算拆成</h2>
+<pre class="text"><code>履
+约
+验
+收</code></pre>
+<p>理论上仍可以学习。</p>
+<p>只是：</p>
+<blockquote>
+<p>序列更长、组合负担更重。</p>
+</blockquote>
+<hr />
+<h2 id="所以一个专业术语必须等于一个-token是错误结论">112.
+所以“一个专业术语必须等于一个 Token”是错误结论</h2>
+<p>真正问题应该是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>这</mi><mi>种</mi><mi>切</mi><mi>分</mi><mi>是</mi><mi>否</mi><mi>显</mi><mi>著</mi><mi>影</mi><mi>响</mi><mi>效</mi><mi>率</mi><mi>和</mi><mi>任</mi><mi>务</mi><mi>性</mi><mi>能</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+这种切分是否显著影响效率和任务性能？
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十四什么时候专业词拆分可能确实值得关注">二十四、什么时候专业词拆分可能确实值得关注？</h1>
+<h2 id="如果一个高频核心术语">113. 如果一个高频核心术语</h2>
+<p>在你的领域语料里：</p>
+<blockquote>
+<p>每份文件出现几十次。</p>
+</blockquote>
+<p>却平均被拆成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>6</mn><mo>∼</mo><mn>10</mn></mrow><annotation encoding="application/x-tex">
+6\sim10
+</annotation></semantics></math></p>
+<p>个 Token。</p>
+<hr />
+<h2 id="那么累计代价可能很大">114. 那么累计代价可能很大</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>1000</mn><annotation encoding="application/x-tex">
+1000
+</annotation></semantics></math></p>
+<p>次出现，</p>
+<p>每次比理想情况多：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>5</mn><annotation encoding="application/x-tex">
+5
+</annotation></semantics></math></p>
+<p>个 Token。</p>
+<p>就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>5000</mn><annotation encoding="application/x-tex">
+5000
+</annotation></semantics></math></p>
+<p>额外 Token。</p>
+<hr />
+<h2 id="所以领域-tokenizer-分析应该看频率">115. 所以领域 Tokenizer
+分析应该看频率</h2>
+<p>不是只挑几个词说：</p>
+<blockquote>
+<p>“这个切得不好看。”</p>
+</blockquote>
+<p>真正要计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>×</mo><mi>E</mi><mi>x</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Frequency
+\times
+ExtraTokens
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十五domain-tokenization-efficiency">二十五、Domain
+Tokenization Efficiency</h1>
+<h2 id="可以定义一个简单工程指标">116. 可以定义一个简单工程指标</h2>
+<p>例如对采购语料：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mo>=</mo><mfrac><mrow><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CompressionRatio
+=
+\frac{Characters}
+{Tokens}
+}
+</annotation></semantics></math></p>
+<p>或者反过来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>P</mi><mi>e</mi><mi>r</mi><mn>1</mn><mi>K</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokensPer1KChars
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="再按文档类型切片">117. 再按文档类型切片</h2>
+<p>公告：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>/</mi><mn>1</mn><mi>K</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Tokens/1KChars
+</annotation></semantics></math></p>
+<p>法规：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>/</mi><mn>1</mn><mi>K</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Tokens/1KChars
+</annotation></semantics></math></p>
+<p>招标文件：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>/</mi><mn>1</mn><mi>K</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Tokens/1KChars
+</annotation></semantics></math></p>
+<p>质疑投诉：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>/</mi><mn>1</mn><mi>K</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Tokens/1KChars
+</annotation></semantics></math></p>
+<hr />
+<h2 id="为什么要-slice">118. 为什么要 Slice？</h2>
+<p>Tokenizer 可能对：</p>
+<blockquote>
+<p>普通中文很好。</p>
+</blockquote>
+<p>但对：</p>
+<ul>
+<li>产品型号；</li>
+<li>技术参数；</li>
+<li>数字；</li>
+<li>表格；</li>
+<li>法规编号；</li>
+</ul>
+<p>特别差。</p>
+<hr />
+<h1 id="二十六一个采购技术参数例子">二十六、一个采购技术参数例子</h1>
+<h2 id="文本">119. 文本</h2>
+<pre class="text"><code>CPU主频≥3.2GHz，内存≥32GB，支持Wi-Fi 6E。</code></pre>
+<p>这里混合：</p>
+<ul>
+<li>中文；</li>
+<li>英文；</li>
+<li>数字；</li>
+<li>单位；</li>
+<li>符号；</li>
+<li>连字符。</li>
+</ul>
+<hr />
+<h2 id="tokenizer-可能把它切得很碎">120. Tokenizer 可能把它切得很碎</h2>
+<p>如果每个技术参数：</p>
+<blockquote>
+<p>都膨胀很多 Token，</p>
+</blockquote>
+<p>IT 采购文件：</p>
+<blockquote>
+<p>Context 消耗会异常高。</p>
+</blockquote>
+<hr />
+<h2 id="所以-procurementlm-tokenizer-benchmark-应该专门包含">121. 所以
+ProcurementLM Tokenizer Benchmark 应该专门包含</h2>
+<p>不只是：</p>
+<blockquote>
+<p>普通中文段落。</p>
+</blockquote>
+<p>还应该包括：</p>
+<ul>
+<li>金额；</li>
+<li>日期；</li>
+<li>法规编号；</li>
+<li>产品型号；</li>
+<li>技术单位；</li>
+<li>百分比；</li>
+<li>数学符号；</li>
+<li>表格文本；</li>
+<li>中英文混排。</li>
+</ul>
+<hr />
+<h1 id="二十七特殊-token">二十七、特殊 Token</h1>
+<h2 id="vocabulary-里还有一类特殊成员">122. Vocabulary
+里还有一类特殊成员</h2>
+<h1 id="special-tokens">Special Tokens</h1>
+<p>它们不一定来自普通自然语言。</p>
+<hr />
+<h2 id="常见的有">123. 常见的有</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mi>B</mi><mi>O</mi><mi>S</mi><mo>&gt;</mo></mrow><annotation encoding="application/x-tex">
+&lt;BOS&gt;
+</annotation></semantics></math></p>
+<p>Beginning Of Sequence。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mi>E</mi><mi>O</mi><mi>S</mi><mo>&gt;</mo></mrow><annotation encoding="application/x-tex">
+&lt;EOS&gt;
+</annotation></semantics></math></p>
+<p>End Of Sequence。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mi>P</mi><mi>A</mi><mi>D</mi><mo>&gt;</mo></mrow><annotation encoding="application/x-tex">
+&lt;PAD&gt;
+</annotation></semantics></math></p>
+<p>Padding。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mi>U</mi><mi>N</mi><mi>K</mi><mo>&gt;</mo></mrow><annotation encoding="application/x-tex">
+&lt;UNK&gt;
+</annotation></semantics></math></p>
+<p>Unknown。</p>
+<p>以及：</p>
+<blockquote>
+<p>Chat Template 特殊 Token。</p>
+</blockquote>
+<hr />
+<h2 id="bos-是什么">124. BOS 是什么？</h2>
+<p>表示：</p>
+<blockquote>
+<p>序列开始。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>&lt;BOS&gt;
+用户文本……</code></pre>
+<hr />
+<h2 id="eos-呢">125. EOS 呢？</h2>
+<p>表示：</p>
+<blockquote>
+<p>序列结束。</p>
+</blockquote>
+<p>语言模型可以学习：</p>
+<blockquote>
+<p>什么时候输出 EOS。</p>
+</blockquote>
+<p>也就是：</p>
+<blockquote>
+<p>停止生成。</p>
+</blockquote>
+<hr />
+<h2 id="pad-为什么需要">126. PAD 为什么需要？</h2>
+<p>Batch 中不同文本长度不同。</p>
+<p>样本 A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>100</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+100\ Tokens
+</annotation></semantics></math></p>
+<p>样本 B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>300</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+300\ Tokens
+</annotation></semantics></math></p>
+<p>为了组成规则 Tensor：</p>
+<blockquote>
+<p>经常要补齐。</p>
+</blockquote>
+<hr />
+<h2 id="于是短样本后面加入-pad">127. 于是短样本后面加入 PAD</h2>
+<p>例如：</p>
+<pre class="text"><code>A A A &lt;PAD&gt; &lt;PAD&gt;
+B B B B B</code></pre>
+<p>这样 Shape：</p>
+<blockquote>
+<p>能对齐。</p>
+</blockquote>
+<hr />
+<h2 id="但模型不应该把-pad-当正文">128. 但模型不应该把 PAD 当正文</h2>
+<p>所以通常还需要：</p>
+<h1 id="attention-mask">Attention Mask</h1>
+<p>告诉模型：</p>
+<blockquote>
+<p>哪些位置是真的，哪些是 Padding。</p>
+</blockquote>
+<p>这个后面讲 Attention 时正式展开。</p>
+<hr />
+<h1 id="二十八chat-model-还有角色-token">二十八、Chat Model 还有角色
+Token</h1>
+<h2 id="例如一段对话">129. 例如一段对话</h2>
+<pre class="text"><code>system
+user
+assistant</code></pre>
+<p>模型需要知道：</p>
+<blockquote>
+<p>谁说了哪一段。</p>
+</blockquote>
+<p>不同模型可能使用：</p>
+<blockquote>
+<p>不同特殊 Token 和模板。</p>
+</blockquote>
+<hr />
+<h2 id="所以-chat-template-本质上最终也会变成-token-sequence">130. 所以
+Chat Template 本质上最终也会变成 Token Sequence</h2>
+<p>用户看到：</p>
+<pre class="text"><code>用户：请审查这份采购文件</code></pre>
+<p>内部可能被包装成：</p>
+<pre class="text"><code>&lt;role_user&gt;
+请审查这份采购文件
+&lt;end_turn&gt;
+&lt;role_assistant&gt;</code></pre>
+<hr />
+<h2 id="这就是为什么不能随便换-chat-template">131.
+这就是为什么不能随便换 Chat Template</h2>
+<p>模型 SFT 时如果一直见：</p>
+<blockquote>
+<p>某一套格式，</p>
+</blockquote>
+<p>部署时完全换掉：</p>
+<blockquote>
+<p>性能可能下降。</p>
+</blockquote>
+<hr />
+<h1 id="二十九tokenizer-与-prompt-格式其实相连">二十九、Tokenizer 与
+Prompt 格式其实相连</h1>
+<h2 id="prompt-最终不是字符串概念">132. Prompt 最终不是字符串概念</h2>
+<p>它最终成为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenSequence
+}
+</annotation></semantics></math></p>
+<p>所以：</p>
+<ul>
+<li>换换行；</li>
+<li>加 XML；</li>
+<li>加 JSON；</li>
+<li>加 Markdown；</li>
+</ul>
+<p>最终都改变：</p>
+<blockquote>
+<p>Token 序列。</p>
+</blockquote>
+<hr />
+<h2 id="这也是-prompt-length-为什么按-token-算">133. 这也是 Prompt
+Length 为什么按 Token 算</h2>
+<p>不是：</p>
+<blockquote>
+<p>按 Word。</p>
+</blockquote>
+<p>也不是：</p>
+<blockquote>
+<p>按字符。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mi>O</mi><mi>f</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NumberOfTokens
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十tokenizer-是否可逆">三十、Tokenizer 是否可逆？</h1>
+<h2 id="encode">134. Encode</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Text
+\rightarrow
+TokenIDs
+</annotation></semantics></math></p>
+<hr />
+<h2 id="decode">135. Decode</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi><mo>→</mo><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+TokenIDs
+\rightarrow
+Text
+</annotation></semantics></math></p>
+<p>理想情况下：</p>
+<blockquote>
+<p>尽可能恢复原文。</p>
+</blockquote>
+<hr />
+<h2 id="但如果-normalization-做了不可逆处理">136. 但如果 Normalization
+做了不可逆处理</h2>
+<p>例如主动：</p>
+<blockquote>
+<p>删除某些字符，</p>
+</blockquote>
+<p>Decode：</p>
+<blockquote>
+<p>可能无法恢复原始形式。</p>
+</blockquote>
+<p>所以必须理解具体 Tokenizer 配置。</p>
+<hr />
+<h1 id="三十一tokenizer-的确定性">三十一、Tokenizer 的确定性</h1>
+<h2 id="推理时大多数常规-tokenizer">137. 推理时大多数常规 Tokenizer</h2>
+<p>同样输入：</p>
+<blockquote>
+<p>通常得到同样 Token IDs。</p>
+</blockquote>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>E</mi><mi>n</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DeterministicEncoding
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="但训练阶段某些方案可以故意随机">138.
+但训练阶段某些方案可以故意随机</h2>
+<p>例如前面提到：</p>
+<h1 id="subword-regularization-1">Subword Regularization</h1>
+<p>同一个字符串：</p>
+<blockquote>
+<p>随机选择不同合法切法。</p>
+</blockquote>
+<p>用于：</p>
+<blockquote>
+<p>数据增强式训练。</p>
+</blockquote>
+<hr />
+<h1 id="三十二为什么模型和-tokenizer-必须一起发布">三十二、为什么模型和
+Tokenizer 必须一起发布？</h1>
+<h2 id="模型-weight-只认识-id">139. 模型 Weight 只认识 ID</h2>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>D</mi><mo>=</mo><mn>9281</mn></mrow><annotation encoding="application/x-tex">
+ID=9281
+</annotation></semantics></math></p>
+<p>训练时代表：</p>
+<blockquote>
+<p>“供应商”。</p>
+</blockquote>
+<p>Embedding Row：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>E</mi><mn>9281</mn></msub><annotation encoding="application/x-tex">
+E_{9281}
+</annotation></semantics></math></p>
+<p>已经为它学了参数。</p>
+<hr />
+<h2 id="换一个-tokenizer-后">140. 换一个 Tokenizer 后</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>9281</mn><annotation encoding="application/x-tex">
+9281
+</annotation></semantics></math></p>
+<p>变成：</p>
+<blockquote>
+<p>“太阳能”。</p>
+</blockquote>
+<p>那么模型接收到这个 ID：</p>
+<blockquote>
+<p>仍然会取原来的 Row。</p>
+</blockquote>
+<p>完全错位。</p>
+<hr />
+<h2 id="所以模型-artifact-应该包含">141. 所以模型 Artifact 应该包含</h2>
+<p>至少包括：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi><mo>+</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>V</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Weights
++
+Tokenizer
++
+Vocabulary
++
+TokenizerConfig
+}
+</annotation></semantics></math></p>
+<p>这也是 Model Reproducibility 的一部分。</p>
+<hr />
+<h1
+id="三十三能不能给现有模型增加几个-token">三十三、能不能给现有模型“增加几个
+Token”？</h1>
+<h2 id="技术上可以">142. 技术上可以</h2>
+<p>例如 Vocabulary：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>V</mi><annotation encoding="application/x-tex">
+V
+</annotation></semantics></math></p>
+<p>增加：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">
+K
+</annotation></semantics></math></p>
+<p>个新 Token。</p>
+<p>Embedding Matrix：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>×</mo><mi>d</mi></mrow><annotation encoding="application/x-tex">
+V\times d
+</annotation></semantics></math></p>
+<p>就需要变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mi>V</mi><mo>+</mo><mi>K</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>×</mo><mi>d</mi></mrow><annotation encoding="application/x-tex">
+(V+K)\times d
+</annotation></semantics></math></p>
+<hr />
+<h2 id="新增-row-从哪里来">143. 新增 Row 从哪里来？</h2>
+<p>旧模型：</p>
+<blockquote>
+<p>没有学过。</p>
+</blockquote>
+<p>所以新 Embedding：</p>
+<blockquote>
+<p>必须初始化。</p>
+</blockquote>
+<p>然后：</p>
+<blockquote>
+<p>再训练。</p>
+</blockquote>
+<hr />
+<h2 id="输出层也可能需要同步变化">144. 输出层也可能需要同步变化</h2>
+<p>语言模型最后通常要预测：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>V</mi><annotation encoding="application/x-tex">
+V
+</annotation></semantics></math></p>
+<p>个 Vocabulary Token。</p>
+<p>如果 Vocabulary 变大：</p>
+<blockquote>
+<p>输出 Head 也必须支持新大小。</p>
+</blockquote>
+<hr />
+<h2 id="这就是为什么加专业词表不是改-json-那么简单">145.
+这就是为什么“加专业词表”不是改 JSON 那么简单</h2>
+<p>至少涉及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Tokenizer
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+InputEmbedding
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>H</mi><mi>e</mi><mi>a</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+OutputHead
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+Training
+</annotation></semantics></math></p>
+<hr />
+<h2 id="如果直接加-token-不训练会怎样">146. 如果直接加 Token
+不训练会怎样？</h2>
+<p>新 Token Embedding：</p>
+<blockquote>
+<p>基本没有可靠语义。</p>
+</blockquote>
+<p>模型看到：</p>
+<blockquote>
+<p>这个 Token</p>
+</blockquote>
+<p>就像看到一个新随机向量。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>d</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mo>≠</mo><mi>A</mi><mi>d</mi><mi>d</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AddToken
+\neq
+AddKnowledge
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十四这对-procurementlm-极其重要">三十四、这对 ProcurementLM
+极其重要</h1>
+<h2 id="如果我们发现基础-tokenizer">147. 如果我们发现基础 Tokenizer</h2>
+<p>把：</p>
+<blockquote>
+<p>“政府采购”</p>
+</blockquote>
+<p>拆成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>政</mi><mi>府</mi><mo>+</mo><mi>采</mi><mi>购</mi></mrow><annotation encoding="application/x-tex">
+政府 + 采购
+</annotation></semantics></math></p>
+<p>这不一定需要修改。</p>
+<p>模型完全可能：</p>
+<blockquote>
+<p>已经很好理解。</p>
+</blockquote>
+<hr />
+<h2 id="即使框架协议采购">148. 即使“框架协议采购”</h2>
+<p>拆成：</p>
+<pre class="text"><code>框架
+协议
+采购</code></pre>
+<p>也可能非常合理。</p>
+<hr />
+<h2 id="真正需要证据的问题是">149. 真正需要证据的问题是</h2>
+<p>修改 Tokenizer 后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>性</mi><mi>能</mi><mi>收</mi><mi>益</mi><mo>&gt;</mo><mi>兼</mi><mi>容</mi><mi>性</mi><mi>成</mi><mi>本</mi><mo>+</mo><mi>训</mi><mi>练</mi><mi>成</mi><mi>本</mi><mi>?</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+性能收益
+&gt;
+兼容性成本+训练成本
+?
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="不要因为看起来切得碎就重做-tokenizer">150.
+不要因为“看起来切得碎”就重做 Tokenizer</h2>
+<p>这是一个很常见的冲动。</p>
+<p>但重做 Tokenizer：</p>
+<blockquote>
+<p>会破坏与基础模型 Embedding 的天然兼容。</p>
+</blockquote>
+<p>成本非常高。</p>
+<hr />
+<h1
+id="三十五预训练模型为何通常不换-tokenizer">三十五、预训练模型为何通常不换
+Tokenizer？</h1>
+<h2 id="因为-tokenizer-已经是其参数系统的一部分">151. 因为 Tokenizer
+已经是其参数系统的一部分</h2>
+<p>基础模型几十亿参数：</p>
+<blockquote>
+<p>已经围绕原 Tokenizer 学了很久。</p>
+</blockquote>
+<p>直接换：</p>
+<blockquote>
+<p>相当于把输入字典重新编号。</p>
+</blockquote>
+<hr />
+<h2 id="所以领域微调一般更稳妥的方法">152.
+所以领域微调一般更稳妥的方法</h2>
+<p>先保留：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>r</mi><mi>i</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OriginalTokenizer
+}
+</annotation></semantics></math></p>
+<p>然后用：</p>
+<ul>
+<li>CPT；</li>
+<li>SFT；</li>
+<li>RAG；</li>
+</ul>
+<p>提升政府采购能力。</p>
+<hr />
+<h2 id="什么时候才考虑-vocabulary-extension">153. 什么时候才考虑
+Vocabulary Extension？</h2>
+<p>例如大量核心领域字符串：</p>
+<blockquote>
+<p>切分效率异常差。</p>
+</blockquote>
+<p>并且：</p>
+<blockquote>
+<p>造成明显 Context / Compute / Accuracy 问题。</p>
+</blockquote>
+<p>同时你有：</p>
+<blockquote>
+<p>足够领域训练数据重新训练新增 Embedding。</p>
+</blockquote>
+<p>才值得认真实验。</p>
+<hr />
+<h1 id="三十六tokenizer-需要-benchmark而不是凭感觉">三十六、Tokenizer
+需要 Benchmark，而不是凭感觉</h1>
+<h2 id="我们可以建立-procurement-tokenizer-benchmark">154. 我们可以建立
+Procurement Tokenizer Benchmark</h2>
+<p>固定一批真实但合规处理后的文本：</p>
+<ul>
+<li>法规；</li>
+<li>采购公告；</li>
+<li>采购需求；</li>
+<li>招标文件；</li>
+<li>投诉处理；</li>
+<li>IT 技术参数；</li>
+<li>医疗参数；</li>
+<li>工程条款。</li>
+</ul>
+<hr />
+<h2 id="对每个-tokenizer-统计">155. 对每个 Tokenizer 统计</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Tokens
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>/</mi><mn>1</mn><mi>K</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Tokens/1KChars
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+MaxSequence
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mn>95</mn><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+P95Sequence
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>D</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>T</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>F</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+RareDomainTermFragmentation
+</annotation></semantics></math></p>
+<hr />
+<h2 id="还应该单独测数字">156. 还应该单独测数字</h2>
+<p>例如：</p>
+<pre class="text"><code>1万元
+10万元
+100万元
+1000万元
+10000万元</code></pre>
+<p>观察：</p>
+<blockquote>
+<p>切分是否稳定。</p>
+</blockquote>
+<hr />
+<h2 id="测法规编号">157. 测法规编号</h2>
+<p>例如：</p>
+<pre class="text"><code>财库〔2020〕46号</code></pre>
+<p>这类字符串对政府采购：</p>
+<blockquote>
+<p>高频且重要。</p>
+</blockquote>
+<hr />
+<h2 id="测日期和条款号">158. 测日期和条款号</h2>
+<pre class="text"><code>第22条
+第二十二条
+2026年9月11日</code></pre>
+<hr />
+<h2 id="测企业名称与型号">159. 测企业名称与型号</h2>
+<p>例如：</p>
+<pre class="text"><code>ABC-X5000-Pro</code></pre>
+<p>技术采购中：</p>
+<blockquote>
+<p>型号信息可能非常重要。</p>
+</blockquote>
+<hr />
+<h1 id="三十七tokenization-与信息损失">三十七、Tokenization
+与信息损失</h1>
+<h2 id="好消息是">160. 好消息是</h2>
+<p>现代 Subword / Byte Tokenizer 通常：</p>
+<blockquote>
+<p>不会因为没见过新词就直接丢掉整个词。</p>
+</blockquote>
+<p>它会：</p>
+<blockquote>
+<p>拆小。</p>
+</blockquote>
+<hr />
+<h2 id="所以碎并不等于丢失">161. 所以碎并不等于丢失</h2>
+<p>例如：</p>
+<pre class="text"><code>政
+采
+贷</code></pre>
+<p>仍然包含原始字符信息。</p>
+<p>模型理论上：</p>
+<blockquote>
+<p>可以组合回来。</p>
+</blockquote>
+<hr />
+<h2 id="真正问题是效率和学习难度">162. 真正问题是效率和学习难度</h2>
+<p>切得越碎：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mo>↑</mo></mrow><annotation encoding="application/x-tex">
+SequenceLength\uparrow
+</annotation></semantics></math></p>
+<p>模型需要更多层计算：</p>
+<blockquote>
+<p>把碎片重新组合成概念。</p>
+</blockquote>
+<hr />
+<h1
+id="三十八为什么常见词有大-token可能更容易">三十八、为什么常见词有“大
+Token”可能更容易？</h1>
+<h2 id="假设供应商是单-token">163. 假设“供应商”是单 Token</h2>
+<p>一开始就有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>E</mi><mtext mathvariant="normal">供应商</mtext></msub><annotation encoding="application/x-tex">
+E_{\text{供应商}}
+</annotation></semantics></math></p>
+<p>一个直接可训练向量。</p>
+<hr />
+<h2 id="如果是三个-token">164. 如果是三个 Token</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>供</mi><annotation encoding="application/x-tex">
+供
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>应</mi><annotation encoding="application/x-tex">
+应
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>商</mi><annotation encoding="application/x-tex">
+商
+</annotation></semantics></math></p>
+<p>模型需要依靠后续上下文：</p>
+<blockquote>
+<p>组合成“供应商”。</p>
+</blockquote>
+<hr />
+<h2 id="但大-token-也有代价">165. 但大 Token 也有代价</h2>
+<p>如果 Vocabulary 把所有可能词都加入：</p>
+<blockquote>
+<p>参数爆炸。</p>
+</blockquote>
+<p>而且：</p>
+<blockquote>
+<p>稀有大 Token 训练次数少。</p>
+</blockquote>
+<p>其 Embedding 可能：</p>
+<blockquote>
+<p>反而学不好。</p>
+</blockquote>
+<hr />
+<h2 id="所以又回到统计折中">166. 所以又回到统计折中</h2>
+<p>高频片段：</p>
+<blockquote>
+<p>值得独立 Token。</p>
+</blockquote>
+<p>低频片段：</p>
+<blockquote>
+<p>组合更划算。</p>
+</blockquote>
+<p>这就是 Subword 的漂亮之处。</p>
+<hr />
+<h1 id="三十九tokenizer-与语言公平性">三十九、Tokenizer
+与语言公平性</h1>
+<h2 id="如果一种语言平均更费-token">167. 如果一种语言平均更费 Token</h2>
+<p>那么同一个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>W</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>o</mi><mi>w</mi></mrow><annotation encoding="application/x-tex">
+ContextWindow
+</annotation></semantics></math></p>
+<p>它实际能表达：</p>
+<blockquote>
+<p>更少内容。</p>
+</blockquote>
+<hr />
+<h2 id="同一个-api-token-计费体系下">168. 同一个 API Token
+计费体系下</h2>
+<p>也可能导致：</p>
+<blockquote>
+<p>使用成本不同。</p>
+</blockquote>
+<p>所以 Tokenizer：</p>
+<blockquote>
+<p>也会影响多语言系统体验。</p>
+</blockquote>
+<hr />
+<h1 id="四十中文-tokenizer-的特殊点">四十、中文 Tokenizer 的特殊点</h1>
+<h2 id="中文没有天然空格分词">169. 中文没有天然空格分词</h2>
+<p>例如：</p>
+<blockquote>
+<p>政府采购监督管理部门</p>
+</blockquote>
+<p>到底是：</p>
+<pre class="text"><code>政府采购
+监督管理
+部门</code></pre>
+<p>还是：</p>
+<pre class="text"><code>政府
+采购
+监督
+管理部门</code></pre>
+<p>并没有唯一正确答案。</p>
+<hr />
+<h2 id="subword-的优势就在这里">170. Subword 的优势就在这里</h2>
+<p>不要求：</p>
+<blockquote>
+<p>先有人类给出唯一“正确分词”。</p>
+</blockquote>
+<p>模型可以基于：</p>
+<blockquote>
+<p>语料统计形成有效单位。</p>
+</blockquote>
+<hr />
+<h1 id="四十一政府采购里的复合术语">四十一、政府采购里的复合术语</h1>
+<h2 id="例如-6">171. 例如</h2>
+<blockquote>
+<p>“竞争性磋商”</p>
+</blockquote>
+<p>可以：</p>
+<pre class="text"><code>竞争性
+磋商</code></pre>
+<p>也可以整个：</p>
+<pre class="text"><code>竞争性磋商</code></pre>
+<hr />
+<h2 id="两种切法哪个绝对正确">172. 两种切法哪个绝对正确？</h2>
+<p>没有。</p>
+<p>要看：</p>
+<ul>
+<li>Vocabulary 预算；</li>
+<li>语料频率；</li>
+<li>训练效果；</li>
+<li>压缩效率。</li>
+</ul>
+<p>Tokenizer 优化目标：</p>
+<blockquote>
+<p>不等于语言学词典。</p>
+</blockquote>
+<hr />
+<h1 id="四十二tokenizer-与法律条款边界">四十二、Tokenizer
+与法律条款边界</h1>
+<h2 id="tokenizer-不知道第十七条是法律结构">173. Tokenizer
+不知道“第十七条”是法律结构</h2>
+<p>它可能切：</p>
+<pre class="text"><code>第
+十七
+条</code></pre>
+<hr />
+<h2 id="但后面的模型可以学习">174. 但后面的模型可以学习</h2>
+<p>这些 Token 组合：</p>
+<blockquote>
+<p>经常表示法律条款编号。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>负</mi><mi>责</mi><mi>表</mi><mi>示</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenizer负责表示
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>s</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>e</mi><mi>r</mi><mi>负</mi><mi>责</mi><mi>上</mi><mi>下</mi><mi>文</mi><mi>化</mi><mi>建</mi><mi>模</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Transformer负责上下文化建模
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="四十三为什么不能把-tokenizer-看成智能理解器">四十三、为什么不能把
+Tokenizer 看成“智能理解器”？</h1>
+<h2 id="因为它的主要任务不是判断语义">175.
+因为它的主要任务不是判断语义</h2>
+<p>它不负责回答：</p>
+<blockquote>
+<p>这条资格条件是否合理。</p>
+</blockquote>
+<p>它只是把字符串：</p>
+<blockquote>
+<p>转换成可处理的离散单元。</p>
+</blockquote>
+<hr />
+<h2 id="很粗略地说">176. 很粗略地说</h2>
+<p>Tokenizer：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>/</mi><mi>E</mi><mi>n</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Compression/EncodingLayer
+}
+</annotation></semantics></math></p>
+<p>Transformer：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ContextualComputationLayer
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十四tokenizer-和-rag-chunking-也不是一回事">四十四、Tokenizer
+和 RAG Chunking 也不是一回事</h1>
+<h2 id="tokenization">177. Tokenization</h2>
+<p>把：</p>
+<blockquote>
+<p>字符串拆成模型基本输入单位。</p>
+</blockquote>
+<hr />
+<h2 id="chunking">178. Chunking</h2>
+<p>把：</p>
+<blockquote>
+<p>长文档拆成检索单元。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>采购文件
+↓
+资格条件 Chunk
+评分办法 Chunk
+技术参数 Chunk</code></pre>
+<hr />
+<h2 id="一个-chunk-内部仍然需要-tokenizer">179. 一个 Chunk 内部仍然需要
+Tokenizer</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mi>s</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Document
+\rightarrow
+Chunks
+\rightarrow
+Tokens
+}
+</annotation></semantics></math></p>
+<p>两个层级完全不同。</p>
+<hr />
+<h1 id="四十五chunk-size-为什么经常用-token-表示">四十五、Chunk Size
+为什么经常用 Token 表示？</h1>
+<h2 id="因为最终模型-context-限制">180. 因为最终模型 Context 限制：</h2>
+<blockquote>
+<p>按 Token。</p>
+</blockquote>
+<p>所以 RAG 中常见：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>=</mo><mn>512</mn><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+ChunkSize=512\ Tokens
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>512 个汉字。</p>
+</blockquote>
+<hr />
+<h1 id="四十六tokenizer-与-context-window">四十六、Tokenizer 与 Context
+Window</h1>
+<h2 id="假设模型-context-length">181. 假设模型 Context Length</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mo>=</mo><mn>32768</mn></mrow><annotation encoding="application/x-tex">
+C=32768
+</annotation></semantics></math></p>
+<p>那么所有输入：</p>
+<ul>
+<li>System Prompt；</li>
+<li>User Prompt；</li>
+<li>RAG Evidence；</li>
+<li>Chat History；</li>
+<li>Generated Tokens；</li>
+</ul>
+<p>都共同消耗：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+TokenBudget
+</annotation></semantics></math></p>
+<hr />
+<h2 id="所以-procurementai-系统必须学会预算-token">182. 所以
+ProcurementAI 系统必须学会预算 Token</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mo>=</mo><mn>1500</mn></mrow><annotation encoding="application/x-tex">
+System=1500
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mn>18000</mn></mrow><annotation encoding="application/x-tex">
+UserDocument=18000
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mo>=</mo><mn>8000</mn></mrow><annotation encoding="application/x-tex">
+RAG=8000
+</annotation></semantics></math></p>
+<p>已经：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>27500</mn><annotation encoding="application/x-tex">
+27500
+</annotation></semantics></math></p>
+<p>还要留：</p>
+<blockquote>
+<p>输出空间。</p>
+</blockquote>
+<hr />
+<h2 id="tokenizer-因此直接影响系统架构">183. Tokenizer
+因此直接影响系统架构</h2>
+<p>如果同一文件：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>18000</mn><annotation encoding="application/x-tex">
+18000
+</annotation></semantics></math></p>
+<p>变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>26000</mn><annotation encoding="application/x-tex">
+26000
+</annotation></semantics></math></p>
+<p>那么 RAG Evidence：</p>
+<blockquote>
+<p>就塞不下那么多了。</p>
+</blockquote>
+<hr />
+<h1 id="四十七tokenizer-可以改变模型看到的距离">四十七、Tokenizer
+可以改变模型“看到的距离”</h1>
+<h2 id="人看两个词之间距离">184. 人看两个词之间距离</h2>
+<p>可能是：</p>
+<blockquote>
+<p>10 个汉字。</p>
+</blockquote>
+<p>模型看的是：</p>
+<blockquote>
+<p>中间隔了多少 Token。</p>
+</blockquote>
+<hr />
+<h2 id="如果一段字符串切得特别碎">185. 如果一段字符串切得特别碎</h2>
+<p>两个业务概念在 Token 序列中的距离：</p>
+<blockquote>
+<p>会变大。</p>
+</blockquote>
+<p>这会影响：</p>
+<ul>
+<li>Context 使用；</li>
+<li>Position；</li>
+<li>Attention 距离。</li>
+</ul>
+<hr />
+<h1
+id="四十八position-编码为什么下一阶段马上就必须出现">四十八、Position
+编码为什么下一阶段马上就必须出现？</h1>
+<h2 id="现在我们已经有">186. 现在我们已经有</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+TokenIDs
+</annotation></semantics></math></p>
+<p>再经过 Embedding：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>H</mi><mn>0</mn></msub><annotation encoding="application/x-tex">
+H_0
+</annotation></semantics></math></p>
+<p>但 Token Embedding 只告诉：</p>
+<blockquote>
+<p>“我是谁”。</p>
+</blockquote>
+<hr />
+<h2 id="它还没有告诉模型">187. 它还没有告诉模型</h2>
+<blockquote>
+<p>“我在哪里”。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>采购人 限制 供应商</code></pre>
+<p>和：</p>
+<pre class="text"><code>供应商 限制 采购人</code></pre>
+<p>Token 内容非常相似。</p>
+<p>顺序：</p>
+<blockquote>
+<p>决定语义。</p>
+</blockquote>
+<hr />
+<h2 id="所以-llm-输入至少需要两个维度的信息">188. 所以 LLM
+输入至少需要两个维度的信息</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenIdentity
+}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenPosition
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十九tokenizer-的最终统一视角">四十九、Tokenizer
+的最终统一视角</h1>
+<h2 id="raw-text-是连续字符串">189. Raw Text 是连续字符串</h2>
+<p>例如：</p>
+<pre class="text"><code>供应商注册资本不得低于5000万元</code></pre>
+<hr />
+<h2 id="tokenizer-把它变成离散序列">190. Tokenizer 把它变成离散序列</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>t</mi><mn>1</mn></msub><mo>,</mo><msub><mi>t</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>t</mi><mi>S</mi></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[t_1,t_2,\ldots,t_S]
+</annotation></semantics></math></p>
+<hr />
+<h2 id="vocabulary-把-token-变成-id">191. Vocabulary 把 Token 变成
+ID</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mi>i</mi><msub><mi>d</mi><mn>1</mn></msub><mo>,</mo><mi>i</mi><msub><mi>d</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><mi>i</mi><msub><mi>d</mi><mi>S</mi></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[id_1,id_2,\ldots,id_S]
+</annotation></semantics></math></p>
+<hr />
+<h2 id="embedding-把-id-变成向量">192. Embedding 把 ID 变成向量</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>e</mi><mn>1</mn></msub><mo>,</mo><msub><mi>e</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>e</mi><mi>S</mi></msub><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[e_1,e_2,\ldots,e_S]
+</annotation></semantics></math></p>
+<hr />
+<h2 id="于是-shape-变成">193. 于是 Shape 变成</h2>
+<p>单样本：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>S</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(S,D)
+</annotation></semantics></math></p>
+<p>Batch：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mo>,</mo><mi>S</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+(B,S,D)
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="到这里才真正进入-transformer">194. 到这里才真正进入
+Transformer</h2>
+<p>所以 LLM 的入口不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>s</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>e</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Text\rightarrow Transformer
+</annotation></semantics></math></p>
+<p>而更准确是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>I</mi><mi>D</mi><mi>s</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>s</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Text
+\rightarrow
+Tokenizer
+\rightarrow
+IDs
+\rightarrow
+Embedding
+\rightarrow
+Transformer
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十本阶段最重要的-7-个核心心智模型">五十、本阶段最重要的 7
+个核心心智模型</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>心智模型</th>
+<th>核心认知</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① Tokenizer 是语言与模型之间的接口协议</strong></td>
+<td>模型看到的不是原始字符串，而是 Token 序列</td>
+</tr>
+<tr class="even">
+<td><strong>② Tokenizer 同时决定语言效率和计算效率</strong></td>
+<td>Token 数会影响 Context、显存、延迟和 Attention 成本</td>
+</tr>
+<tr class="odd">
+<td><strong>③ Subword 是 Vocabulary 与 Sequence Length
+的折中</strong></td>
+<td>高频片段变大 Token，低频内容拆小</td>
+</tr>
+<tr class="even">
+<td><strong>④ Tokenizer 与模型 Weight 强绑定</strong></td>
+<td>Token-ID 映射不能随意替换</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ Byte-Level 的核心价值是覆盖性</strong></td>
+<td>底层几乎任何文本都能表示，再靠 Merge 提升效率</td>
+</tr>
+<tr class="even">
+<td><strong>⑥ 专业术语被拆开不等于模型无法理解</strong></td>
+<td>真正应评估效率、训练难度和任务性能</td>
+</tr>
+<tr class="odd">
+<td><strong>⑦ Tokenizer 是压缩/编码层，不是业务推理层</strong></td>
+<td>合规判断仍来自后续模型、证据与规则</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1
+id="五十一bpewordpiecesentencepiece-一次分清">五十一、BPE、WordPiece、SentencePiece
+一次分清</h1>
+<p>可以先记这个框架：</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>名称</th>
+<th>核心理解</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>BPE</strong></td>
+<td>反复合并高价值/高频相邻单元，形成 Subword Vocabulary</td>
+</tr>
+<tr class="even">
+<td><strong>WordPiece</strong></td>
+<td>同属 Subword，但 Vocabulary 构造准则与经典 BPE 不完全相同</td>
+</tr>
+<tr class="odd">
+<td><strong>SentencePiece</strong></td>
+<td>一套直接处理原始文本的 Tokenization 框架，可使用 BPE、Unigram
+等模型</td>
+</tr>
+<tr class="even">
+<td><strong>Byte-Level BPE</strong></td>
+<td>以 Byte 覆盖为底座，再使用 BPE Merge 提升压缩效率</td>
+</tr>
+<tr class="odd">
+<td><strong>Unigram</strong></td>
+<td>从候选 Token 集合出发，通过概率模型逐步筛选有效 Vocabulary</td>
+</tr>
+</tbody>
+</table>
+<p>不要把它们背成产品名。</p>
+<p>要问：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>是</mi><mi>什</mi><mi>么</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BaseUnit是什么？
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>b</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>怎</mi><mi>么</mi><mi>学</mi><mi>习</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Vocabulary怎么学习？
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>输</mi><mi>入</mi><mi>怎</mi><mi>么</mi><mi>切</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+输入怎么切？
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>未</mi><mi>知</mi><mi>字</mi><mi>符</mi><mi>怎</mi><mi>么</mi><mi>处</mi><mi>理</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+未知字符怎么处理？
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十二如果只记一个核心公式">五十二、如果只记一个核心公式</h1>
+<p>Tokenizer 最重要的工程关系其实不是复杂数学，而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mover><mo>→</mo><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></mover><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi><mover><mo>→</mo><mrow><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></mover><msup><mi>ℝ</mi><mrow><mi>S</mi><mo>×</mo><mi>D</mi></mrow></msup></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Text
+\xrightarrow{Tokenizer}
+TokenIDs
+\xrightarrow{Embedding}
+\mathbb R^{S\times D}
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>S</mi><annotation encoding="application/x-tex">
+S
+</annotation></semantics></math></p>
+<p>就是 Tokenizer 最直接影响的变量。</p>
+<hr />
+<h1 id="五十三再加一个成本公式">五十三、再加一个成本公式</h1>
+<p>标准 Self-Attention 的一项主要计算随：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>S</mi><annotation encoding="application/x-tex">
+S
+</annotation></semantics></math></p>
+<p>大致呈：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mrow><mo stretchy="true" form="prefix">(</mo><msup><mi>S</mi><mn>2</mn></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+O(S^2)
+}
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>→</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokenizerEfficiency
+\rightarrow
+ModelEfficiency
+}
+</annotation></semantics></math></p>
+<p>不是一句漂亮口号，而有直接计算含义。</p>
+<hr />
+<h1 id="五十四一个-procurementlm-tokenizer-实验">五十四、一个
+ProcurementLM Tokenizer 实验</h1>
+<p>假设未来我们真正选一个 7B/14B 基础模型。</p>
+<p>不要先修改 Tokenizer。</p>
+<p>先建立：</p>
+<h1 id="procurement-tokenization-audit">Procurement Tokenization
+Audit</h1>
+<p>拿：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>10000</mn><annotation encoding="application/x-tex">
+10000
+</annotation></semantics></math></p>
+<p>个真实采购文本片段。</p>
+<hr />
+<h2 id="第一组法规">195. 第一组：法规</h2>
+<p>例如：</p>
+<blockquote>
+<p>政府采购法、实施条例、部门规章、规范性文件。</p>
+</blockquote>
+<p>统计：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>/</mi><mn>1</mn><mi>K</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+Tokens/1KChars
+</annotation></semantics></math></p>
+<hr />
+<h2 id="第二组采购文件">196. 第二组：采购文件</h2>
+<p>资格条件、商务要求、评分标准、技术参数。</p>
+<p>分别统计：</p>
+<blockquote>
+<p>Token Density。</p>
+</blockquote>
+<hr />
+<h2 id="第三组核心领域词">197. 第三组：核心领域词</h2>
+<p>例如：</p>
+<pre class="text"><code>政府采购
+采购人
+采购代理机构
+供应商
+框架协议采购
+竞争性磋商
+单一来源采购
+质疑答复
+投诉处理
+履约验收
+中小企业声明函</code></pre>
+<p>记录：</p>
+<blockquote>
+<p>每个术语被拆成几个 Token。</p>
+</blockquote>
+<hr />
+<h2 id="第四组数字和符号">198. 第四组：数字和符号</h2>
+<p>例如：</p>
+<pre class="text"><code>5000万元
+30%
+7×24小时
+ISO9001
+GB/T 19001
+财库〔2020〕46号</code></pre>
+<p>观察：</p>
+<blockquote>
+<p>切分稳定性。</p>
+</blockquote>
+<hr />
+<h2 id="第五组长文档成本">199. 第五组：长文档成本</h2>
+<p>统计每类完整文件：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mn>50</mn></mrow><annotation encoding="application/x-tex">
+P50
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mn>90</mn></mrow><annotation encoding="application/x-tex">
+P90
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mn>95</mn></mrow><annotation encoding="application/x-tex">
+P95
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mn>99</mn></mrow><annotation encoding="application/x-tex">
+P99
+</annotation></semantics></math></p>
+<p>Token Length。</p>
+<hr />
+<h2 id="然后才回答是否需要改-tokenizer">200. 然后才回答是否需要改
+Tokenizer</h2>
+<p>如果原 Tokenizer：</p>
+<ul>
+<li>中文效率合理；</li>
+<li>核心术语切分可接受；</li>
+<li>技术参数没有灾难性膨胀；</li>
+<li>Context 够用；</li>
+</ul>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>不</mi><mi>要</mi><mi>为</mi><mi>了</mi><mo>“</mo><mi>更</mi><mi>专</mi><mi>业</mi><mo>”</mo><mi>而</mi><mi>乱</mi><mi>换</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+不要为了“更专业”而乱换Tokenizer
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五十五为什么这是一个很重要的工程结论">五十五、为什么这是一个很重要的工程结论？</h1>
+<p>因为我们做政府采购领域模型的目标是：</p>
+<blockquote>
+<p>提升专业能力。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>重新发明基础语言模型全部底层组件。</p>
+</blockquote>
+<p>如果现有 Tokenizer 已经够用：</p>
+<blockquote>
+<p>把资源投入到专家数据、RAG、SFT、评测，</p>
+</blockquote>
+<p>往往价值更高。</p>
+<hr />
+<h1
+id="五十六什么时候真的值得考虑扩词表">五十六、什么时候真的值得考虑扩词表？</h1>
+<p>至少应该出现类似证据：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>高</mi><mi>频</mi><mi>领</mi><mi>域</mi><mi>文</mi><mi>本</mi><mo>+</mo><mi>严</mi><mi>重</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>膨</mi><mi>胀</mi><mo>+</mo><mi>明</mi><mi>显</mi><mi>性</mi><mi>能</mi><mi>/</mi><mi>成</mi><mi>本</mi><mi>问</mi><mi>题</mi><mo>+</mo><mi>足</mi><mi>够</mi><mi>继</mi><mi>续</mi><mi>训</mi><mi>练</mi><mi>数</mi><mi>据</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+高频领域文本
++
+严重Token膨胀
++
+明显性能/成本问题
++
+足够继续训练数据
+}
+</annotation></semantics></math></p>
+<p>这时才值得做：</p>
+<blockquote>
+<p>Vocabulary Extension 实验。</p>
+</blockquote>
+<hr />
+<h1 id="五十七最危险的做法">五十七、最危险的做法</h1>
+<p>拿到一个训练好的 14B 模型。</p>
+<p>然后：</p>
+<blockquote>
+<p>“我自己重新训练一个采购 Tokenizer，中文切得漂亮多了。”</p>
+</blockquote>
+<p>接着直接用新 Tokenizer：</p>
+<blockquote>
+<p>喂旧模型。</p>
+</blockquote>
+<p>这基本相当于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>重</mi><mi>新</mi><mi>给</mi><mi>词</mi><mi>典</mi><mi>编</mi><mi>号</mi><mi>，</mi><mi>但</mi><mi>要</mi><mi>求</mi><mi>模</mi><mi>型</mi><mi>继</mi><mi>续</mi><mi>读</mi><mi>懂</mi><mi>旧</mi><mi>编</mi><mi>号</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+重新给词典编号，
+但要求模型继续读懂旧编号
+}
+</annotation></semantics></math></p>
+<p>当然会出问题。</p>
+<hr />
+<h1 id="五十八第-9-阶段一句话压缩">五十八、第 9 阶段一句话压缩</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>决</mi><mi>定</mi><mi>了</mi><mi>模</mi><mi>型</mi><mi>用</mi><mi>哪</mi><mi>些</mi><mi>离</mi><mi>散</mi><mi>积</mi><mi>木</mi><mi>观</mi><mi>察</mi><mi>文</mi><mi>本</mi><mi>；</mi><mi>S</mi><mi>u</mi><mi>b</mi><mi>w</mi><mi>o</mi><mi>r</mi><mi>d</mi><mi>算</mi><mi>法</mi><mi>则</mi><mi>在</mi><mo>“</mo><mi>完</mi><mi>整</mi><mi>词</mi><mi>太</mi><mi>多</mi><mo>”</mo><mi>和</mi><mo>“</mo><mi>字</mi><mi>符</mi><mi>序</mi><mi>列</mi><mi>太</mi><mi>长</mi><mo>”</mo><mi>之</mi><mi>间</mi><mi>寻</mi><mi>找</mi><mi>统</mi><mi>计</mi><mi>上</mi><mi>的</mi><mi>高</mi><mi>效</mi><mi>折</mi><mi>中</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Tokenizer决定了模型用哪些离散积木观察文本；
+Subword算法则在“完整词太多”和“字符序列太长”之间寻找统计上的高效折中。
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五十九第二课-19-阶段现在已经串起来">五十九、第二课 1～9
+阶段现在已经串起来</h1>
+<p>第 1～7 阶段：</p>
+<blockquote>
+<p>神经网络怎么计算和学习。</p>
+</blockquote>
+<p>第 8 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">
+TokenID\rightarrow Embedding
+</annotation></semantics></math></p>
+<p>解决：</p>
+<blockquote>
+<p>离散符号怎么进入向量空间。</p>
+</blockquote>
+<p>第 9 阶段：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi></mrow><annotation encoding="application/x-tex">
+Text\rightarrow TokenID
+</annotation></semantics></math></p>
+<p>解决：</p>
+<blockquote>
+<p>原始文本怎么变成离散符号。</p>
+</blockquote>
+<p>所以倒过来组合：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>I</mi><mi>D</mi><mi>s</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawText
+\rightarrow
+Tokenizer
+\rightarrow
+TokenIDs
+\rightarrow
+Embedding
+\rightarrow
+HiddenStates
+}
+</annotation></semantics></math></p>
+<p>LLM 的输入管线已经只缺一个非常关键的东西：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Position
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六十第-9-阶段掌握标准">六十、第 9 阶段掌握标准</h1>
+<p>完成这一阶段以后，你应该能自然解释：</p>
+<blockquote>
+<p>Token 为什么不等于 Word？</p>
+</blockquote>
+<blockquote>
+<p>为什么不用纯字符级 Tokenizer？</p>
+</blockquote>
+<blockquote>
+<p>为什么不用纯词级 Tokenizer？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 OOV？</p>
+</blockquote>
+<blockquote>
+<p>Subword 为什么能同时缓解词表膨胀和未知词问题？</p>
+</blockquote>
+<blockquote>
+<p>BPE 的 Merge 到底在做什么？</p>
+</blockquote>
+<blockquote>
+<p>Byte-Level BPE 为什么几乎可以覆盖任意文本？</p>
+</blockquote>
+<blockquote>
+<p>WordPiece 与 BPE 为什么不能简单画等号？</p>
+</blockquote>
+<blockquote>
+<p>SentencePiece 为什么更准确地说是一套框架？</p>
+</blockquote>
+<blockquote>
+<p>Unigram 和 BPE 的高层思路有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>Vocabulary Size 为什么会影响 Embedding 参数量？</p>
+</blockquote>
+<blockquote>
+<p>Token 数为什么会影响 Attention 成本？</p>
+</blockquote>
+<blockquote>
+<p>为什么“框架协议采购”被拆成三个 Token 不代表模型不理解它？</p>
+</blockquote>
+<blockquote>
+<p>为什么给模型新增一个 Token 并不等于给模型增加一个知识点？</p>
+</blockquote>
+<blockquote>
+<p>为什么不能随意给已经训练好的模型换 Tokenizer？</p>
+</blockquote>
+<blockquote>
+<p>为什么领域模型应该先做 Tokenization Audit，而不是先重做
+Vocabulary？</p>
+</blockquote>
+<blockquote>
+<p>为什么数字、金额、日期、法规编号、产品型号需要单独测试？</p>
+</blockquote>
+<blockquote>
+<p>Special Token、BOS、EOS、PAD 分别在解决什么问题？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Chat Template 最终也是一种 Token 序列格式？</p>
+</blockquote>
+<blockquote>
+<p>Tokenization 和 RAG Chunking 为什么是完全不同层级的概念？</p>
+</blockquote>
+<p>如果这些已经能够从底层机制讲明白：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>二</mi><mi>课</mi><mi>第</mi><mn>9</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>建</mi><mi>立</mi><mi>起</mi><mi>来</mi><mi>了</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第二课第9阶段真正建立起来了
+}
+</annotation></semantics></math></p>
+<p>下一阶段，我们终于要补上 LLM 输入层最后一个大缺口：</p><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

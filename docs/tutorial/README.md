@@ -1,57 +1,23 @@
-# 政府采购 AI / ML 实战教程
+# 第一课～第十一课 V2：核心心智模型前置 + 中文释义增强完整体系
 
-本目录收录此前形成的十一门课程。教程服务于 `ProcurementLM_V1.0` 工程建设，不是泛化的机器学习教材；每一课都对应真实模块、工程资产或验收门禁。
+- 课程：11/11。
+- 阶段：130/130。
+- 最终交付：`ProcurementLM_V1.0`。
+- V2原则：核心心智模型前置、英文工程标识 + 中文释义、详细正文完整保留、按审计选择性增强。
+- 推荐入口：`index.html`、`COURSE_READING_GUIDE.html`、`CORE_MENTAL_MODEL_INDEX.html`、`REVISION_AUDIT.html`、`COURSE_ALL.html`。
+- 上一版完整归档保存在 `sources/`。
 
-## 教程文件
 
-- [`COURSE_ALL.md`](./COURSE_ALL.md)：第一课至第十一课完整合订内容。
-- `lessons/`：后续按课程拆分的 canonical 文档目录；拆分时保持合订稿的原始顺序和版本语义。
+## 课程 / 产品说明书式导航
 
-## 十一课导航
+- `manual/NAVIGATION_MANUAL.html`：按课程、问题、架构检索130个阶段。
+- `manual/stages/LxxSxx.html`：130个阶段快速说明页。
+- `manual/NAV_DATA.json`：机器可读导航数据，可用于后续工具/产品界面。
 
-| 课次 | 课程 | 主要工程映射 |
-|---|---|---|
-| 1 | 机器学习到底在学习什么？ | Compliance LM、训练、Benchmark 的学习/泛化边界 |
-| 2 | 神经网络到 Transformer / LLM | Compliance LM 的模型底层机制 |
-| 3 | GPU 环境与开源大模型 | 训练、推理和模型运行基础设施 |
-| 4 | 政府采购数据工程与训练数据集 | Document/Data、Schema、Label、Evidence、Dataset |
-| 5 | SFT + LoRA / QLoRA | 领域监督微调与 PEFT |
-| 6 | RAG、Embedding 与向量检索 | Policy Registry、Legal RAG、证据召回与引用 |
-| 7 | Agent、Tool Calling 与工作流 | Agent、工具路由、状态、恢复和人工回路 |
-| 8 | CPT 与高级领域适配 | 领域分布适配、能力保持和训练边界 |
-| 9 | Gold Benchmark、评测与可靠性 | Gold、切片、红队、回归和 Release Gate |
-| 10 | 推理部署、性能优化与 MLOps | Serving、性能、监控、发布和回滚 |
-| 11 | ProcurementLM V1.0 全流程实战 | 产品、数据、规则、法规、模型、Agent、Benchmark、生产治理的总集成 |
 
-## 教程与工程建设顺序
+## V2.2：阶段 HTML 与 Markdown 一一对应
 
-```text
-Schema
-  → Gold Benchmark
-  → Gold Data / Decision Boundary
-  → Compliance LM
-  → Policy / Legal RAG
-  → Hybrid Compliance Engine
-  → Compliance Agent
-  → Production Governance
-```
-
-对应版本里程碑：
-
-```text
-ProcurementDataset_V0.1
-  → ProcurementLM_V0.1
-  → ProcurementRAG_V0.1
-  → ProcurementAgent_V0.1
-  → ProcurementLM_V0.2
-  → ProcurementBench_V1
-  → ProcurementAI
-  → ProcurementLM_V1.0
-```
-
-## 使用规则
-
-1. 课程中的工程字段、状态值、流程节点和 Schema 标识保留稳定英文名称，并配套中文业务释义。
-2. 教程内容不能替代 `contracts/` 下的正式契约；正式接口、Schema、门禁和权限以 `contracts/` 与 `docs/governance/` 为准。
-3. 第 9 课的 Benchmark 内容必须遵守 `blind_test_gold` 访问边界；教程可以讲方法和规则，不包含真实盲测金标。
-4. 第 11 课是系统集成课，不能被解释为跳过前置 Schema、数据质量和独立 Benchmark。
+- 每个 `stageXX.md` 现在都有同名 `stageXX.html`，共 130 个完整阶段 HTML。
+- 每课新增 `LESSON_INDEX.html`，用于查看该课所有阶段并进入对应完整 HTML。
+- `LESSON_ALL.html` 保留为整课连续阅读合订版。
+- `manual/stages/LxxSxx.html` 是快速说明页，不是完整正文页。

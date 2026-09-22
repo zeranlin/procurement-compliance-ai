@@ -1,0 +1,1459 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第1阶段：Inference 到底在优化什么？Latency、Throughput、TTFT、TPOT</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第1阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>Latency ≠ Throughput。一个请求快和整个服务处理得多，是两个不同目标。</li><li>Prefill ≠ Decode。输入处理和逐 Token 生成是两个不同性能阶段，瓶颈也可能不同。</li><li>tokens/s 必须带 Scope。单请求、整机、输入、输出、单卡、多卡不能混为一谈。</li></ul></div><h1 id="第十课-第-1-阶段">第十课 · 第 1 阶段</h1>
+<h1 id="inference-到底在优化什么latencythroughputttfttpot">Inference
+到底在优化什么？Latency、Throughput、TTFT、TPOT</h1>
+<h2
+id="模型跑得快到底是什么意思为什么首-token-很快整体生成很慢或者吞吐很高单个用户却等很久都可能同时发生">“模型跑得快”到底是什么意思？为什么首
+Token
+很快、整体生成很慢，或者吞吐很高、单个用户却等很久，都可能同时发生？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Latency ≠
+Throughput。一个请求快和整个服务处理得多，是两个不同目标。</strong></li>
+<li><strong>Prefill ≠ Decode。输入处理和逐 Token
+生成是两个不同性能阶段，瓶颈也可能不同。</strong></li>
+<li><strong>tokens/s 必须带
+Scope。单请求、整机、输入、输出、单卡、多卡不能混为一谈。</strong></li>
+<li><strong>FastStart ≠ FastFinish。TTFT、TPOT / ITL、E2E Latency
+必须分开看。</strong></li>
+<li><strong>Requests/s ≠ Tokens/s。吞吐指标必须匹配真实 Workload
+Shape。</strong></li>
+<li><strong>AverageLatency ≠ TailLatency。生产体验往往由 P95 / P99
+决定，而不是平均值。</strong></li>
+<li><strong>FastKernel ≠ FastService。Queue Time
+可以让一个很快的模型服务变得很慢。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+<tr class="odd">
+<td><code>TTFT</code></td>
+<td>首 Token 时间：用户等待第一个输出 Token 的时间</td>
+</tr>
+<tr class="even">
+<td><code>Throughput</code></td>
+<td>吞吐：单位时间内处理请求或生成 Token 的能力</td>
+</tr>
+<tr class="odd">
+<td><code>TPOT</code></td>
+<td>每输出 Token 时间：首 Token 后平均生成一个 Token 的耗时</td>
+</tr>
+<tr class="even">
+<td><code>Inference</code></td>
+<td>推理：系统接收请求并产生结果的在线计算过程</td>
+</tr>
+<tr class="odd">
+<td><code>tokens/s</code></td>
+<td>每秒 Token 数：衡量生成速度或系统吞吐的常见指标</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="odd">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第九课结束以后，我们已经有了：</p>
+<pre class="text"><code>ProcurementLM_V0.2
+ProcurementRAG_V0.1
+ProcurementAgent_V0.1
+ProcurementBench_V1</code></pre>
+<p>也就是说，我们已经能够回答：</p>
+<blockquote>
+<p><strong>这个系统质量够不够好？</strong></p>
+</blockquote>
+<p>第十课开始解决另一个完全不同的问题：</p>
+<blockquote>
+<p><strong>这个已经被证明“质量合格”的系统，能不能真正稳定地跑在生产环境里？</strong></p>
+</blockquote>
+<p>很多团队进入部署以后第一句话就是：</p>
+<pre class="text"><code>模型有多少 tokens/s？</code></pre>
+<p>这个问题太粗。</p>
+<p>因为“快”至少可能指：</p>
+<pre class="text"><code>用户多久看到第一个Token？
+
+后续Token流出来有多快？
+
+一个请求多久完整结束？
+
+服务器一秒能处理多少请求？
+
+服务器一秒能生成多少Token？
+
+高并发时P95 / P99会不会爆炸？
+
+排队时间占了多少？
+
+输入很长时会不会突然变慢？</code></pre>
+<p>所以本阶段第一条边界必须先锁死：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Latency
+\neq
+Throughput
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementinferenceslopolicy_v0.1"><code>ProcurementInferenceSLOPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一先给-inference-一个完整工程定义">一、先给 Inference
+一个完整工程定义</h1>
+<h1 id="inference">Inference</h1>
+<h2 id="推理">推理</h2>
+<p>在部署语境里，Inference 不只是：</p>
+<blockquote>
+<p>“模型执行一次 forward。”</p>
+</blockquote>
+<p>而是从请求进入系统，到结果返回用户之间的完整在线计算过程。</p>
+<p>可以粗略拆成：</p>
+<pre class="text"><code>Request Arrival
+请求到达
+↓
+Queue
+排队
+↓
+Preprocessing
+预处理
+↓
+Prefill
+处理输入上下文
+↓
+Decode
+逐Token生成
+↓
+Postprocessing
+后处理
+↓
+Response Complete
+响应完成</code></pre>
+<p>所以端到端延迟可以概念化为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>T</mi><mrow><mi>E</mi><mn>2</mn><mi>E</mi></mrow></msub><mo>=</mo><msub><mi>T</mi><mrow><mi>q</mi><mi>u</mi><mi>e</mi><mi>u</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>p</mi><mi>r</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>p</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>l</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>d</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>p</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+T_{E2E}
+=
+T_{queue}
++
+T_{preprocess}
++
+T_{prefill}
++
+T_{decode}
++
+T_{postprocess}
+}
+</annotation></semantics></math></p>
+<p>注意：</p>
+<blockquote>
+<p>不同服务框架对时间边界的定义可能略有差异。</p>
+</blockquote>
+<p>因此真正做 Benchmark 时必须同时记录：</p>
+<h1 id="metric-definition">Metric Definition</h1>
+<h2 id="指标口径">指标口径</h2>
+<p>否则同一个“Latency”可能根本不是同一个东西。</p>
+<hr />
+<h1 id="二核心心智模型-①">二、核心心智模型 ①</h1>
+<h1 id="latency-throughput"><code>Latency ≠ Throughput</code></h1>
+<h1 id="latency">Latency</h1>
+<h2 id="延迟">延迟</h2>
+<p>问的是：</p>
+<blockquote>
+<p><strong>一个请求要等多久？</strong></p>
+</blockquote>
+<h1 id="throughput">Throughput</h1>
+<h2 id="吞吐量">吞吐量</h2>
+<p>问的是：</p>
+<blockquote>
+<p><strong>系统单位时间能处理多少工作？</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>系统A：
+单请求 1.2 秒完成
+每秒处理 5 个请求
+
+系统B：
+单请求 2.0 秒完成
+每秒处理 50 个请求</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>A 的单请求延迟更低。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>B 的总体吞吐更高。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>w</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>⇏</mo><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LowLatency
+\not\Rightarrow
+HighThroughput
+}
+</annotation></semantics></math></p>
+<p>同样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>⇏</mo><mi>L</mi><mi>o</mi><mi>w</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighThroughput
+\not\Rightarrow
+LowLatency
+}
+</annotation></semantics></math></p>
+<p>生产优化第一步不是问：</p>
+<blockquote>
+<p>“哪个数最大？”</p>
+</blockquote>
+<p>而是问：</p>
+<blockquote>
+<p><strong>我们的业务真正受哪个指标约束？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三用户真正感受到的第一类指标ttft">三、用户真正感受到的第一类指标：TTFT</h1>
+<h1 id="ttft">TTFT</h1>
+<h2 id="time-to-first-token">Time To First Token</h2>
+<h2 id="首-token-延迟">首 Token 延迟</h2>
+<p>它表示：</p>
+<blockquote>
+<p>从请求进入服务，到用户看到第一个生成 Token，要等多久。</p>
+</blockquote>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>T</mi><mi>F</mi><mi>T</mi><mo>≈</mo><mi>Q</mi><mi>u</mi><mi>e</mi><mi>u</mi><mi>e</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>l</mi><mo>+</mo><mi>F</mi><mi>i</mi><mi>r</mi><mi>s</mi><mi>t</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>S</mi><mi>t</mi><mi>e</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TTFT
+\approx
+Queue
++
+Preprocess
++
+Prefill
++
+FirstDecodeStep
+}
+</annotation></semantics></math></p>
+<p>为什么 TTFT 很重要？</p>
+<p>因为流式输出场景里：</p>
+<blockquote>
+<p>用户并不需要等整个回答完成，才开始感受到系统响应。</p>
+</blockquote>
+<p>如果：</p>
+<pre class="text"><code>总回答需要8秒</code></pre>
+<p>但：</p>
+<pre class="text"><code>0.5秒就开始出字</code></pre>
+<p>用户体验通常会比：</p>
+<pre class="text"><code>前6秒完全没反应
+最后2秒突然全部输出</code></pre>
+<p>好很多。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>e</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>p</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>高</mi><mi>度</mi><mi>受</mi><mi>T</mi><mi>T</mi><mi>F</mi><mi>T</mi><mi>影</mi><mi>响</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PerceivedResponsiveness
+高度受
+TTFT
+影响
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四ttft-主要受什么影响">四、TTFT 主要受什么影响？</h1>
+<p>通常包括：</p>
+<pre class="text"><code>Queue Time
+排队时间
+
+Input Length
+输入长度
+
+Prefill Compute
+Prefill计算量
+
+Batching State
+当前批处理状态
+
+Model Size
+模型规模
+
+Hardware
+硬件
+
+Prompt Processing
+提示词处理
+
+RAG Context Length
+RAG上下文长度</code></pre>
+<p>特别是：</p>
+<blockquote>
+<p>输入 Token 越长，Prefill 需要处理的上下文越多。</p>
+</blockquote>
+<p>所以一个政府采购系统如果把：</p>
+<pre class="text"><code>整份数万Token采购文件
++
+多段RAG证据
++
+长System Prompt</code></pre>
+<p>全部直接塞进模型，</p>
+<p>TTFT 可能显著上升。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>首</mi><mi>先</mi><mi>强</mi><mi>烈</mi><mi>影</mi><mi>响</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>/</mi><mi>T</mi><mi>T</mi><mi>F</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongInput
+首先强烈影响
+Prefill / TTFT
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五prefill-到底是什么">五、Prefill 到底是什么？</h1>
+<h1 id="prefill">Prefill</h1>
+<h2 id="输入预填充阶段">输入预填充阶段</h2>
+<p>模型先处理整个输入上下文：</p>
+<pre class="text"><code>System Prompt
+User Query
+RAG Context
+Conversation History
+Tool Results</code></pre>
+<p>并建立后续生成需要的内部状态。</p>
+<p>这个阶段通常：</p>
+<blockquote>
+<p>一次处理很多输入 Token。</p>
+</blockquote>
+<p>所以它和后面的 Decode：</p>
+<blockquote>
+<p>计算形态不同。</p>
+</blockquote>
+<hr />
+<h1 id="六decode-到底是什么">六、Decode 到底是什么？</h1>
+<h1 id="decode">Decode</h1>
+<h2 id="自回归生成阶段">自回归生成阶段</h2>
+<p>第一步生成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>y</mi><mn>1</mn></msub><annotation encoding="application/x-tex">
+y_1
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>y</mi><mn>2</mn></msub><annotation encoding="application/x-tex">
+y_2
+</annotation></semantics></math></p>
+<p>依赖前面已经生成的 Token。</p>
+<p>继续：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mn>3</mn></msub><mo>,</mo><msub><mi>y</mi><mn>4</mn></msub><mo>,</mo><mi>…</mi></mrow><annotation encoding="application/x-tex">
+y_3,y_4,\ldots
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi><mo>=</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Decode
+=
+AutoregressiveSequentialGeneration
+}
+</annotation></semantics></math></p>
+<p>中文：</p>
+<blockquote>
+<p><strong>同一个序列内部，生成过程具有时间上的顺序依赖。</strong></p>
+</blockquote>
+<p>这也是为什么：</p>
+<blockquote>
+<p>单个回答不能简单把所有未来 Token 一次性并行算完。</p>
+</blockquote>
+<hr />
+<h1 id="七核心心智模型-②">七、核心心智模型 ②</h1>
+<h1 id="prefill-decode"><code>Prefill ≠ Decode</code></h1>
+<p>Prefill 更关注：</p>
+<blockquote>
+<p>输入上下文处理。</p>
+</blockquote>
+<p>Decode 更关注：</p>
+<blockquote>
+<p>一个 Token 接一个 Token 地生成。</p>
+</blockquote>
+<p>两者的性能瓶颈也常常不同。</p>
+<p>在很多典型部署里：</p>
+<pre class="text"><code>Prefill
+更容易受到大规模矩阵计算能力影响
+
+Decode
+更容易受到逐步生成、KV Cache访问、内存带宽和并发调度影响</code></pre>
+<p>但具体瓶颈仍取决于：</p>
+<pre class="text"><code>模型结构
+硬件
+并发
+序列长度
+推理引擎
+量化方式</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>一</mi><mi>定</mi><mi>同</mi><mi>时</mi><mi>改</mi><mi>善</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>和</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneOptimization
+不一定同时改善
+Prefill
+和
+Decode
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八第二类关键指标tpot">八、第二类关键指标：TPOT</h1>
+<h1 id="tpot">TPOT</h1>
+<h2 id="time-per-output-token">Time Per Output Token</h2>
+<h2 id="每个输出-token-的平均时间">每个输出 Token 的平均时间</h2>
+<p>在已经生成第一个 Token 以后，</p>
+<p>后续 Token 平均多久出来一个。</p>
+<p>一种常见定义可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>P</mi><mi>O</mi><mi>T</mi><mo>=</mo><mfrac><mrow><msub><mi>T</mi><mrow><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi></mrow></msub><mo>−</mo><msub><mi>T</mi><mrow><mi>f</mi><mi>i</mi><mi>r</mi><mi>s</mi><mi>t</mi></mrow></msub></mrow><mrow><msub><mi>N</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>−</mo><mn>1</mn></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TPOT
+=
+\frac{
+T_{last}-T_{first}
+}{
+N_{output}-1
+}
+}
+</annotation></semantics></math></p>
+<p>前提：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+N_{output}&gt;1
+</annotation></semantics></math></p>
+<p>它越低：</p>
+<blockquote>
+<p>后续文字流出来越快。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>TPOT = 50 ms/token</code></pre>
+<p>大致意味着：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>20</mn><mspace width="0.222em"></mspace><mi>t</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>/</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+20\ tokens/s
+</annotation></semantics></math></p>
+<p>的单序列输出节奏。</p>
+<hr />
+<h1 id="九tpot-和-tokenss-是什么关系">九、TPOT 和 Tokens/s
+是什么关系？</h1>
+<p>对单个序列，</p>
+<p>近似可以理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>d</mi><mo>≈</mo><mfrac><mn>1</mn><mrow><mi>T</mi><mi>P</mi><mi>O</mi><mi>T</mi></mrow></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OutputTokensPerSecond
+\approx
+\frac{1}{TPOT}
+}
+</annotation></semantics></math></p>
+<p>但工程上必须非常小心。</p>
+<p>因为“tokens/s”可能指：</p>
+<pre class="text"><code>单请求输出 tokens/s
+
+整个服务器输出 tokens/s
+
+输入+输出总 tokens/s
+
+每张GPU tokens/s
+
+某个Batch内 tokens/s</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>必</mi><mi>须</mi><mi>说</mi><mi>明</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>p</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TokensPerSecond
+必须说明
+Scope
+}
+</annotation></semantics></math></p>
+<p>否则一句：</p>
+<blockquote>
+<p>“我们现在 2000 tokens/s。”</p>
+</blockquote>
+<p>几乎没有足够信息。</p>
+<hr />
+<h1 id="十核心心智模型-③">十、核心心智模型 ③</h1>
+<h1 id="tokenss-是一个必须带口径的指标"><code>tokens/s</code>
+是一个必须带口径的指标</h1>
+<p>至少要问：</p>
+<pre class="text"><code>Per Request 还是 Server Aggregate？
+
+只算 Output 还是 Input + Output？
+
+单GPU还是多GPU？
+
+什么模型？
+
+什么输入长度？
+
+什么输出长度？
+
+什么并发？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi><mo>=</mo><mi>W</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MetricWithoutWorkload
+=
+WeakMetric
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一第三类指标end-to-end-latency">十一、第三类指标：End-to-End
+Latency</h1>
+<h1 id="e2e-latency">E2E Latency</h1>
+<h2 id="端到端延迟">端到端延迟</h2>
+<p>表示：</p>
+<blockquote>
+<p>一个请求从进入系统到完整响应结束，用户总共等多久。</p>
+</blockquote>
+<p>对于流式生成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mn>2</mn><mi>E</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>T</mi><mi>F</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+E2ELatency
+\neq
+TTFT
+}
+</annotation></semantics></math></p>
+<p>一个系统可能：</p>
+<pre class="text"><code>TTFT = 0.4s</code></pre>
+<p>但：</p>
+<pre class="text"><code>E2E = 15s</code></pre>
+<p>说明：</p>
+<blockquote>
+<p>开头反应很快，但生成过程很慢或输出很长。</p>
+</blockquote>
+<p>反过来，</p>
+<p>TTFT 慢但 TPOT 很快：</p>
+<blockquote>
+<p>用户前面等很久，后面字出得很快。</p>
+</blockquote>
+<p>这两种用户体验完全不同。</p>
+<hr />
+<h1 id="十二核心心智模型-④">十二、核心心智模型 ④</h1>
+<h1 id="faststart-fastfinish"><code>FastStart ≠ FastFinish</code></h1>
+<p>所以生产监控至少应该分开：</p>
+<pre class="text"><code>TTFT
+TPOT / ITL
+E2E Latency</code></pre>
+<p>而不是只记录：</p>
+<pre class="text"><code>request_time</code></pre>
+<p>一个总数。</p>
+<hr />
+<h1 id="十三itl-是什么">十三、ITL 是什么？</h1>
+<h1 id="itl">ITL</h1>
+<h2 id="inter-token-latency">Inter-Token Latency</h2>
+<h2 id="token-间延迟">Token 间延迟</h2>
+<p>表示：</p>
+<blockquote>
+<p>相邻两个输出 Token 之间的时间。</p>
+</blockquote>
+<p>TPOT 是平均。</p>
+<p>ITL 可以进一步观察：</p>
+<pre class="text"><code>中间有没有突然卡顿
+P95 Token间隔
+P99 Token间隔</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>T</mi><mi>P</mi><mi>O</mi><mi>T</mi><mi>可</mi><mi>能</mi><mi>掩</mi><mi>盖</mi><mi>J</mi><mi>i</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AverageTPOT
+可能掩盖
+Jitter
+}
+</annotation></semantics></math></p>
+<h1 id="jitter">Jitter</h1>
+<h2 id="抖动">抖动</h2>
+<p>指：</p>
+<blockquote>
+<p>Token 输出节奏忽快忽慢。</p>
+</blockquote>
+<p>流式交互里，</p>
+<p>稳定的输出节奏通常也很重要。</p>
+<hr />
+<h1 id="十四第四类指标request-throughput">十四、第四类指标：Request
+Throughput</h1>
+<h1 id="request-throughput">Request Throughput</h1>
+<h2 id="请求吞吐">请求吞吐</h2>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>s</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RequestsPerSecond
+}
+</annotation></semantics></math></p>
+<p>或者：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>s</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>M</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RequestsPerMinute
+}
+</annotation></semantics></math></p>
+<p>它回答：</p>
+<blockquote>
+<p>服务单位时间完成多少请求。</p>
+</blockquote>
+<p>但如果请求长度差异巨大：</p>
+<pre class="text"><code>请求A：
+100 input tokens
+20 output tokens
+
+请求B：
+20000 input tokens
+3000 output tokens</code></pre>
+<p>那么：</p>
+<blockquote>
+<p>只比较 Requests/s 也很容易失真。</p>
+</blockquote>
+<hr />
+<h1 id="十五第五类指标token-throughput">十五、第五类指标：Token
+Throughput</h1>
+<p>可以记录：</p>
+<pre class="text"><code>Input Tokens/s
+
+Output Tokens/s
+
+Total Tokens/s</code></pre>
+<p>它比 Requests/s 更能表达：</p>
+<blockquote>
+<p>实际处理了多少 Token 工作量。</p>
+</blockquote>
+<p>但仍然要结合：</p>
+<pre class="text"><code>输入长度分布
+输出长度分布
+并发
+Batch</code></pre>
+<p>一起看。</p>
+<hr />
+<h1 id="十六核心心智模型-⑤">十六、核心心智模型 ⑤</h1>
+<h1 id="requestss-和-tokenss-衡量的不是同一件事"><code>Requests/s</code>
+和 <code>Tokens/s</code> 衡量的不是同一件事</h1>
+<p>一个系统：</p>
+<blockquote>
+<p>很擅长处理大量短请求。</p>
+</blockquote>
+<p>另一个系统：</p>
+<blockquote>
+<p>更擅长长文档。</p>
+</blockquote>
+<p>如果只看 Requests/s，</p>
+<p>可能得到完全错误的比较结论。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>必</mi><mi>须</mi><mi>匹</mi><mi>配</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi><mi>S</mi><mi>h</mi><mi>a</mi><mi>p</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ThroughputMetric
+必须匹配
+WorkloadShape
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十七p50p95p99-为什么比平均值更重要">十七、P50、P95、P99
+为什么比平均值更重要？</h1>
+<p>假设 100 个请求：</p>
+<pre class="text"><code>95个请求 = 1秒
+
+5个请求 = 20秒</code></pre>
+<p>平均值：</p>
+<blockquote>
+<p>仍然可能看起来没有特别离谱。</p>
+</blockquote>
+<p>但那 5 个用户体验非常差。</p>
+<p>所以生产系统通常看：</p>
+<h1 id="percentile-latency">Percentile Latency</h1>
+<h2 id="分位数延迟">分位数延迟</h2>
+<h3 id="p50">P50</h3>
+<p>中位用户。</p>
+<h3 id="p95">P95</h3>
+<p>95% 请求低于这个时间。</p>
+<h3 id="p99">P99</h3>
+<p>99% 请求低于这个时间。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AverageLatency
+\neq
+TailLatency
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十八核心心智模型-⑥">十八、核心心智模型 ⑥</h1>
+<h1 id="生产事故经常发生在-tail不发生在-average">生产事故经常发生在
+Tail，不发生在 Average</h1>
+<p>真正线上用户抱怨的通常是：</p>
+<pre class="text"><code>为什么有些请求突然20秒？
+
+为什么高峰期偶尔超时？
+
+为什么一到长文档就卡死？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>L</mi><mi>O</mi><mi>通</mi><mi>常</mi><mi>需</mi><mi>要</mi><mi>P</mi><mn>95</mn><mi>/</mi><mi>P</mi><mn>99</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProductionSLO
+通常需要
+P95 / P99
+}
+</annotation></semantics></math></p>
+<p>不能只看平均延迟。</p>
+<hr />
+<h1 id="十九queue-time为什么模型本身很快用户仍然很慢">十九、Queue
+Time：为什么模型本身很快，用户仍然很慢？</h1>
+<p>当请求到达速度超过当前服务能力，</p>
+<p>请求会进入：</p>
+<h1 id="queue">Queue</h1>
+<h2 id="队列">队列</h2>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>U</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>=</mo><mi>Q</mi><mi>u</mi><mi>e</mi><mi>u</mi><mi>e</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+UserLatency
+=
+QueueLatency
++
+ServiceLatency
+}
+</annotation></semantics></math></p>
+<p>即使模型本身只需：</p>
+<pre class="text"><code>2秒</code></pre>
+<p>但排队：</p>
+<pre class="text"><code>8秒</code></pre>
+<p>用户实际等待：</p>
+<pre class="text"><code>10秒</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>K</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>e</mi><mi>l</mi><mo>≠</mo><mi>F</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FastKernel
+\neq
+FastService
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十concurrency并发到底是什么">二十、Concurrency：并发到底是什么？</h1>
+<h1 id="concurrency">Concurrency</h1>
+<h2 id="并发数">并发数</h2>
+<p>表示：</p>
+<blockquote>
+<p>同一时间系统里有多少请求正在等待或执行。</p>
+</blockquote>
+<p>提高 Concurrency 往往可以：</p>
+<blockquote>
+<p>更充分利用 GPU。</p>
+</blockquote>
+<p>但 Concurrency 太高：</p>
+<pre class="text"><code>Queue变长
+
+Batch变大
+
+KV Cache增长
+
+显存压力变大
+
+P95 / P99上升
+
+甚至OOM</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>A</mi><mi>l</mi><mi>w</mi><mi>a</mi><mi>y</mi><mi>s</mi><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreConcurrency
+\neq
+AlwaysBetter
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十一核心心智模型-⑦">二十一、核心心智模型 ⑦</h1>
+<h1 id="throughput-和-latency-往往存在-operating-tradeoff">Throughput 和
+Latency 往往存在 Operating Tradeoff</h1>
+<p>提高并发：</p>
+<blockquote>
+<p>吞吐可能上升。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>单请求等待时间也可能上升。</p>
+</blockquote>
+<p>所以生产优化真正寻找的是：</p>
+<h1 id="operating-point">Operating Point</h1>
+<h2 id="运行工作点">运行工作点</h2>
+<p>即：</p>
+<blockquote>
+<p>在目标 SLO、成本和硬件预算下，最合适的并发、Batch 和资源配置。</p>
+</blockquote>
+<hr />
+<h1 id="二十二什么时候系统开始-saturation">二十二、什么时候系统开始
+Saturation？</h1>
+<h1 id="saturation">Saturation</h1>
+<h2 id="饱和">饱和</h2>
+<p>当请求负载继续增加，</p>
+<p>系统已经无法等比例增加吞吐，</p>
+<p>但：</p>
+<pre class="text"><code>Queue Time快速增加
+P95快速增加
+P99快速增加</code></pre>
+<p>这就是接近饱和。</p>
+<p>概念上：</p>
+<pre class="text"><code>低负载：
+请求来了马上跑
+
+中负载：
+GPU利用率提升，吞吐提高
+
+高负载：
+系统接近满载
+
+过载：
+吞吐增加有限，但排队延迟急剧恶化</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>P</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>通</mi><mi>常</mi><mi>不</mi><mi>是</mi><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>P</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MaxThroughputPoint
+通常不是
+BestProductionPoint
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十三littles-law为什么并发吞吐和延迟会互相约束">二十三、Little’s
+Law：为什么并发、吞吐和延迟会互相约束？</h1>
+<p>在稳定系统里，常用一个非常重要的排队论关系：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mo>=</mo><mi>λ</mi><mi>W</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+L
+=
+\lambda W
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">L</annotation></semantics></math>：系统中的平均请求数；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math>：平均到达
+/ 完成速率；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>：平均停留时间。</li>
+</ul>
+<p>它告诉我们：</p>
+<blockquote>
+<p>并发、吞吐和延迟不是三个互不相关的数字。</p>
+</blockquote>
+<p>如果吞吐固定，</p>
+<p>系统里积压的请求越多：</p>
+<blockquote>
+<p>平均等待时间通常越长。</p>
+</blockquote>
+<p>这就是为什么：</p>
+<blockquote>
+<p>“把并发无限调大”</p>
+</blockquote>
+<p>不是免费优化。</p>
+<hr />
+<h1 id="二十四核心心智模型-⑧">二十四、核心心智模型 ⑧</h1>
+<h1
+id="concurrency-是资源利用工具不是性能目标本身"><code>Concurrency</code>
+是资源利用工具，不是性能目标本身</h1>
+<p>并发真正的作用是：</p>
+<blockquote>
+<p>让 GPU 尽可能少闲着。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>数字越大越高级。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>服</mi><mi>务</mi><mi>于</mi><mi>S</mi><mi>L</mi><mi>O</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Concurrency
+服务于
+SLO
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>L</mi><mi>O</mi><mi>服</mi><mi>务</mi><mi>于</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SLO
+服务于
+Concurrency
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十五workload-shape为什么-benchmark-必须模拟真实流量">二十五、Workload
+Shape：为什么 Benchmark 必须模拟真实流量？</h1>
+<p>如果性能 Benchmark 只测：</p>
+<pre class="text"><code>Input = 128 tokens
+Output = 128 tokens
+Concurrency = 1</code></pre>
+<p>但生产采购系统实际：</p>
+<pre class="text"><code>短问答
+长文档
+RAG长Context
+Agent多轮工具结果
+输出长度差异巨大
+并发有高峰</code></pre>
+<p>那么离线性能数字：</p>
+<blockquote>
+<p>参考价值有限。</p>
+</blockquote>
+<p>所以需要：</p>
+<h1 id="workload-distribution">Workload Distribution</h1>
+<h2 id="工作负载分布">工作负载分布</h2>
+<p>至少记录：</p>
+<pre class="text"><code>Input Length Distribution
+
+Output Length Distribution
+
+Concurrency Distribution
+
+Request Arrival Pattern
+
+Task Mix
+
+Streaming / Non-streaming
+
+RAG Context Size
+
+Agent Tool Latency</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi><mi>必</mi><mi>须</mi><mi>接</mi><mi>近</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkWorkload
+必须接近
+ProductionWorkload
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十六cold-start-和-warm-run-要不要分开">二十六、Cold Start 和
+Warm Run 要不要分开？</h1>
+<p>要。</p>
+<h1 id="cold-start">Cold Start</h1>
+<h2 id="冷启动">冷启动</h2>
+<p>可能包含：</p>
+<pre class="text"><code>模型加载
+CUDA初始化
+Kernel编译
+Cache未命中</code></pre>
+<h1 id="warm-run">Warm Run</h1>
+<h2 id="热运行">热运行</h2>
+<p>系统已经：</p>
+<blockquote>
+<p>模型加载完成、缓存建立、服务稳定。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>S</mi><mi>t</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ColdLatency
+\neq
+SteadyStateLatency
+}
+</annotation></semantics></math></p>
+<p>二者都可以有价值，</p>
+<p>但不能混着报告。</p>
+<hr />
+<h1 id="二十七核心心智模型-⑨">二十七、核心心智模型 ⑨</h1>
+<h1
+id="benchmark-environment-是性能指标的一部分"><code>Benchmark Environment</code>
+是性能指标的一部分</h1>
+<p>性能分数必须绑定：</p>
+<pre class="text"><code>GPU型号
+GPU数量
+显存
+CPU
+内存
+网络
+驱动
+CUDA
+推理引擎
+模型版本
+量化版本
+并发
+输入输出长度</code></pre>
+<p>否则：</p>
+<pre class="text"><code>TTFT = 500ms</code></pre>
+<p>缺少环境信息，</p>
+<p>很难复现。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>E</mi><mi>n</mi><mi>v</mi><mi>i</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PerformanceNumber
++
+Environment
+=
+ReproducibleEvidence
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十八slo-到底是什么">二十八、SLO 到底是什么？</h1>
+<h1 id="slo">SLO</h1>
+<h2 id="service-level-objective">Service Level Objective</h2>
+<h2 id="服务级目标">服务级目标</h2>
+<p>不是：</p>
+<blockquote>
+<p>“越快越好。”</p>
+</blockquote>
+<p>而是明确：</p>
+<blockquote>
+<p>生产系统应该达到什么服务水平。</p>
+</blockquote>
+<p>例如概念上：</p>
+<pre class="text"><code>P95 TTFT &lt;= 某阈值
+
+P95 E2E &lt;= 某阈值
+
+P99错误率 &lt;= 某阈值
+
+最大并发下不得OOM
+
+吞吐 &gt;= 某目标
+
+关键任务成功率 &gt;= 某阈值</code></pre>
+<p>具体数值：</p>
+<blockquote>
+<p>应由真实业务要求和性能压测确定。</p>
+</blockquote>
+<p>不是本课拍脑袋给一个万能数字。</p>
+<hr />
+<h1 id="二十九核心心智模型-⑩">二十九、核心心智模型 ⑩</h1>
+<h1 id="slo-是部署优化的目标函数"><code>SLO</code>
+是部署优化的目标函数</h1>
+<p>没有 SLO 时：</p>
+<pre class="text"><code>更快一点
+更多吞吐
+再省点显存</code></pre>
+<p>会变成无止境优化。</p>
+<p>有 SLO 后：</p>
+<blockquote>
+<p>才能知道什么叫“已经足够好”。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>需</mi><mi>要</mi><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Optimization
+需要
+Target
+}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mo>=</mo><mi>S</mi><mi>L</mi><mi>O</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProductionTarget
+=
+SLO
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三十latencythroughputcost-三者必须一起看">三十、Latency、Throughput、Cost
+三者必须一起看</h1>
+<p>假设方案 A：</p>
+<pre class="text"><code>TTFT更低
+但需要8张GPU</code></pre>
+<p>方案 B：</p>
+<pre class="text"><code>TTFT略高
+但只需要2张GPU</code></pre>
+<p>到底选哪个？</p>
+<p>不能只看延迟。</p>
+<p>还要看：</p>
+<h1 id="cost-efficiency">Cost Efficiency</h1>
+<h2 id="成本效率">成本效率</h2>
+<p>例如：</p>
+<pre class="text"><code>requests / dollar
+
+output tokens / dollar
+
+GPU hours / 1M tokens</code></pre>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProductionOptimization
+=
+Quality
++
+Latency
++
+Throughput
++
+Cost
+}
+</annotation></semantics></math></p>
+<p>而且 Quality：</p>
+<blockquote>
+<p>不能因为性能优化而掉出第九课 Benchmark 的 Release Gate。</p>
+</blockquote>
+<hr />
+<h1
+id="三十一性能优化为什么不能脱离质量评测">三十一、性能优化为什么不能脱离质量评测？</h1>
+<p>后面我们会做：</p>
+<pre class="text"><code>Quantization
+Batching
+Long Context Optimization
+Parallelism</code></pre>
+<p>这些可能改变：</p>
+<pre class="text"><code>数值精度
+解码行为
+上下文处理
+输出稳定性</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>不</mi><mi>能</mi><mi>自</mi><mi>动</mi><mi>等</mi><mi>于</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PerformanceGain
+不能自动等于
+ProductionGain
+}
+</annotation></semantics></math></p>
+<p>必须继续通过：</p>
+<pre class="text"><code>ProcurementBench_V1</code></pre>
+<p>验证质量没有不可接受回归。</p>
+<p>这就把第九课和第十课正式连接起来。</p>
+<hr />
+<h1 id="三十二本阶段正式工程产物">三十二、本阶段正式工程产物</h1>
+<h1
+id="procurementinferenceslopolicy_v0.1-1"><code>ProcurementInferenceSLOPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>inference_slo_policy_version
+
+model_version
+
+serving_engine_version
+
+hardware_profile
+
+quantization_version
+
+workload_profile_version
+
+request_arrival_pattern
+
+input_length_distribution
+
+output_length_distribution
+
+concurrency_levels
+
+streaming_enabled
+
+ttft_definition
+
+tpot_definition
+
+itl_definition
+
+e2e_latency_definition
+
+request_throughput_definition
+
+input_token_throughput
+
+output_token_throughput
+
+p50_latency
+
+p95_latency
+
+p99_latency
+
+queue_time
+
+prefill_time
+
+decode_time
+
+cold_start_policy
+
+warm_run_policy
+
+saturation_test
+
+oom_boundary
+
+cost_metric
+
+quality_regression_benchmark
+
+slo_targets
+
+release_gate
+
+trace_logging
+=
+enabled</code></pre>
+<p>每次性能 Benchmark Run 至少记录：</p>
+<pre class="text"><code>run_id
+
+model_version
+
+engine_version
+
+hardware
+
+workload_profile
+
+concurrency
+
+input_tokens
+
+output_tokens
+
+ttft
+
+tpot
+
+itl
+
+e2e_latency
+
+queue_time
+
+requests_per_second
+
+input_tokens_per_second
+
+output_tokens_per_second
+
+gpu_memory
+
+gpu_utilization
+
+errors
+
+oom
+
+cost
+
+benchmark_quality_delta
+
+slo_status</code></pre>
+<p>这样以后才能回答：</p>
+<blockquote>
+<p><strong>所谓“更快”，到底快在哪里、在什么负载下快、代价是什么、质量有没有下降？</strong></p>
+</blockquote>
+<hr />
+<h1 id="三十三本阶段最重要的-10-个核心心智模型">三十三、本阶段最重要的
+10 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>Latency ≠ Throughput</code>。一个请求快和整个服务处理得多，是两个不同目标。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ②：<code>Prefill ≠ Decode</code>。输入处理和逐 Token
+生成是两个不同性能阶段，瓶颈也可能不同。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ③：<code>tokens/s</code> 必须带
+Scope。单请求、整机、输入、输出、单卡、多卡不能混为一谈。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ④：<code>FastStart ≠ FastFinish</code>。TTFT、TPOT /
+ITL、E2E Latency 必须分开看。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>Requests/s ≠ Tokens/s</code>。吞吐指标必须匹配真实 Workload
+Shape。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>AverageLatency ≠ TailLatency</code>。生产体验往往由 P95 / P99
+决定，而不是平均值。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>FastKernel ≠ FastService</code>。Queue Time
+可以让一个很快的模型服务变得很慢。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑧：<code>Concurrency</code>
+是资源利用工具，不是性能目标；最大并发不等于最佳生产工作点。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>PerformanceNumber + Environment = ReproducibleEvidence</code>。脱离硬件和负载上下文的性能数字没有充分可比性。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑩：<code>SLO = Production Optimization Target</code>。没有
+SLO，就没有明确的优化停止条件。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十四把完整-inference-performance-模型压成一张专业工程图">三十四、把完整
+Inference Performance 模型压成一张专业工程图</h1>
+<pre class="text"><code>                        Incoming Requests
+                           请求到达
+                               │
+                               ▼
+                             Queue
+                              排队
+                               │
+                               ▼
+                         Preprocessing
+                            预处理
+                               │
+                               ▼
+                            Prefill
+                          处理输入上下文
+                               │
+                       ┌───────┴────────┐
+                       │                │
+                       ▼                ▼
+                    TTFT            KV / State
+                  首Token时间          缓存状态
+                       │                │
+                       └───────┬────────┘
+                               ▼
+                             Decode
+                         逐Token生成
+                               │
+                  ┌────────────┼────────────┐
+                  ▼            ▼            ▼
+                TPOT          ITL       Output Tokens/s
+            每Token时间     Token间延迟      输出吞吐
+                  │            │            │
+                  └────────────┼────────────┘
+                               ▼
+                        Response Complete
+                           响应完成
+                               │
+                               ▼
+                         E2E Latency
+                          端到端延迟
+                               │
+                               ▼
+                  P50 / P95 / P99 + Throughput
+                      分位延迟 + 系统吞吐
+                               │
+                               ▼
+                       Cost + Quality Check
+                       成本 + 质量回归
+                               │
+                               ▼
+                              SLO
+                          服务级目标</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Inference 性能优化的本质，不是追求一个最大的
+tokens/s，而是在真实 Workload 下，把 Queue、Prefill、Decode
+和输出全过程拆开，用 TTFT、TPOT、ITL、E2E、P95/P99、Throughput 和 Cost
+建立统一性能模型，再在不突破质量回归门槛的前提下找到满足业务 SLO
+的最佳运行工作点。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第十课-第-1-阶段掌握测试">第十课 · 第 1 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Latency 和 Throughput
+为什么不是一回事；TTFT、TPOT、ITL、E2E 分别测什么；Prefill 与 Decode
+为什么要分开；输入长度为什么主要影响 Prefill 和 TTFT；为什么同一个
+“tokens/s” 必须说明 Scope；Requests/s 和 Tokens/s
+为什么不能互相替代；为什么平均延迟不能代表 P95 / P99；Queue Time
+为什么会让“模型很快但服务很慢”；Concurrency
+为什么既能提高利用率又可能拉高 Tail Latency；什么叫 Saturation；Little’s
+Law 为什么能帮助理解并发、吞吐、延迟之间的关系；为什么真实性能 Benchmark
+必须定义 Workload Shape；Cold Start 与 Warm Run
+为什么要分开；为什么性能数字必须绑定 Hardware / Engine / Model /
+Workload；SLO
+为什么是性能优化真正的目标函数；以及为什么所有性能优化最后还必须重新经过
+<code>ProcurementBench_V1</code> 的质量回归验证。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>十</mi><mi>课</mi><mi>第</mi><mn>1</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第十课第1阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第十课-第-2-阶段">下一阶段：第十课 · 第 2 阶段</h1>
+<h1
+id="quantizationfp16bf16int8int4-与精度显存权衡">Quantization：FP16、BF16、INT8、INT4
+与精度—显存权衡</h1>
+<h2
+id="为什么把-weight-从-16-bit-压到-8-bit-4-bit-可以显著省显存为什么-quantization-不是免费压缩而是一次必须经过-benchmark-验证的数值近似">为什么把
+Weight 从 16 bit 压到 8 bit / 4 bit 可以显著省显存？为什么 Quantization
+不是“免费压缩”，而是一次必须经过 Benchmark 验证的数值近似？</h2>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Floating Point
+浮点表示
+
+FP16 / BF16
+半精度
+
+INT8
+8位整数
+
+INT4
+4位整数
+
+Weight-only Quantization
+只量化权重
+
+Activation Quantization
+激活量化
+
+Scale / Zero Point
+缩放与零点
+
+Calibration
+量化校准
+
+Quantization Error
+量化误差
+
+Memory Saving
+显存节省
+
+Throughput Impact
+吞吐影响
+
+Quality Regression
+质量回归</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementquantizationpolicy_v0.1"><code>ProcurementQuantizationPolicy_V0.1</code></h1>
+<p>下一阶段最关键的一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Quantization
+\neq
+FreeCompression
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>量化节省的是数值表示成本，但它引入的是近似误差；省下多少显存、能不能更快、质量会不会退化，都必须用真实模型、真实硬件和
+<code>ProcurementBench_V1</code> 实测。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="../lesson09/stage12.html">← 第 9 课最后阶段</a><a class="btn" href="stage02.html">第 2 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

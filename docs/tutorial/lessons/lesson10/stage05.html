@@ -1,0 +1,474 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第5阶段：Batching：Static、Dynamic、Continuous Batching</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>MaxBatch ≠ BestBatch。</li><li>BatchSize ≠ TokenLoad。</li><li>Continuous Batching 解决请求生命周期不同步。</li></ul></div><h1 id="第十课-第-5-阶段">第十课 · 第 5 阶段</h1>
+<h1
+id="batchingstaticdynamiccontinuous-batching-1">Batching：Static、Dynamic、Continuous
+Batching</h1>
+<h2
+id="为什么一次服务多个请求能提高-gpu-利用率为什么-batch-太大又会伤害-ttftqueue-和-tail-latency">为什么一次服务多个请求能提高
+GPU 利用率？为什么 Batch 太大又会伤害 TTFT、Queue 和 Tail Latency？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>MaxBatch ≠ BestBatch。</strong></li>
+<li><strong>BatchSize ≠ TokenLoad。</strong></li>
+<li><strong>Continuous Batching 解决请求生命周期不同步。</strong></li>
+<li><strong>Prefill 与 Decode 会争 GPU，长 Prefill
+会伤流式体验。</strong></li>
+<li><strong>HigherBatch 用 Queue / Tail Latency 换
+Throughput。</strong></li>
+<li><strong>100% Accept ≠
+ReliableService，过载时需要准入控制。</strong></li>
+<li><strong>生产配置应该找 Knee Point，不是绝对最大吞吐。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="odd">
+<td><code>Continuous Batching</code></td>
+<td>连续批处理：动态把不同时间到达的请求加入 GPU 批次</td>
+</tr>
+<tr class="even">
+<td><code>TTFT</code></td>
+<td>首 Token 时间：用户等待第一个输出 Token 的时间</td>
+</tr>
+<tr class="odd">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="odd">
+<td><code>Throughput</code></td>
+<td>吞吐：单位时间内处理请求或生成 Token 的能力</td>
+</tr>
+<tr class="even">
+<td><code>Serving</code></td>
+<td>服务化：把模型包装成可扩展、可观测、可治理的在线服务</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 4 阶段已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EfficientMemory
+\neq
+EfficientScheduling
+}
+</annotation></semantics></math></p>
+<p>现在进入吞吐最关键的调度机制之一：</p>
+<h1 id="batching">Batching</h1>
+<h2 id="批处理">批处理</h2>
+<p>本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MaxBatch
+\neq
+BestBatch
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementbatchingpolicy_v0.1-1"><code>ProcurementBatchingPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一为什么-gpu-喜欢-batch">一、为什么 GPU 喜欢 Batch？</h1>
+<p>GPU 擅长并行。</p>
+<p>如果每次只给一个小请求：</p>
+<blockquote>
+<p>很多计算单元可能没有充分利用。</p>
+</blockquote>
+<p>把多个请求组合：</p>
+<pre class="text"><code>A
+B
+C
+D</code></pre>
+<p>可以提高：</p>
+<h1 id="hardware-utilization">Hardware Utilization</h1>
+<h2 id="硬件利用率">硬件利用率</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>可</mi><mi>以</mi><mi>提</mi><mi>高</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Batching
+可以提高
+Throughput
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二static-batching">二、Static Batching</h1>
+<p>固定收集 N 个请求：</p>
+<pre class="text"><code>凑满Batch
+↓
+一起执行
+↓
+等整批结束
+↓
+开始下一批</code></pre>
+<p>优点：</p>
+<blockquote>
+<p>简单。</p>
+</blockquote>
+<p>问题：</p>
+<pre class="text"><code>长度不同
+输出时间不同
+短请求被长请求拖住
+新请求只能等下一批</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameBatch
+\neq
+SameWork
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三batch-size-不等于计算量">三、Batch Size 不等于计算量</h1>
+<p>请求：</p>
+<pre class="text"><code>A：100 input / 20 output
+B：20000 input / 2000 output</code></pre>
+<p>数量都算 1，</p>
+<p>但计算量完全不同。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>≠</mo><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>a</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BatchSize
+\neq
+TokenLoad
+}
+</annotation></semantics></math></p>
+<p>更需要关注：</p>
+<pre class="text"><code>batched tokens
+active sequences
+prefill tokens
+decode tokens</code></pre>
+<hr />
+<h1 id="四padding-waste">四、Padding Waste</h1>
+<p>静态 Batch 中不同输入长度常需要补齐。</p>
+<p>例如：</p>
+<pre class="text"><code>100
+200
+2000</code></pre>
+<p>如果按 2000 处理，</p>
+<p>大量补齐部分没有真实信息。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>P</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>W</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Padding
+=
+PotentialComputeWaste
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五dynamic-batching">五、Dynamic Batching</h1>
+<p>系统短暂等待，</p>
+<p>把一小段时间内到达的请求组合起来。</p>
+<p>收益：</p>
+<blockquote>
+<p>吞吐提高。</p>
+</blockquote>
+<p>代价：</p>
+<blockquote>
+<p>等 Batch 本身产生 Queue Delay。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>W</mi><mi>i</mi><mi>n</mi><mi>d</mi><mi>o</mi><mi>w</mi><mo>=</mo><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>e</mi><mi>o</mi><mi>f</mi><mi>f</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BatchWindow
+=
+ThroughputLatencyTradeoff
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六continuous-batching">六、Continuous Batching</h1>
+<p>LLM 在线 Serving 更适合：</p>
+<h1 id="continuous-batching">Continuous Batching</h1>
+<h2 id="连续批处理">连续批处理</h2>
+<p>每个 Decode Step 之后：</p>
+<pre class="text"><code>完成请求
+→ 退出
+
+新请求
+→ 加入</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>h</mi><mi>i</mi><mi>p</mi><mi>可</mi><mi>以</mi><mi>动</mi><mi>态</mi><mi>变</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BatchMembership
+可以动态变化
+}
+</annotation></semantics></math></p>
+<p>它解决的是：</p>
+<blockquote>
+<p>LLM 请求输出长度不同、生命周期不同步的问题。</p>
+</blockquote>
+<hr />
+<h1 id="七核心心智模型-①">七、核心心智模型 ①</h1>
+<h1 id="continuous-batching-不是大-batch而是动态-batch">Continuous
+Batching 不是“大 Batch”，而是“动态 Batch”</h1>
+<p>重点不是：</p>
+<blockquote>
+<p>一次装更多。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>请求可以动态加入和退出。</p>
+</blockquote>
+<hr />
+<h1 id="八长-prefill-会伤害-decode">八、长 Prefill 会伤害 Decode</h1>
+<p>一个：</p>
+<pre class="text"><code>30000 Token Prefill</code></pre>
+<p>可能长时间占用 GPU。</p>
+<p>已有流式请求：</p>
+<blockquote>
+<p>等不到下一 Token。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="decode-stall">Decode Stall</h1>
+<h2 id="解码卡顿">解码卡顿</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>可</mi><mi>能</mi><mi>伤</mi><mi>害</mi><mi>I</mi><mi>T</mi><mi>L</mi><mi>/</mi><mi>T</mi><mi>P</mi><mi>O</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongPrefill
+可能伤害
+ITL / TPOT
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九chunked-prefill">九、Chunked Prefill</h1>
+<p>把超长 Prefill：</p>
+<blockquote>
+<p>分成多个小块。</p>
+</blockquote>
+<p>在中间穿插 Decode。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mi>e</mi><mi>d</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>l</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ChunkedPrefill
+=
+PrefillDecodeSchedulingTool
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十核心心智模型-②">十、核心心智模型 ②</h1>
+<h1 id="prefill-与-decode-会争用同一套-gpu-资源">Prefill 与 Decode
+会争用同一套 GPU 资源</h1>
+<p>因此 Scheduler 必须决定：</p>
+<pre class="text"><code>谁先跑
+每次跑多少
+何时切换</code></pre>
+<p>这已经超出简单 Batch Size。</p>
+<hr />
+<h1 id="十一max-batched-tokens">十一、Max Batched Tokens</h1>
+<p>比：</p>
+<pre class="text"><code>max_batch_size</code></pre>
+<p>更接近真实负载的是：</p>
+<blockquote>
+<p>一次调度允许的总 Token 数。</p>
+</blockquote>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>L</mi><mi>o</mi><mi>a</mi><mi>d</mi><mi>更</mi><mi>接</mi><mi>近</mi><mi>T</mi><mi>o</mi><mi>k</mi><mi>e</mi><mi>n</mi><mi>V</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>m</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ComputeLoad
+更接近
+TokenVolume
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二为什么更大-batch-会伤-ttft">十二、为什么更大 Batch 会伤
+TTFT？</h1>
+<p>为了凑 Batch：</p>
+<blockquote>
+<p>请求要等。</p>
+</blockquote>
+<p>Batch 本身更重：</p>
+<blockquote>
+<p>单轮时间也可能更长。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>可</mi><mi>能</mi><mi>提</mi><mi>高</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>同</mi><mi>时</mi><mi>伤</mi><mi>害</mi><mi>T</mi><mi>T</mi><mi>F</mi><mi>T</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HigherBatch
+可能提高Throughput
+同时伤害TTFT
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三fairness-与-priority">十三、Fairness 与 Priority</h1>
+<p>可以区分：</p>
+<pre class="text"><code>交互问答
+高优先级
+
+离线批量任务
+低优先级</code></pre>
+<p>还要防止：</p>
+<pre class="text"><code>长请求饿死短请求
+短请求永远抢占长请求</code></pre>
+<p>所以需要：</p>
+<h1 id="fair-scheduling">Fair Scheduling</h1>
+<h2 id="公平调度">公平调度</h2>
+<hr />
+<h1 id="十四admission-control">十四、Admission Control</h1>
+<p>系统接近饱和后，</p>
+<p>继续无限接请求：</p>
+<blockquote>
+<p>只会让 Queue 和 P99 爆炸。</p>
+</blockquote>
+<p>所以可以：</p>
+<pre class="text"><code>限流
+排队
+拒绝
+降级</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>100</mn><mi>P</mi><mi>e</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+100PercentAccept
+\neq
+ReliableService
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五knee-point">十五、Knee Point</h1>
+<p>性能 Sweep 时会看到：</p>
+<pre class="text"><code>吞吐上升
+↓
+某一点之后
+吞吐增长很少
+但延迟急剧恶化</code></pre>
+<p>这个位置附近可以看作：</p>
+<h1 id="knee-point">Knee Point</h1>
+<h2 id="性能拐点">性能拐点</h2>
+<p>生产通常应该：</p>
+<blockquote>
+<p>留在拐点之前，并保留 Headroom。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>n</mi><mi>e</mi><mi>e</mi><mi>P</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>比</mi><mi>A</mi><mi>b</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>M</mi><mi>a</mi><mi>x</mi><mi>i</mi><mi>m</mi><mi>u</mi><mi>m</mi><mi>更</mi><mi>有</mi><mi>生</mi><mi>产</mi><mi>意</mi><mi>义</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KneePoint
+比
+AbsoluteMaximum
+更有生产意义
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六本阶段正式工程产物-1">十六、本阶段正式工程产物</h1>
+<h1
+id="procurementbatchingpolicy_v0.1-2"><code>ProcurementBatchingPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>batching_policy_version
+serving_engine_version
+static_batching
+dynamic_batching
+continuous_batching
+batch_wait_window
+max_sequences
+max_batched_tokens
+chunked_prefill
+prefill_chunk_size
+priority_classes
+fairness_policy
+admission_control
+queue_limit
+overload_policy
+concurrency_sweep
+workload_matrix
+ttft_slo
+p95_p99_slo
+throughput_target
+kv_capacity_constraint
+oom_boundary
+knee_point
+release_gate</code></pre>
+<hr />
+<h1 id="十七本阶段最重要的-8-个核心心智模型">十七、本阶段最重要的 8
+个核心心智模型</h1>
+<blockquote>
+<p><strong>① <code>MaxBatch ≠ BestBatch</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>② <code>BatchSize ≠ TokenLoad</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③ Continuous Batching 解决请求生命周期不同步。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④ Prefill 与 Decode 会争 GPU，长 Prefill
+会伤流式体验。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤ <code>HigherBatch</code> 用 Queue / Tail Latency 换
+Throughput。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥
+<code>100% Accept ≠ ReliableService</code>，过载时需要准入控制。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦ 生产配置应该找
+<code>Knee Point</code>，不是绝对最大吞吐。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧ Batching 的目标仍然是满足 SLO。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第十课-第-6-阶段">下一阶段：第十课 · 第 6 阶段</h1>
+<h1 id="tensor-parallelpipeline-parallel-与多-gpu-推理">Tensor
+Parallel、Pipeline Parallel 与多 GPU 推理</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>G</mi><mi>P</mi><mi>U</mi><mi>s</mi><mo>≠</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreGPUs
+\neq
+LinearSpeedup
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementparallelservingpolicy_v0.1"><code>ProcurementParallelServingPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

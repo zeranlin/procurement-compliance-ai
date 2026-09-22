@@ -1,0 +1,962 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第1阶段：RAG 到底是什么？从 Parametric Memory 到 External Knowledge</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第1阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，Parametric Memory 是模型通过 Weight 表现出来的已有能力与知识；External Knowledge 是模型外部、可以独立更新和检索的知识资产。</li><li>第二，Fine-tuning 主要改变参数 \(\theta\)，RAG 主要在推理时增加检索证据 \(E\)，把 \(P_\theta(Y|X)\) 变成 \(P_\theta(Y|X,E)\)。</li><li>第三，Knowledge Base 只是知识仓库，Retriever 负责找证据，RAG 是“检索 → 组装 Context → 生成”的完整系统流程，Prompt 则是最终真正送进模型的输入。</li></ul></div><h1 id="第六课-第-1-阶段">第六课 · 第 1 阶段</h1>
+<h1 id="rag-到底是什么从-parametric-memory-到-external-knowledge">RAG
+到底是什么？从 Parametric Memory 到 External Knowledge</h1>
+<h2 id="为什么已经-fine-tune-了还需要-rag">为什么已经 Fine-tune
+了，还需要 RAG？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Parametric Memory 是模型通过 Weight
+表现出来的已有能力与知识；External Knowledge
+是模型外部、可以独立更新和检索的知识资产。</strong></li>
+<li><strong>第二，Fine-tuning 主要改变参数
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>，RAG
+主要在推理时增加检索证据
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>E</mi><annotation encoding="application/x-tex">E</annotation></semantics></math>，把
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">P_\theta(Y|X)</annotation></semantics></math>
+变成
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo>,</mo><mi>E</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">P_\theta(Y|X,E)</annotation></semantics></math>。</strong></li>
+<li><strong>第三，Knowledge Base 只是知识仓库，Retriever 负责找证据，RAG
+是“检索 → 组装 Context → 生成”的完整系统流程，Prompt
+则是最终真正送进模型的输入。</strong></li>
+<li><strong>第四，SFT 更适合稳定行为和任务模式，RAG
+更适合动态知识、巨大知识库、来源追溯和频繁更新；两者不是竞争关系，而是互补关系。</strong></li>
+<li><strong>第五，RAG 答错以后必须先定位
+Knowledge、Retrieval、Ranking、Context 还是 Generation
+出错，不能把所有问题统称为“LLM 幻觉”。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Parametric Memory</code></td>
+<td>参数记忆：编码在模型权重中的知识和模式</td>
+</tr>
+<tr class="odd">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+<tr class="even">
+<td><code>External Knowledge</code></td>
+<td>外部知识：位于模型参数之外、可检索可更新的资料</td>
+</tr>
+<tr class="odd">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="even">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="odd">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第五课结束时，我们已经拥有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.1
+}
+</annotation></semantics></math></p>
+<p>它通过 SFT + LoRA / QLoRA，已经比原始 Base Model
+更懂我们的政府采购任务。</p>
+<p>但现在马上遇到一个问题。</p>
+<p>假设明天发布了一份新的政府采购政策文件。</p>
+<p>你希望模型回答：</p>
+<blockquote>
+<p>“按照目前有效规定，这条采购要求是否存在风险？依据是什么？”</p>
+</blockquote>
+<p>这时候我们有两个完全不同的办法。</p>
+<p>第一种：</p>
+<pre class="text"><code>新法规
+↓
+重新整理训练数据
+↓
+再次SFT
+↓
+训练新Adapter
+↓
+重新评测
+↓
+重新发布</code></pre>
+<p>第二种：</p>
+<pre class="text"><code>新法规
+↓
+进入Knowledge Base
+↓
+用户提问
+↓
+检索相关法规
+↓
+把法规放进Context
+↓
+ProcurementLM_V0.1基于证据回答</code></pre>
+<p>第二条路线，就是今天正式进入的：</p>
+<h1 id="rag">RAG</h1>
+<h2 id="retrieval-augmented-generation">Retrieval-Augmented
+Generation</h2>
+<h2 id="检索增强生成">检索增强生成</h2>
+<p>本阶段最终形成一个核心工程模型：</p>
+<h1 id="ragboundarymodel_v0.1"><code>RAGBoundaryModel_V0.1</code></h1>
+<hr />
+<h2 id="一先把-rag-压缩成一句最准确的话">一、先把 RAG
+压缩成一句最准确的话</h2>
+<p>RAG 不是一种新的 Transformer。</p>
+<p>也不是一种新的 Fine-tuning。</p>
+<p>它是一套<strong>推理时系统</strong>：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>A</mi><mi>d</mi><mi>d</mi><mspace width="0.222em"></mspace><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>t</mi><mi>o</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Query
+\rightarrow
+Retrieve\ Evidence
+\rightarrow
+Add\ Evidence\ to\ Context
+\rightarrow
+Generate
+}
+</annotation></semantics></math></p>
+<p>中文就是：</p>
+<blockquote>
+<p><strong>先根据用户问题从外部知识源找到相关证据，再把这些证据交给
+LLM，让模型基于证据生成答案。</strong></p>
+</blockquote>
+<p>所以 RAG 最核心的变化不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">
+\theta
+</annotation></semantics></math></p>
+<p>也就是模型参数。</p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+Context
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二parametric-memory知识已经进入了模型参数">二、Parametric
+Memory：知识已经进入了模型参数</h1>
+<p>第五课我们训练模型时，本质上不断修改：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">
+\theta
+</annotation></semantics></math></p>
+<p>也就是模型内部参数。</p>
+<p>于是可以粗略把模型已经学进去的能力和知识称为：</p>
+<h1 id="parametric-memory">Parametric Memory</h1>
+<h2 id="参数化记忆">参数化记忆</h2>
+<p>例如 Base Model 本来可能已经知道：</p>
+<pre class="text"><code>什么是供应商
+什么是资格条件
+什么是履约能力
+中文法律文本怎样表达
+什么叫“投标截止日前”</code></pre>
+<p>第五课的 SFT 又进一步教它：</p>
+<pre class="text"><code>看到什么业务结构应该判断风险
+怎样区分准入条件和履约条件
+怎样按照我们的Schema输出
+怎样解释理由
+什么时候needs_review</code></pre>
+<p>这些东西最终体现为：</p>
+<blockquote>
+<p>模型 Weight 的变化。</p>
+</blockquote>
+<p>因此可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{\theta}(Y|X)
+</annotation></semantics></math></p>
+<p>模型用：</p>
+<blockquote>
+<p>参数
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math></p>
+</blockquote>
+<p>去处理输入
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">X</annotation></semantics></math>。</p>
+<p>但是这里一定要注意：</p>
+<blockquote>
+<p><strong>Parametric Memory
+不是一个可以打开浏览的法规数据库。</strong></p>
+</blockquote>
+<p>你不能问某个 Weight：</p>
+<blockquote>
+<p>“你这里存的是财政部哪一份文件？”</p>
+</blockquote>
+<p>知识是：</p>
+<blockquote>
+<p>分布式地编码在大量参数及其交互中。</p>
+</blockquote>
+<hr />
+<h1 id="三external-knowledge知识不进-weight而留在模型外面">三、External
+Knowledge：知识不进 Weight，而留在模型外面</h1>
+<p>另一种知识形态是：</p>
+<h1 id="external-knowledge">External Knowledge</h1>
+<h2 id="外部知识">外部知识</h2>
+<p>例如我们的政府采购系统可以维护：</p>
+<pre class="text"><code>法律
+法规
+财政部门规章
+规范性文件
+政策文件
+地方规则
+采购文件
+质疑答复
+投诉处理案例
+专家解释
+内部审查规则</code></pre>
+<p>这些东西不用全部训练进模型。</p>
+<p>它们可以作为：</p>
+<h1 id="knowledge-base">Knowledge Base</h1>
+<h2 id="知识库">知识库</h2>
+<p>独立存在。</p>
+<p>用户提问以后，我们临时找到最相关的几段：</p>
+<pre class="text"><code>Evidence 1
+Evidence 2
+Evidence 3</code></pre>
+<p>再交给模型。</p>
+<p>于是推理变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo>∣</mo><mi>X</mi><mo>,</mo><mspace width="0.278em"></mspace><mi>E</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{\theta}
+(
+Y
+\mid
+X,\;E
+)
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+E
+=
+RetrievedEvidence
+</annotation></semantics></math></p>
+<p>非常关键的一点：</p>
+<blockquote>
+<p><strong>此时
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>
+可以完全不变。</strong></p>
+</blockquote>
+<p>变的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>E</mi><annotation encoding="application/x-tex">
+E
+</annotation></semantics></math></p>
+<p>也就是模型这一次看到的外部证据。</p>
+<hr />
+<h1 id="四这就是-fine-tuning-和-rag-最根本的数学区别">四、这就是
+Fine-tuning 和 RAG 最根本的数学区别</h1>
+<p>第五课 Fine-tuning：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>→</mo><mi>θ</mi><mi>′</mi></mrow><annotation encoding="application/x-tex">
+\theta
+\rightarrow
+\theta&#39;
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>→</mo><msub><mi>P</mi><mrow><mi>θ</mi><mi>′</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{\theta}(Y|X)
+\rightarrow
+P_{\theta&#39;}(Y|X)
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>换参数。</strong></p>
+</blockquote>
+<p>RAG：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> 不一定变化</mtext></mrow></mrow><annotation encoding="application/x-tex">
+\theta
+\text{ 不一定变化}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>→</mo><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo>,</mo><mi>E</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_{\theta}(Y|X)
+\rightarrow
+P_{\theta}(Y|X,E)
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>增加检索到的证据条件。</strong></p>
+</blockquote>
+<p>所以整个课程到这里，可以形成一个非常漂亮的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>u</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>改</mi><mi>变</mi><mi>模</mi><mi>型</mi><mi>怎</mi><mi>样</mi><mi>思</mi><mi>考</mi><mi>和</mi><mi>行</mi><mi>动</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FineTuning
+=
+改变模型怎样思考和行动
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mo>=</mo><mi>改</mi><mi>变</mi><mi>模</mi><mi>型</mi><mi>这</mi><mi>一</mi><mi>次</mi><mi>拿</mi><mi>什</mi><mi>么</mi><mi>资</mi><mi>料</mi><mi>思</mi><mi>考</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAG
+=
+改变模型这一次拿什么资料思考
+}
+</annotation></semantics></math></p>
+<p>这是第六课最重要的第一根柱子。</p>
+<hr />
+<h1
+id="五promptragknowledge-basefine-tuning-四者不要混">五、Prompt、RAG、Knowledge
+Base、Fine-tuning 四者不要混</h1>
+<p>这四个概念非常容易搅在一起。</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>概念</th>
+<th>本质</th>
+<th>主要解决什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Prompt</strong></td>
+<td>当前送给模型的输入指令与上下文</td>
+<td>告诉模型这一次做什么</td>
+</tr>
+<tr class="even">
+<td><strong>Knowledge Base</strong></td>
+<td>模型外部的知识资产</td>
+<td>保存可更新、可追溯的事实和证据</td>
+</tr>
+<tr class="odd">
+<td><strong>RAG</strong></td>
+<td>动态检索并注入知识的系统流程</td>
+<td>决定这一次应该把哪些知识放进 Prompt</td>
+</tr>
+<tr class="even">
+<td><strong>Fine-tuning</strong></td>
+<td>修改模型参数</td>
+<td>改变稳定行为、任务能力和输出习惯</td>
+</tr>
+</tbody>
+</table>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>≠</mo><mi>R</mi><mi>A</mi><mi>G</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KnowledgeBase
+\neq
+RAG
+}
+</annotation></semantics></math></p>
+<p>知识库只是：</p>
+<blockquote>
+<p>“仓库”。</p>
+</blockquote>
+<p>RAG 才是：</p>
+<blockquote>
+<p><strong>根据问题去仓库找东西，并把找到的东西送给模型。</strong></p>
+</blockquote>
+<p>同样：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi><mo>≠</mo><mi>R</mi><mi>A</mi><mi>G</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Prompt
+\neq
+RAG
+}
+</annotation></semantics></math></p>
+<p>Prompt 是最终输入。</p>
+<p>RAG 是：</p>
+<blockquote>
+<p><strong>动态构造 Prompt Context 的机制之一。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="六用一个政府采购案例完整看一次">六、用一个政府采购案例完整看一次</h1>
+<p>用户问：</p>
+<blockquote>
+<p>某采购文件要求“投标供应商必须在本市连续经营三年以上”，这种要求是否存在风险？</p>
+</blockquote>
+<p>如果没有 RAG：</p>
+<pre class="text"><code>用户问题
+   ↓
+ProcurementLM_V0.1
+   ↓
+依靠模型已有参数
+   ↓
+回答</code></pre>
+<p>模型可能依据第五课训练出的行为判断：</p>
+<blockquote>
+<p>该条件可能构成地域或经营年限方面的不合理准入限制。</p>
+</blockquote>
+<p>这个回答可能是对的。</p>
+<p>但用户进一步问：</p>
+<blockquote>
+<p>“依据当前有效的哪一份规则？”</p>
+</blockquote>
+<p>问题就来了。</p>
+<p>模型参数里即使“知道一些”，也很难保证：</p>
+<pre class="text"><code>文件名称正确
+条款编号正确
+版本仍然有效
+没有被后续文件替代
+适用地区正确
+发布日期正确</code></pre>
+<p>RAG 系统则变成：</p>
+<pre class="text"><code>用户问题
+   ↓
+Retrieval
+   ↓
+找到当前有效法规 / 文件
+   ↓
+筛选相关条款
+   ↓
+加入Context
+   ↓
+ProcurementLM_V0.1
+   ↓
+基于证据判断
+   ↓
+回答 + 来源</code></pre>
+<p>于是模型处理的不再只是：</p>
+<blockquote>
+<p>“凭参数记忆回答。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>拿着当前证据回答。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七为什么第五课-fine-tuning-不能代替-rag">七、为什么第五课
+Fine-tuning 不能代替 RAG？</h1>
+<p>因为有几类信息天然更适合留在模型外。</p>
+<p>最典型就是：</p>
+<h3 id="经常变化的信息">经常变化的信息</h3>
+<p>例如：</p>
+<pre class="text"><code>新法规
+政策调整
+废止文件
+地区规则变化
+最新采购项目
+最新案例</code></pre>
+<p>如果全部依赖 Fine-tuning：</p>
+<blockquote>
+<p>每更新一次知识，都要重新训练模型。</p>
+</blockquote>
+<p>这非常笨重。</p>
+<hr />
+<p>第二类是：</p>
+<h3 id="必须可追溯的信息">必须可追溯的信息</h3>
+<p>政府采购系统经常不能只回答：</p>
+<blockquote>
+<p>“我觉得有风险。”</p>
+</blockquote>
+<p>还需要：</p>
+<pre class="text"><code>依据什么？
+哪份文件？
+哪个条款？
+哪个版本？
+什么时候生效？
+适用于哪里？</code></pre>
+<p>参数化记忆很难天然提供可靠出处。</p>
+<p>外部知识库则可以保留：</p>
+<pre class="text"><code>source_id
+title
+article
+issuer
+effective_date
+expiry_date
+jurisdiction
+version
+URL / document_id</code></pre>
+<p>于是：</p>
+<blockquote>
+<p>答案能够连接回证据。</p>
+</blockquote>
+<hr />
+<p>第三类是：</p>
+<h3
+id="规模巨大但单次只需要一小部分的信息">规模巨大但单次只需要一小部分的信息</h3>
+<p>假设我们最终有：</p>
+<pre class="text"><code>100万份采购文件
+10万份政策法规
+几十万案例</code></pre>
+<p>用户一次只问：</p>
+<blockquote>
+<p>一个资格条款。</p>
+</blockquote>
+<p>没必要把全部内容塞进 Context，更没必要每次全部训练进 Weight。</p>
+<p>RAG 的思想恰恰是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>u</mi><mi>g</mi><mi>e</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HugeKnowledgeBase
+\rightarrow
+SmallRelevantEvidenceSet
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八但是-rag-也绝对不能代替-fine-tuning">八、但是 RAG
+也绝对不能代替 Fine-tuning</h1>
+<p>这又是另一个常见误区。</p>
+<p>有人会说：</p>
+<blockquote>
+<p>“既然可以 RAG，那还微调干什么？”</p>
+</blockquote>
+<p>不对。</p>
+<p>假设 Base Model 拿到了正确法规，但它：</p>
+<pre class="text"><code>不会按采购审查Schema输出
+不会区分资格与履约
+不会处理Hard Negative
+总是给出冗长泛泛解释
+不知道什么时候needs_review</code></pre>
+<p>那么即使检索完全正确：</p>
+<blockquote>
+<p>最终答案还是可能很差。</p>
+</blockquote>
+<p>因为 RAG 给模型解决的是：</p>
+<blockquote>
+<p><strong>Know what evidence to see</strong></p>
+</blockquote>
+<p>但 SFT 更接近解决：</p>
+<blockquote>
+<p><strong>Know how to behave with that evidence</strong></p>
+</blockquote>
+<p>因此我们的最终系统不是二选一：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>u</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mspace width="1.0em"></mspace><mi>v</mi><mi>s</mi><mspace width="1.0em"></mspace><mi>R</mi><mi>A</mi><mi>G</mi></mrow><annotation encoding="application/x-tex">
+FineTuning
+\quad vs \quad
+RAG
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>u</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>R</mi><mi>A</mi><mi>G</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FineTunedModel
++
+RAG
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<pre class="text"><code>ProcurementLM_V0.1
+负责：
+判断方式
+输出格式
+业务行为
+推理习惯
+
+RAG
+负责：
+当前法规
+项目事实
+可追溯证据
+动态知识</code></pre>
+<p>这两个是互补关系。</p>
+<hr />
+<h1 id="九rag-真正的完整链条其实有两套系统">九、RAG
+真正的完整链条，其实有两套系统</h1>
+<p>一个 RAG 系统至少有：</p>
+<h3 id="offline-indexing-path">Offline / Indexing Path</h3>
+<p>知识准备链</p>
+<pre class="text"><code>Documents
+   ↓
+Parse
+   ↓
+Clean
+   ↓
+Chunk
+   ↓
+Embedding / Index
+   ↓
+Knowledge Base Ready</code></pre>
+<p>另一套是：</p>
+<h3 id="online-query-path">Online / Query Path</h3>
+<p>在线查询链</p>
+<pre class="text"><code>User Query
+   ↓
+Query Processing
+   ↓
+Retrieval
+   ↓
+Ranking
+   ↓
+Context Assembly
+   ↓
+LLM
+   ↓
+Answer + Citation</code></pre>
+<p>这两个必须分开。</p>
+<p>因为：</p>
+<blockquote>
+<p>用户每问一次问题，我们不会重新把整个法规库 Chunk 一遍。</p>
+</blockquote>
+<p>知识库构建通常是：</p>
+<blockquote>
+<p>离线准备。</p>
+</blockquote>
+<p>用户查询则是：</p>
+<blockquote>
+<p>在线检索。</p>
+</blockquote>
+<p>后面第 2～10 阶段，基本就是把这两条链一层层拆开。</p>
+<hr />
+<h1 id="十rag-最重要的工程思想先检索再生成">十、RAG
+最重要的工程思想：先检索，再生成</h1>
+<p>以后一个 RAG 答错了，绝不能只说：</p>
+<blockquote>
+<p>“LLM 又幻觉了。”</p>
+</blockquote>
+<p>因为错误可能发生在完全不同的位置。</p>
+<p>例如用户问：</p>
+<blockquote>
+<p>“本项目要求供应商投标前在当地设立机构是否合法？”</p>
+</blockquote>
+<p>最终答案错误。</p>
+<p>至少存在五种可能：</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>错误层</th>
+<th>真正发生了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Knowledge Error</strong></td>
+<td>知识库缺少正确法规，或者保存的是过期版本</td>
+</tr>
+<tr class="even">
+<td><strong>Retrieval Error</strong></td>
+<td>正确证据存在，但没有被检索出来</td>
+</tr>
+<tr class="odd">
+<td><strong>Ranking Error</strong></td>
+<td>正确证据找到了，但排名太低，没有进入最终 Context</td>
+</tr>
+<tr class="even">
+<td><strong>Context Error</strong></td>
+<td>正确证据进入系统，但拼接、截断或冲突处理出了问题</td>
+</tr>
+<tr class="odd">
+<td><strong>Generation Error</strong></td>
+<td>正确证据已经清楚放进 Prompt，模型仍然理解或判断错误</td>
+</tr>
+</tbody>
+</table>
+<p>这就是第六课相较第五课最大的思维升级：</p>
+<blockquote>
+<p><strong>模型错误开始变成“系统错误定位”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十一为什么-rag-不能保证有证据就绝对不幻觉">十一、为什么 RAG
+不能保证“有证据就绝对不幻觉”？</h1>
+<p>这是必须提前拆掉的一个神话。</p>
+<p>错误理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mo>=</mo><mi>N</mi><mi>o</mi><mi>H</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+RAG
+=
+NoHallucination
+</annotation></semantics></math></p>
+<p>不成立。</p>
+<p>RAG 只能让模型获得：</p>
+<blockquote>
+<p><strong>更好的外部证据条件。</strong></p>
+</blockquote>
+<p>但模型依然可能：</p>
+<pre class="text"><code>忽略证据
+误解证据
+把两份法规混在一起
+引用正确但结论错误
+把旧规则和新规则搞反
+在证据没有覆盖的地方自行补充</code></pre>
+<p>甚至检索本身就可能给错材料。</p>
+<p>所以更正确的表达是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>可</mi><mi>以</mi><mi>提</mi><mi>高</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>机</mi><mi>会</mi><mi>但</mi><mi>不</mi><mi>自</mi><mi>动</mi><mi>保</mi><mi>证</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAG
+可以提高Grounding机会
+但不自动保证Grounded Answer
+}
+</annotation></semantics></math></p>
+<p>因此后面我们必须同时评测：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+RetrievalQuality
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+GenerationQuality
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十二什么时候应该用-fine-tuning什么时候应该用-rag">十二、什么时候应该用
+Fine-tuning，什么时候应该用 RAG？</h1>
+<p>到这里已经可以建立第一版工程决策模型。</p>
+<p>如果需求是：</p>
+<blockquote>
+<p>“模型以后统一按照这种 JSON Schema 输出。”</p>
+</blockquote>
+<p>优先考虑：</p>
+<h1 id="sft">SFT</h1>
+<p>如果需求是：</p>
+<blockquote>
+<p>“让模型掌握政府采购风险判断的稳定模式。”</p>
+</blockquote>
+<p>可以考虑：</p>
+<h1 id="sft-lora">SFT / LoRA</h1>
+<p>如果需求是：</p>
+<blockquote>
+<p>“今天新增一份法规，明天就能引用。”</p>
+</blockquote>
+<p>优先：</p>
+<h1 id="rag-1">RAG</h1>
+<p>如果需求是：</p>
+<blockquote>
+<p>“回答必须告诉我依据哪一条文件。”</p>
+</blockquote>
+<p>优先：</p>
+<h1 id="rag-citation">RAG + Citation</h1>
+<p>如果需求是：</p>
+<blockquote>
+<p>“某个具体采购项目的 300 页招标文件里，第 87 页和第 142
+页是否冲突？”</p>
+</blockquote>
+<p>这通常也是：</p>
+<h1 id="retrieval-document-context">Retrieval / Document Context</h1>
+<p>而不是：</p>
+<blockquote>
+<p>重新 Fine-tune 一个模型。</p>
+</blockquote>
+<p>所以一个很好用的长期判断是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>稳</mi><mi>定</mi><mi>行</mi><mi>为</mi><mo>→</mo><mi>F</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>u</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+稳定行为
+\rightarrow
+FineTuning
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>动</mi><mi>态</mi><mi>事</mi><mi>实</mi><mi>与</mi><mi>证</mi><mi>据</mi><mo>→</mo><mi>R</mi><mi>A</mi><mi>G</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+动态事实与证据
+\rightarrow
+RAG
+}
+</annotation></semantics></math></p>
+<p>当然真实系统里：</p>
+<blockquote>
+<p>二者经常同时存在。</p>
+</blockquote>
+<hr />
+<h1
+id="十三本阶段工程产物ragboundarymodel_v0.1">十三、本阶段工程产物：<code>RAGBoundaryModel_V0.1</code></h1>
+<p>从现在开始，我们给系统能力建立一个明确责任表：</p>
+<pre class="text"><code>Base Model
+=
+通用语言 / 推理基础能力
+
+SFT / LoRA
+=
+稳定政府采购行为
+输出Schema
+决策方式
+Hard Case边界
+
+Knowledge Base
+=
+外部事实与证据资产
+
+Retriever
+=
+从知识库找到候选证据
+
+Reranker
+=
+重新判断候选证据优先级
+
+Context Builder
+=
+决定哪些证据真正进入Prompt
+
+ProcurementLM_V0.1
+=
+读取问题 + 证据并生成判断
+
+Citation Layer
+=
+把结论连接回证据来源</code></pre>
+<p>最终系统可以压成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>=</mo><mi>L</mi><mi>L</mi><msub><mi>M</mi><mrow><mi>θ</mi><mi>′</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>,</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Answer
+=
+LLM_{\theta&#39;}
+(
+Question,
+RetrievedEvidence
+)
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mi>′</mi></mrow><annotation encoding="application/x-tex">
+\theta&#39;
+</annotation></semantics></math></p>
+<p>来自第五课 Fine-tuning。</p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+RetrievedEvidence
+</annotation></semantics></math></p>
+<p>来自第六课 RAG。</p>
+<p>这两个终于在这里汇合。</p>
+<hr />
+<h1 id="十四把本阶段压成最精准的-5-句话">十四、把本阶段压成最精准的 5
+句话</h1>
+<blockquote>
+<p><strong>第一，Parametric Memory 是模型通过 Weight
+表现出来的已有能力与知识；External Knowledge
+是模型外部、可以独立更新和检索的知识资产。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Fine-tuning 主要改变参数
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>，RAG
+主要在推理时增加检索证据
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>E</mi><annotation encoding="application/x-tex">E</annotation></semantics></math>，把
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">P_\theta(Y|X)</annotation></semantics></math>
+变成
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Y</mi><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo>,</mo><mi>E</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">P_\theta(Y|X,E)</annotation></semantics></math>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Knowledge Base 只是知识仓库，Retriever 负责找证据，RAG
+是“检索 → 组装 Context → 生成”的完整系统流程，Prompt
+则是最终真正送进模型的输入。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，SFT 更适合稳定行为和任务模式，RAG
+更适合动态知识、巨大知识库、来源追溯和频繁更新；两者不是竞争关系，而是互补关系。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，RAG 答错以后必须先定位
+Knowledge、Retrieval、Ranking、Context 还是 Generation
+出错，不能把所有问题统称为“LLM 幻觉”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图">本阶段最核心的一张图</h1>
+<pre class="text"><code>                     Procurement AI
+                           │
+          ┌────────────────┴────────────────┐
+          │                                 │
+          ▼                                 ▼
+   Parametric Memory                 External Knowledge
+          │                                 │
+          ▼                                 ▼
+     Base Model                     Knowledge Base
+          │                                 │
+     SFT / LoRA                         Retrieval
+          │                                 │
+          ▼                                 ▼
+ ProcurementLM_V0.1              Retrieved Evidence
+          │                                 │
+          └───────────────┬─────────────────┘
+                          ▼
+                       Context
+                          │
+                          ▼
+                        LLM
+                          │
+                          ▼
+                Answer + Evidence</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Fine-tuning 决定模型“怎样做事”，RAG
+决定模型“这一次拿什么证据做事”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-1-阶段掌握测试">第六课 · 第 1 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：什么是 RAG；Parametric Memory 和
+External Knowledge 有什么区别；为什么模型 Weight
+不能等同于法规数据库；Fine-tuning 和 RAG
+数学上分别改变什么；Prompt、Knowledge Base、Retriever 和 RAG
+为什么不是同一个东西；为什么新法规更适合进入 Knowledge Base
+而不是每次重新训练；为什么 RAG 无法完全取代 SFT；为什么 SFT 也无法取代
+RAG；Offline Indexing Path 和 Online Query Path
+有什么区别；为什么检索到证据并不保证最终回答正确；Knowledge、Retrieval、Ranking、Context、Generation
+五类错误分别是什么；以及为什么最终 <code>ProcurementRAG_V0.1</code>
+应该是
+<code>ProcurementLM_V0.1 + External Evidence System</code>，而不是另一个孤立模型。</p>
+<p>如果这些都能自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>1</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第1阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第六课-第-2-阶段">下一阶段：第六课 · 第 2 阶段</h1>
+<h1 id="knowledge-base法规采购文件与知识版本怎样进入-rag">Knowledge
+Base：法规、采购文件与知识版本怎样进入 RAG？</h1>
+<p>下一阶段我们暂时<strong>不讲 Embedding</strong>。</p>
+<p>因为在讨论：</p>
+<blockquote>
+<p>“怎样找到知识”</p>
+</blockquote>
+<p>之前，必须先解决：</p>
+<blockquote>
+<p><strong>到底有哪些知识值得进入库，以及怎么保证这份知识是真的、当前有效、可以追溯。</strong></p>
+</blockquote>
+<p>下一阶段我们会正式处理：</p>
+<pre class="text"><code>Document
+↓
+Source Identity
+↓
+Authority / Jurisdiction
+↓
+Effective Date
+↓
+Version
+↓
+Document Structure
+↓
+Metadata
+↓
+Knowledge Unit
+↓
+Knowledge Base</code></pre>
+<p>重点解决政府采购 RAG 里一个极其现实的问题：</p>
+<blockquote>
+<p><strong>如果知识库自己装着过期法规、重复版本和来源不明的文本，再强的
+Embedding 和 Retriever，也只是在更高效地找错答案。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="../lesson05/stage14.html">← 第 5 课最后阶段</a><a class="btn" href="stage02.html">第 2 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

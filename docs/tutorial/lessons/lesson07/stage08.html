@@ -1,0 +1,1222 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第8阶段：RAG + Tools：什么时候检索知识，什么时候调用外部工具？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第8阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，RAG + Tools Routing 的核心不是“选择一个最方便的工具”，而是先确定这个问题真正的 Source of Truth 在哪里。</li><li>第二，规则依据优先走 RAG，实时结构化业务事实优先走权威数据库，具体文件内容走 File Tool，确定性计算走 Compute Tool，改变现实状态的请求才进入 Action Tool。</li><li>第三，Routing 至少要同时考虑 Information Type、Authority、Freshness、Determinism 和 Side Effect；同一个用户问题完全可能需要多个 Source 联合完成。</li></ul></div><h1 id="第七课-第-8-阶段">第七课 · 第 8 阶段</h1>
+<h1 id="rag-tools什么时候检索知识什么时候调用外部工具-1">RAG +
+Tools：什么时候检索知识，什么时候调用外部工具？</h1>
+<h2
+id="agent-已经有-state-和-memory但面对查规则查项目读文件算金额写报告执行动作时到底应该走哪条路径">Agent
+已经有 State 和
+Memory，但面对“查规则、查项目、读文件、算金额、写报告、执行动作”时，到底应该走哪条路径？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-7">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-7">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，RAG + Tools Routing
+的核心不是“选择一个最方便的工具”，而是先确定这个问题真正的 Source of
+Truth 在哪里。</strong></li>
+<li><strong>第二，规则依据优先走
+RAG，实时结构化业务事实优先走权威数据库，具体文件内容走 File
+Tool，确定性计算走 Compute Tool，改变现实状态的请求才进入 Action
+Tool。</strong></li>
+<li><strong>第三，Routing 至少要同时考虑 Information
+Type、Authority、Freshness、Determinism 和 Side
+Effect；同一个用户问题完全可能需要多个 Source 联合完成。</strong></li>
+<li><strong>第四，Vector Search 不能替代业务数据库，Memory
+不能替代更权威的实时系统，LLM
+参数知识也不能替代当前有效规则或实时项目状态。</strong></li>
+<li><strong>第五，多 Source 结果进入 Working Context 前必须保留
+Provenance、Version、Time 和 Authority；如果来源冲突，必须显式解决或标记
+needs_review，不能让模型静默选边。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-7">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="odd">
+<td><code>Routing</code></td>
+<td>路由：决定当前任务交给哪个工具/模块</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-7">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 7 阶段，我们已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>+</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>S</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TaskState
++
+WorkingContext
++
+Memory
++
+ArtifactStore
++
+Checkpoint
+}
+</annotation></semantics></math></p>
+<p>也就是说，Agent 现在已经能够：</p>
+<blockquote>
+<p><strong>记住任务进行到了哪里，并把当前最需要的信息送回模型。</strong></p>
+</blockquote>
+<p>但接下来会碰到一个非常现实的问题：</p>
+<p>用户问：</p>
+<pre class="text"><code>“这个资格条件有没有法规风险？”</code></pre>
+<p>我们应该去：</p>
+<pre class="text"><code>知识库检索？
+项目数据库？
+当前采购文件？
+计算器？
+互联网？
+内部业务系统？</code></pre>
+<p>再比如用户问：</p>
+<pre class="text"><code>“这个项目预算金额是多少？”</code></pre>
+<p>如果 Agent 去 RAG 知识库里找：</p>
+<blockquote>
+<p>很可能就错了。</p>
+</blockquote>
+<p>因为这个问题真正的 Source of Truth 可能是：</p>
+<blockquote>
+<p><strong>项目业务数据库。</strong></p>
+</blockquote>
+<p>所以本阶段正式解决：</p>
+<h1 id="rag-tools-routing">RAG + Tools Routing</h1>
+<h2 id="知识检索与工具调用路由">知识检索与工具调用路由</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementragtoolroutingpolicy_v0.1-1"><code>ProcurementRAGToolRoutingPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-7">一、先锁死本阶段最重要的一句话</h1>
+<p>Agent 不应该先问：</p>
+<blockquote>
+<p><strong>“我现在能调用什么工具？”</strong></p>
+</blockquote>
+<p>而应该先问：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>这</mi><mi>个</mi><mi>问</mi><mi>题</mi><mi>的</mi><mi>真</mi><mi>实</mi><mi>答</mi><mi>案</mi><mi>应</mi><mi>该</mi><mi>来</mi><mi>自</mi><mi>哪</mi><mi>里</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+这个问题的真实答案
+应该来自哪里？
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<h1 id="source-of-truth">Source of Truth</h1>
+<h2 id="事实真源">事实真源</h2>
+<p>然后再决定：</p>
+<pre class="text"><code>RAG
+Database Tool
+File Tool
+Compute Tool
+Action Tool
+Memory
+或
+直接由模型回答</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>首</mi><mi>先</mi><mi>是</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mo>−</mo><mi>o</mi><mi>f</mi><mo>−</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>问</mi><mi>题</mi><mi>其</mi><mi>次</mi><mi>才</mi><mi>是</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>选</mi><mi>择</mi><mi>问</mi><mi>题</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Routing
+首先是Source-of-Truth问题
+其次才是Tool选择问题
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二rag-适合解决什么问题">二、RAG 适合解决什么问题？</h1>
+<p>RAG 最适合：</p>
+<blockquote>
+<p><strong>从外部知识集合中找依据。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>法规条文
+政策文件
+采购规则
+历史制度文件
+业务指南
+标准解释材料
+项目采购文件中的相关条款</code></pre>
+<p>它的典型流程是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow><annotation encoding="application/x-tex">
+Query
+\rightarrow
+Retrieve
+\rightarrow
+Evidence
+\rightarrow
+Generate
+</annotation></semantics></math></p>
+<p>所以 RAG 擅长的问题是：</p>
+<pre class="text"><code>“依据是什么？”
+“哪个文件提到了这件事？”
+“当前规则怎样规定？”
+“这段条款与什么规则相关？”</code></pre>
+<p>核心是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KnowledgeQuestion
+\rightarrow
+KnowledgeRetrieval
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三database-tool-适合解决什么问题">三、Database Tool
+适合解决什么问题？</h1>
+<p>数据库工具适合：</p>
+<blockquote>
+<p><strong>读取业务系统中的当前结构化事实。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>项目预算
+项目编号
+采购方式
+当前审批状态
+供应商数量
+项目负责人
+合同金额
+履约状态</code></pre>
+<p>这些信息可能：</p>
+<blockquote>
+<p>每小时都在变化。</p>
+</blockquote>
+<p>所以如果用户问：</p>
+<pre class="text"><code>“P_001项目现在预算多少？”</code></pre>
+<p>真正应该查询：</p>
+<pre class="text"><code>project_database.get_budget</code></pre>
+<p>而不是依赖：</p>
+<pre class="text"><code>旧文档
+模型记忆
+历史RAG Chunk</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>F</mi><mi>a</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OperationalFact
+\rightarrow
+AuthoritativeOperationalSystem
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四file-tool-适合解决什么问题">四、File Tool
+适合解决什么问题？</h1>
+<p>如果问题针对的是：</p>
+<blockquote>
+<p><strong>一个具体文件本身。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>“这份PDF第几页有评分标准？”
+“把这份采购文件的资格条件抽出来。”
+“比较原版和更正版的差异。”</code></pre>
+<p>最合适的通常是：</p>
+<h1 id="file-tool">File Tool</h1>
+<h2 id="文件工具">文件工具</h2>
+<p>例如：</p>
+<pre class="text"><code>read_file
+parse_pdf
+extract_section
+compare_versions</code></pre>
+<p>这里的 Source of Truth 是：</p>
+<blockquote>
+<p>当前这份具体文件。</p>
+</blockquote>
+<p>不是通用知识库。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ArtifactSpecificQuestion
+\rightarrow
+ArtifactTool
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五compute-tool-适合解决什么问题">五、Compute Tool
+适合解决什么问题？</h1>
+<p>如果答案应该由：</p>
+<blockquote>
+<p><strong>确定性计算</strong></p>
+</blockquote>
+<p>得到，</p>
+<p>就不应该让 LLM 靠语言推理“估算”。</p>
+<p>例如：</p>
+<pre class="text"><code>金额合计
+税率计算
+比例
+评分加总
+时间间隔
+阈值判断
+排序
+去重</code></pre>
+<p>这类问题更适合：</p>
+<h1 id="compute-tool">Compute Tool</h1>
+<h2 id="计算工具">计算工具</h2>
+<p>例如：</p>
+<pre class="text"><code>calculator
+date_diff
+score_aggregate
+threshold_check</code></pre>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>c</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DeterministicCalculation
+\rightarrow
+DeterministicTool
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>c</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DeterministicCalculation
+\rightarrow
+FreeFormGeneration
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六action-tool-适合解决什么问题">六、Action Tool
+适合解决什么问题？</h1>
+<p>Action Tool 不只是“查”。</p>
+<p>它会：</p>
+<blockquote>
+<p><strong>改变外部系统状态。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>create_draft
+update_record
+send_message
+submit_for_approval
+publish_notice</code></pre>
+<p>这里的问题已经从：</p>
+<blockquote>
+<p>“答案是什么？”</p>
+</blockquote>
+<p>变成：</p>
+<blockquote>
+<p><strong>“要不要执行一个动作？”</strong></p>
+</blockquote>
+<p>所以 Action Tool 必须同时经过：</p>
+<pre class="text"><code>Intent Check
+Authorization
+Resource Scope
+Approval
+Idempotency
+Audit</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>≠</mo><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ActionRequest
+\neq
+KnowledgeQuery
+}
+</annotation></semantics></math></p>
+<p>不能把两类事情混在一个 RAG 流程里。</p>
+<hr />
+<h1 id="七memory-什么时候可以用什么时候不能当真源">七、Memory
+什么时候可以用，什么时候不能当真源？</h1>
+<p>Memory 可以帮助 Agent 记住：</p>
+<pre class="text"><code>用户已经确认的任务偏好
+当前项目的临时上下文
+前面已经完成的步骤
+已确认的项目参数</code></pre>
+<p>但 Memory 不是天然的权威真源。</p>
+<p>例如 Memory 里记着：</p>
+<pre class="text"><code>项目预算 = 500万元</code></pre>
+<p>但如果预算可能发生变化，</p>
+<p>当前业务数据库才是：</p>
+<blockquote>
+<p>更高权威、更高新鲜度的 Source of Truth。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>适</mi><mi>合</mi><mi>减</mi><mi>少</mi><mi>重</mi><mi>复</mi><mi>询</mi><mi>问</mi><mi>不</mi><mi>适</mi><mi>合</mi><mi>替</mi><mi>代</mi><mi>更</mi><mi>权</mi><mi>威</mi><mi>的</mi><mi>实</mi><mi>时</mi><mi>系</mi><mi>统</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Memory
+适合减少重复询问
+不适合替代更权威的实时系统
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="八模型参数本身什么时候可以直接回答">八、模型参数本身什么时候可以直接回答？</h1>
+<p>如果问题是：</p>
+<pre class="text"><code>“什么是RAG？”
+“JSON Schema是干什么的？”
+“Agent Loop是什么意思？”</code></pre>
+<p>这类：</p>
+<blockquote>
+<p>稳定、通用、非高风险概念</p>
+</blockquote>
+<p>可以直接由模型回答。</p>
+<p>但如果问题涉及：</p>
+<pre class="text"><code>当前项目状态
+当前有效规则
+实时金额
+具体文件内容
+正式业务动作</code></pre>
+<p>就应该优先使用外部 Source of Truth。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>适</mi><mi>合</mi><mi>稳</mi><mi>定</mi><mi>概</mi><mi>念</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ParametricKnowledge
+适合稳定概念
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>适</mi><mi>合</mi><mi>动</mi><mi>态</mi><mi>事</mi><mi>实</mi><mi>与</mi><mi>可</mi><mi>核</mi><mi>验</mi><mi>证</mi><mi>据</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExternalSource
+适合动态事实与可核验证据
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九routing-的第一个维度information-type">九、Routing
+的第一个维度：Information Type</h1>
+<p>可以先把用户需求分成几类：</p>
+<table>
+<thead>
+<tr class="header">
+<th>信息类型</th>
+<th>典型问题</th>
+<th>首选路径</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>通用概念</td>
+<td>什么是 RAG？</td>
+<td>模型参数知识</td>
+</tr>
+<tr class="even">
+<td>规则知识</td>
+<td>当前规则怎样规定？</td>
+<td>RAG</td>
+</tr>
+<tr class="odd">
+<td>项目事实</td>
+<td>项目预算是多少？</td>
+<td>Database Tool</td>
+</tr>
+<tr class="even">
+<td>文件内容</td>
+<td>这份 PDF 有什么要求？</td>
+<td>File Tool</td>
+</tr>
+<tr class="odd">
+<td>确定性计算</td>
+<td>总分是多少？</td>
+<td>Compute Tool</td>
+</tr>
+<tr class="even">
+<td>外部动作</td>
+<td>发布公告</td>
+<td>Action Tool</td>
+</tr>
+<tr class="odd">
+<td>历史任务上下文</td>
+<td>前面已经审到哪一步？</td>
+<td>Task State / Memory</td>
+</tr>
+</tbody>
+</table>
+<p>这张表非常重要。</p>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>不</mi><mi>同</mi><mi>问</mi><mi>题</mi><mi>类</mi><mi>型</mi><mi>应</mi><mi>该</mi><mi>路</mi><mi>由</mi><mi>到</mi><mi>不</mi><mi>同</mi><mi>真</mi><mi>源</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+不同问题类型
+应该路由到不同真源
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十routing-的第二个维度authority">十、Routing
+的第二个维度：Authority</h1>
+<p>如果多个 Source 都能回答，</p>
+<p>优先级不应该按：</p>
+<blockquote>
+<p>哪个最快。</p>
+</blockquote>
+<p>而应该先看：</p>
+<h1 id="authority">Authority</h1>
+<h2 id="权威性">权威性</h2>
+<p>例如：</p>
+<pre class="text"><code>项目预算：
+
+项目数据库
+&gt;
+旧采购文件
+&gt;
+Memory
+&gt;
+模型猜测</code></pre>
+<p>再比如：</p>
+<pre class="text"><code>当前有效规则：
+
+经过版本管理的法规知识库
+&gt;
+历史报告
+&gt;
+普通网页摘要
+&gt;
+模型参数记忆</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>i</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>首</mi><mi>先</mi><mi>看</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourcePriority
+首先看Authority
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一routing-的第三个维度freshness">十一、Routing
+的第三个维度：Freshness</h1>
+<p>有些信息变化慢：</p>
+<pre class="text"><code>概念定义
+算法原理
+稳定业务术语</code></pre>
+<p>有些变化快：</p>
+<pre class="text"><code>项目状态
+预算
+审批进度
+当前版本
+供应商信息
+接口状态</code></pre>
+<p>所以需要：</p>
+<h1 id="freshness">Freshness</h1>
+<h2 id="新鲜度">新鲜度</h2>
+<p>可以概念化为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≤</mo><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>F</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+RequiredFreshness
+\le
+SourceFreshness
+</annotation></semantics></math></p>
+<p>如果用户问：</p>
+<blockquote>
+<p>“现在项目审批到哪一步了？”</p>
+</blockquote>
+<p>就不能用：</p>
+<blockquote>
+<p>三天前同步进 RAG 的静态文档。</p>
+</blockquote>
+<hr />
+<h1 id="十二routing-的第四个维度determinism">十二、Routing
+的第四个维度：Determinism</h1>
+<p>有些任务有明确确定结果：</p>
+<pre class="text"><code>7 + 13
+日期差
+金额求和
+评分计算</code></pre>
+<p>如果让 LLM 自由生成，</p>
+<p>哪怕准确率很高：</p>
+<blockquote>
+<p>也没有必要承担随机性。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>m</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>优</mi><mi>先</mi><mi>使</mi><mi>用</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighDeterminismTask
+优先使用ComputeTool
+}
+</annotation></semantics></math></p>
+<p>模型更适合做：</p>
+<pre class="text"><code>解释结果
+判断下一步
+组织表达</code></pre>
+<p>而不是替代计算器。</p>
+<hr />
+<h1 id="十三routing-的第五个维度side-effect">十三、Routing
+的第五个维度：Side Effect</h1>
+<p>只读路径：</p>
+<pre class="text"><code>RAG
+Read Database
+Read File
+Compute</code></pre>
+<p>通常不会改变业务状态。</p>
+<p>但：</p>
+<pre class="text"><code>Write
+Submit
+Publish
+Delete
+Approve</code></pre>
+<p>会产生副作用。</p>
+<p>所以 Side Effect 一旦升高，</p>
+<p>Routing Policy 就必须提高控制强度：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mo>⇒</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>r</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>A</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HigherSideEffect
+\Rightarrow
+StrongerAuthorization
++
+Approval
++
+Audit
+}
+</annotation></semantics></math></p>
+<p>这不是模型能力问题，</p>
+<p>是系统治理问题。</p>
+<hr />
+<h1 id="十四不要把-rag-误当成万能数据访问层">十四、不要把 RAG
+误当成万能数据访问层</h1>
+<p>一个常见错误是：</p>
+<blockquote>
+<p>“反正我们已经有向量数据库了，什么都搜进去。”</p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>项目预算
+供应商实时状态
+当前审批节点
+业务流水</code></pre>
+<p>全部定期做 Chunk + Embedding。</p>
+<p>这样做的问题是：</p>
+<pre class="text"><code>同步延迟
+版本不一致
+字段精度丢失
+结构化查询变模糊
+实时状态容易过期</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>S</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>不</mi><mi>是</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>的</mi><mi>替</mi><mi>代</mi><mi>品</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+VectorSearch
+不是DatabaseQuery的替代品
+}
+</annotation></semantics></math></p>
+<p>结构化业务事实：</p>
+<blockquote>
+<p>优先从结构化权威系统读取。</p>
+</blockquote>
+<hr />
+<h1
+id="十五也不要把每个问题都变成-tool-call">十五、也不要把每个问题都变成
+Tool Call</h1>
+<p>另一个极端是：</p>
+<blockquote>
+<p>什么都 Tool。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>“什么是资格条件？”</code></pre>
+<p>如果每次都：</p>
+<pre class="text"><code>search
+database
+file</code></pre>
+<p>反而增加：</p>
+<pre class="text"><code>延迟
+成本
+失败点
+不必要依赖</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>必</mi><mi>须</mi><mi>有</mi><mi>必</mi><mi>要</mi><mi>性</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExternalCall
+必须有必要性
+}
+</annotation></semantics></math></p>
+<p>稳定常识可以直接回答。</p>
+<p>动态事实、高风险依据、实时状态才更需要外部调用。</p>
+<hr />
+<h1 id="十六hybrid-route真实任务经常需要多条路径组合">十六、Hybrid
+Route：真实任务经常需要多条路径组合</h1>
+<p>用户问：</p>
+<blockquote>
+<p>“这个项目要求供应商投标前在本市设立机构，有没有风险？”</p>
+</blockquote>
+<p>这其实至少需要两个 Source：</p>
+<pre class="text"><code>项目文件
+→ File Tool
+
+适用规则
+→ RAG</code></pre>
+<p>如果还要确认项目所在辖区：</p>
+<pre class="text"><code>项目Metadata
+→ Database Tool</code></pre>
+<p>完整路径可能是：</p>
+<pre class="text"><code>File Tool
+↓
+提取资格条件
+
+Database Tool
+↓
+获取项目辖区 / 项目时间
+
+RAG
+↓
+检索适用规则
+
+LLM
+↓
+基于证据形成判断</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>e</mi><mi>U</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>Q</mi><mi>u</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>可</mi><mi>能</mi><mi>需</mi><mi>要</mi><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OneUserQuestion
+可能需要
+MultiSourceRoute
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十七source-fusion多个-source-返回结果以后不能简单混在一起">十七、Source
+Fusion：多个 Source 返回结果以后，不能简单混在一起</h1>
+<p>假设：</p>
+<pre class="text"><code>RAG说：
+某规则当前有效
+
+数据库说：
+项目时间是2024年
+
+文件说：
+资格条件要求投标前本地机构</code></pre>
+<p>这些信息角色不同。</p>
+<p>应该保留：</p>
+<pre class="text"><code>source_type
+source_id
+source_version
+retrieved_at
+authority
+validity</code></pre>
+<p>再统一送进 Working Context。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>必</mi><mi>须</mi><mi>保</mi><mi>留</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MultiSource
+必须保留Provenance
+}
+</annotation></semantics></math></p>
+<p>而不是把所有结果拼成一段无来源文本。</p>
+<hr />
+<h1
+id="十八routing-policy哪些判断应该写死哪些可以交给模型">十八、Routing
+Policy：哪些判断应该写死，哪些可以交给模型？</h1>
+<p>不是所有 Routing 都应该让 LLM 自由决定。</p>
+<p>有些规则可以 Hard-code：</p>
+<pre class="text"><code>如果是精确算术
+→ calculator
+
+如果请求修改外部系统
+→ action tool + authorization
+
+如果请求读取上传文件
+→ file tool
+
+如果请求当前项目实时状态
+→ operational database</code></pre>
+<p>模型更适合处理：</p>
+<pre class="text"><code>模糊意图识别
+多Source组合
+是否还需要补充检索
+下一步路径选择</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>R</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>s</mi><mo>+</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Routing
+=
+DeterministicRules
++
+ModelDecision
+}
+</annotation></semantics></math></p>
+<p>这通常比：</p>
+<blockquote>
+<p>全部交给模型</p>
+</blockquote>
+<p>更稳定。</p>
+<hr />
+<h1 id="十九fallback首选-source-不可用怎么办">十九、Fallback：首选
+Source 不可用怎么办？</h1>
+<p>假设：</p>
+<pre class="text"><code>project_database</code></pre>
+<p>暂时不可用。</p>
+<p>系统不应该偷偷切到：</p>
+<blockquote>
+<p>模型猜测。</p>
+</blockquote>
+<p>应该显式进入 Fallback Policy。</p>
+<p>例如：</p>
+<pre class="text"><code>Primary:
+project_database
+
+Fallback:
+latest_project_document
+
+If still unavailable:
+needs_review / ask_user</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>必</mi><mi>须</mi><mi>显</mi><mi>式</mi><mi>定</mi><mi>义</mi><mi>可</mi><mi>信</mi><mi>度</mi><mi>下</mi><mi>降</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Fallback
+必须显式定义可信度下降
+}
+</annotation></semantics></math></p>
+<p>如果 Source 变弱：</p>
+<blockquote>
+<p>结论确定性也应该下降。</p>
+</blockquote>
+<hr />
+<h1 id="二十conflict多个-source-冲突怎么办">二十、Conflict：多个 Source
+冲突怎么办？</h1>
+<p>例如：</p>
+<pre class="text"><code>项目数据库：
+预算 = 500万
+
+采购文件：
+预算 = 480万</code></pre>
+<p>Agent 不应该：</p>
+<blockquote>
+<p>随便选一个。</p>
+</blockquote>
+<p>而应该检查：</p>
+<pre class="text"><code>哪个Source更权威？
+时间戳谁更新？
+文件是不是旧版本？
+数据库是不是当前正式值？</code></pre>
+<p>如果仍无法解决：</p>
+<pre class="text"><code>conflict = true
+needs_review = true</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>t</mi><mi>不</mi><mi>能</mi><mi>被</mi><mi>L</mi><mi>L</mi><mi>M</mi><mi>静</mi><mi>默</mi><mi>消</mi><mi>解</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourceConflict
+不能被LLM静默消解
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十一rag-result-和-tool-result-都只是-observation">二十一、RAG
+Result 和 Tool Result 都只是 Observation</h1>
+<p>第 2 阶段我们讲过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi><mo>=</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+ToolResult
+=
+Observation
+</annotation></semantics></math></p>
+<p>现在要扩展为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi><mo>+</mo><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi><mo>+</mo><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>u</mi><mi>l</mi><mi>t</mi><mo>=</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGResult
++
+DatabaseResult
++
+FileResult
++
+ComputeResult
+=
+Observations
+}
+</annotation></semantics></math></p>
+<p>它们都必须：</p>
+<pre class="text"><code>带来源
+带版本
+带时间
+经过校验
+再进入State / Working Context</code></pre>
+<p>所以 Agent 不应该因为：</p>
+<blockquote>
+<p>“这是工具返回的”</p>
+</blockquote>
+<p>就自动相信。</p>
+<hr />
+<h1 id="二十二政府采购案例完整路由">二十二、政府采购案例：完整路由</h1>
+<p>用户：</p>
+<blockquote>
+<p>“请判断这份采购文件里要求供应商投标前已经在本市设立三年以上分支机构是否有风险，并给出依据；如果有风险，生成修改建议草稿。”</p>
+</blockquote>
+<p>Routing：</p>
+<pre class="text"><code>Step 1
+File Tool
+读取当前采购文件
+
+Step 2
+Extract Tool
+提取资格条件
+
+Step 3
+Project Database
+获取项目辖区、采购阶段、当前时间点
+
+Step 4
+RAG
+检索当前适用规则与相关证据
+
+Step 5
+LLM
+进行证据约束判断
+
+Step 6
+Report / Draft Tool
+生成修改建议草稿</code></pre>
+<p>如果用户进一步说：</p>
+<blockquote>
+<p>“直接替我发布更正公告。”</p>
+</blockquote>
+<p>则 Route 发生变化：</p>
+<pre class="text"><code>Action Tool
++
+Authorization
++
+Human Approval</code></pre>
+<p>这说明：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>同</mi><mi>一</mi><mi>个</mi><mi>任</mi><mi>务</mi><mi>不</mi><mi>同</mi><mi>阶</mi><mi>段</mi><mi>路</mi><mi>由</mi><mi>可</mi><mi>以</mi><mi>完</mi><mi>全</mi><mi>不</mi><mi>同</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+同一个任务
+不同阶段
+路由可以完全不同
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十三本阶段错误分类routing-会在哪些地方失败">二十三、本阶段错误分类：Routing
+会在哪些地方失败？</h1>
+<p>至少要区分：</p>
+<pre class="text"><code>1. Wrong Source Error
+选择了错误真源
+
+2. Stale Source Error
+使用过期来源
+
+3. Authority Error
+低权威来源覆盖高权威来源
+
+4. Unnecessary Tool Call
+本可直接回答却调用工具
+
+5. Missing Tool Call
+需要外部真源却直接生成
+
+6. Wrong Tool Type
+该算却检索，该查库却RAG
+
+7. Side-effect Misroute
+读请求误路由到写工具
+
+8. Source Conflict Suppression
+冲突被静默忽略
+
+9. Fallback Degradation Hidden
+降级后没有暴露可信度下降
+
+10. Provenance Loss
+结果进入Context后丢失来源</code></pre>
+<p>这张错误地图非常重要。</p>
+<hr />
+<h1 id="二十四应该怎样评测-rag-tool-routing">二十四、应该怎样评测 RAG +
+Tool Routing？</h1>
+<p>第一版至少记录：</p>
+<pre class="text"><code>route_accuracy
+
+source_of_truth_accuracy
+
+rag_route_precision
+rag_route_recall
+
+database_route_accuracy
+
+file_tool_route_accuracy
+
+compute_tool_route_accuracy
+
+action_tool_route_accuracy
+
+unnecessary_external_call_rate
+
+missing_external_call_rate
+
+stale_source_usage_rate
+
+authority_violation_rate
+
+source_conflict_detection_rate
+
+fallback_correctness
+
+provenance_coverage
+
+end_to_end_task_success</code></pre>
+<p>其中最核心的不是：</p>
+<blockquote>
+<p>Tool Selection Accuracy。</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>O</mi><mi>f</mi><mi>T</mi><mi>r</mi><mi>u</mi><mi>t</mi><mi>h</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourceOfTruthAccuracy
+}
+</annotation></semantics></math></p>
+<p>因为 Tool 选对名字，</p>
+<p>但如果真源选错：</p>
+<blockquote>
+<p>整个答案仍然可能错。</p>
+</blockquote>
+<hr />
+<h1
+id="二十五本阶段工程产物procurementragtoolroutingpolicy_v0.1">二十五、本阶段工程产物：<code>ProcurementRAGToolRoutingPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>routing_policy_version
+
+information_type_schema
+
+source_of_truth_map
+
+authority_priority
+
+freshness_requirement
+
+deterministic_task_rules
+
+side_effect_routing_rules
+
+rag_route_policy
+
+database_route_policy
+
+file_route_policy
+
+compute_route_policy
+
+action_route_policy
+
+memory_usage_policy
+
+parametric_answer_policy
+
+multi_source_route_policy
+
+source_fusion_policy
+
+conflict_policy
+
+fallback_policy
+
+provenance_required
+=
+true
+
+trace_logging
+=
+enabled</code></pre>
+<p>每次路由至少记录：</p>
+<pre class="text"><code>request_id
+
+detected_information_type
+
+candidate_sources
+
+selected_sources
+
+routing_reason
+
+authority_level
+
+freshness_requirement
+
+tool_calls
+
+rag_queries
+
+fallback_used
+
+conflict_detected
+
+provenance_map
+
+final_task_result</code></pre>
+<p>这样我们以后才能回答：</p>
+<blockquote>
+<p><strong>为什么这个问题走了 RAG，而不是数据库？为什么调用了这个
+Tool？如果错了，到底是路由错、数据错，还是模型判断错？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十六把本阶段压成最精准的-6-句话">二十六、把本阶段压成最精准的
+6 句话</h1>
+<blockquote>
+<p><strong>第一，RAG + Tools Routing
+的核心不是“选择一个最方便的工具”，而是先确定这个问题真正的 Source of
+Truth 在哪里。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，规则依据优先走
+RAG，实时结构化业务事实优先走权威数据库，具体文件内容走 File
+Tool，确定性计算走 Compute Tool，改变现实状态的请求才进入 Action
+Tool。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Routing 至少要同时考虑 Information
+Type、Authority、Freshness、Determinism 和 Side
+Effect；同一个用户问题完全可能需要多个 Source 联合完成。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Vector Search 不能替代业务数据库，Memory
+不能替代更权威的实时系统，LLM
+参数知识也不能替代当前有效规则或实时项目状态。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，多 Source 结果进入 Working Context 前必须保留
+Provenance、Version、Time 和 Authority；如果来源冲突，必须显式解决或标记
+<code>needs_review</code>，不能让模型静默选边。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，真正可靠的 Routing 应该是“确定性硬规则 +
+模型动态决策”的组合，并通过 Source-of-Truth
+Accuracy、Staleness、Conflict Handling 和最终 Task Success
+来评测。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-7">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         User Request
+                              │
+                              ▼
+                    Information Type
+                              │
+                              ▼
+                    Source-of-Truth Map
+                              │
+             ┌────────────────┼─────────────────┐
+             ▼                ▼                 ▼
+          Knowledge        Operational       Artifact
+             │                │                 │
+             ▼                ▼                 ▼
+            RAG          Database Tool       File Tool
+             │                │                 │
+             └────────┬───────┴─────────┬──────┘
+                      │                 │
+                      ▼                 ▼
+                  Compute?          Action?
+                      │                 │
+                      ▼                 ▼
+                Compute Tool      Action Tool
+                                         │
+                                         ▼
+                                  Auth / Approval
+                      │                 │
+                      └────────┬────────┘
+                               ▼
+                         Observations
+                               │
+                               ▼
+                    Provenance / Conflict
+                               │
+                               ▼
+                       Working Context
+                               │
+                               ▼
+                              LLM</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Agent 不应该“有什么 Tool 就用什么
+Tool”，而应该先找到事实真源，再根据权威性、实时性、确定性与副作用选择最合适的
+RAG、数据库、文件、计算或行动路径。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-8-阶段掌握测试">第七课 · 第 8 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Routing 首先是 Source-of-Truth
+问题；RAG、Database Tool、File Tool、Compute Tool、Action Tool
+分别适合什么；Memory
+为什么不能天然当权威真源；什么时候可以直接依赖模型参数知识；Information
+Type、Authority、Freshness、Determinism、Side Effect
+五个维度怎样影响路由；为什么 Vector Search 不能替代 Database
+Query；为什么也不能把所有问题都变成 Tool Call；什么是 MultiSource
+Route；多个 Source 结果为什么必须保留
+Provenance；哪些路由应该由硬规则决定，哪些可以交给模型；Fallback
+时为什么必须暴露可信度下降；多个 Source
+冲突时为什么不能静默选择；以及为什么最终最关键的指标是 Source-of-Truth
+Accuracy，而不是单纯 Tool Selection Accuracy。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>8</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第8阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第七课-第-9-阶段">下一阶段：第七课 · 第 9 阶段</h1>
+<h1 id="failure-recoveryretry-与-human-in-the-loop">Failure
+Recovery、Retry 与 Human-in-the-loop</h1>
+<h2
+id="agent-已经会路由会调用工具会循环但真实系统一旦超时权限失败证据不足写操作不确定怎样才能安全恢复">Agent
+已经会路由、会调用工具、会循环，但真实系统一旦超时、权限失败、证据不足、写操作不确定，怎样才能安全恢复？</h2>
+<p>到第 8 阶段，我们已经拥有：</p>
+<pre class="text"><code>Source-of-Truth Routing
+RAG
+Database Tool
+File Tool
+Compute Tool
+Action Tool
+MultiSource Fusion
+Conflict Detection
+Fallback</code></pre>
+<p>下一阶段要解决：</p>
+<blockquote>
+<p><strong>真实世界不会永远成功。</strong></p>
+</blockquote>
+<p>我们会正式拆开：</p>
+<pre class="text"><code>Retryable Error
+Terminal Error
+Timeout
+Rate Limit
+Permission Denied
+Partial Failure
+Compensation
+Rollback
+Idempotency
+Circuit Breaker
+Human Escalation
+Approval
+Recovery State</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementagentrecoverypolicy_v0.1"><code>ProcurementAgentRecoveryPolicy_V0.1</code></h1>
+<p>核心目标是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>N</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableAgent
+\neq
+NeverFails
+}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>=</mo><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>s</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>l</mi><mi>y</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>l</mi><mi>y</mi><mo>+</mo><mi>E</mi><mi>s</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>s</mi><mi>W</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>N</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>e</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableAgent
+=
+FailsExplicitly
++
+RecoversSafely
++
+EscalatesWhenNeeded
+}
+</annotation></semantics></math></p>
+<hr /><div class="nav"><a class="btn" href="stage07.html">← 第 7 阶段</a><a class="btn" href="stage09.html">第 9 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

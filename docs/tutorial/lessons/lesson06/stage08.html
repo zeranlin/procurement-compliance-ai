@@ -1,0 +1,953 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第8阶段：Reranker：为什么“先召回，再精排”比直接 Top-K 更可靠？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第8阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，Retriever 负责高 Recall 召回，Reranker 负责把最相关的候选重新排到最前面；两者优化目标不同。</li><li>第二，Bi-Encoder 通过独立 Query / Document Vector 实现高效大规模检索，而 Cross-Encoder 让 Query 与候选文本逐 Token 交互，因此更适合细粒度精排，但成本更高。</li><li>第三，Reranker 只能重排已经召回的 Candidate Set，不能救回根本没进入候选集的 Gold Evidence；所以调试必须先区分 Recall Failure 和 Rerank Failure。</li></ul></div><h1 id="第六课-第-8-阶段">第六课 · 第 8 阶段</h1>
+<h1
+id="reranker为什么先召回再精排比直接-top-k-更可靠-1">Reranker：为什么“先召回，再精排”比直接
+Top-K 更可靠？</h1>
+<h2 id="retriever-负责别漏掉reranker-负责别把错的排太前">Retriever
+负责“别漏掉”，Reranker 负责“别把错的排太前”</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-7">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-7">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Retriever 负责高 Recall 召回，Reranker
+负责把最相关的候选重新排到最前面；两者优化目标不同。</strong></li>
+<li><strong>第二，Bi-Encoder 通过独立 Query / Document Vector
+实现高效大规模检索，而 Cross-Encoder 让 Query 与候选文本逐 Token
+交互，因此更适合细粒度精排，但成本更高。</strong></li>
+<li><strong>第三，Reranker 只能重排已经召回的 Candidate
+Set，不能救回根本没进入候选集的 Gold Evidence；所以调试必须先区分 Recall
+Failure 和 Rerank Failure。</strong></li>
+<li><strong>第四，政府采购 Reranker 的关键价值是压制“投标前 vs
+中标后”“准入 vs 履约”这类语义很近但业务边界不同的 Hard
+Negative。</strong></li>
+<li><strong>第五，是否启用 Reranker 必须同时比较 MRR、Gold Rank、Hard
+Negative 排名改善和新增 Latency / VRAM
+成本，而不是只看一个排序分数。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-7">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="even">
+<td><code>Reranker</code></td>
+<td>重排器：对初筛候选做更精细相关性排序</td>
+</tr>
+<tr class="odd">
+<td><code>BM25</code></td>
+<td>BM25：基于词频和逆文档频率的经典词法检索算法</td>
+</tr>
+<tr class="even">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="odd">
+<td><code>Hard Negative</code></td>
+<td>高难负例：表面像风险但正确结论不应判风险</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="odd">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="even">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-7">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 7 阶段，我们已经把两条召回链接起来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>M</mi><mn>25</mn><mo>+</mo><mi>D</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+BM25
++
+DenseRetrieval
+\rightarrow
+CandidateSet
+</annotation></semantics></math></p>
+<p>这一步的目标很明确：</p>
+<blockquote>
+<p><strong>尽量不要漏掉真正的 Gold Evidence。</strong></p>
+</blockquote>
+<p>所以召回阶段通常愿意多拿一些候选，例如：</p>
+<pre class="text"><code>Sparse Top-20
++
+Dense Top-20
+↓
+去重后
+得到 25～35 条候选</code></pre>
+<p>但真正送进 LLM 的 Context 不可能无限大。</p>
+<p>于是马上出现第二个问题：</p>
+<blockquote>
+<p><strong>这几十条候选里，谁应该排在最前面？</strong></p>
+</blockquote>
+<p>这就是今天的主题：</p>
+<h1 id="reranking">Reranking</h1>
+<h2 id="重排序-精排">重排序 / 精排</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementrerankingpolicy_v0.1-1"><code>ProcurementRerankingPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一先锁死最重要的职责边界">一、先锁死最重要的职责边界</h1>
+<p>Retriever 和 Reranker 不应该被当成同一个东西。</p>
+<p>Retriever 的第一职责：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+High\ Recall
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>正确证据尽量别漏。</strong></p>
+</blockquote>
+<p>Reranker 的第一职责：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>a</mi><mi>t</mi><mspace width="0.222em"></mspace><mi>T</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+High\ Precision\ at\ Top
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>真正最有用的证据尽量排到最前面。</strong></p>
+</blockquote>
+<p>所以最经典的两阶段结构是：</p>
+<pre class="text"><code>Query
+↓
+Retriever
+召回较多候选
+↓
+Candidate Set
+↓
+Reranker
+逐个重新判断 Query-Document 相关性
+↓
+Final Top-K</code></pre>
+<p>脑中先记一句：</p>
+<blockquote>
+<p><strong>召回阶段怕漏，精排阶段怕错。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二为什么不直接让-retriever-一次性把-top-3-排准">二、为什么不直接让
+Retriever 一次性把 Top-3 排准？</h1>
+<p>因为 Retriever 的设计目标通常包含：</p>
+<pre class="text"><code>大规模
+低延迟
+高吞吐
+可索引
+可近似搜索</code></pre>
+<p>Dense Retriever 往往先把 Query 和 Document 分别编码成向量：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝐪</mi><mo>=</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathbf{q}=f(Q)
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝐝</mi><mo>=</mo><mi>g</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathbf{d}=g(D)
+</annotation></semantics></math></p>
+<p>然后比较：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>i</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>𝐪</mi><mo>,</mo><mi>𝐝</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+sim(\mathbf{q},\mathbf{d})
+</annotation></semantics></math></p>
+<p>这个方式非常高效，因为 Document Vector 可以：</p>
+<blockquote>
+<p><strong>提前离线算好并建立 Index。</strong></p>
+</blockquote>
+<p>但代价是：</p>
+<blockquote>
+<p>Query 和 Document 在编码阶段并没有充分逐 Token 交互。</p>
+</blockquote>
+<p>因此一些细粒度差异，例如：</p>
+<pre class="text"><code>投标前
+vs
+中标后
+
+必须预先设立
+vs
+中标后提供服务
+
+本地准入条件
+vs
+本地履约安排</code></pre>
+<p>可能无法被单个向量充分表达。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>擅</mi><mi>长</mi><mi>快</mi><mi>速</mi><mi>缩</mi><mi>小</mi><mi>范</mi><mi>围</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FastRetriever
+擅长快速缩小范围
+}
+</annotation></semantics></math></p>
+<p>但未必擅长：</p>
+<blockquote>
+<p><strong>在非常相似的候选之间做最终精细判断。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三bi-encoder-与-cross-encoder这是理解-reranker-的核心">三、Bi-Encoder
+与 Cross-Encoder：这是理解 Reranker 的核心</h1>
+<p>Dense Retriever 常见的一类结构叫：</p>
+<h1 id="bi-encoder">Bi-Encoder</h1>
+<h2 id="双塔-双编码器">双塔 / 双编码器</h2>
+<p>概念上：</p>
+<pre class="text"><code>Query
+↓
+Encoder
+↓
+Query Vector
+
+Document
+↓
+Encoder
+↓
+Document Vector
+
+最后
+计算相似度</code></pre>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>s</mi><mi>i</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo><mi>g</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+score(Q,D)
+=
+sim(
+f(Q),
+g(D)
+)
+</annotation></semantics></math></p>
+<p>它的优势是：</p>
+<blockquote>
+<p>Document 可以提前编码。</p>
+</blockquote>
+<p>因此很适合：</p>
+<blockquote>
+<p>百万、千万级候选的第一阶段检索。</p>
+</blockquote>
+<hr />
+<p>Reranker 常见的一类结构叫：</p>
+<h1 id="cross-encoder-1">Cross-Encoder</h1>
+<h2 id="交叉编码器">交叉编码器</h2>
+<p>它不是先分别压成两个独立向量。</p>
+<p>而是把：</p>
+<pre class="text"><code>Query
++
+Document</code></pre>
+<p>一起送进模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>h</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+score(Q,D)
+=
+h(Q,D)
+</annotation></semantics></math></p>
+<p>于是模型内部可以直接看到：</p>
+<pre class="text"><code>Query Token
+↔
+Document Token</code></pre>
+<p>之间的细粒度交互。</p>
+<p>所以它更容易判断：</p>
+<blockquote>
+<p>“这段法规到底是不是在回答这个具体问题。”</p>
+</blockquote>
+<hr />
+<h1 id="四为什么-cross-encoder-通常更适合精排">四、为什么 Cross-Encoder
+通常更适合精排？</h1>
+<p>看一个政府采购 Hard Negative。</p>
+<p>Query：</p>
+<blockquote>
+<p>“采购文件要求供应商在投标前必须设立本地服务机构，是否属于不合理准入条件？”</p>
+</blockquote>
+<p>候选 A：</p>
+<blockquote>
+<p>“不得要求供应商在参加采购活动前已在采购人所在地设立分支机构。”</p>
+</blockquote>
+<p>候选 B：</p>
+<blockquote>
+<p>“中标供应商应当在合同履行期间提供本地化售后服务。”</p>
+</blockquote>
+<p>Embedding 可能觉得 A、B 都非常接近 Query。</p>
+<p>因为它们都有：</p>
+<pre class="text"><code>供应商
+本地
+服务
+机构
+要求</code></pre>
+<p>但真正决定相关性的词是：</p>
+<pre class="text"><code>参加采购活动前
+vs
+中标后 / 合同履行期间</code></pre>
+<p>Cross-Encoder 因为 Query 和候选文本一起参与 Attention，</p>
+<p>更有机会把这种：</p>
+<blockquote>
+<p><strong>局部条件对局部条件</strong></p>
+</blockquote>
+<p>直接比较。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>r</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>E</mi><mi>n</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>更</mi><mi>擅</mi><mi>长</mi><mi>细</mi><mi>粒</mi><mi>度</mi><mi>相</mi><mi>关</mi><mi>性</mi><mi>判</mi><mi>断</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CrossEncoder
+更擅长细粒度相关性判断
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五为什么不直接拿-cross-encoder-搜整个知识库">五、为什么不直接拿
+Cross-Encoder 搜整个知识库？</h1>
+<p>因为成本太高。</p>
+<p>假设知识库有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mn>7</mn></msup><annotation encoding="application/x-tex">
+10^7
+</annotation></semantics></math></p>
+<p>个 Chunk。</p>
+<p>如果每次 Query 都运行：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><msub><mi>D</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+h(Q,D_i)
+</annotation></semantics></math></p>
+<p>一千万次，</p>
+<p>几乎不可接受。</p>
+<p>Bi-Encoder 可以提前把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>D</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+g(D_i)
+</annotation></semantics></math></p>
+<p>全部离线计算好，</p>
+<p>查询时只需要：</p>
+<pre class="text"><code>Query Encoding
++
+Vector Search</code></pre>
+<p>而 Cross-Encoder 必须针对每一个 Query-Document Pair 重新
+Forward。</p>
+<p>因此经典架构就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>h</mi><mi>e</mi><mi>a</mi><mi>p</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>v</mi><mi>e</mi><mspace width="0.222em"></mspace><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Cheap\ Retrieval
+\rightarrow
+Expensive\ Reranking
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>先便宜地缩小候选，再昂贵地精排少量候选。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="六candidate-pool-多大final-top-k-多大是两个不同参数">六、Candidate
+Pool 多大，Final Top-K 多大，是两个不同参数</h1>
+<p>假设：</p>
+<pre class="text"><code>Retriever Candidate N = 50</code></pre>
+<p>并不等于：</p>
+<pre class="text"><code>最终给 LLM 50 条</code></pre>
+<p>更常见是：</p>
+<pre class="text"><code>Retriever
+Top-50
+
+↓
+Reranker
+
+Final Top-5</code></pre>
+<p>这里有两个不同目标：</p>
+<h3 id="candidate-n">Candidate N</h3>
+<p>要足够大，保证：</p>
+<blockquote>
+<p>Gold Evidence 有机会被召回。</p>
+</blockquote>
+<h3 id="final-k">Final K</h3>
+<p>要足够小，保证：</p>
+<blockquote>
+<p>Context 干净、成本可控。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>N</mi><mi>解</mi><mi>决</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CandidateN
+解决Recall
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>K</mi><mi>解</mi><mi>决</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mspace width="0.222em"></mspace><mi>/</mi><mspace width="0.222em"></mspace><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FinalK
+解决Precision\ /\ ContextBudget
+}
+</annotation></semantics></math></p>
+<p>不要把它们混成一个 Top-K 参数。</p>
+<hr />
+<h1 id="七reranker-不能救回根本没召回的证据">七、Reranker
+不能救回“根本没召回”的证据</h1>
+<p>这是本阶段最重要的边界之一。</p>
+<p>假设 Gold Evidence：</p>
+<blockquote>
+<p>根本不在 Retriever Top-50。</p>
+</blockquote>
+<p>那么 Reranker 无论多强：</p>
+<blockquote>
+<p>都看不到它。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>e</mi><mi>r</mi><mi>只</mi><mi>能</mi><mi>重</mi><mi>新</mi><mi>排</mi><mi>序</mi><mi>候</mi><mi>选</mi><mi>不</mi><mi>能</mi><mi>凭</mi><mi>空</mi><mi>召</mi><mi>回</mi><mi>不</mi><mi>存</mi><mi>在</mi><mi>于</mi><mi>候</mi><mi>选</mi><mi>集</mi><mi>的</mi><mi>证</mi><mi>据</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Reranker
+只能重新排序候选
+不能凭空召回不存在于候选集的证据
+}
+</annotation></semantics></math></p>
+<p>这意味着调试时一定要先问：</p>
+<pre class="text"><code>Gold 在 Candidate Set 里吗？</code></pre>
+<p>如果不在：</p>
+<blockquote>
+<p>优先修 Retrieval。</p>
+</blockquote>
+<p>如果在，但排得太后：</p>
+<blockquote>
+<p>才重点修 Reranking。</p>
+</blockquote>
+<p>这和第 6 阶段的错误分层完全一致。</p>
+<hr />
+<h1 id="八reranker-score-不是概率也不能随便跨模型比较">八、Reranker
+Score 不是概率，也不能随便跨模型比较</h1>
+<p>很多 Reranker 会输出一个：</p>
+<pre class="text"><code>relevance score</code></pre>
+<p>但这个 Score 的数值语义取决于：</p>
+<pre class="text"><code>模型
+训练目标
+实现
+是否经过Sigmoid / Softmax
+输入格式
+版本</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>U</mi><mi>n</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>a</mi><mi>l</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RerankerScore
+\neq
+UniversalProbability
+}
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>Model A
+score = 8.2
+
+Model B
+score = 0.91</code></pre>
+<p>不能据此说：</p>
+<blockquote>
+<p>Model A 更确信。</p>
+</blockquote>
+<p>Reranker Score 最可靠的用途通常是：</p>
+<blockquote>
+<p><strong>同一 Query 下做候选排序。</strong></p>
+</blockquote>
+<p>如果要做 Threshold：</p>
+<blockquote>
+<p>必须基于自己的 Benchmark 校准。</p>
+</blockquote>
+<hr />
+<h1 id="九reranker-最应该盯住的是-hard-negative-排名">九、Reranker
+最应该盯住的，是 Hard Negative 排名</h1>
+<p>第 6、7 阶段我们已经反复强调：</p>
+<h1 id="hard-negative">Hard Negative</h1>
+<p>对于政府采购，很多真正难的候选不是完全无关，</p>
+<p>而是：</p>
+<blockquote>
+<p><strong>高度相关，但关键条件错了一点。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>Gold:
+投标前必须设本地机构
+属于准入限制
+
+Hard Negative:
+中标后提供本地服务
+属于履约要求</code></pre>
+<p>一个好的 Reranker 应该实现：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>&gt;</mo><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>N</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+score(Gold)
+&gt;
+score(HardNegative)
+</annotation></semantics></math></p>
+<p>并最好形成稳定 Margin：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>i</mi><mi>n</mi><mo>=</mo><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>N</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Margin
+=
+score(Gold)
+-
+score(HardNegative)
+</annotation></semantics></math></p>
+<p>因此 Stage 8 的重点不是只看：</p>
+<blockquote>
+<p>平均 MRR 有没有涨。</p>
+</blockquote>
+<p>还要看：</p>
+<pre class="text"><code>Hard Negative Above Gold Rate
+↓</code></pre>
+<p>有没有明显下降。</p>
+<hr />
+<h1 id="十reranking-前后哪些指标最值得比较">十、Reranking
+前后，哪些指标最值得比较？</h1>
+<p>我们已经有：</p>
+<h1
+id="procurementretrievalbenchmark_v0.1-3"><code>ProcurementRetrievalBenchmark_V0.1</code></h1>
+<p>所以可以固定同一 Candidate Set，</p>
+<p>比较：</p>
+<pre class="text"><code>Before Rerank
+vs
+After Rerank</code></pre>
+<p>重点看：</p>
+<table>
+<thead>
+<tr class="header">
+<th>指标</th>
+<th>关注什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Hit@K</td>
+<td>Gold 是否仍在候选范围内</td>
+</tr>
+<tr class="even">
+<td>MRR</td>
+<td>第一条 Gold 是否更靠前</td>
+</tr>
+<tr class="odd">
+<td>Median Gold Rank</td>
+<td>典型 Query 的 Gold 排名</td>
+</tr>
+<tr class="even">
+<td>P95 Gold Rank</td>
+<td>尾部困难 Query</td>
+</tr>
+<tr class="odd">
+<td>Hard Negative Above Gold Rate</td>
+<td>困难负例是否还压在 Gold 上面</td>
+</tr>
+<tr class="even">
+<td>NDCG@K</td>
+<td>多级相关性时，整体排序质量</td>
+</tr>
+<tr class="odd">
+<td>Latency</td>
+<td>精排带来的额外时延</td>
+</tr>
+</tbody>
+</table>
+<p>这里可以引入：</p>
+<h1 id="ndcg">NDCG</h1>
+<h2 id="normalized-discounted-cumulative-gain">Normalized Discounted
+Cumulative Gain</h2>
+<p>当相关性不是简单：</p>
+<pre class="text"><code>Relevant
+vs
+Irrelevant</code></pre>
+<p>而是：</p>
+<pre class="text"><code>3 = 核心证据
+2 = 强相关辅助证据
+1 = 弱相关背景
+0 = 无关</code></pre>
+<p>时，</p>
+<p>NDCG 会比单纯 MRR 更适合评价：</p>
+<blockquote>
+<p><strong>整个 Top-K 排序质量。</strong></p>
+</blockquote>
+<p>本阶段先理解用途，不要求背完整公式。</p>
+<hr />
+<h1 id="十一reranker-的成本主要花在哪">十一、Reranker
+的成本主要花在哪？</h1>
+<p>Retriever 可以：</p>
+<blockquote>
+<p>一次 Query Encoding + ANN Search。</p>
+</blockquote>
+<p>Reranker 则要对：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">
+N
+</annotation></semantics></math></p>
+<p>个候选分别构造：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><msub><mi>D</mi><mn>1</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><msub><mi>D</mi><mn>2</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo><mi>…</mi><mo>,</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><msub><mi>D</mi><mi>N</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+(Q,D_1), (Q,D_2), \ldots, (Q,D_N)
+</annotation></semantics></math></p>
+<p>然后做模型 Forward。</p>
+<p>所以粗略上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi><mo>∝</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>N</mi><mo>×</mo><mi>P</mi><mi>a</mi><mi>i</mi><mi>r</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">
+RerankCost
+\propto
+CandidateN
+\times
+PairSequenceLength
+</annotation></semantics></math></p>
+<p>真实成本还与：</p>
+<pre class="text"><code>模型大小
+Batch Size
+GPU / CPU
+最大Token长度
+动态Padding
+实现Kernel</code></pre>
+<p>有关。</p>
+<p>因此：</p>
+<blockquote>
+<p>Candidate Pool 不是越大越好。</p>
+</blockquote>
+<p>如果从：</p>
+<pre class="text"><code>Top-50</code></pre>
+<p>扩大到：</p>
+<pre class="text"><code>Top-500</code></pre>
+<p>可能 Recall 稍涨，</p>
+<p>但 Reranker 延迟和算力成本可能大幅上升。</p>
+<hr />
+<h1 id="十二batchingreranker-工程效率的关键">十二、Batching：Reranker
+工程效率的关键</h1>
+<p>虽然每个 Query-Document Pair 都需要重新计算，</p>
+<p>但不代表必须一个一个串行跑。</p>
+<p>可以把多个 Pair 组成 Batch：</p>
+<pre class="text"><code>(Q, D1)
+(Q, D2)
+(Q, D3)
+...</code></pre>
+<p>一起进入 GPU。</p>
+<p>这样可以显著提高：</p>
+<h1 id="throughput">Throughput</h1>
+<h2 id="吞吐">吞吐</h2>
+<p>但 Batch 过大又可能：</p>
+<blockquote>
+<p>OOM。</p>
+</blockquote>
+<p>所以要 Benchmark：</p>
+<pre class="text"><code>rerank_batch_size
+p50_latency
+p95_latency
+pairs_per_second
+peak_vram</code></pre>
+<p>这和第五课训练显存的思想很相似：</p>
+<blockquote>
+<p><strong>工程优化必须看真实瓶颈，而不是只改一个参数。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十三reranker-输入长度也会反过来影响-chunking">十三、Reranker
+输入长度也会反过来影响 Chunking</h1>
+<p>假设某个 Chunk：</p>
+<pre class="text"><code>4000 Tokens</code></pre>
+<p>而 Reranker 支持的最大输入长度有限。</p>
+<p>那可能发生：</p>
+<pre class="text"><code>Query + Chunk
+↓
+Truncation
+↓
+真正关键证据恰好被截掉</code></pre>
+<p>于是一个“模型能力问题”，其实是：</p>
+<h1 id="reranker-input-truncation">Reranker Input Truncation</h1>
+<p>所以 Stage 3 的 Chunking Policy 到这里再次回来。</p>
+<p>需要记录：</p>
+<pre class="text"><code>reranker_max_tokens
+query_token_budget
+document_token_budget
+truncation_policy</code></pre>
+<p>尤其政府采购条文中：</p>
+<blockquote>
+<p>例外条件、但书、后半段限制</p>
+</blockquote>
+<p>经常非常关键。</p>
+<p>不能总是简单：</p>
+<blockquote>
+<p>从末尾硬截。</p>
+</blockquote>
+<hr />
+<h1 id="十四reranker-也不能替代-metadata-version-filter">十四、Reranker
+也不能替代 Metadata / Version Filter</h1>
+<p>假设候选里同时有：</p>
+<pre class="text"><code>2022旧版
+2026现行版</code></pre>
+<p>两段文字都和 Query 极其相关。</p>
+<p>如果用户问：</p>
+<blockquote>
+<p>“按照 2026 年现行规定……”</p>
+</blockquote>
+<p>我们不应该把所有责任都丢给 Reranker，</p>
+<p>让它自己猜：</p>
+<blockquote>
+<p>哪一份当前有效。</p>
+</blockquote>
+<p>更可靠的系统仍然应该先利用：</p>
+<pre class="text"><code>query_time
+effective_from
+effective_to
+validity_status
+jurisdiction</code></pre>
+<p>做硬约束或强过滤。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BusinessMetadataConstraint
+\neq
+SemanticReranking
+}
+</annotation></semantics></math></p>
+<p>Reranker 负责：</p>
+<blockquote>
+<p>在合法候选空间内判断相关性。</p>
+</blockquote>
+<p>Metadata / Version Policy 负责：</p>
+<blockquote>
+<p>定义哪些候选本来就不应该参与竞争。</p>
+</blockquote>
+<hr />
+<h1 id="十五第一版-reranking-pipeline-应该怎么设计">十五、第一版
+Reranking Pipeline 应该怎么设计？</h1>
+<p>对于
+<code>ProcurementRAG_V0.1</code>，建议先采用清楚的两阶段结构：</p>
+<pre class="text"><code>User Query
+    │
+    ▼
+Metadata / Validity Filter
+    │
+    ▼
+BM25 + Dense Retrieval
+    │
+    ▼
+Fusion / RRF
+    │
+    ▼
+Candidate Top-N
+    │
+    ▼
+Cross-Encoder Reranker
+    │
+    ▼
+Reranked Top-K
+    │
+    ▼
+Context Builder</code></pre>
+<p>第一版不要急着引入太多动态规则。</p>
+<p>先固定：</p>
+<pre class="text"><code>candidate_n
+final_k
+reranker_model
+reranker_revision
+max_input_tokens
+batch_size</code></pre>
+<p>然后用同一套 Retrieval Benchmark 做 A/B。</p>
+<p>这样我们才能知道：</p>
+<blockquote>
+<p>提升到底来自哪里。</p>
+</blockquote>
+<hr />
+<h1
+id="十六本阶段工程产物procurementrerankingpolicy_v0.1">十六、本阶段工程产物：<code>ProcurementRerankingPolicy_V0.1</code></h1>
+<p>第一版至少记录：</p>
+<pre class="text"><code>reranker_model_id
+reranker_model_revision
+
+reranker_type
+=
+cross_encoder
+
+candidate_source
+=
+hybrid_retrieval
+
+candidate_n
+
+final_top_k
+
+query_document_format
+
+max_input_tokens
+truncation_policy
+
+batch_size
+device
+dtype
+
+score_usage
+=
+ranking_only / thresholded
+
+score_threshold
+如果启用
+
+metadata_filter_before_rerank
+=
+true
+
+version_filter_before_rerank
+=
+true
+
+benchmark_version</code></pre>
+<p>同时记录：</p>
+<pre class="text"><code>before_rerank_mrr
+after_rerank_mrr
+
+before_median_gold_rank
+after_median_gold_rank
+
+before_hard_negative_above_gold_rate
+after_hard_negative_above_gold_rate
+
+p50_rerank_latency
+p95_rerank_latency
+
+pairs_per_second
+peak_vram</code></pre>
+<p>这样我们才真正知道：</p>
+<blockquote>
+<p><strong>Reranker
+带来的排序收益，值不值得它增加的系统成本。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十七把本阶段压成最精准的-5-句话-2">十七、把本阶段压成最精准的 5
+句话</h1>
+<blockquote>
+<p><strong>第一，Retriever 负责高 Recall 召回，Reranker
+负责把最相关的候选重新排到最前面；两者优化目标不同。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Bi-Encoder 通过独立 Query / Document Vector
+实现高效大规模检索，而 Cross-Encoder 让 Query 与候选文本逐 Token
+交互，因此更适合细粒度精排，但成本更高。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Reranker 只能重排已经召回的 Candidate
+Set，不能救回根本没进入候选集的 Gold Evidence；所以调试必须先区分 Recall
+Failure 和 Rerank Failure。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，政府采购 Reranker 的关键价值是压制“投标前 vs
+中标后”“准入 vs 履约”这类语义很近但业务边界不同的 Hard
+Negative。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，是否启用 Reranker 必须同时比较 MRR、Gold Rank、Hard
+Negative 排名改善和新增 Latency / VRAM
+成本，而不是只看一个排序分数。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-7">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         User Query
+                             │
+                             ▼
+                  Metadata / Validity Filter
+                             │
+                             ▼
+                BM25 + Dense Retrieval
+                             │
+                             ▼
+                       Fusion / RRF
+                             │
+                             ▼
+                    Candidate Top-N
+                             │
+                             ▼
+                  Cross-Encoder Reranker
+                             │
+                 ┌───────────┴───────────┐
+                 ▼                       ▼
+               Gold                Hard Negative
+          score应该更高              score应该更低
+                 │                       │
+                 └───────────┬───────────┘
+                             ▼
+                      Reranked Top-K
+                             │
+                             ▼
+                       Context Builder</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Retriever 的任务是“把正确答案带进考场”，Reranker
+的任务是“让正确答案坐到第一排”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-8-阶段掌握测试">第六课 · 第 8 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Retriever 和 Reranker
+的职责为什么不同；为什么 Retriever 优先追求 Recall，而 Reranker 更关注
+Top-Rank Precision；Bi-Encoder 和 Cross-Encoder
+在计算结构上有什么根本差别；为什么 Cross-Encoder 更擅长处理细粒度 Hard
+Negative；为什么不能直接用 Cross-Encoder
+对千万级知识库全量搜索；Candidate N 和 Final K
+为什么是两个不同参数；为什么 Reranker 不能救回没有进入 Candidate Set 的
+Gold Evidence；Reranker Score 为什么不能自动当成概率；为什么 Hard
+Negative Above Gold Rate 是政府采购精排的重要指标；为什么 Reranker
+的输入长度会反过来约束 Chunking；为什么 Metadata / Version Filter
+不应该完全交给 Reranker；以及为什么最终必须同时比较排序收益与 Latency /
+VRAM 成本。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>8</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第8阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第六课-第-9-阶段">下一阶段：第六课 · 第 9 阶段</h1>
+<h1 id="query-rewritemetadata-filter-与多路检索">Query Rewrite、Metadata
+Filter 与多路检索</h1>
+<h2
+id="用户问得不标准信息藏在上下文里retriever-应该怎样先理解查询再去搜">用户问得不标准、信息藏在上下文里，Retriever
+应该怎样先“理解查询”再去搜？</h2>
+<p>到第 8 阶段，我们的链路已经变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo>→</mo><mi>H</mi><mi>y</mi><mi>b</mi><mi>r</mi><mi>i</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>T</mi><mi>o</mi><mi>p</mi><mi>K</mi></mrow><annotation encoding="application/x-tex">
+Query
+\rightarrow
+HybridRetrieval
+\rightarrow
+Reranker
+\rightarrow
+TopK
+</annotation></semantics></math></p>
+<p>下一阶段要处理的问题是：</p>
+<blockquote>
+<p><strong>如果原始 Query 本身就不适合拿去检索怎么办？</strong></p>
+</blockquote>
+<p>例如用户只说：</p>
+<pre class="text"><code>“这个要求合法么？”</code></pre>
+<p>但真正有用的信息其实在前面对话里：</p>
+<pre class="text"><code>2026年
+广东省
+政府采购
+投标前
+本地机构
+资格条件</code></pre>
+<p>下一阶段会正式进入：</p>
+<pre class="text"><code>Query Rewrite
+Query Expansion
+Metadata Extraction
+Temporal Filter
+Jurisdiction Filter
+Multi-query Retrieval
+Query Routing</code></pre>
+<p>并形成：</p>
+<h1
+id="procurementqueryprocessingpolicy_v0.1"><code>ProcurementQueryProcessingPolicy_V0.1</code></h1>
+<p>也就是把 RAG 从：</p>
+<blockquote>
+<p>“拿用户原句直接搜”</p>
+</blockquote>
+<p>升级成：</p>
+<blockquote>
+<p><strong>先把真正的检索意图结构化，再决定搜什么、在哪搜、怎么搜。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage07.html">← 第 7 阶段</a><a class="btn" href="stage09.html">第 9 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

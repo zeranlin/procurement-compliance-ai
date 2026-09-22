@@ -1,0 +1,955 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课 · 第6阶段：Planning 与 Task Decomposition：复杂采购任务怎样拆步骤？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第7课 · 第6阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Agent、Tool Calling、State、Routing、人工复核和工具失败恢复。<ul><li>第一，Planning 不是写待办清单，而是把 Goal → Subgoal → Executable Task → Dependency → Completion Criteria 变成一个可执行任务模型。</li><li>第二，复杂任务更适合表示成 Task Graph，而不是单一线性步骤；Dependency 决定 Sequential / Parallel，Join 决定并行分支何时可以重新汇合。</li><li>第三，一个 Task 最好具有清楚的 Inputs、Preconditions、Action、Outputs 和 Completion Criteria；拆得太粗无法执行，拆得太细则会造成步骤爆炸。</li></ul></div><h1 id="第七课-第-6-阶段">第七课 · 第 6 阶段</h1>
+<h1 id="planning-与-task-decomposition复杂采购任务怎样拆步骤-1">Planning
+与 Task Decomposition：复杂采购任务怎样拆步骤？</h1>
+<h2
+id="agent-已经会循环了但它到底怎样把一个模糊大任务拆成可执行可验证可恢复的子任务">Agent
+已经会循环了，但它到底怎样把一个模糊大任务拆成可执行、可验证、可恢复的子任务？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-5">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-5">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Planning 不是写待办清单，而是把 Goal → Subgoal →
+Executable Task → Dependency → Completion Criteria
+变成一个可执行任务模型。</strong></li>
+<li><strong>第二，复杂任务更适合表示成 Task
+Graph，而不是单一线性步骤；Dependency 决定 Sequential / Parallel，Join
+决定并行分支何时可以重新汇合。</strong></li>
+<li><strong>第三，一个 Task 最好具有清楚的
+Inputs、Preconditions、Action、Outputs 和 Completion
+Criteria；拆得太粗无法执行，拆得太细则会造成步骤爆炸。</strong></li>
+<li><strong>第四，可靠规划通常采用“稳定高层骨架 +
+动态细节展开”：High-level Plan 可以稳定，Detailed Plan 应根据真实
+Observation 随时 Revision。</strong></li>
+<li><strong>第五，Planning Error 必须和 Tool Execution Error
+分开；即使所有 Tool 都成功，只要遗漏
+Subtask、依赖错误或错误并行化，整个任务仍然可能失败。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-5">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Planning</code></td>
+<td>任务规划：把目标拆成可执行、带依赖的子任务</td>
+</tr>
+<tr class="even">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>State</code></td>
+<td>状态：保存任务进度、事实和待办</td>
+</tr>
+<tr class="even">
+<td><code>Observe</code></td>
+<td>Observe/观察：读取当前状态和工具结果</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-5">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 5 阶段我们已经得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>U</mi><mi>p</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>e</mi><mi>/</mi><mi>S</mi><mi>t</mi><mi>o</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+State
+\rightarrow
+Plan
+\rightarrow
+Act
+\rightarrow
+Observe
+\rightarrow
+UpdateState
+\rightarrow
+Continue/Stop
+}
+</annotation></semantics></math></p>
+<p>这解决了：</p>
+<blockquote>
+<p><strong>Agent 怎样持续运行。</strong></p>
+</blockquote>
+<p>但新的问题是：</p>
+<blockquote>
+<p><strong>Plan 到底从哪里来？</strong></p>
+</blockquote>
+<p>用户可能只说一句：</p>
+<pre class="text"><code>“帮我完整审查这份采购文件。”</code></pre>
+<p>这不是一个 Tool 可以直接完成的动作。</p>
+<p>Agent 必须把这个 Goal 拆成：</p>
+<pre class="text"><code>读取文件
+↓
+识别文档结构
+↓
+抽取资格条件
+↓
+抽取评分标准
+↓
+抽取技术参数
+↓
+抽取合同要求
+↓
+分别检索适用规则
+↓
+识别风险
+↓
+整合证据
+↓
+生成报告</code></pre>
+<p>所以本阶段正式进入：</p>
+<h1 id="planning">Planning</h1>
+<h2 id="规划">规划</h2>
+<p>以及：</p>
+<h1 id="task-decomposition">Task Decomposition</h1>
+<h2 id="任务分解">任务分解</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementtaskplanningpolicy_v0.1-1"><code>ProcurementTaskPlanningPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-5">一、先锁死本阶段最重要的一句话</h1>
+<p>Planning 的本质不是：</p>
+<blockquote>
+<p><strong>“让模型写一个很长的待办清单。”</strong></p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>S</mi><mi>u</mi><mi>b</mi><mi>g</mi><mi>o</mi><mi>a</mi><mi>l</mi><mi>s</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>s</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>s</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Goal
+\rightarrow
+Subgoals
+\rightarrow
+ExecutableTasks
+\rightarrow
+Dependencies
+\rightarrow
+CompletionCriteria
+}
+</annotation></semantics></math></p>
+<p>一个好的 Plan 必须回答五件事：</p>
+<pre class="text"><code>最终目标是什么？
+
+为了达到目标，需要哪些子目标？
+
+每个子目标对应哪些可执行任务？
+
+这些任务之间有什么依赖？
+
+怎样判断每个任务真的完成？</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>y</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>l</mi><mi>i</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plan
+\neq
+PrettyChecklist
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二goal-和-action-之间通常差了很多层">二、Goal 和 Action
+之间通常差了很多层</h1>
+<p>用户目标可能是：</p>
+<pre class="text"><code>完成采购文件风险审查</code></pre>
+<p>而 Runtime 真正能执行的是：</p>
+<pre class="text"><code>read_file
+extract_requirements
+search_regulation
+calculate_score
+create_report</code></pre>
+<p>中间需要一层：</p>
+<h1 id="task-decomposition-1">Task Decomposition</h1>
+<p>把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi></mrow><annotation encoding="application/x-tex">
+HighLevelGoal
+</annotation></semantics></math></p>
+<p>变成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+ExecutableActions
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>Goal:
+完成采购文件风险审查
+
+Subgoal A:
+理解采购文件内容
+
+Subgoal B:
+识别潜在风险点
+
+Subgoal C:
+找到适用证据
+
+Subgoal D:
+形成审查结果
+
+Executable Tasks:
+read_file
+extract_sections
+extract_requirements
+search_regulation
+evaluate_risk
+create_report</code></pre>
+<p>这就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>S</mi><mi>u</mi><mi>b</mi><mi>g</mi><mi>o</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo>→</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Goal
+\rightarrow
+Subgoal
+\rightarrow
+Task
+\rightarrow
+Action
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三task-graph复杂任务不应该只是一条线">三、Task
+Graph：复杂任务不应该只是一条线</h1>
+<p>很多任务不是：</p>
+<pre class="text"><code>A → B → C → D</code></pre>
+<p>而更像：</p>
+<pre class="text"><code>                读取文件
+                   │
+                   ▼
+               识别结构
+                   │
+        ┌──────────┼──────────┐
+        ▼          ▼          ▼
+     资格条件    评分标准    技术参数
+        │          │          │
+        ▼          ▼          ▼
+     检索规则    检索规则    检索规则
+        │          │          │
+        └──────────┼──────────┘
+                   ▼
+                汇总风险
+                   │
+                   ▼
+                生成报告</code></pre>
+<p>这就是：</p>
+<h1 id="task-graph">Task Graph</h1>
+<h2 id="任务图">任务图</h2>
+<p>任务图中的节点是：</p>
+<blockquote>
+<p>Task。</p>
+</blockquote>
+<p>边表示：</p>
+<blockquote>
+<p>Dependency。</p>
+</blockquote>
+<hr />
+<h1
+id="四dependency哪些任务必须先做哪些可以并行">四、Dependency：哪些任务必须先做，哪些可以并行？</h1>
+<p>如果：</p>
+<pre class="text"><code>B 需要 A 的输出</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>→</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">
+A
+\rightarrow
+B
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>读取文件
+→
+抽取资格条件</code></pre>
+<p>因为没有文件内容：</p>
+<blockquote>
+<p>不能抽取资格条件。</p>
+</blockquote>
+<p>但：</p>
+<pre class="text"><code>审查资格条件
+审查评分标准
+审查技术参数</code></pre>
+<p>在文件结构已经提取后，</p>
+<p>可能互不依赖。</p>
+<p>因此可以并行：</p>
+<pre class="text"><code>             ┌→ qualification_review
+parse_file ──┼→ scoring_review
+             └→ technical_review</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>决</mi><mi>定</mi><mi>S</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mspace width="0.222em"></mspace><mi>o</mi><mi>r</mi><mspace width="0.222em"></mspace><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Dependency
+决定
+Sequential\ or\ Parallel
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五dag为什么任务图最好尽量是有向无环图">五、DAG：为什么任务图最好尽量是有向无环图？</h1>
+<p>很多规划可以表示为：</p>
+<h1 id="dag">DAG</h1>
+<h2 id="directed-acyclic-graph有向无环图">Directed Acyclic
+Graph，有向无环图</h2>
+<p>意思是：</p>
+<pre class="text"><code>任务有方向
+但不要形成无意义循环</code></pre>
+<p>例如：</p>
+<pre class="text"><code>A → B → C</code></pre>
+<p>是正常依赖。</p>
+<p>而：</p>
+<pre class="text"><code>A → B → C → A</code></pre>
+<p>就意味着：</p>
+<blockquote>
+<p>任务定义本身可能形成循环依赖。</p>
+</blockquote>
+<p>注意：</p>
+<blockquote>
+<p>Agent Loop 可以循环。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>高层 Task Dependency 不应该无缘无故形成闭环。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>o</mi><mi>p</mi><mi>用</mi><mi>于</mi><mi>执</mi><mi>行</mi><mi>控</mi><mi>制</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Loop
+用于执行控制
+}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>p</mi><mi>h</mi><mi>用</mi><mi>于</mi><mi>表</mi><mi>达</mi><mi>任</mi><mi>务</mi><mi>依</mi><mi>赖</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TaskGraph
+用于表达任务依赖
+}
+</annotation></semantics></math></p>
+<p>两者不是一回事。</p>
+<hr />
+<h1
+id="六每个-task-都必须有-preconditions-和-completion-criteria">六、每个
+Task 都必须有 Preconditions 和 Completion Criteria</h1>
+<p>一个 Task 不能只写：</p>
+<pre class="text"><code>“审查资格条件”</code></pre>
+<p>还应该明确：</p>
+<h1 id="preconditions">Preconditions</h1>
+<h2 id="前置条件">前置条件</h2>
+<p>例如：</p>
+<pre class="text"><code>采购文件已读取
+资格条件已抽取
+项目辖区已知</code></pre>
+<p>以及：</p>
+<h1 id="completion-criteria">Completion Criteria</h1>
+<h2 id="完成标准">完成标准</h2>
+<p>例如：</p>
+<pre class="text"><code>每条资格条件都有：
+risk_status
+reason
+evidence_ids
+needs_review</code></pre>
+<p>所以一个 Task 可以抽象为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo>=</mo><mo stretchy="false" form="prefix">{</mo><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>s</mi><mo>,</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mo>,</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>,</mo><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>s</mi><mo>,</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>a</mi><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">
+Task
+=
+\{
+Inputs,
+Preconditions,
+Action,
+Outputs,
+CompletionCriteria
+\}
+</annotation></semantics></math></p>
+<p>这会极大降低：</p>
+<blockquote>
+<p>“看起来做过，实际上没完成”</p>
+</blockquote>
+<p>的问题。</p>
+<hr />
+<h1
+id="七granularity任务拆多细才合适">七、Granularity：任务拆多细才合适？</h1>
+<p>这是 Planning 最难的工程问题之一。</p>
+<p>如果拆得太粗：</p>
+<h1 id="under-decomposition">Under-decomposition</h1>
+<h2 id="分解不足">分解不足</h2>
+<p>例如：</p>
+<pre class="text"><code>Task 1:
+完整审查采购文件</code></pre>
+<p>Runtime 根本不知道怎么执行。</p>
+<hr />
+<p>如果拆得太细：</p>
+<h1 id="over-decomposition">Over-decomposition</h1>
+<h2 id="过度分解">过度分解</h2>
+<p>例如：</p>
+<pre class="text"><code>打开文件
+读取第一页
+识别第一个标题
+读取第二页
+识别第二个标题
+……</code></pre>
+<p>会导致：</p>
+<pre class="text"><code>步骤爆炸
+成本上升
+状态复杂
+错误机会增多
+计划难以维护</code></pre>
+<p>所以合适粒度是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>一</mi><mi>个</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>最</mi><mi>好</mi><mi>对</mi><mi>应</mi><mi>一</mi><mi>个</mi><mi>清</mi><mi>楚</mi><mi>输</mi><mi>入</mi><mo>+</mo><mi>一</mi><mi>个</mi><mi>可</mi><mi>执</mi><mi>行</mi><mi>能</mi><mi>力</mi><mo>+</mo><mi>一</mi><mi>个</mi><mi>可</mi><mi>验</mi><mi>证</mi><mi>输</mi><mi>出</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+一个Task
+最好对应
+一个清楚输入
++
+一个可执行能力
++
+一个可验证输出
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八稳定骨架-动态分支比一次生成完整计划更可靠">八、稳定骨架 +
+动态分支，比“一次生成完整计划”更可靠</h1>
+<p>第 5 阶段我们强调：</p>
+<blockquote>
+<p>Short-horizon Planning。</p>
+</blockquote>
+<p>第 6 阶段把它进一步精确化。</p>
+<p>可以先有一个：</p>
+<h1 id="stable-skeleton">Stable Skeleton</h1>
+<h2 id="稳定任务骨架">稳定任务骨架</h2>
+<p>例如：</p>
+<pre class="text"><code>读取
+→
+抽取
+→
+检索
+→
+判断
+→
+汇总</code></pre>
+<p>然后运行过程中根据 Observation 动态展开：</p>
+<pre class="text"><code>如果发现资格条件
+→ 展开资格审查分支
+
+如果发现评分条款
+→ 展开评分审查分支
+
+如果证据冲突
+→ 增加版本核验任务
+
+如果辖区未知
+→ 增加澄清任务</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>可</mi><mi>以</mi><mi>相</mi><mi>对</mi><mi>稳</mi><mi>定</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighLevelPlan
+可以相对稳定
+}
+</annotation></semantics></math></p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>应</mi><mi>随</mi><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>动</mi><mi>态</mi><mi>调</mi><mi>整</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DetailedPlan
+应随Observation动态调整
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九conditional-branch真实任务一定会出现条件分支">九、Conditional
+Branch：真实任务一定会出现条件分支</h1>
+<p>规划不只是：</p>
+<pre class="text"><code>Step 1
+Step 2
+Step 3</code></pre>
+<p>还会有：</p>
+<pre class="text"><code>IF 发现本地化要求
+THEN 检索本地机构相关规则
+
+IF 文号明确
+THEN 精确检索
+
+ELSE
+语义检索
+
+IF 证据不足
+THEN needs_review
+
+IF 高风险动作
+THEN human_approval</code></pre>
+<p>这就是：</p>
+<h1 id="conditional-planning">Conditional Planning</h1>
+<h2 id="条件式规划">条件式规划</h2>
+<p>因此一个真实 Plan 更像：</p>
+<blockquote>
+<p>Task Graph + Conditions</p>
+</blockquote>
+<p>而不是简单列表。</p>
+<hr />
+<h1
+id="十join并行子任务最后必须重新汇合">十、Join：并行子任务最后必须重新汇合</h1>
+<p>假设三个分支并行：</p>
+<pre class="text"><code>qualification_review
+scoring_review
+technical_review</code></pre>
+<p>最终生成报告之前，</p>
+<p>必须确认：</p>
+<pre class="text"><code>三个分支都完成
+或
+某个分支明确标记 incomplete / needs_review</code></pre>
+<p>这叫：</p>
+<h1 id="join">Join</h1>
+<h2 id="汇合">汇合</h2>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>J</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mo>=</mo><mi>A</mi><mi>l</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>s</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>v</mi><mi>e</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+JoinReady
+=
+AllRequiredDependenciesResolved
+</annotation></semantics></math></p>
+<p>这里的“Resolved”不一定意味着：</p>
+<blockquote>
+<p>成功。</p>
+</blockquote>
+<p>也可以意味着：</p>
+<blockquote>
+<p>已明确失败并记录状态。</p>
+</blockquote>
+<p>关键是：</p>
+<blockquote>
+<p>上游状态必须清楚。</p>
+</blockquote>
+<hr />
+<h1 id="十一critical-path什么决定整个任务最快多久完成">十一、Critical
+Path：什么决定整个任务最快多久完成？</h1>
+<p>在一个 Task Graph 中，</p>
+<p>有些任务可以并行，</p>
+<p>但有一条最长依赖链会决定：</p>
+<blockquote>
+<p>整体最短完成时间。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="critical-path">Critical Path</h1>
+<h2 id="关键路径">关键路径</h2>
+<p>例如：</p>
+<pre class="text"><code>读取文件
+→
+解析结构
+→
+资格审查
+→
+汇总
+→
+报告生成</code></pre>
+<p>如果资格审查是最慢分支，</p>
+<p>即使评分和技术分支很快：</p>
+<blockquote>
+<p>整个报告仍然要等资格分支。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>优</mi><mi>化</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>延</mi><mi>迟</mi><mi>不</mi><mi>只</mi><mi>是</mi><mi>让</mi><mi>每</mi><mi>个</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>都</mi><mi>更</mi><mi>快</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+优化Agent延迟
+不只是让每个Tool都更快
+}
+</annotation></semantics></math></p>
+<p>还要看：</p>
+<blockquote>
+<p>哪些任务位于关键路径。</p>
+</blockquote>
+<hr />
+<h1 id="十二plan-revision什么时候应该改计划">十二、Plan
+Revision：什么时候应该改计划？</h1>
+<p>计划必须允许修改。</p>
+<p>例如：</p>
+<pre class="text"><code>原计划：
+直接检索适用规则</code></pre>
+<p>但 Observation 发现：</p>
+<pre class="text"><code>项目辖区缺失</code></pre>
+<p>那么继续检索可能产生错误结果。</p>
+<p>此时应该：</p>
+<pre class="text"><code>暂停原分支
+↓
+新增任务：获取辖区
+↓
+获得辖区
+↓
+恢复检索</code></pre>
+<p>这就是：</p>
+<h1 id="plan-revision">Plan Revision</h1>
+<h2 id="计划修订">计划修订</h2>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>是</mi><mi>可</mi><mi>更</mi><mi>新</mi><mi>的</mi><mi>任</mi><mi>务</mi><mi>模</mi><mi>型</mi><mi>不</mi><mi>是</mi><mi>不</mi><mi>可</mi><mi>改</mi><mi>变</mi><mi>的</mi><mi>剧</mi><mi>本</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Plan
+是可更新的任务模型
+不是不可改变的剧本
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三planning-error规划错误和执行错误必须分开">十三、Planning
+Error：规划错误和执行错误必须分开</h1>
+<p>假设 Agent 最终没完成任务。</p>
+<p>可能不是 Tool 失败，</p>
+<p>而是：</p>
+<blockquote>
+<p>一开始就没规划这个子任务。</p>
+</blockquote>
+<p>例如用户要求：</p>
+<pre class="text"><code>资格条件
++
+评分标准
++
+技术参数
++
+合同要求</code></pre>
+<p>Agent 只规划了前三项。</p>
+<p>所有 Tool 都执行成功，</p>
+<p>最终仍然失败。</p>
+<p>这叫：</p>
+<h1 id="missing-subtask-error">Missing Subtask Error</h1>
+<h2 id="缺失子任务错误">缺失子任务错误</h2>
+<p>所以至少要区分：</p>
+<pre class="text"><code>Missing Subtask
+Wrong Dependency
+Wrong Ordering
+Over-decomposition
+Under-decomposition
+Invalid Parallelization
+Missing Join
+Wrong Branch Condition
+Premature Plan Completion</code></pre>
+<p>这些都属于：</p>
+<blockquote>
+<p>Planning Error。</p>
+</blockquote>
+<hr />
+<h1 id="十四怎样评测-task-planning">十四、怎样评测 Task Planning？</h1>
+<p>第一版至少记录：</p>
+<pre class="text"><code>subtask_coverage
+
+dependency_accuracy
+
+ordering_accuracy
+
+parallelization_accuracy
+
+branch_accuracy
+
+completion_criteria_coverage
+
+missing_subtask_rate
+
+over_decomposition_rate
+
+under_decomposition_rate
+
+plan_revision_success_rate
+
+critical_path_latency
+
+final_task_completion_rate</code></pre>
+<p>最重要的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>最</mi><mi>终</mi><mi>必</mi><mi>须</mi><mi>由</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>验</mi><mi>证</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PlanQuality
+最终必须由TaskSuccess验证
+}
+</annotation></semantics></math></p>
+<p>因为一个“看起来很专业”的 Plan：</p>
+<blockquote>
+<p>也可能漏任务、依赖错、无法执行。</p>
+</blockquote>
+<hr />
+<h1
+id="十五政府采购案例完整采购文件审查-task-graph">十五、政府采购案例：完整采购文件审查
+Task Graph</h1>
+<p>用户目标：</p>
+<blockquote>
+<p>“完整审查这份采购文件，并生成带证据的风险报告。”</p>
+</blockquote>
+<p>第一版 Task Graph 可以是：</p>
+<pre class="text"><code>T0 读取采购文件
+        │
+        ▼
+T1 识别文档结构
+        │
+   ┌────┼────┬────┐
+   ▼    ▼    ▼    ▼
+ T2    T3    T4    T5
+资格  评分  技术  合同
+抽取  抽取  抽取  抽取
+   │    │    │    │
+   ▼    ▼    ▼    ▼
+ T6    T7    T8    T9
+规则  规则  规则  规则
+检索  检索  检索  检索
+   │    │    │    │
+   ▼    ▼    ▼    ▼
+T10   T11   T12   T13
+风险  风险  风险  风险
+判断  判断  判断  判断
+   └────┬────┴────┘
+        ▼
+T14 汇总证据与风险
+        │
+        ▼
+T15 生成审查报告
+        │
+        ▼
+T16 Completion Check</code></pre>
+<p>如果某个分支证据不足：</p>
+<pre class="text"><code>T12
+=
+needs_review</code></pre>
+<p>并不一定阻止整个任务继续。</p>
+<p>最终报告可以明确：</p>
+<pre class="text"><code>已完成：
+资格 / 评分 / 合同
+
+需要人工复核：
+技术参数第3项</code></pre>
+<p>这比：</p>
+<blockquote>
+<p>为了“全部成功”而强行生成确定结论</p>
+</blockquote>
+<p>可靠得多。</p>
+<hr />
+<h1
+id="十六本阶段工程产物procurementtaskplanningpolicy_v0.1">十六、本阶段工程产物：<code>ProcurementTaskPlanningPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>planning_policy_version
+
+goal_schema
+
+subgoal_schema
+
+task_schema
+
+task_id
+
+task_type
+
+inputs
+
+outputs
+
+preconditions
+
+dependencies
+
+completion_criteria
+
+parallelizable
+
+branch_condition
+
+join_policy
+
+priority
+
+critical_path_tracking
+
+decomposition_granularity
+
+max_subtasks
+
+dynamic_expansion_enabled
+=
+true
+
+plan_revision_policy
+
+missing_information_policy
+
+human_clarification_policy
+
+trace_logging
+=
+enabled</code></pre>
+<p>每次任务至少记录：</p>
+<pre class="text"><code>original_goal
+
+initial_task_graph
+
+task_dependencies
+
+dynamic_tasks_added
+
+tasks_removed
+
+plan_revision_reason
+
+parallel_groups
+
+critical_path
+
+task_statuses
+
+final_completion_check</code></pre>
+<p>这样 Planning 才能：</p>
+<blockquote>
+<p><strong>被审计、被评测、被优化。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十七把本阶段压成最精准的-6-句话">十七、把本阶段压成最精准的 6
+句话</h1>
+<blockquote>
+<p><strong>第一，Planning 不是写待办清单，而是把
+<code>Goal → Subgoal → Executable Task → Dependency → Completion Criteria</code>
+变成一个可执行任务模型。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，复杂任务更适合表示成 Task
+Graph，而不是单一线性步骤；Dependency 决定 Sequential / Parallel，Join
+决定并行分支何时可以重新汇合。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，一个 Task 最好具有清楚的
+Inputs、Preconditions、Action、Outputs 和 Completion
+Criteria；拆得太粗无法执行，拆得太细则会造成步骤爆炸。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，可靠规划通常采用“稳定高层骨架 +
+动态细节展开”：High-level Plan 可以稳定，Detailed Plan 应根据真实
+Observation 随时 Revision。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Planning Error 必须和 Tool Execution Error
+分开；即使所有 Tool 都成功，只要遗漏
+Subtask、依赖错误或错误并行化，整个任务仍然可能失败。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，Plan 的最终质量不看它写得多漂亮，而看 Subtask
+Coverage、Dependency Accuracy、Plan Revision 和最终 Task
+Completion。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-5">本阶段最核心的一张图</h1>
+<pre class="text"><code>                         User Goal
+                            │
+                            ▼
+                      Goal Analysis
+                            │
+                            ▼
+                    Subgoal Decompose
+                            │
+                            ▼
+                       Task Graph
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+          Sequential     Parallel      Conditional
+              │             │             │
+              └─────────────┼─────────────┘
+                            ▼
+                        Execute Tasks
+                            │
+                            ▼
+                       Observations
+                            │
+                ┌───────────┴───────────┐
+                ▼                       ▼
+           Plan Still Valid?          Join Ready?
+                │                       │
+          ┌─────┴─────┐                 │
+          ▼           ▼                 │
+         Yes          No                 │
+          │       Plan Revision          │
+          └───────────┬──────────────────┘
+                      ▼
+                Completion Check</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>真正的
+Planning，不是提前猜完未来，而是把目标拆成有依赖、有完成标准、可并行、可修订的任务图，再让
+Agent 根据真实 Observation 一步步把这张图执行完。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第七课-第-6-阶段掌握测试">第七课 · 第 6 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Goal、Subgoal、Task、Action
+四层有什么区别；为什么复杂任务应该用 Task Graph
+而不是简单线性列表；Dependency 怎样决定顺序和并行；为什么 Task Graph
+最好尽量是 DAG；Preconditions 和 Completion Criteria
+分别解决什么问题；什么叫 Under-decomposition 和
+Over-decomposition；为什么“稳定高层骨架 +
+动态细节展开”比一次生成完整未来计划更可靠；Conditional Branch 和 Join
+分别做什么；Critical Path 为什么决定整体延迟；什么时候需要 Plan
+Revision；Planning Error 为什么必须和 Tool Execution Error
+分开；以及为什么 Plan Quality 最终必须由 Task Completion 来验证。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>七</mi><mi>课</mi><mi>第</mi><mn>6</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第七课第6阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第七课-第-7-阶段">下一阶段：第七课 · 第 7 阶段</h1>
+<h1
+id="statememory-与-working-contextagent-怎样记住任务进度">State、Memory
+与 Working Context：Agent 怎样记住任务进度？</h1>
+<h2
+id="agent-已经会拆任务也会循环执行但记住什么保存在哪里下一轮把什么重新交给模型到底应该怎样设计">Agent
+已经会拆任务，也会循环执行，但“记住什么、保存在哪里、下一轮把什么重新交给模型”到底应该怎样设计？</h2>
+<p>到第 6 阶段，我们已经有：</p>
+<pre class="text"><code>Goal
+Subgoal
+Task Graph
+Dependency
+Parallel / Sequential
+Conditional Branch
+Plan Revision
+Completion Criteria</code></pre>
+<p>下一阶段要解决的是：</p>
+<blockquote>
+<p><strong>这些信息到底保存在哪里？</strong></p>
+</blockquote>
+<p>我们会正式区分：</p>
+<pre class="text"><code>Conversation History
+Working Context
+Task State
+Short-term Memory
+Long-term Memory
+Artifact Store
+External State
+Checkpoint</code></pre>
+<p>并建立：</p>
+<h1
+id="procurementagentstatepolicy_v0.1"><code>ProcurementAgentStatePolicy_V0.1</code></h1>
+<p>下一阶段最关键的一条边界会是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>把</mi><mi>所</mi><mi>有</mi><mi>历</mi><mi>史</mi><mi>聊</mi><mi>天</mi><mi>重</mi><mi>新</mi><mi>塞</mi><mi>进</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Memory
+\neq
+把所有历史聊天重新塞进Context
+}
+</annotation></semantics></math></p>
+<p>而是要设计：</p>
+<blockquote>
+<p><strong>什么必须长期保存，什么只在当前任务有效，什么应该结构化进入
+State，什么需要按需重新取回。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage05.html">← 第 5 阶段</a><a class="btn" href="stage07.html">第 7 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

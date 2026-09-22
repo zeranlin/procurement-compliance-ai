@@ -1,0 +1,630 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第10阶段：Benchmark Leakage、Contamination、Firewall 与 Test Governance</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第10阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>NoExactDuplicate ≠ NoContamination。没有完全重复只能说明最浅层没有泄漏。</li><li>Semantic Independence &gt; String Independence。Benchmark 独立性要覆盖语义、项目、血缘和派生关系。</li><li>HumanExposure 也是 Benchmark Exposure，开发者同样会对测试集过拟合。</li></ul></div><h1 id="第九课-第-10-阶段">第九课 · 第 10 阶段</h1>
+<h1
+id="benchmark-leakagecontaminationfirewall-与-test-governance-1">Benchmark
+Leakage、Contamination、Firewall 与 Test Governance</h1>
+<h2
+id="怎么防止训练集偷看测试集为什么没有完全重复样本也可能已经污染-benchmark">怎么防止训练集“偷看”测试集？为什么没有完全重复样本，也可能已经污染
+Benchmark？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-9">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-9">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>NoExactDuplicate ≠
+NoContamination。没有完全重复只能说明最浅层没有泄漏。</strong></li>
+<li><strong>Semantic Independence &gt; String Independence。Benchmark
+独立性要覆盖语义、项目、血缘和派生关系。</strong></li>
+<li><strong>HumanExposure 也是 Benchmark
+Exposure，开发者同样会对测试集过拟合。</strong></li>
+<li><strong>RAG 评测需要 RetrievalFirewall，否则系统可能直接检索到 Gold
+答案。</strong></li>
+<li><strong>Unlimited Benchmark Queries 会把 Hidden Test 逐渐变成
+Validation。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-9">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="odd">
+<td><code>Governance</code></td>
+<td>治理：控制版本、权限、污染、审批和发布决策</td>
+</tr>
+<tr class="even">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-9">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 1 阶段我们已经建立 Benchmark Firewall 的概念。</p>
+<p>现在把它升级成完整治理系统。</p>
+<p>因为 Benchmark 最大的敌人之一就是：</p>
+<h1 id="contamination">Contamination</h1>
+<h2 id="测试污染">测试污染</h2>
+<p>如果模型、数据管道、开发人员、RAG 或 Synthetic Pipeline 已经提前接触
+Benchmark 信息，</p>
+<p>最终高分可能只是：</p>
+<blockquote>
+<p>“见过答案”。</p>
+</blockquote>
+<p>所以本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>E</mi><mi>x</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>D</mi><mi>u</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoExactDuplicate
+\neq
+NoContamination
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementbenchmarkfirewallpolicy_v0.1-1"><code>ProcurementBenchmarkFirewallPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一污染到底有哪些类型">一、污染到底有哪些类型？</h1>
+<p>至少可以分：</p>
+<pre class="text"><code>Training Contamination
+训练污染
+
+Validation Contamination
+验证污染
+
+Developer Contamination
+开发者污染
+
+Synthetic Contamination
+合成派生污染
+
+Retrieval Contamination
+检索污染
+
+Prompt Leakage
+提示泄漏
+
+Judge Leakage
+裁判泄漏</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>I</mi><mi>n</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Contamination
+=
+InformationExposureProblem
+}
+</annotation></semantics></math></p>
+<p>不只是文本重复问题。</p>
+<hr />
+<h1 id="二training-contamination">二、Training Contamination</h1>
+<p>最直接：</p>
+<pre class="text"><code>Benchmark样本
+进入CPT / SFT / LoRA训练</code></pre>
+<p>包括：</p>
+<pre class="text"><code>原文
+答案
+解释
+改写
+切块
+摘要</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>只</mi><mi>是</mi><mi>最</mi><mi>容</mi><mi>易</mi><mi>发</mi><mi>现</mi><mi>的</mi><mi>一</mi><mi>层</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExactText
+只是最容易发现的一层
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三near-duplicate同一文档不同版本怎么办">三、Near
+Duplicate：同一文档不同版本怎么办？</h1>
+<p>例如：</p>
+<pre class="text"><code>原公告
+更正公告
+最终公告</code></pre>
+<p>文本不完全相同，</p>
+<p>但内容高度重合。</p>
+<p>如果一个进 Training，</p>
+<p>另一个进 Gold，</p>
+<p>模型仍可能：</p>
+<blockquote>
+<p>基本见过。</p>
+</blockquote>
+<p>所以要检查：</p>
+<h1 id="document-lineage">Document Lineage</h1>
+<h2 id="文档血缘">文档血缘</h2>
+<hr />
+<h1 id="四核心心智模型-①">四、核心心智模型 ①</h1>
+<h1
+id="semantic-independence-比-string-independence-更重要"><code>Semantic Independence</code>
+比 <code>String Independence</code> 更重要</h1>
+<p>Benchmark 独立性不应该只定义为：</p>
+<blockquote>
+<p>字符串不一样。</p>
+</blockquote>
+<p>而应该尽量追求：</p>
+<blockquote>
+<p>语义、项目、文档血缘、派生关系也独立。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>I</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>p</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>&gt;</mo><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>D</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkIndependence
+&gt;
+TextDedup
+}
+</annotation></semantics></math></p>
+<p>这里的 <code>&gt;</code> 表示治理范围更大。</p>
+<hr />
+<h1 id="五synthetic-contamination">五、Synthetic Contamination</h1>
+<p>如果 Teacher 看到 Gold 样本：</p>
+<pre class="text"><code>Sample X</code></pre>
+<p>然后生成：</p>
+<pre class="text"><code>改写X
+反事实X
+同结构X</code></pre>
+<p>这些再进入 Training，</p>
+<p>Benchmark 已经间接泄漏。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>也</mi><mi>是</mi><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DerivativeLeakage
+也是Leakage
+}
+</annotation></semantics></math></p>
+<p>必须记录：</p>
+<pre class="text"><code>seed_id
+teacher_model
+prompt_version
+derivative_lineage</code></pre>
+<hr />
+<h1 id="六developer-contamination">六、Developer Contamination</h1>
+<p>即使样本没进训练，</p>
+<p>开发者如果长期：</p>
+<pre class="text"><code>逐条看Gold错误
+针对Gold修Prompt
+针对Gold写规则
+针对Gold补案例</code></pre>
+<p>Gold 也会逐渐变成：</p>
+<blockquote>
+<p>Validation。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>也</mi><mi>是</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HumanExposure
+也是BenchmarkExposure
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七核心心智模型-②-2">七、核心心智模型 ②</h1>
+<h1
+id="evaluation-leakage-可以发生在-weight-之外"><code>Evaluation Leakage</code>
+可以发生在 Weight 之外</h1>
+<p>Benchmark 独立性不仅保护：</p>
+<blockquote>
+<p>模型参数。</p>
+</blockquote>
+<p>还要保护：</p>
+<pre class="text"><code>Prompt
+Rules
+Threshold
+RAG Config
+Agent Policy
+Human Decisions</code></pre>
+<hr />
+<h1
+id="八retrieval-contaminationrag-特别容易忽略的一类污染">八、Retrieval
+Contamination：RAG 特别容易忽略的一类污染</h1>
+<p>如果评测时 RAG 可以检索：</p>
+<blockquote>
+<p>包含 Gold Answer 或 Benchmark 标注文件的索引，</p>
+</blockquote>
+<p>那么系统可能直接：</p>
+<blockquote>
+<p>检索到答案。</p>
+</blockquote>
+<p>所以评测 RAG 时必须检查：</p>
+<pre class="text"><code>retrieval_corpus_version
+index_version
+benchmark_exclusion</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>需</mi><mi>要</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>F</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>w</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGEval
+需要
+RetrievalFirewall
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九prompt-leakage">九、Prompt Leakage</h1>
+<p>如果 System Prompt 里：</p>
+<pre class="text"><code>列出了Benchmark标签定义
+甚至包含具体Gold答案模式</code></pre>
+<p>也可能造成泄漏。</p>
+<p>尤其当：</p>
+<blockquote>
+<p>Prompt 是根据 Benchmark 错误逐条优化的。</p>
+</blockquote>
+<p>所以 Prompt 也属于：</p>
+<h1 id="exposure-surface">Exposure Surface</h1>
+<h2 id="信息暴露面">信息暴露面</h2>
+<hr />
+<h1 id="十hidden-test-为什么越来越重要">十、Hidden Test
+为什么越来越重要？</h1>
+<p>开发团队看不到：</p>
+<pre class="text"><code>具体题目
+具体标签</code></pre>
+<p>就能显著降低：</p>
+<blockquote>
+<p>Human Overfitting。</p>
+</blockquote>
+<p>所以重要 Release 可以使用：</p>
+<h1 id="hidden-benchmark">Hidden Benchmark</h1>
+<h2 id="隐藏基准">隐藏基准</h2>
+<p>并限制：</p>
+<pre class="text"><code>提交次数
+结果粒度
+错误访问</code></pre>
+<hr />
+<h1 id="十一核心心智模型-③-1">十一、核心心智模型 ③</h1>
+<h1
+id="unlimited-benchmark-queries-会把-hidden-test-也变成-validation"><code>Unlimited Benchmark Queries</code>
+会把 Hidden Test 也变成 Validation</h1>
+<p>即使看不到题目，</p>
+<p>如果每天提交 1000 次，</p>
+<p>只看分数变化，</p>
+<p>也可以逐渐：</p>
+<blockquote>
+<p>反向调参。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>也</mi><mi>是</mi><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QueryBudget
+也是Governance
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二firewall-应该在什么时候执行">十二、Firewall
+应该在什么时候执行？</h1>
+<p>至少：</p>
+<pre class="text"><code>数据入库时
+训练集构建时
+Synthetic生成时
+Benchmark发布时
+模型Release前</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>w</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>不</mi><mi>是</mi><mi>一</mi><mi>次</mi><mi>检</mi><mi>查</mi><mi>而</mi><mi>是</mi><mi>L</mi><mi>i</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>y</mi><mi>c</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Firewall
+不是一次检查
+而是LifecycleControl
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三污染检查层级">十三、污染检查层级</h1>
+<p>可以设计：</p>
+<h3 id="level-1">Level 1</h3>
+<p>Exact Hash</p>
+<h3 id="level-2">Level 2</h3>
+<p>Near Duplicate</p>
+<h3 id="level-3">Level 3</h3>
+<p>Semantic Similarity</p>
+<h3 id="level-4">Level 4</h3>
+<p>Project / Document Lineage</p>
+<h3 id="level-5">Level 5</h3>
+<p>Synthetic Derivative</p>
+<h3 id="level-6">Level 6</h3>
+<p>Human / Prompt Exposure</p>
+<p>这比只做：</p>
+<pre class="text"><code>hash != hash</code></pre>
+<p>完整得多。</p>
+<hr />
+<h1 id="十四核心心智模型-④-1">十四、核心心智模型 ④</h1>
+<h1
+id="leakage-detection-永远不是-100-完美"><code>Leakage Detection</code>
+永远不是 100% 完美</h1>
+<p>语义污染很难完全检测。</p>
+<p>所以真正策略应该是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mo>+</mo><mi>A</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Detection
++
+Prevention
++
+AccessControl
++
+Audit
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>“我们有一个相似度脚本，所以没污染。”</p>
+</blockquote>
+<hr />
+<h1 id="十五canary-sentinel-样本">十五、Canary / Sentinel 样本</h1>
+<p>可以加入一些专门用于监控泄漏的：</p>
+<h1 id="canary-items">Canary Items</h1>
+<h2 id="哨兵样本">哨兵样本</h2>
+<p>如果系统在这些极少公开、严格隐藏的样本上：</p>
+<blockquote>
+<p>表现异常好，</p>
+</blockquote>
+<p>可以触发污染调查。</p>
+<p>它不是绝对证据，</p>
+<p>而是：</p>
+<h1 id="contamination-signal">Contamination Signal</h1>
+<h2 id="污染信号">污染信号</h2>
+<hr />
+<h1 id="十六test-governance谁可以看什么">十六、Test
+Governance：谁可以看什么？</h1>
+<p>可以设计权限：</p>
+<pre class="text"><code>Benchmark Owner
+看全量
+
+Evaluator
+运行评测
+
+Developer
+只看聚合结果
+
+Release Owner
+看Release报告
+
+Annotator
+只看分配样本</code></pre>
+<p>核心：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NeedToKnowAccess
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十七核心心智模型-⑤-1">十七、核心心智模型 ⑤</h1>
+<h1
+id="accesscontrol-是-benchmark-质量的一部分"><code>AccessControl</code>
+是 Benchmark 质量的一部分</h1>
+<p>如果任何人都能：</p>
+<blockquote>
+<p>下载 Gold 全量答案，</p>
+</blockquote>
+<p>那么 Benchmark 独立性长期一定下降。</p>
+<p>所以治理不是行政附加项。</p>
+<p>它直接影响：</p>
+<blockquote>
+<p>Metric Credibility。</p>
+</blockquote>
+<hr />
+<h1 id="十八污染事件发生后怎么办">十八、污染事件发生后怎么办？</h1>
+<p>需要：</p>
+<h1 id="contamination-incident-response">Contamination Incident
+Response</h1>
+<h2 id="污染事件响应">污染事件响应</h2>
+<p>流程：</p>
+<pre class="text"><code>Detect
+发现
+
+↓
+Scope
+确定影响范围
+
+↓
+Taint
+标记污染样本 / Run
+
+↓
+Invalidate
+必要时作废分数
+
+↓
+Replace / Rebuild
+替换或重建Benchmark
+
+↓
+Version
+发布新版本
+
+↓
+Audit
+记录事件</code></pre>
+<hr />
+<h1 id="十九核心心智模型-⑥-2">十九、核心心智模型 ⑥</h1>
+<h1 id="tainted-score-不能继续当历史基线"><code>Tainted Score</code>
+不能继续当历史基线</h1>
+<p>如果某次 Run 被确认：</p>
+<blockquote>
+<p>使用了被污染 Benchmark，</p>
+</blockquote>
+<p>它的分数应该：</p>
+<pre class="text"><code>tainted = true</code></pre>
+<p>必要时：</p>
+<blockquote>
+<p>不再参与模型版本比较。</p>
+</blockquote>
+<hr />
+<h1 id="二十benchmark-rotation">二十、Benchmark Rotation</h1>
+<p>长期使用同一套 Benchmark，</p>
+<p>开发团队不可避免会：</p>
+<blockquote>
+<p>熟悉它。</p>
+</blockquote>
+<p>所以可以保留：</p>
+<pre class="text"><code>Core Frozen Set
+核心稳定集
+
++
+Rotating Hidden Set
+轮换隐藏集</code></pre>
+<p>既保持历史可比，</p>
+<p>又降低长期过拟合。</p>
+<hr />
+<h1 id="二十一核心心智模型-⑦-1">二十一、核心心智模型 ⑦</h1>
+<h1
+id="stablebenchmark-和-freshbenchmark-都需要"><code>StableBenchmark</code>
+和 <code>FreshBenchmark</code> 都需要</h1>
+<p>只稳定：</p>
+<blockquote>
+<p>容易长期过拟合。</p>
+</blockquote>
+<p>只更新：</p>
+<blockquote>
+<p>历史不可比。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>P</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>f</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>o</mi><mo>=</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>H</mi><mi>i</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BenchmarkPortfolio
+=
+StableCore
++
+FreshHidden
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十二本阶段正式工程产物-3">二十二、本阶段正式工程产物</h1>
+<h1
+id="procurementbenchmarkfirewallpolicy_v0.1-2"><code>ProcurementBenchmarkFirewallPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>firewall_policy_version
+
+training_contamination_check
+
+exact_hash_check
+
+near_duplicate_check
+
+semantic_similarity_check
+
+project_lineage_check
+
+document_lineage_check
+
+synthetic_derivative_check
+
+retrieval_firewall
+
+prompt_exposure_policy
+
+developer_access_policy
+
+hidden_test_policy
+
+query_budget
+
+canary_policy
+
+tainted_run_policy
+
+incident_response
+
+benchmark_rotation_policy
+
+audit_log
+
+release_gate</code></pre>
+<hr />
+<h1 id="二十三本阶段最重要的-9-个核心心智模型-3">二十三、本阶段最重要的
+9 个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>NoExactDuplicate ≠ NoContamination</code>。没有完全重复只能说明最浅层没有泄漏。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>Semantic Independence &gt; String Independence</code>。Benchmark
+独立性要覆盖语义、项目、血缘和派生关系。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ③：<code>HumanExposure</code> 也是 Benchmark
+Exposure，开发者同样会对测试集过拟合。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ④：RAG 评测需要
+<code>RetrievalFirewall</code>，否则系统可能直接检索到 Gold
+答案。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑤：<code>Unlimited Benchmark Queries</code> 会把
+Hidden Test 逐渐变成 Validation。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>Detection + Prevention + AccessControl + Audit</code> 才是完整
+Firewall。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>AccessControl</code>
+是评测质量的一部分，不是行政附加项。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑧：<code>TaintedScore</code>
+不应继续作为可信历史基线。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑨：<code>StableCore + FreshHidden</code>
+能同时兼顾历史可比与抗长期过拟合。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四下一阶段第九课-第-11-阶段">二十四、下一阶段：第九课 · 第
+11 阶段</h1>
+<h1 id="benchmark-versioningregression-test-与模型版本比较">Benchmark
+Versioning、Regression Test 与模型版本比较</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>N</mi><mi>o</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HigherOverallScore
+\neq
+NoRegression
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementregressionpolicy_v0.1"><code>ProcurementRegressionPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage09.html">← 第 9 阶段</a><a class="btn" href="stage11.html">第 11 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

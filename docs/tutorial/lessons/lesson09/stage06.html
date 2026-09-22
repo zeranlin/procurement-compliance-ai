@@ -1,0 +1,627 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第6阶段：RAG Evaluation：Retrieval、Ranking、Context、Generation 分层评测</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第6阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>RAGFailure ≠ LLMFailure。RAG 错误必须分层归因。</li><li>RetrievedContext = LLMVisibleWorld。Retriever 决定模型实际看到的证据世界。</li><li>RetrievalRecall ≠ RankingQuality。找到了和排对了是两个问题。</li></ul></div><h1 id="第九课-第-6-阶段">第九课 · 第 6 阶段</h1>
+<h1 id="rag-evaluationretrievalrankingcontextgeneration-分层评测-1">RAG
+Evaluation：Retrieval、Ranking、Context、Generation 分层评测</h1>
+<h2
+id="rag-回答错了到底是没检索到排错了上下文组装错了还是-llm-没用好证据">RAG
+回答错了，到底是没检索到、排错了、上下文组装错了，还是 LLM
+没用好证据？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-5">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-5">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>RAGFailure ≠ LLMFailure。RAG
+错误必须分层归因。</strong></li>
+<li><strong>RetrievedContext = LLMVisibleWorld。Retriever
+决定模型实际看到的证据世界。</strong></li>
+<li><strong>RetrievalRecall ≠
+RankingQuality。找到了和排对了是两个问题。</strong></li>
+<li><strong>RetrievedDocs ≠ FinalContext。Context Builder
+还可能丢证据或引入噪声。</strong></li>
+<li><strong>GoodContext ≠
+GoodAnswer。上下文正确不代表生成一定正确。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-5">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="odd">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="even">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="odd">
+<td><code>Precision</code></td>
+<td>精确率：系统报出的风险中真正成立的比例</td>
+</tr>
+<tr class="even">
+<td><code>Citation</code></td>
+<td>引用：把生成结论和具体来源建立可追踪链接</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-5">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>RAG 系统最终只给用户一个答案。</p>
+<p>但内部至少经历：</p>
+<pre class="text"><code>Query
+↓
+Retrieval
+↓
+Ranking
+↓
+Context Construction
+↓
+Generation</code></pre>
+<p>如果最终答错，</p>
+<p>不能直接说：</p>
+<blockquote>
+<p>“LLM 不行。”</p>
+</blockquote>
+<p>所以本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mo>≠</mo><mi>L</mi><mi>L</mi><mi>M</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGFailure
+\neq
+LLMFailure
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementragevalpolicy_v0.1-1"><code>ProcurementRAGEvalPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一rag-必须分层评测">一、RAG 必须分层评测</h1>
+<p>完整链路：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>R</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>→</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>→</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retrieval
+\rightarrow
+Ranking
+\rightarrow
+Context
+\rightarrow
+Generation
+}
+</annotation></semantics></math></p>
+<p>每一层都可能失败。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>E</mi><mi>n</mi><mi>d</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>需</mi><mi>要</mi><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>t</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EndToEndFailure
+需要
+LayerAttribution
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二retrieval-recall有没有把正确证据捞上来">二、Retrieval
+Recall：有没有把正确证据捞上来？</h1>
+<p>如果 Gold Evidence 已知，</p>
+<p>可以看：</p>
+<h1 id="recallk">Recall@K</h1>
+<h2 id="前-k-个结果中的召回率">前 K 个结果中的召回率</h2>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>@</mi><mi>K</mi><mo>=</mo><mfrac><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>@</mi><mi>K</mi></mrow><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Recall@K
+=
+\frac{
+RetrievedRelevant@K
+}{
+TotalRelevant
+}
+</annotation></semantics></math></p>
+<p>如果正确证据根本不在 Top-K：</p>
+<blockquote>
+<p>后面的 LLM 再强也没用。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>是</mi><mi>上</mi><mi>游</mi><mi>硬</mi><mi>上</mi><mi>限</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MissingEvidence
+是上游硬上限
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三核心心智模型-①-1">三、核心心智模型 ①</h1>
+<h1 id="retriever-决定-llm-能看到什么世界"><code>Retriever</code> 决定
+LLM 能看到什么世界</h1>
+<p>RAG 的 LLM 并不是直接面对整个知识库。</p>
+<p>它面对的是：</p>
+<blockquote>
+<p>Retriever 选出来的一小块世界。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>=</mo><mi>L</mi><mi>L</mi><mi>M</mi><mi>V</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetrievedContext
+=
+LLMVisibleWorld
+}
+</annotation></semantics></math></p>
+<p>如果可见世界错了，</p>
+<p>生成质量上限会直接被限制。</p>
+<hr />
+<h1
+id="四precisionk捞上来的东西有多少真的相关">四、Precision@K：捞上来的东西有多少真的相关？</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>@</mi><mi>K</mi><mo>=</mo><mfrac><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>@</mi><mi>K</mi></mrow><mi>K</mi></mfrac></mrow><annotation encoding="application/x-tex">
+Precision@K
+=
+\frac{
+RelevantRetrieved@K
+}{
+K
+}
+</annotation></semantics></math></p>
+<p>Recall 高但 Precision 很低：</p>
+<blockquote>
+<p>大量噪声上下文会挤占 Context。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreRetrieved
+\neq
+BetterContext
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五mrr正确答案第一次出现得有多靠前">五、MRR：正确答案第一次出现得有多靠前？</h1>
+<h1 id="mean-reciprocal-rank">Mean Reciprocal Rank</h1>
+<h2 id="平均倒数排名">平均倒数排名</h2>
+<p>如果第一个相关结果排名为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">
+r
+</annotation></semantics></math></p>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>R</mi><mo>=</mo><mfrac><mn>1</mn><mi>r</mi></mfrac></mrow><annotation encoding="application/x-tex">
+RR=\frac{1}{r}
+</annotation></semantics></math></p>
+<p>越靠前越好。</p>
+<p>适合：</p>
+<blockquote>
+<p>关注第一个关键证据是否足够靠前。</p>
+</blockquote>
+<hr />
+<h1
+id="六ndcg多个相关证据有不同价值时怎么办">六、nDCG：多个相关证据有不同价值时怎么办？</h1>
+<h1 id="ndcg">nDCG</h1>
+<h2 id="归一化折损累计增益">归一化折损累计增益</h2>
+<p>适合：</p>
+<blockquote>
+<p>相关性有等级、并且排序重要的场景。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>权威法规 = 高相关
+地方解读 = 中相关
+论坛讨论 = 低相关</code></pre>
+<p>nDCG 可以同时考虑：</p>
+<blockquote>
+<p>相关度和排名位置。</p>
+</blockquote>
+<hr />
+<h1 id="七核心心智模型-②">七、核心心智模型 ②</h1>
+<h1 id="retrieval-和-ranking-是两个问题"><code>Retrieval</code> 和
+<code>Ranking</code> 是两个问题</h1>
+<p>Retriever 可能：</p>
+<blockquote>
+<p>已经把正确文档找到了。</p>
+</blockquote>
+<p>但 Reranker：</p>
+<blockquote>
+<p>把它排到很后面。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>≠</mo><mi>R</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetrievalRecall
+\neq
+RankingQuality
+}
+</annotation></semantics></math></p>
+<p>必须分别评。</p>
+<hr />
+<h1
+id="八context-constructiontop-k-正确也不代表最终-context-正确">八、Context
+Construction：Top-K 正确也不代表最终 Context 正确</h1>
+<p>拿到 Top-K 文档后还会发生：</p>
+<pre class="text"><code>Chunk Merge
+Chunk Dedup
+Context Truncation
+Section Selection
+Citation Mapping</code></pre>
+<p>如果关键段落被：</p>
+<blockquote>
+<p>截断、覆盖、重复噪声挤掉，</p>
+</blockquote>
+<p>最终 Context 仍然可能失败。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>s</mi><mo>≠</mo><mi>F</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RetrievedDocs
+\neq
+FinalContext
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九context-recall-precision">九、Context Recall / Precision</h1>
+<p>可以定义：</p>
+<h1 id="context-recall">Context Recall</h1>
+<p>最终 Context 覆盖了多少 Gold Evidence。</p>
+<h1 id="context-precision">Context Precision</h1>
+<p>最终 Context 中有多少内容真正对回答有帮助。</p>
+<p>这能区分：</p>
+<pre class="text"><code>Retriever找到了
+但Context Builder丢了</code></pre>
+<p>和：</p>
+<pre class="text"><code>Retriever本身没找到</code></pre>
+<hr />
+<h1 id="十核心心智模型-③">十、核心心智模型 ③</h1>
+<h1 id="contextbudget-是有限资源"><code>ContextBudget</code>
+是有限资源</h1>
+<p>Context Window 有限。</p>
+<p>多塞一个低价值 Chunk，</p>
+<p>就可能挤掉一个高价值 Chunk。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>S</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>B</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ContextSelection
+=
+BudgetAllocation
+}
+</annotation></semantics></math></p>
+<p>这和第八课 Mixture 的思想非常像：</p>
+<blockquote>
+<p>有限资源必须优先分配给高价值信息。</p>
+</blockquote>
+<hr />
+<h1
+id="十一generation-groundednessllm-有没有真正用好-context">十一、Generation
+Groundedness：LLM 有没有真正用好 Context？</h1>
+<p>即使 Context 完全正确，</p>
+<p>LLM 仍可能：</p>
+<pre class="text"><code>忽略关键证据
+误读证据
+引用错段落
+加入外部记忆
+过度推断</code></pre>
+<p>所以要评：</p>
+<pre class="text"><code>Answer Correctness
+Groundedness
+Citation Correctness
+Evidence Coverage</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>≠</mo><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodContext
+\neq
+GoodAnswer
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二核心心智模型-④-1">十二、核心心智模型 ④</h1>
+<h1 id="ragquality-是链路乘积而不是单点能力"><code>RAGQuality</code>
+是链路乘积，而不是单点能力</h1>
+<p>概念上可以理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≈</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>×</mo><mi>R</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>×</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>×</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGQuality
+\approx
+Retrieval
+\times
+Ranking
+\times
+Context
+\times
+Generation
+}
+</annotation></semantics></math></p>
+<p>不是严格数学乘法。</p>
+<p>它强调：</p>
+<blockquote>
+<p>任一关键环节接近零，整体就会明显受限。</p>
+</blockquote>
+<hr />
+<h1 id="十三no-answer-样本为什么必须进-benchmark">十三、No-answer
+样本为什么必须进 Benchmark？</h1>
+<p>如果知识库里根本没有答案，</p>
+<p>正确行为应该：</p>
+<blockquote>
+<p>不回答 / 请求更多证据。</p>
+</blockquote>
+<p>所以 RAG Benchmark 必须包含：</p>
+<h1 id="unanswerable-items">Unanswerable Items</h1>
+<h2 id="不可回答样本">不可回答样本</h2>
+<p>否则系统可能养成：</p>
+<blockquote>
+<p>每题必答。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>A</mi><mi>G</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CanAnswer
++
+CanAbstain
+=
+ReliableRAG
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十四gold-evidence-怎么定义">十四、Gold Evidence 怎么定义？</h1>
+<p>RAG 评测最好不仅有：</p>
+<pre class="text"><code>Gold Answer</code></pre>
+<p>还要有：</p>
+<pre class="text"><code>Gold Document IDs
+Gold Chunk IDs
+Gold Evidence Spans</code></pre>
+<p>这样才能评：</p>
+<pre class="text"><code>Retrieval
+Ranking
+Context
+Citation</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>=</mo><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGGold
+=
+AnswerGold
++
+EvidenceGold
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五核心心智模型-⑤-1">十五、核心心智模型 ⑤</h1>
+<h1 id="answer-only-gold-不足以诊断-rag"><code>Answer-only Gold</code>
+不足以诊断 RAG</h1>
+<p>如果只有最终答案，</p>
+<p>你无法知道：</p>
+<blockquote>
+<p>检索器到底有没有找到正确证据。</p>
+</blockquote>
+<p>因此 RAG Gold 必须更丰富。</p>
+<hr />
+<h1 id="十六failure-attribution一次错误应该归到哪层">十六、Failure
+Attribution：一次错误应该归到哪层？</h1>
+<p>可以定义：</p>
+<pre class="text"><code>R1 Retrieval Miss
+R2 Ranking Failure
+R3 Context Drop
+R4 Context Noise
+R5 Evidence Misuse
+R6 Unsupported Generation
+R7 Wrong Citation
+R8 Failed Abstention</code></pre>
+<p>然后每个失败样本尽量标：</p>
+<h1 id="primary-failure">Primary Failure</h1>
+<h2 id="主失败原因">主失败原因</h2>
+<p>以及：</p>
+<h1 id="secondary-failures">Secondary Failures</h1>
+<h2 id="次级失败原因">次级失败原因</h2>
+<p>这样才能做真正工程优化。</p>
+<hr />
+<h1
+id="十七counterfactual-eval把正确证据给模型看看它还会不会错">十七、Counterfactual
+Eval：把正确证据给模型，看看它还会不会错</h1>
+<p>一个非常有价值的诊断方法：</p>
+<blockquote>
+<p>直接把 Gold Evidence 放进 Context。</p>
+</blockquote>
+<p>如果此时模型答对：</p>
+<blockquote>
+<p>原问题更可能在 Retrieval / Ranking。</p>
+</blockquote>
+<p>如果仍答错：</p>
+<blockquote>
+<p>更可能在 Generation / Reasoning。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>=</mo><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>I</mi><mi>s</mi><mi>o</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OracleContextEval
+=
+FailureIsolationTool
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十八核心心智模型-⑥">十八、核心心智模型 ⑥</h1>
+<h1
+id="oracle-context-可以测-rag-的生成上限"><code>Oracle Context</code>
+可以测 RAG 的“生成上限”</h1>
+<p>它不是生产配置。</p>
+<p>而是诊断实验：</p>
+<blockquote>
+<p>如果给模型完美上下文，它最高能做到什么？</p>
+</blockquote>
+<p>这样可以区分：</p>
+<pre class="text"><code>Retriever瓶颈
+vs
+Generator瓶颈</code></pre>
+<hr />
+<h1 id="十九rag-评测还要记录成本和延迟吗">十九、RAG
+评测还要记录成本和延迟吗？</h1>
+<p>需要。</p>
+<p>因为：</p>
+<pre class="text"><code>Top-K更大
+Reranker更复杂
+Context更长</code></pre>
+<p>可能提升质量，</p>
+<p>但也会增加：</p>
+<pre class="text"><code>Latency
+Token Cost
+Compute Cost</code></pre>
+<p>所以 RAG 评测应保留：</p>
+<pre class="text"><code>quality
+latency
+cost</code></pre>
+<p>三个坐标。</p>
+<hr />
+<h1 id="二十核心心智模型-⑦">二十、核心心智模型 ⑦</h1>
+<h1
+id="bestofflinequality-不一定是-bestproductionrag"><code>BestOfflineQuality</code>
+不一定是 <code>BestProductionRAG</code></h1>
+<p>生产系统还要考虑：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Quality
++
+Latency
++
+Cost
+}
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>S</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>O</mi><mi>b</mi><mi>j</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGSelection
+=
+MultiObjectiveDecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十一本阶段正式工程产物-1">二十一、本阶段正式工程产物</h1>
+<h1
+id="procurementragevalpolicy_v0.1-2"><code>ProcurementRAGEvalPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>rag_eval_policy_version
+
+gold_answer_required
+
+gold_document_ids
+
+gold_chunk_ids
+
+gold_evidence_spans
+
+retrieval_recall_at_k
+
+precision_at_k
+
+mrr
+
+ndcg
+
+context_recall
+
+context_precision
+
+context_budget
+
+ranking_eval
+
+oracle_context_eval
+
+answer_correctness
+
+groundedness
+
+citation_correctness
+
+citation_completeness
+
+unanswerable_items
+
+abstention_metric
+
+failure_taxonomy
+
+latency_metric
+
+cost_metric
+
+release_gate</code></pre>
+<hr />
+<h1 id="二十二本阶段最重要的-8-个核心心智模型">二十二、本阶段最重要的 8
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型 ①：<code>RAGFailure ≠ LLMFailure</code>。RAG
+错误必须分层归因。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+②：<code>RetrievedContext = LLMVisibleWorld</code>。Retriever
+决定模型实际看到的证据世界。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>RetrievalRecall ≠ RankingQuality</code>。找到了和排对了是两个问题。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>RetrievedDocs ≠ FinalContext</code>。Context Builder
+还可能丢证据或引入噪声。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑤：<code>GoodContext ≠ GoodAnswer</code>。上下文正确不代表生成一定正确。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑥：<code>RAGGold = AnswerGold + EvidenceGold</code>。只标答案不足以诊断
+RAG。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑦：<code>OracleContextEval</code> 是隔离 Retriever
+与 Generator 瓶颈的重要工具。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑧：<code>BestOfflineQuality ≠ BestProductionRAG</code>。生产选择必须同时考虑质量、延迟和成本。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十三下一阶段第九课-第-7-阶段">二十三、下一阶段：第九课 · 第 7
+阶段</h1>
+<h1 id="agent-evaluationplanningtoolstaterecoverysafetycompletion">Agent
+Evaluation：Planning、Tool、State、Recovery、Safety、Completion</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>o</mi><mi>o</mi><mi>l</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ToolCallSuccess
+\neq
+TaskCompletion
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementagentevalpolicy_v0.1"><code>ProcurementAgentEvalPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage05.html">← 第 5 阶段</a><a class="btn" href="stage07.html">第 7 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

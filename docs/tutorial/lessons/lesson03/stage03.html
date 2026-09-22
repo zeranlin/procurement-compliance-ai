@@ -1,0 +1,2019 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第3阶段：一个开源大模型的文件夹里到底有什么？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第3阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>config.json 定义 Architecture Metadata，Tokenizer 定义 Text↔Token 协议，safetensors 保存真正的参数数值。</li><li>Model Weight ≠ Model Code。权重只是训练后的参数状态，模型结构仍需要代码和配置解释。</li><li>Shard 只是把大权重文件分箱保存，Index 记录参数在哪个 Shard；分片本身不改变模型能力。</li></ul></div><h1 id="第三课-第-3-阶段一个开源大模型的文件夹里到底有什么">第三课 · 第
+3 阶段：一个开源大模型的文件夹里到底有什么？</h1>
+<h2
+id="config.jsontokenizer.safetensorsshardindex-各自到底是什么"><code>config.json</code>、Tokenizer、<code>.safetensors</code>、Shard、Index
+各自到底是什么？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-2">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-2">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>config.json 定义 Architecture Metadata，Tokenizer 定义
+Text↔︎Token 协议，safetensors 保存真正的参数数值。</strong></li>
+<li><strong>Model Weight ≠ Model
+Code。权重只是训练后的参数状态，模型结构仍需要代码和配置解释。</strong></li>
+<li><strong>Shard 只是把大权重文件分箱保存，Index 记录参数在哪个
+Shard；分片本身不改变模型能力。</strong></li>
+<li><strong>一个可运行 Checkpoint 需要结构、权重、Tokenizer
+和必要配置彼此匹配，不能随意混用不同仓库文件。</strong></li>
+<li><strong>Generation Config / Chat Template
+等文件影响推理协议，但它们与核心权重承担的职责不同。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-2">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Tokenizer</code></td>
+<td>分词器：文本与 Token ID 之间的编码/解码组件</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>MLP</code></td>
+<td>MLP/前馈网络：对每个位置表示做非线性变换</td>
+</tr>
+<tr class="odd">
+<td><code>Transformers</code></td>
+<td>Transformers：Hugging Face 的模型加载与推理库</td>
+</tr>
+<tr class="even">
+<td><code>Block</code></td>
+<td>版面块：文档解析后保留布局和位置的基本块</td>
+</tr>
+<tr class="odd">
+<td><code>PyTorch</code></td>
+<td>PyTorch：张量计算、自动求导和训练/推理框架</td>
+</tr>
+<tr class="even">
+<td><code>Normalization</code></td>
+<td>规范化：稳定中间激活与训练过程</td>
+</tr>
+<tr class="odd">
+<td><code>RoPE</code></td>
+<td>RoPE：旋转位置编码，把位置信息融入注意力</td>
+</tr>
+<tr class="even">
+<td><code>Chat Template</code></td>
+<td>对话模板：把角色消息转换成模型训练/推理序列</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-2">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>这一阶段我们继续坚持一个原则：</p>
+<blockquote>
+<p><strong>先看地图，后看文件名。</strong></p>
+</blockquote>
+<p>不要一上来背：</p>
+<pre class="text"><code>config.json
+tokenizer.json
+tokenizer_config.json
+generation_config.json
+model-00001-of-00004.safetensors
+...</code></pre>
+<p>那样很快又会变成：</p>
+<blockquote>
+<p>每个名字都见过，但不知道为什么存在。</p>
+</blockquote>
+<p>今天我们真正只需要建立 <strong>5 个核心心智模型</strong>：</p>
+<pre class="text"><code>① config = 模型结构说明书
+
+② tokenizer = 模型与文字世界之间的翻译系统
+
+③ weights = 模型训练后真正学到的数字
+
+④ shard + index = 把巨大的权重仓库拆成多个箱子，再配一张货物地图
+
+⑤ 一个“模型”不是单个文件，而是一套必须彼此匹配的资产</code></pre>
+<p>先把这五根柱子立起来。</p>
+<hr />
+<h1 id="一先看一眼完整模型包">一、先看一眼完整“模型包”</h1>
+<p>假设以后我们下载一个开源模型。</p>
+<p>文件夹可能长这样：</p>
+<pre class="text"><code>ProcurementBaseModel/
+│
+├── config.json
+│
+├── generation_config.json
+│
+│
+├── tokenizer.json
+├── tokenizer_config.json
+├── special_tokens_map.json
+│
+├── model-00001-of-00004.safetensors
+├── model-00002-of-00004.safetensors
+├── model-00003-of-00004.safetensors
+├── model-00004-of-00004.safetensors
+├── model.safetensors.index.json
+│
+├── README.md
+├── LICENSE
+└── 其它可能文件...</code></pre>
+<p>第一次看确实像一地零件。</p>
+<p>但只要换一种分类方式，马上简单很多：</p>
+<pre class="text"><code>模型文件夹
+│
+├── A. 结构
+│      └── config.json
+│
+├── B. 文字入口
+│      ├── tokenizer.json
+│      ├── tokenizer_config.json
+│      └── special_tokens_map.json
+│
+├── C. 学到的参数
+│      ├── *.safetensors
+│      └── *.index.json
+│
+├── D. 默认生成设置
+│      └── generation_config.json
+│
+└── E. 说明与附加资产
+       ├── README.md
+       ├── LICENSE
+       └── 可能的模型代码</code></pre>
+<p>整个阶段实际上就在理解这五组东西。</p>
+<hr />
+<h1 id="二核心心智模型-①config.json-建筑蓝图">二、核心心智模型
+①：<code>config.json</code> = 建筑蓝图</h1>
+<h2 id="先想一个采购办公楼">1. 先想一个采购办公楼</h2>
+<p>你拿到一张建筑蓝图。</p>
+<p>上面写着：</p>
+<pre class="text"><code>楼有多少层
+每层多宽
+有多少个房间
+电梯有几部
+楼梯在哪里</code></pre>
+<p>蓝图告诉你：</p>
+<blockquote>
+<p><strong>这栋楼应该长什么样。</strong></p>
+</blockquote>
+<p>但蓝图本身：</p>
+<blockquote>
+<p>不是办公楼。</p>
+</blockquote>
+<hr />
+<h2 id="config.json-就是类似的角色">2. <code>config.json</code>
+就是类似的角色</h2>
+<p>它告诉软件：</p>
+<blockquote>
+<p>这个神经网络到底应该搭成什么结构。</p>
+</blockquote>
+<p>比如里面可能描述：</p>
+<pre class="text"><code>模型类型
+Hidden Size
+Transformer Layer 数量
+Attention Head 数量
+KV Head 数量
+Intermediate Size
+Vocabulary Size
+RoPE 参数
+Normalization 类型</code></pre>
+<p>这些词我们第二课已经基本学过了。</p>
+<hr />
+<h2 id="例如你可能看到类似概念">3. 例如你可能看到类似概念</h2>
+<div class="sourceCode" id="cb129"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb129-2"><a href="#cb129-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;hidden_size&quot;</span><span class="fu">:</span> <span class="dv">4096</span><span class="fu">,</span></span>
+<span id="cb129-3"><a href="#cb129-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;num_hidden_layers&quot;</span><span class="fu">:</span> <span class="dv">32</span><span class="fu">,</span></span>
+<span id="cb129-4"><a href="#cb129-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;num_attention_heads&quot;</span><span class="fu">:</span> <span class="dv">32</span><span class="fu">,</span></span>
+<span id="cb129-5"><a href="#cb129-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;num_key_value_heads&quot;</span><span class="fu">:</span> <span class="dv">8</span><span class="fu">,</span></span>
+<span id="cb129-6"><a href="#cb129-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;intermediate_size&quot;</span><span class="fu">:</span> <span class="dv">11008</span><span class="fu">,</span></span>
+<span id="cb129-7"><a href="#cb129-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;vocab_size&quot;</span><span class="fu">:</span> <span class="dv">100000</span></span>
+<span id="cb129-8"><a href="#cb129-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>今天不用关心这些数字来自哪个真实模型。</p>
+<p>重点是理解：</p>
+<blockquote>
+<p><strong>这不是模型学到的知识，而是在描述模型骨架。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三蓝图和知识不是一回事">三、蓝图和“知识”不是一回事</h1>
+<h2 id="假设两栋办公楼">4. 假设两栋办公楼</h2>
+<p>它们：</p>
+<pre class="text"><code>都是 32 层
+每层结构一样
+房间数量一样</code></pre>
+<p>说明：</p>
+<blockquote>
+<p>建筑结构相同。</p>
+</blockquote>
+<hr />
+<h2 id="但第一栋里面">5. 但第一栋里面</h2>
+<p>住的是：</p>
+<blockquote>
+<p>政府采购专家。</p>
+</blockquote>
+<p>第二栋里面：</p>
+<blockquote>
+<p>医生。</p>
+</blockquote>
+<p>它们能做的事情：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h2 id="对模型也是一样">6. 对模型也是一样</h2>
+<p>两个模型可能拥有相同 Architecture：</p>
+<pre class="text"><code>32 Layers
+4096 Hidden Size
+32 Attention Heads</code></pre>
+<p>但因为训练数据不同、参数不同：</p>
+<blockquote>
+<p>能力可能完全不同。</p>
+</blockquote>
+<hr />
+<h2 id="所以第一条非常重要">7. 所以第一条非常重要</h2>
+<pre class="text"><code>Architecture
+≠
+Learned Knowledge</code></pre>
+<p>或者用最直观的话：</p>
+<blockquote>
+<p><strong>楼长得一样，不代表楼里的人会一样的东西。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四config.json-解决的是怎么搭模型">四、<code>config.json</code>
+解决的是“怎么搭模型”</h1>
+<h2 id="假设-pytorch-现在什么都不知道">8. 假设 PyTorch
+现在什么都不知道</h2>
+<p>你告诉它：</p>
+<pre class="text"><code>我要加载一个大模型。</code></pre>
+<p>它首先得问：</p>
+<blockquote>
+<p>我要创建多少 Transformer Block？</p>
+</blockquote>
+<blockquote>
+<p>每层 Hidden Size 是多少？</p>
+</blockquote>
+<blockquote>
+<p>Attention 有几个 Head？</p>
+</blockquote>
+<blockquote>
+<p>MLP 中间层多宽？</p>
+</blockquote>
+<hr />
+<h2 id="谁来回答">9. 谁来回答？</h2>
+<p>通常就是：</p>
+<blockquote>
+<p><code>config.json</code></p>
+</blockquote>
+<hr />
+<h2 id="所以加载模型的早期过程可以先想成">10.
+所以加载模型的早期过程可以先想成</h2>
+<pre class="text"><code>config.json
+     ↓
+读取模型蓝图
+     ↓
+PyTorch / Transformers
+     ↓
+创建一个“空的模型骨架”</code></pre>
+<p>此时有：</p>
+<blockquote>
+<p>结构。</p>
+</blockquote>
+<p>但还没真正装入训练后的 Weight。</p>
+<hr />
+<h1
+id="五第二个核心心智模型weights-模型真正学到的东西">五、第二个核心心智模型：Weights
+= 模型真正学到的东西</h1>
+<h2 id="现在想象一个刚造好的大脑">11. 现在想象一个刚造好的大脑</h2>
+<p>神经网络结构已经搭好了：</p>
+<pre class="text"><code>Embedding
+↓
+Transformer Block
+↓
+Transformer Block
+↓
+...
+↓
+LM Head</code></pre>
+<p>但里面所有参数如果还是：</p>
+<blockquote>
+<p>随机数。</p>
+</blockquote>
+<p>这个模型基本不会工作。</p>
+<hr />
+<h2 id="为什么-2">12. 为什么？</h2>
+<p>因为第二课我们知道：</p>
+<p>模型的能力最终被训练写进：</p>
+<pre class="text"><code>Wq
+Wk
+Wv
+Wo
+MLP weights
+Embedding
+...</code></pre>
+<p>大量参数里。</p>
+<hr />
+<h2 id="训练真正改变的就是这些数字">13. 训练真正改变的就是这些数字</h2>
+<p>例如最开始：</p>
+<pre class="text"><code>0.0031
+-0.021
+0.0098
+...</code></pre>
+<p>经过海量训练以后：</p>
+<blockquote>
+<p>变成另一组数字。</p>
+</blockquote>
+<p>单独看每个数字：</p>
+<blockquote>
+<p>没什么人类可读含义。</p>
+</blockquote>
+<p>但数十亿个数字共同工作：</p>
+<blockquote>
+<p>就形成模型能力。</p>
+</blockquote>
+<hr />
+<h1 id="六一个最重要的类比">六、一个最重要的类比</h1>
+<p><code>config.json</code>：</p>
+<blockquote>
+<p><strong>大脑结构图。</strong></p>
+</blockquote>
+<p>Weights：</p>
+<blockquote>
+<p><strong>这个大脑经过学习以后形成的神经连接状态。</strong></p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>config
+=
+脑子长什么样
+
+weights
+=
+脑子学成了什么样</code></pre>
+<hr />
+<h1
+id="七为什么模型文件最大的通常是-weight">七、为什么模型文件最大的通常是
+Weight？</h1>
+<h2 id="假设一个-7b-模型">14. 假设一个 7B 模型</h2>
+<p>大约：</p>
+<blockquote>
+<p>70 亿个参数。</p>
+</blockquote>
+<p>而 <code>config.json</code>：</p>
+<blockquote>
+<p>可能只是一个很小的文本文件。</p>
+</blockquote>
+<hr />
+<h2 id="所以你可能看到">15. 所以你可能看到</h2>
+<pre class="text"><code>config.json
+几 KB
+
+tokenizer.json
+几 MB / 十几 MB
+
+model weights
+十几 GB</code></pre>
+<p>数量级完全不同。</p>
+<hr />
+<h2 id="这很好理解">16. 这很好理解</h2>
+<p>建筑蓝图：</p>
+<blockquote>
+<p>几张纸。</p>
+</blockquote>
+<p>真正的整栋办公楼：</p>
+<blockquote>
+<p>巨大。</p>
+</blockquote>
+<hr />
+<h1 id="八.safetensors-是什么">八、<code>.safetensors</code>
+是什么？</h1>
+<p>接下来第一次认真认识：</p>
+<pre class="text"><code>*.safetensors</code></pre>
+<hr />
+<h2 id="最简单理解">17. 最简单理解</h2>
+<p>它是：</p>
+<blockquote>
+<p><strong>保存模型 Tensor / Weight 的一种文件格式。</strong></p>
+</blockquote>
+<p>也就是说：</p>
+<pre class="text"><code>model.safetensors</code></pre>
+<p>里面主要装：</p>
+<blockquote>
+<p>大量参数 Tensor。</p>
+</blockquote>
+<hr />
+<h2 id="为什么叫-tensor">18. 为什么叫 Tensor？</h2>
+<p>第二课学过，一个 Weight Matrix 本身就是：</p>
+<blockquote>
+<p>Tensor。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>q_proj.weight
+k_proj.weight
+v_proj.weight
+...</code></pre>
+<p>模型有成千上万个这样的参数对象。</p>
+<hr />
+<h2 id="safetensors-就像什么">19. <code>.safetensors</code>
+就像什么？</h2>
+<p>可以想象一个超级仓库：</p>
+<pre class="text"><code>safetensors
+│
+├── Layer 0 的参数
+├── Layer 1 的参数
+├── Layer 2 的参数
+├── ...
+├── MLP 参数
+├── Attention 参数
+├── Embedding
+└── LM Head</code></pre>
+<p>当然真实文件内部不是这样给人看的目录结构。</p>
+<p>这是帮助建立直觉。</p>
+<hr />
+<h1 id="九为什么不是普通-.txt">九、为什么不是普通
+<code>.txt</code>？</h1>
+<h2 id="因为模型参数可能有几十亿个数字">20.
+因为模型参数可能有几十亿个数字</h2>
+<p>如果用普通文本：</p>
+<pre class="text"><code>0.123456
+-0.03381
+...</code></pre>
+<p>会：</p>
+<ul>
+<li>空间浪费巨大；</li>
+<li>读取很慢；</li>
+<li>类型信息难管理。</li>
+</ul>
+<p>所以需要：</p>
+<blockquote>
+<p>高效的二进制 Tensor 存储格式。</p>
+</blockquote>
+<hr />
+<h1 id="十为什么现在经常看到-safetensors">十、为什么现在经常看到
+<code>safetensors</code>？</h1>
+<h2 id="一个重要原因">21. 一个重要原因</h2>
+<p>它设计时非常强调：</p>
+<blockquote>
+<p>安全、高效地保存和读取 Tensor。</p>
+</blockquote>
+<p>尤其是：</p>
+<blockquote>
+<p>不需要像某些通用序列化机制那样在加载权重时执行任意 Python
+对象逻辑。</p>
+</blockquote>
+<hr />
+<h2 id="这里你先建立一个原则">22. 这里你先建立一个原则</h2>
+<p>从陌生来源下载模型时：</p>
+<blockquote>
+<p><strong>“模型文件也是软件供应链的一部分。”</strong></p>
+</blockquote>
+<p>不要因为它叫“AI 模型”：</p>
+<blockquote>
+<p>就默认任何文件都安全。</p>
+</blockquote>
+<p>这个意识以后做政府采购生产系统会非常重要。</p>
+<hr />
+<h1
+id="十一为什么一个模型有四五个-.safetensors">十一、为什么一个模型有四五个
+<code>.safetensors</code>？</h1>
+<p>你可能看到：</p>
+<pre class="text"><code>model-00001-of-00004.safetensors
+model-00002-of-00004.safetensors
+model-00003-of-00004.safetensors
+model-00004-of-00004.safetensors</code></pre>
+<p>第一次看到很容易问：</p>
+<blockquote>
+<p>“我下载了四个模型吗？”</p>
+</blockquote>
+<p>不是。</p>
+<hr />
+<h1
+id="十二核心心智模型-③shard-把一个巨大仓库拆成几个箱子">十二、核心心智模型
+③：Shard = 把一个巨大仓库拆成几个箱子</h1>
+<h2 id="想象你搬家">23. 想象你搬家</h2>
+<p>你有：</p>
+<blockquote>
+<p>800 本政府采购资料。</p>
+</blockquote>
+<p>不可能把所有东西塞进：</p>
+<blockquote>
+<p>一个 200 公斤纸箱。</p>
+</blockquote>
+<hr />
+<h2 id="所以你分成">24. 所以你分成</h2>
+<pre class="text"><code>第1箱
+第2箱
+第3箱
+第4箱</code></pre>
+<p>每个箱子里：</p>
+<blockquote>
+<p>放一部分书。</p>
+</blockquote>
+<hr />
+<h2 id="模型权重也一样">25. 模型权重也一样</h2>
+<p>一个模型可能非常大。</p>
+<p>于是将权重拆成：</p>
+<h1 id="shards">Shards</h1>
+<p>也就是：</p>
+<blockquote>
+<p>权重分片。</p>
+</blockquote>
+<hr />
+<h2 id="所以-1">26. 所以</h2>
+<pre class="text"><code>model-00001-of-00004</code></pre>
+<p>大致是在说：</p>
+<blockquote>
+<p>这是总共 4 片中的第 1 片。</p>
+</blockquote>
+<hr />
+<h2 id="四个文件加起来">27. 四个文件加起来</h2>
+<p>才构成：</p>
+<blockquote>
+<p>完整 Weight。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>4 shards
+≠
+4 models</code></pre>
+<p>而是：</p>
+<pre class="text"><code>4 shards
+=
+1 model&#39;s weights</code></pre>
+<hr />
+<h1 id="十三为什么要拆">十三、为什么要拆？</h1>
+<p>主要有一些非常实际的工程理由：</p>
+<ul>
+<li>单文件过大不方便管理；</li>
+<li>上传下载更麻烦；</li>
+<li>文件系统或托管平台可能有大小限制；</li>
+<li>加载时可以更灵活处理。</li>
+</ul>
+<hr />
+<h1
+id="十四但是拆开以后出现一个新问题">十四、但是拆开以后出现一个新问题</h1>
+<p>假设现在有四个箱子：</p>
+<pre class="text"><code>箱子 1
+箱子 2
+箱子 3
+箱子 4</code></pre>
+<p>你需要找：</p>
+<blockquote>
+<p>“第 17 层的 <code>q_proj.weight</code> 在哪个箱子？”</p>
+</blockquote>
+<p>怎么办？</p>
+<hr />
+<h1 id="十五这时候-index-出场了">十五、这时候 Index 出场了</h1>
+<p>可能看到：</p>
+<pre class="text"><code>model.safetensors.index.json</code></pre>
+<hr />
+<h2 id="最简单理解-1">28. 最简单理解</h2>
+<p>它就是：</p>
+<blockquote>
+<p><strong>权重分片地图。</strong></p>
+</blockquote>
+<hr />
+<h2 id="类似仓库目录">29. 类似仓库目录</h2>
+<pre class="text"><code>Embedding → 箱子1
+
+Layer 0 → 箱子1
+
+Layer 12 → 箱子2
+
+Layer 23 → 箱子3
+
+LM Head → 箱子4</code></pre>
+<p>真实 Index 更细：</p>
+<blockquote>
+<p>会把具体 Parameter Name 映射到具体 Shard。</p>
+</blockquote>
+<hr />
+<h1 id="十六第四个核心心智模型">十六、第四个核心心智模型</h1>
+<pre class="text"><code>Shard
+=
+货箱
+
+Index
+=
+货物清单 + 箱子位置地图</code></pre>
+<p>于是：</p>
+<pre class="text"><code>model-00001-of-00004.safetensors
+model-00002-of-00004.safetensors
+...
+             ↑
+             │
+model.safetensors.index.json
+告诉加载器每个参数在哪</code></pre>
+<p>这就很好懂了。</p>
+<hr />
+<h1 id="十七一个采购档案库类比">十七、一个采购档案库类比</h1>
+<p>假设你有 20 万页采购文件。</p>
+<p>档案室分成：</p>
+<pre class="text"><code>A柜
+B柜
+C柜
+D柜</code></pre>
+<p>然后有一张索引：</p>
+<pre class="text"><code>项目2026-A023
+→ C柜
+→ 第4层
+→ 文件盒17</code></pre>
+<hr />
+<h2 id="index-本身没有采购内容">30. Index 本身没有采购内容</h2>
+<p>它只是：</p>
+<blockquote>
+<p>告诉你内容在哪。</p>
+</blockquote>
+<p>同样：</p>
+<blockquote>
+<p>权重 Index 本身不是模型知识。</p>
+</blockquote>
+<hr />
+<h1 id="十八现在进入-tokenizer-文件">十八、现在进入 Tokenizer 文件</h1>
+<p>第二课已经知道：</p>
+<pre class="text"><code>原始文字
+↓
+Tokenizer
+↓
+Token IDs</code></pre>
+<p>所以一个模型只有 Weight：</p>
+<blockquote>
+<p>还不够。</p>
+</blockquote>
+<hr />
+<h2 id="举一个极端例子">31. 举一个极端例子</h2>
+<p>模型训练时：</p>
+<pre class="text"><code>“供应商”
+→ Token ID 5172</code></pre>
+<hr />
+<h2 id="但你运行模型时使用另一个错误-tokenizer">32.
+但你运行模型时使用另一个错误 Tokenizer</h2>
+<p>它把：</p>
+<pre class="text"><code>“供应商”
+→ Token ID 813</code></pre>
+<hr />
+<h2 id="发生什么">33. 发生什么？</h2>
+<p>模型的 Embedding 表里：</p>
+<blockquote>
+<p>813 原本代表的是别的 Token。</p>
+</blockquote>
+<p>于是整个输入：</p>
+<blockquote>
+<p>从第一步就错位。</p>
+</blockquote>
+<hr />
+<h1 id="十九所以-tokenizer-不是附属品">十九、所以 Tokenizer
+不是附属品</h1>
+<p>它和 Weight 必须：</p>
+<blockquote>
+<p>对得上。</p>
+</blockquote>
+<p>可以把它理解成：</p>
+<pre class="text"><code>Tokenizer
+=
+模型自己的字典 + 编码协议</code></pre>
+<hr />
+<h1 id="二十政府采购案例">二十、政府采购案例</h1>
+<p>假设一个采购专家系统里有内部编码：</p>
+<pre class="text"><code>001 → 资格条件
+002 → 技术参数
+003 → 评分标准</code></pre>
+<p>然后某天你换了一本字典：</p>
+<pre class="text"><code>001 → 合同条款
+002 → 履约验收
+003 → 供应商地址</code></pre>
+<hr />
+<h2 id="专家脑子没变">34. 专家脑子没变</h2>
+<p>但输入编码：</p>
+<blockquote>
+<p>全乱了。</p>
+</blockquote>
+<p>结果自然乱套。</p>
+<p>这就是 Tokenizer 和 Weight 必须配套的直觉。</p>
+<hr />
+<h1 id="二十一tokenizer.json-是什么">二十一、<code>tokenizer.json</code>
+是什么？</h1>
+<p>它通常承载：</p>
+<blockquote>
+<p>Tokenizer 的重要规则和数据。</p>
+</blockquote>
+<p>具体内容取决于 Tokenizer 实现。</p>
+<hr />
+<h2 id="里面可能涉及">35. 里面可能涉及</h2>
+<ul>
+<li>Vocabulary；</li>
+<li>分词规则；</li>
+<li>Merge 规则；</li>
+<li>Normalization；</li>
+<li>Pre-tokenization；</li>
+<li>Decoder 等。</li>
+</ul>
+<p>现在不需要进去读几万行 JSON。</p>
+<hr />
+<h2 id="只需要记住">36. 只需要记住</h2>
+<pre class="text"><code>tokenizer.json
+↓
+模型怎样把字符串变成Token
+以及怎样把Token变回文本</code></pre>
+<hr />
+<h1
+id="二十二tokenizer_config.json-又是什么">二十二、<code>tokenizer_config.json</code>
+又是什么？</h1>
+<p>名字很接近。</p>
+<p>所以很容易混淆。</p>
+<hr />
+<h2 id="可以先粗略区分">37. 可以先粗略区分</h2>
+<pre class="text"><code>tokenizer.json
+=
+Tokenizer本身的大量规则/词表资产
+
+tokenizer_config.json
+=
+告诉Transformers如何使用这个Tokenizer的一些配置</code></pre>
+<hr />
+<h2 id="例如可能涉及">38. 例如可能涉及</h2>
+<pre class="text"><code>Tokenizer class
+
+最大长度信息
+
+特殊 Token
+
+Padding 行为
+
+Chat Template</code></pre>
+<p>具体字段：</p>
+<blockquote>
+<p>因模型而异。</p>
+</blockquote>
+<hr />
+<h1 id="二十三什么是-special-token">二十三、什么是 Special Token？</h1>
+<p>普通 Token 代表：</p>
+<blockquote>
+<p>文本内容。</p>
+</blockquote>
+<p>但 LLM 往往还需要一些特殊控制符号。</p>
+<p>例如概念上的：</p>
+<pre class="text"><code>&lt;BOS&gt;
+&lt;EOS&gt;
+&lt;PAD&gt;</code></pre>
+<hr />
+<h2 id="bos">39. BOS</h2>
+<p>Beginning Of Sequence</p>
+<p>可以理解：</p>
+<blockquote>
+<p>序列开始。</p>
+</blockquote>
+<hr />
+<h2 id="eos">40. EOS</h2>
+<p>End Of Sequence</p>
+<p>可以理解：</p>
+<blockquote>
+<p>序列结束。</p>
+</blockquote>
+<hr />
+<h2 id="pad">41. PAD</h2>
+<p>Padding</p>
+<p>用于：</p>
+<blockquote>
+<p>批处理时把不同长度样本补到兼容长度。</p>
+</blockquote>
+<hr />
+<h1 id="二十四chat-模型还有更重要的一类特殊结构">二十四、Chat
+模型还有更重要的一类特殊结构</h1>
+<p>例如一段对话：</p>
+<pre class="text"><code>System:
+你是政府采购审查助手
+
+User:
+审查以下资格条件……
+
+Assistant:
+……</code></pre>
+<p>模型并不一定直接看到：</p>
+<blockquote>
+<p>我们屏幕上的漂亮聊天气泡。</p>
+</blockquote>
+<hr />
+<h2 id="它真正看到的可能更像某种序列格式">42.
+它真正看到的可能更像某种序列格式</h2>
+<p>概念上：</p>
+<pre class="text"><code>&lt;system&gt;
+你是政府采购审查助手
+&lt;/system&gt;
+
+&lt;user&gt;
+审查以下资格条件……
+&lt;/user&gt;
+
+&lt;assistant&gt;</code></pre>
+<p>真实格式：</p>
+<blockquote>
+<p>每个模型家族可能完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="二十五这就是-chat-template">二十五、这就是 Chat Template</h1>
+<p>Chat Template 的作用可以粗略理解成：</p>
+<blockquote>
+<p><strong>把“角色化对话”转换成模型训练时熟悉的 Token
+序列格式。</strong></p>
+</blockquote>
+<hr />
+<h2 id="这是一个非常重要的东西">43. 这是一个非常重要的东西</h2>
+<p>两个模型都支持聊天：</p>
+<blockquote>
+<p>并不意味着它们的 Chat Template 相同。</p>
+</blockquote>
+<hr />
+<h2 id="如果用错-template">44. 如果用错 Template</h2>
+<p>可能出现：</p>
+<ul>
+<li>回答质量下降；</li>
+<li>模型不知道该继续谁的话；</li>
+<li>特殊 Token 错误；</li>
+<li>输出格式奇怪；</li>
+<li>重复生成。</li>
+</ul>
+<hr />
+<h1 id="二十六核心心智模型-④tokenizer-不只负责切词">二十六、核心心智模型
+④：Tokenizer 不只负责“切词”</h1>
+<p>对于 Chat LLM，它还可能参与：</p>
+<pre class="text"><code>文字切分
++
+Token ID映射
++
+特殊Token
++
+对话格式</code></pre>
+<p>所以千万不要把 Tokenizer 理解成：</p>
+<blockquote>
+<p>一个简单的中文分词器。</p>
+</blockquote>
+<hr />
+<h1
+id="二十七special_tokens_map.json">二十七、<code>special_tokens_map.json</code></h1>
+<p>有些模型目录中可能看到：</p>
+<pre class="text"><code>special_tokens_map.json</code></pre>
+<p>它可以用于描述：</p>
+<blockquote>
+<p>哪些 Token 扮演 BOS、EOS、PAD 等特殊角色。</p>
+</blockquote>
+<hr />
+<h2 id="但不同模型仓库">45. 但不同模型仓库</h2>
+<p>文件组织方式可能：</p>
+<blockquote>
+<p>不完全一样。</p>
+</blockquote>
+<p>有些信息可能写在其它 Tokenizer 配置里。</p>
+<p>所以以后不要背：</p>
+<blockquote>
+<p>“每个模型一定必须有这 7 个文件。”</p>
+</blockquote>
+<hr />
+<h1
+id="二十八这是今天非常重要的一个习惯">二十八、这是今天非常重要的一个习惯</h1>
+<p>不要学习：</p>
+<pre class="text"><code>固定文件清单</code></pre>
+<p>而要学习：</p>
+<pre class="text"><code>每一种功能需要什么资产</code></pre>
+<p>比如：</p>
+<pre class="text"><code>Architecture information
+Tokenizer assets
+Weights
+Generation defaults
+Metadata / code</code></pre>
+<p>具体文件名：</p>
+<blockquote>
+<p>可以变化。</p>
+</blockquote>
+<hr />
+<h1
+id="二十九generation_config.json-是什么">二十九、<code>generation_config.json</code>
+是什么？</h1>
+<p>现在看另一个常见文件：</p>
+<pre class="text"><code>generation_config.json</code></pre>
+<hr />
+<h2 id="很多人看到它会误以为">46. 很多人看到它会误以为</h2>
+<blockquote>
+<p>“这是不是模型能力参数？”</p>
+</blockquote>
+<p>不是。</p>
+<p>它更接近：</p>
+<blockquote>
+<p><strong>生成时的默认驾驶设置。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三十还是用汽车类比">三十、还是用汽车类比</h1>
+<p>模型 Weight：</p>
+<blockquote>
+<p>汽车本身。</p>
+</blockquote>
+<p><code>generation_config</code>：</p>
+<blockquote>
+<p>默认驾驶方式。</p>
+</blockquote>
+<hr />
+<h2 id="比如可能涉及">47. 比如可能涉及</h2>
+<pre class="text"><code>max_new_tokens
+temperature
+top_p
+do_sample
+eos_token_id</code></pre>
+<p>具体字段依模型和配置而异。</p>
+<hr />
+<h2 id="修改它意味着什么">48. 修改它意味着什么？</h2>
+<p>可能改变：</p>
+<blockquote>
+<p>模型如何从 Logits 选择 Token。</p>
+</blockquote>
+<p>但不会因此：</p>
+<blockquote>
+<p>把 7B 模型变成 70B。</p>
+</blockquote>
+<p>也不会让它：</p>
+<blockquote>
+<p>突然学会没训练过的法规。</p>
+</blockquote>
+<hr />
+<h1 id="三十一所以要牢牢记住">三十一、所以要牢牢记住</h1>
+<pre class="text"><code>Model Capability
+≠
+Generation Policy</code></pre>
+<p>比如：</p>
+<blockquote>
+<p>Temperature 调低，</p>
+</blockquote>
+<p>可以让输出：</p>
+<blockquote>
+<p>更稳定。</p>
+</blockquote>
+<p>但不能保证：</p>
+<blockquote>
+<p>法规依据就变正确。</p>
+</blockquote>
+<hr />
+<h1 id="三十二采购系统中的例子">三十二、采购系统中的例子</h1>
+<p>同一个模型面对：</p>
+<blockquote>
+<p>“请给出该资格条款的风险判断。”</p>
+</blockquote>
+<p>生成设置 A：</p>
+<pre class="text"><code>低随机性</code></pre>
+<p>可能每次比较稳定。</p>
+<hr />
+<h2 id="设置-b">49. 设置 B</h2>
+<pre class="text"><code>高随机性</code></pre>
+<p>可能措辞更丰富。</p>
+<p>但底层：</p>
+<blockquote>
+<p>还是同一套 Weight。</p>
+</blockquote>
+<hr />
+<h1 id="三十三那么-readme-是干什么的">三十三、那么 README
+是干什么的？</h1>
+<p>很多模型仓库会有：</p>
+<pre class="text"><code>README.md</code></pre>
+<p>或者页面上的：</p>
+<h1 id="model-card">Model Card</h1>
+<hr />
+<h2 id="它不参与神经网络-forward">50. 它不参与神经网络 Forward</h2>
+<p>但对工程师：</p>
+<blockquote>
+<p>非常重要。</p>
+</blockquote>
+<hr />
+<h2 id="因为它可能告诉你">51. 因为它可能告诉你</h2>
+<ul>
+<li>模型是什么；</li>
+<li>谁发布；</li>
+<li>用途；</li>
+<li>License；</li>
+<li>Context Length；</li>
+<li>推荐推理方式；</li>
+<li>Chat Template；</li>
+<li>已知限制；</li>
+<li>训练信息；</li>
+<li>使用示例。</li>
+</ul>
+<hr />
+<h1
+id="三十四为什么政府采购项目尤其不能跳过-readme-license">三十四、为什么政府采购项目尤其不能跳过
+README / License？</h1>
+<p>因为你不只是：</p>
+<blockquote>
+<p>自己玩一个模型。</p>
+</blockquote>
+<p>以后可能是：</p>
+<blockquote>
+<p>企业产品。</p>
+</blockquote>
+<hr />
+<h2 id="所以必须问">52. 所以必须问</h2>
+<pre class="text"><code>可以商用吗？
+
+允许修改吗？
+
+允许再发布吗？
+
+有没有使用限制？
+
+有没有归属/通知要求？</code></pre>
+<p>这些属于：</p>
+<blockquote>
+<p>模型选型的一部分。</p>
+</blockquote>
+<hr />
+<h1 id="三十五第五个核心心智模型">三十五、第五个核心心智模型</h1>
+<h3
+id="一个开源模型不是一个-weight-文件而是一套版本必须彼此匹配的资产">一个开源模型不是“一个
+Weight 文件”，而是一套版本必须彼此匹配的资产</h3>
+<pre class="text"><code>Architecture
++
+Tokenizer
++
+Weights
++
+Generation Settings
++
+Metadata / License
++
+有时还有Model Code</code></pre>
+<hr />
+<h1
+id="三十六为什么版本匹配这么重要">三十六、为什么“版本匹配”这么重要？</h1>
+<p>想象你有：</p>
+<pre class="text"><code>A车型发动机
++
+B车型变速箱
++
+C车型控制软件</code></pre>
+<p>虽然每一个零件：</p>
+<blockquote>
+<p>都是好东西。</p>
+</blockquote>
+<p>但拼起来：</p>
+<blockquote>
+<p>不一定能工作。</p>
+</blockquote>
+<hr />
+<h2 id="llm-也是一样">53. LLM 也是一样</h2>
+<p>例如：</p>
+<pre class="text"><code>Model A 的 Weight
++
+Model B 的 Tokenizer</code></pre>
+<p>可能：</p>
+<blockquote>
+<p>完全错误。</p>
+</blockquote>
+<hr />
+<h2 id="或者">54. 或者</h2>
+<pre class="text"><code>新版本 config
++
+旧版本 weight</code></pre>
+<p>也可能：</p>
+<blockquote>
+<p>Shape 对不上。</p>
+</blockquote>
+<hr />
+<h1 id="三十七shape-对不上是什么意思">三十七、Shape
+对不上是什么意思？</h1>
+<p>假设 <code>config.json</code> 告诉程序：</p>
+<pre class="text"><code>Hidden Size = 4096</code></pre>
+<p>于是模型创建：</p>
+<pre class="text"><code>4096 × 4096</code></pre>
+<p>某个 Weight Matrix。</p>
+<hr />
+<h2 id="但实际-weight-文件里">55. 但实际 Weight 文件里</h2>
+<p>这个参数是：</p>
+<pre class="text"><code>5120 × 5120</code></pre>
+<p>加载时软件就会发现：</p>
+<blockquote>
+<p>“这块零件塞不进去。”</p>
+</blockquote>
+<p>这类问题会表现成：</p>
+<blockquote>
+<p>Weight Shape Mismatch。</p>
+</blockquote>
+<hr />
+<h1 id="三十八所以-config-和-weight-必须一致">三十八、所以
+<code>config</code> 和 Weight 必须一致</h1>
+<p>可以记成：</p>
+<pre class="text"><code>config
+=
+模具尺寸
+
+weight
+=
+真正要塞进模具里的零件</code></pre>
+<p>尺寸不同：</p>
+<blockquote>
+<p>装不进去。</p>
+</blockquote>
+<hr />
+<h1 id="三十九tokenizer-错了为什么有时反而不报错">三十九、Tokenizer
+错了为什么有时反而“不报错”？</h1>
+<p>这个问题更危险。</p>
+<hr />
+<h2 id="因为某些情况下">56. 因为某些情况下</h2>
+<p>错误 Tokenizer 仍然能输出：</p>
+<blockquote>
+<p>合法整数 Token ID。</p>
+</blockquote>
+<p>模型也能运行。</p>
+<p>所以程序：</p>
+<blockquote>
+<p>可能不崩。</p>
+</blockquote>
+<hr />
+<h2 id="但是语义已经错了">57. 但是语义已经错了</h2>
+<p>这比直接报错更麻烦。</p>
+<p>因为：</p>
+<pre class="text"><code>程序正常运行
+≠
+模型输入正确</code></pre>
+<hr />
+<h1 id="四十这和第一课里的-silent-failure-很像">四十、这和第一课里的
+Silent Failure 很像</h1>
+<p>显式报错：</p>
+<blockquote>
+<p>反而容易发现。</p>
+</blockquote>
+<p>最危险的是：</p>
+<blockquote>
+<p>程序看起来正常，结果悄悄变差。</p>
+</blockquote>
+<hr />
+<h1 id="四十一什么叫-weight-name">四十一、什么叫 Weight Name？</h1>
+<p>以后如果你查看模型，会看到类似：</p>
+<pre class="text"><code>model.layers.0.self_attn.q_proj.weight
+
+model.layers.0.self_attn.k_proj.weight
+
+model.layers.0.mlp.gate_proj.weight</code></pre>
+<hr />
+<h2 id="现在这些名字已经不再陌生">58. 现在这些名字已经不再陌生</h2>
+<p>第二课学过：</p>
+<pre class="text"><code>Layer 0
+
+Self Attention
+
+Q Projection
+
+K Projection
+
+MLP Gate Projection</code></pre>
+<hr />
+<h2 id="所以-weight-文件不是神秘黑盒">59. 所以 Weight
+文件不是神秘黑盒</h2>
+<p>它里面实际上是在保存：</p>
+<blockquote>
+<p>第二课那些 Matrix 的训练后数值。</p>
+</blockquote>
+<p>这一刻第二课和第三课就真正接上了。</p>
+<hr />
+<h1 id="四十二一个很重要的第二课-第三课映射">四十二、一个很重要的“第二课
+→ 第三课”映射</h1>
+<pre class="text"><code>第二课理论                 第三课文件
+
+Hidden Size         ←→     config.json
+
+Layer Count         ←→     config.json
+
+Attention Heads     ←→     config.json
+
+Tokenizer           ←→     tokenizer assets
+
+Wq / Wk / Wv        ←→     safetensors
+
+MLP weights         ←→     safetensors
+
+LM Head             ←→     safetensors
+
+Sampling            ←→     generation_config</code></pre>
+<p>以后你看到模型目录：</p>
+<blockquote>
+<p>不再只是在看文件。</p>
+</blockquote>
+<p>你是在看到：</p>
+<blockquote>
+<p>第二课理论的实体化版本。</p>
+</blockquote>
+<hr />
+<h1
+id="四十三为什么模型仓库可能还有-python-文件">四十三、为什么模型仓库可能还有
+Python 文件？</h1>
+<p>有些模型架构：</p>
+<blockquote>
+<p>Transformers 内置就认识。</p>
+</blockquote>
+<p>例如加载时根据：</p>
+<pre class="text"><code>model_type</code></pre>
+<p>可以直接找到对应实现。</p>
+<hr />
+<h2 id="但某些模型可能带有">60. 但某些模型可能带有</h2>
+<pre class="text"><code>modeling_xxx.py
+configuration_xxx.py</code></pre>
+<p>之类的自定义代码。</p>
+<p>这意味着：</p>
+<blockquote>
+<p>模型可能需要仓库里的代码定义某些结构。</p>
+</blockquote>
+<hr />
+<h1 id="四十四这时会遇到一个关键词">四十四、这时会遇到一个关键词</h1>
+<pre class="text"><code>trust_remote_code</code></pre>
+<p>以后有些教程会直接写：</p>
+<div class="sourceCode" id="cb196"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb196-1"><a href="#cb196-1" aria-hidden="true" tabindex="-1"></a>trust_remote_code<span class="op">=</span><span class="va">True</span></span></code></pre></div>
+<p>然后一句解释都没有。</p>
+<p>这种习惯不好。</p>
+<hr />
+<h2 id="它真正意味着什么">61. 它真正意味着什么？</h2>
+<p>粗略说：</p>
+<blockquote>
+<p>允许加载并执行模型仓库提供的自定义代码。</p>
+</blockquote>
+<hr />
+<h2 id="所以为什么要谨慎">62. 所以为什么要谨慎？</h2>
+<p>因为：</p>
+<blockquote>
+<p>Weight 数据和可执行 Python Code 是两类完全不同的安全风险。</p>
+</blockquote>
+<p>你不应该对任何陌生仓库：</p>
+<blockquote>
+<p>无脑信任远程代码。</p>
+</blockquote>
+<hr />
+<h1 id="四十五政府采购-ai-尤其需要软件供应链意识">四十五、政府采购 AI
+尤其需要软件供应链意识</h1>
+<p>未来我们的系统可能处理：</p>
+<ul>
+<li>采购文件；</li>
+<li>企业信息；</li>
+<li>内部审查材料；</li>
+<li>专家意见。</li>
+</ul>
+<hr />
+<h2 id="因此模型来源要有治理">63. 因此模型来源要有治理</h2>
+<p>至少应该知道：</p>
+<pre class="text"><code>模型从哪里下载？
+
+哪个版本？
+
+Hash / Revision 是什么？
+
+License 是什么？
+
+有没有Remote Code？
+
+有没有经过安全审查？</code></pre>
+<p>这不是“运维小事”。</p>
+<p>是：</p>
+<blockquote>
+<p>生产 AI 治理的一部分。</p>
+</blockquote>
+<hr />
+<h1 id="四十六什么叫-revision">四十六、什么叫 Revision？</h1>
+<p>模型仓库也会更新。</p>
+<p>今天的模型：</p>
+<pre class="text"><code>Version A</code></pre>
+<p>一个月后作者可能：</p>
+<blockquote>
+<p>更新 Tokenizer、Config 或 Weight。</p>
+</blockquote>
+<hr />
+<h2 id="如果你永远只写">64. 如果你永远只写</h2>
+<pre class="text"><code>下载最新版本</code></pre>
+<p>那么半年后：</p>
+<blockquote>
+<p>你的实验可能无法复现。</p>
+</blockquote>
+<hr />
+<h2 id="所以专业实验需要记录">65. 所以专业实验需要记录</h2>
+<pre class="text"><code>Model ID
++
+Revision / Commit
++
+Tokenizer Version
++
+Framework Version</code></pre>
+<p>这正是第一课：</p>
+<h1 id="reproducibility">Reproducibility</h1>
+<p>真正落地。</p>
+<hr />
+<h1
+id="四十七不要把模型名字当成完整版本">四十七、不要把模型名字当成完整版本</h1>
+<p>例如：</p>
+<pre class="text"><code>SomeModel-7B-Instruct</code></pre>
+<p>只是：</p>
+<blockquote>
+<p>人类可读名字。</p>
+</blockquote>
+<hr />
+<h2 id="真正的实验身份应该更严格">66. 真正的实验身份应该更严格</h2>
+<p>概念上：</p>
+<pre class="text"><code>Model:
+SomeModel-7B-Instruct
+
+Revision:
+abc123...
+
+Tokenizer:
+same revision
+
+Transformers:
+某版本
+
+PyTorch:
+某版本</code></pre>
+<hr />
+<h1 id="四十八base-和-instruct-有什么区别">四十八、Base 和 Instruct
+有什么区别？</h1>
+<p>以后经常看到：</p>
+<pre class="text"><code>Model-7B-Base
+
+Model-7B-Instruct</code></pre>
+<hr />
+<h2 id="base">67. Base</h2>
+<p>通常更接近：</p>
+<blockquote>
+<p>经过预训练的基础语言模型。</p>
+</blockquote>
+<p>它主要学：</p>
+<blockquote>
+<p>Next-token Prediction。</p>
+</blockquote>
+<hr />
+<h2 id="instruct">68. Instruct</h2>
+<p>通常又经过：</p>
+<blockquote>
+<p>Instruction Tuning / Post-training。</p>
+</blockquote>
+<p>因此更擅长：</p>
+<blockquote>
+<p>遵循用户指令、对话。</p>
+</blockquote>
+<hr />
+<h1 id="四十九是不是-instruct-一定比-base-强">四十九、是不是 Instruct
+一定比 Base 强？</h1>
+<p>不能这么说。</p>
+<hr />
+<h2 id="对聊天任务">69. 对聊天任务</h2>
+<p>Instruct：</p>
+<blockquote>
+<p>通常更方便。</p>
+</blockquote>
+<hr />
+<h2 id="但如果我们要做某种-continued-pretraining">70. 但如果我们要做某种
+Continued Pretraining</h2>
+<p>或者特殊训练路线，</p>
+<p>Base：</p>
+<blockquote>
+<p>可能有不同价值。</p>
+</blockquote>
+<hr />
+<h2 id="所以又回到第一课">71. 所以又回到第一课</h2>
+<pre class="text"><code>没有“最强模型”
+只有“适合什么任务的模型”</code></pre>
+<hr />
+<h1 id="五十一个-procurementlm-选型例子">五十、一个 ProcurementLM
+选型例子</h1>
+<p>假设我们未来有两个候选：</p>
+<pre class="text"><code>7B Base
+7B Instruct</code></pre>
+<hr />
+<h2 id="如果目标是">72. 如果目标是</h2>
+<blockquote>
+<p>马上建立采购问答 Baseline。</p>
+</blockquote>
+<p>通常：</p>
+<blockquote>
+<p>Instruct 更方便直接测试。</p>
+</blockquote>
+<hr />
+<h2 id="如果目标是-1">73. 如果目标是</h2>
+<blockquote>
+<p>大规模采购领域 Continued Pretraining。</p>
+</blockquote>
+<p>Base 和 Instruct：</p>
+<blockquote>
+<p>都需要更仔细评估训练路线。</p>
+</blockquote>
+<p>不能仅凭名字决定。</p>
+<hr />
+<h1
+id="五十一模型目录里还有什么可能出现">五十一、模型目录里还有什么可能出现？</h1>
+<p>不同模型可能还包括：</p>
+<pre class="text"><code>merges.txt
+vocab.json
+tokenizer.model
+added_tokens.json
+chat_template...
+preprocessor...</code></pre>
+<p>等等。</p>
+<hr />
+<h2 id="不用慌">74. 不用慌</h2>
+<p>不要问：</p>
+<blockquote>
+<p>“为什么我的模型没有和教程一模一样的文件？”</p>
+</blockquote>
+<p>先问：</p>
+<blockquote>
+<p><strong>这些功能由哪个文件承担？</strong></p>
+</blockquote>
+<hr />
+<h1
+id="五十二今天的功能视角比文件名视角重要">五十二、今天的“功能视角”比“文件名视角”重要</h1>
+<p>你真正应该看的是：</p>
+<table>
+<thead>
+<tr class="header">
+<th>功能</th>
+<th>典型资产</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>模型长什么样</td>
+<td><code>config.json</code></td>
+</tr>
+<tr class="even">
+<td>文字如何变 Token</td>
+<td>Tokenizer 文件</td>
+</tr>
+<tr class="odd">
+<td>模型学到的参数</td>
+<td><code>.safetensors</code> 等 Weight</td>
+</tr>
+<tr class="even">
+<td>Weight 在哪些分片</td>
+<td><code>*.index.json</code></td>
+</tr>
+<tr class="odd">
+<td>默认怎样生成</td>
+<td><code>generation_config.json</code></td>
+</tr>
+<tr class="even">
+<td>如何使用/限制</td>
+<td>README / Model Card</td>
+</tr>
+<tr class="odd">
+<td>是否有自定义实现</td>
+<td>可能的 Python 代码</td>
+</tr>
+</tbody>
+</table>
+<p>具体文件：</p>
+<blockquote>
+<p>可以因模型而异。</p>
+</blockquote>
+<hr />
+<h1
+id="五十三我们用一个采购专家公司把所有文件串起来">五十三、我们用一个“采购专家公司”把所有文件串起来</h1>
+<p>想象你买下一家政府采购咨询公司。</p>
+<p>你拿到了五类资产。</p>
+<hr />
+<h2 id="第一类组织架构图">75. 第一类：组织架构图</h2>
+<pre class="text"><code>config.json</code></pre>
+<p>告诉你：</p>
+<blockquote>
+<p>公司有多少部门、多少层级。</p>
+</blockquote>
+<hr />
+<h2 id="第二类内部术语字典">76. 第二类：内部术语字典</h2>
+<pre class="text"><code>Tokenizer</code></pre>
+<p>告诉你：</p>
+<blockquote>
+<p>公司怎样编码和理解文字输入。</p>
+</blockquote>
+<hr />
+<h2 id="第三类专家真正的大脑和经验">77.
+第三类：专家真正的大脑和经验</h2>
+<pre class="text"><code>Weights</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>最值钱的部分。</p>
+</blockquote>
+<hr />
+<h2 id="第四类档案箱目录">78. 第四类：档案箱目录</h2>
+<pre class="text"><code>Shard + Index</code></pre>
+<p>告诉系统：</p>
+<blockquote>
+<p>哪部分知识参数装在哪个文件。</p>
+</blockquote>
+<hr />
+<h2 id="第五类默认工作习惯">79. 第五类：默认工作习惯</h2>
+<pre class="text"><code>generation_config</code></pre>
+<p>例如：</p>
+<blockquote>
+<p>回答偏保守还是偏随机、何时停止等默认设置。</p>
+</blockquote>
+<hr />
+<h2 id="第六类员工手册和许可证">80. 第六类：员工手册和许可证</h2>
+<pre class="text"><code>README
+LICENSE
+Model Card</code></pre>
+<p>告诉你：</p>
+<blockquote>
+<p>应该怎么使用、有哪些限制、是否合法部署。</p>
+</blockquote>
+<p>这就是完整模型仓库。</p>
+<hr />
+<h1
+id="五十四再看一遍模型文件夹现在感觉应该完全不同">五十四、再看一遍模型文件夹，现在感觉应该完全不同</h1>
+<pre class="text"><code>ProcurementBaseModel/
+│
+├── config.json
+│      └─ 模型骨架
+│
+├── tokenizer...
+│      └─ 语言入口
+│
+├── model-00001-of-00004.safetensors
+├── model-00002-of-00004.safetensors
+├── model-00003-of-00004.safetensors
+├── model-00004-of-00004.safetensors
+│      └─ 真正训练后的参数
+│
+├── model.safetensors.index.json
+│      └─ 权重分片地图
+│
+├── generation_config.json
+│      └─ 默认生成设置
+│
+└── README / LICENSE
+       └─ 使用说明与治理信息</code></pre>
+<p>这时候它已经不再是一堆陌生文件。</p>
+<hr />
+<h1
+id="五十五接下来做一个完整加载思维实验">五十五、接下来做一个完整加载思维实验</h1>
+<p>假设我们执行：</p>
+<div class="sourceCode" id="cb214"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb214-1"><a href="#cb214-1" aria-hidden="true" tabindex="-1"></a>AutoModelForCausalLM.from_pretrained(...)</span></code></pre></div>
+<p>先别管代码。</p>
+<p>想象程序要完成什么。</p>
+<hr />
+<h2 id="第一步找到模型仓库">81. 第一步：找到模型仓库</h2>
+<pre class="text"><code>模型在哪里？</code></pre>
+<p>本地目录？</p>
+<p>远程模型仓库？</p>
+<hr />
+<h2 id="第二步读取-config">82. 第二步：读取 <code>config</code></h2>
+<p>回答：</p>
+<pre class="text"><code>我要搭一个什么神经网络？</code></pre>
+<hr />
+<h2 id="第三步建立模型骨架">83. 第三步：建立模型骨架</h2>
+<p>例如：</p>
+<pre class="text"><code>Embedding
++
+32个Decoder Block
++
+Final Norm
++
+LM Head</code></pre>
+<hr />
+<h2 id="第四步读取-weight-index">84. 第四步：读取 Weight Index</h2>
+<p>如果有 Shard：</p>
+<blockquote>
+<p>先知道每个 Parameter 在哪个文件。</p>
+</blockquote>
+<hr />
+<h2 id="第五步读取-.safetensors">85. 第五步：读取
+<code>.safetensors</code></h2>
+<p>把真正的 Weight：</p>
+<blockquote>
+<p>填入对应 Parameter。</p>
+</blockquote>
+<hr />
+<h2 id="第六步处理-device-precision">86. 第六步：处理 Device /
+Precision</h2>
+<p>例如：</p>
+<blockquote>
+<p>CPU？</p>
+</blockquote>
+<blockquote>
+<p>GPU？</p>
+</blockquote>
+<blockquote>
+<p>BF16？</p>
+</blockquote>
+<p>后面第 4、6、7 阶段会展开。</p>
+<hr />
+<h2 id="与此同时-tokenizer-单独加载">87. 与此同时 Tokenizer
+单独加载</h2>
+<p>它负责：</p>
+<pre class="text"><code>Text
+→
+Token IDs</code></pre>
+<hr />
+<h1 id="五十六整个过程画成一张图">五十六、整个过程画成一张图</h1>
+<pre class="text"><code>                 模型目录
+                    │
+        ┌───────────┼────────────┐
+        │           │            │
+        ▼           ▼            ▼
+   config.json   tokenizer    safetensors
+        │           │            │
+        │           │            │
+        ▼           ▼            ▼
+   创建模型骨架   建立文字入口   装入训练参数
+        │                        │
+        └───────────┬────────────┘
+                    ▼
+              可运行的模型
+                    │
+                    ▲
+                    │
+             generation config
+             控制默认生成策略</code></pre>
+<p>这就是本阶段最重要的一张总图。</p>
+<hr />
+<h1 id="五十七现在回到第三课第-1-阶段">五十七、现在回到第三课第 1
+阶段</h1>
+<p>模型文件最开始：</p>
+<blockquote>
+<p>在 SSD。</p>
+</blockquote>
+<hr />
+<h2 id="当真正加载时">88. 当真正加载时</h2>
+<p>会发生类似：</p>
+<pre class="text"><code>SSD
+↓
+RAM
+↓
+创建 Tensor
+↓
+VRAM
+↓
+GPU</code></pre>
+<hr />
+<h2 id="所以模型文件夹和运行中的模型不是同一个东西">89.
+所以“模型文件夹”和“运行中的模型”不是同一个东西</h2>
+<p>磁盘上的：</p>
+<pre class="text"><code>model.safetensors</code></pre>
+<p>是：</p>
+<blockquote>
+<p>静态文件。</p>
+</blockquote>
+<hr />
+<h2 id="运行中的-model">90. 运行中的 Model</h2>
+<p>是：</p>
+<blockquote>
+<p>RAM / VRAM 中已经创建好的 Tensor 和网络对象。</p>
+</blockquote>
+<p>这个区别非常重要。</p>
+<hr />
+<h1 id="五十八一个容易犯的错误">五十八、一个容易犯的错误</h1>
+<p>有人看模型文件夹：</p>
+<pre class="text"><code>总大小 14GB</code></pre>
+<p>就说：</p>
+<blockquote>
+<p>“这个模型运行只需要 14GB。”</p>
+</blockquote>
+<p>第三课第 1 阶段已经知道：</p>
+<blockquote>
+<p>错。</p>
+</blockquote>
+<hr />
+<h2 id="磁盘大小只是一个信息">91. 磁盘大小只是一个信息</h2>
+<p>实际运行还受：</p>
+<ul>
+<li>保存格式；</li>
+<li>Dtype；</li>
+<li>Device；</li>
+<li>KV Cache；</li>
+<li>Context；</li>
+<li>Buffer；</li>
+</ul>
+<p>影响。</p>
+<hr />
+<h1 id="五十九模型文件也可能被量化">五十九、模型文件也可能被量化</h1>
+<p>以后你还会看到：</p>
+<pre class="text"><code>FP16 model
+BF16 model
+INT8 model
+4-bit model
+GGUF...</code></pre>
+<p>这些不仅影响：</p>
+<blockquote>
+<p>文件大小。</p>
+</blockquote>
+<p>也可能影响：</p>
+<blockquote>
+<p>加载方式、运行框架、显存和精度。</p>
+</blockquote>
+<hr />
+<h2 id="但今天先不要展开">92. 但今天先不要展开</h2>
+<p>第三课第 6 阶段会专门讲：</p>
+<blockquote>
+<p><strong>一个数字到底为什么可以占 4 Bytes、2 Bytes、1 Byte
+甚至更少。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六十这阶段真正的-5-个核心心智模型">六十、这阶段真正的 5
+个核心心智模型</h1>
+<h2 id="config-蓝图">① <code>config</code> = 蓝图</h2>
+<p>它回答：</p>
+<blockquote>
+<p><strong>模型长什么样？</strong></p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>模型学会了什么。</p>
+</blockquote>
+<hr />
+<h2 id="tokenizer-语言接口">② Tokenizer = 语言接口</h2>
+<p>它回答：</p>
+<blockquote>
+<p><strong>文字怎样变成模型认识的 Token ID？</strong></p>
+</blockquote>
+<p>对于 Chat Model：</p>
+<blockquote>
+<p>还可能管理特殊 Token 和 Chat Template。</p>
+</blockquote>
+<hr />
+<h2 id="weights-真正训练成果">③ Weights = 真正训练成果</h2>
+<p><code>.safetensors</code> 中的大量 Parameter：</p>
+<blockquote>
+<p>才是训练以后形成的数值状态。</p>
+</blockquote>
+<hr />
+<h2 id="shard-index-分箱-地图">④ Shard + Index = 分箱 + 地图</h2>
+<pre class="text"><code>Shard
+=
+装参数的箱子
+
+Index
+=
+哪个参数在哪个箱子的目录</code></pre>
+<hr />
+<h2 id="model-一套彼此匹配的资产">⑤ Model = 一套彼此匹配的资产</h2>
+<p>不是：</p>
+<pre class="text"><code>一个神秘的大文件</code></pre>
+<p>而是：</p>
+<pre class="text"><code>Architecture
++
+Tokenizer
++
+Weights
++
+Generation Configuration
++
+Metadata / Code / License</code></pre>
+<hr />
+<h1 id="六十一最重要的三个区分">六十一、最重要的三个区分</h1>
+<p>请把下面三组彻底分开。</p>
+<h3 id="第一组">第一组</h3>
+<pre class="text"><code>config
+≠
+weights</code></pre>
+<p>一个是：</p>
+<blockquote>
+<p>结构。</p>
+</blockquote>
+<p>一个是：</p>
+<blockquote>
+<p>学习结果。</p>
+</blockquote>
+<hr />
+<h3 id="第二组">第二组</h3>
+<pre class="text"><code>tokenizer
+≠
+model weights</code></pre>
+<p>一个是：</p>
+<blockquote>
+<p>文字编码规则。</p>
+</blockquote>
+<p>一个是：</p>
+<blockquote>
+<p>神经网络参数。</p>
+</blockquote>
+<hr />
+<h3 id="第三组">第三组</h3>
+<pre class="text"><code>generation config
+≠
+model capability</code></pre>
+<p>一个主要影响：</p>
+<blockquote>
+<p>怎样从输出分布选择 Token。</p>
+</blockquote>
+<p>另一个决定：</p>
+<blockquote>
+<p>模型能形成什么分布。</p>
+</blockquote>
+<hr />
+<h1
+id="六十二政府采购模型的故障思维实验-a">六十二、政府采购模型的故障思维实验
+A</h1>
+<p>你加载模型以后：</p>
+<blockquote>
+<p>输出全是奇怪乱码或极不自然内容。</p>
+</blockquote>
+<p>第一反应是不是一定要重训模型？</p>
+<p><strong>不是。</strong></p>
+<p>先检查：</p>
+<blockquote>
+<p>Tokenizer 是否正确匹配。</p>
+</blockquote>
+<p>这是一个典型：</p>
+<pre class="text"><code>Input Interface Failure</code></pre>
+<hr />
+<h1 id="六十三思维实验-b">六十三、思维实验 B</h1>
+<p>加载模型时报：</p>
+<pre class="text"><code>size mismatch</code></pre>
+<p>最值得优先想到什么？</p>
+<blockquote>
+<p><code>config</code> 描述的网络 Shape 与实际 Weight 可能不匹配。</p>
+</blockquote>
+<p>不是马上说：</p>
+<blockquote>
+<p>GPU 坏了。</p>
+</blockquote>
+<hr />
+<h1 id="六十四思维实验-c">六十四、思维实验 C</h1>
+<p>模型目录中有：</p>
+<pre class="text"><code>model-00001-of-00008.safetensors
+...
+model-00008-of-00008.safetensors</code></pre>
+<p>是不是 8 个模型？</p>
+<p><strong>不是。</strong></p>
+<p>是：</p>
+<blockquote>
+<p>一个模型的 8 个 Weight Shard。</p>
+</blockquote>
+<hr />
+<h1 id="六十五思维实验-d">六十五、思维实验 D</h1>
+<p>你把 Temperature 从 0.2 改到 0.8。</p>
+<p>模型 Weight 有没有重新训练？</p>
+<p><strong>没有。</strong></p>
+<p>改变的是：</p>
+<blockquote>
+<p>Decode / Sampling Policy。</p>
+</blockquote>
+<hr />
+<h1 id="六十六思维实验-e">六十六、思维实验 E</h1>
+<p>你只有 <code>.safetensors</code> Weight，却完全不知道模型结构。</p>
+<p>能不能天然知道应该如何连接所有 Matrix？</p>
+<p><strong>不能简单这样假设。</strong></p>
+<p>需要：</p>
+<blockquote>
+<p>Architecture / Config 等信息告诉软件如何解释这些 Weight。</p>
+</blockquote>
+<hr />
+<h1 id="六十七本阶段掌握测试">六十七、本阶段掌握测试</h1>
+<p>如果你现在能够不用看前文，自己回答这些问题，第 3
+阶段就算真正掌握：</p>
+<blockquote>
+<p>一个“开源模型”为什么不是单个文件？</p>
+</blockquote>
+<blockquote>
+<p><code>config.json</code> 解决的到底是什么问题？</p>
+</blockquote>
+<blockquote>
+<p>为什么相同 Architecture 的两个模型能力可以完全不同？</p>
+</blockquote>
+<blockquote>
+<p>Weight 到底是什么？</p>
+</blockquote>
+<blockquote>
+<p><code>.safetensors</code> 主要保存什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么大模型 Weight 会拆成多个 Shard？</p>
+</blockquote>
+<blockquote>
+<p><code>model.safetensors.index.json</code> 为什么存在？</p>
+</blockquote>
+<blockquote>
+<p>Tokenizer 为什么必须和 Weight 匹配？</p>
+</blockquote>
+<blockquote>
+<p><code>tokenizer.json</code> 和 <code>tokenizer_config.json</code>
+从功能上怎么理解？</p>
+</blockquote>
+<blockquote>
+<p>Special Token 是干什么的？</p>
+</blockquote>
+<blockquote>
+<p>Chat Template 为什么会影响 Chat Model？</p>
+</blockquote>
+<blockquote>
+<p><code>generation_config.json</code>
+修改的是模型能力还是生成策略？</p>
+</blockquote>
+<blockquote>
+<p>为什么 README / License 在企业模型选型中很重要？</p>
+</blockquote>
+<blockquote>
+<p><code>trust_remote_code=True</code> 为什么不能无脑加？</p>
+</blockquote>
+<blockquote>
+<p>为什么要固定 Model Revision？</p>
+</blockquote>
+<blockquote>
+<p>Base 与 Instruct 至少在训练阶段上有什么概念区别？</p>
+</blockquote>
+<blockquote>
+<p>模型磁盘文件大小为什么不等于最终 VRAM 需求？</p>
+</blockquote>
+<p>如果这些都能解释：</p>
+<pre class="text"><code>第三课第3阶段
+=
+真正掌握</code></pre>
+<hr />
+<h1
+id="六十八这一阶段真正只记一句话">六十八、这一阶段真正只记一句话</h1>
+<blockquote>
+<p><strong>一个开源大模型不是一个神秘文件，而是一套彼此配套的资产：<code>config</code>
+告诉你脑子怎么搭，Tokenizer 告诉你文字怎么进，Weights
+保存真正学到的参数，Index 告诉你参数放在哪，Generation Config
+告诉你默认怎样生成。</strong></p>
+</blockquote>
+<p>再压缩成一张脑图：</p>
+<pre class="text"><code>                 MODEL
+                   │
+     ┌─────────────┼─────────────┐
+     │             │             │
+     ▼             ▼             ▼
+   config       tokenizer      weights
+   怎么搭         怎么读         学到了什么
+                                   │
+                                   ▼
+                             shard + index
+                             参数放在哪里
+
+                   │
+                   ▼
+          generation_config
+             默认怎么生成</code></pre>
+<p>当这张图进入脑子以后，下一阶段的 <code>from_pretrained()</code>
+就不再是魔法。</p>
+<hr />
+<h1 id="下一阶段第三课-第-4-阶段">下一阶段：第三课 · 第 4 阶段</h1>
+<h2
+id="from_pretrained-背后到底发生了什么模型怎样从-ssd-一步步变成-gpu-里真正可以运行的-transformer"><code>from_pretrained()</code>
+背后到底发生了什么？模型怎样从 SSD 一步步变成 GPU 里真正可以运行的
+Transformer？</h2>
+<p>下一阶段我们会第一次把<strong>文件世界</strong>和<strong>运行时世界</strong>接起来：</p>
+<pre class="text"><code>模型仓库
+   ↓
+读取 config
+   ↓
+创建空模型骨架
+   ↓
+读取 safetensors
+   ↓
+填入 Weight
+   ↓
+选择 Dtype
+   ↓
+选择 Device
+   ↓
+RAM / VRAM
+   ↓
+可执行 Forward</code></pre>
+<p>并且会重点拆清四个特别容易混淆的问题：</p>
+<pre class="text"><code>① “下载模型”和“加载模型”是不是一回事？
+
+② Weight 从 SSD 到 RAM，再到 VRAM，到底发生了什么？
+
+③ device_map=&quot;auto&quot; 到底在自动什么？
+
+④ 为什么加载一个大模型时，RAM 和 VRAM 可能会同时暴涨？</code></pre>
+<p>到了那一阶段，<code>AutoModelForCausalLM.from_pretrained()</code>
+就会从一行“魔法代码”，变成你能在脑子里逐步模拟出来的一整条加载流水线。</p>
+<hr /><div class="nav"><a class="btn" href="stage02.html">← 第 2 阶段</a><a class="btn" href="stage04.html">第 4 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

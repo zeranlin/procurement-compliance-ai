@@ -1,0 +1,1721 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第12阶段：正式组装 `ProcurementDataset_V0.1`</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第12阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>只是 Dataset 派生出来的一种使用方式。</li><li>我已经有 train.jsonl 所以我已经有 Dataset</li><li>Master Data 主数据</li></ul></div><h1 id="第四课-第-12-阶段">第四课 · 第 12 阶段</h1>
+<h1 id="正式组装-procurementdataset_v0.1-1">正式组装
+<code>ProcurementDataset_V0.1</code></h1>
+<h2
+id="前-11-个阶段学了这么多东西最后到底怎样变成一套真的可以交给模型训练的数据产品">前
+11
+个阶段学了这么多东西，最后到底怎样变成一套真的可以交给模型训练的数据产品？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-11">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-11">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>只是 Dataset 派生出来的一种使用方式。</strong></li>
+<li><strong>我已经有 train.jsonl 所以我已经有 Dataset</strong></li>
+<li><strong>Master Data 主数据</strong></li>
+<li><strong>Task Views 训练 / 评测视图</strong></li>
+<li><strong>Governance Assets 治理与审计资产</strong></li>
+<li><strong>第一，Dataset 不是一个训练文件，而是 Master Data、Task View
+和 Governance Asset 的组合。</strong></li>
+<li><strong>第二，Master Data
+是完整真相源，训练数据只是从它派生出来的任务视图。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-11">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="even">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="odd">
+<td><code>Sample</code></td>
+<td>样本：具有明确输入、目标和来源的一条训练/评测记录</td>
+</tr>
+<tr class="even">
+<td><code>ANN</code></td>
+<td>ANN/近似最近邻：在大规模向量中快速寻找相似项</td>
+</tr>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Input</code></td>
+<td>输入：模型在当前任务中允许看到的条件信息</td>
+</tr>
+<tr class="odd">
+<td><code>Validation</code></td>
+<td>验证集：开发阶段用于选模型、调参数和早停</td>
+</tr>
+<tr class="even">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="odd">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="even">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-11">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>这是第四课最后一个阶段。</p>
+<p>前 11 个阶段，我们一直在解决局部问题：</p>
+<pre class="text"><code>Stage 1   什么是一条数据？
+Stage 2   原始文件怎么可信解析？
+Stage 3   怎样恢复章—节—条款结构？
+Stage 4   怎样安全清洗文本？
+Stage 5   怎样去掉重复信息？
+Stage 6   Train / Validation / Test 怎么切？
+Stage 7   怎样防止数据泄漏？
+Stage 8   专家到底标什么？
+Stage 9   怎样得到可信 Gold Label？
+Stage 10  怎样建设 Hard Case？
+Stage 11  怎样版本化、追溯和证明质量？</code></pre>
+<p>到了今天，我们不再新增一个孤立概念。</p>
+<p>而是要把所有东西真正装起来。</p>
+<p>最终交付物只有一个：</p>
+<h1
+id="procurementdataset_v0.1-2"><code>ProcurementDataset_V0.1</code></h1>
+<p>它将成为第五课：</p>
+<h1 id="sft-lora-qlora-微调">SFT + LoRA / QLoRA 微调</h1>
+<p>真正开始训练政府采购模型之前的<strong>数据底座</strong>。</p>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-4">一、本阶段只解决一个核心问题</h1>
+<blockquote>
+<p><strong>怎样把原始采购文件、结构化 Clause、专家标签、Hard
+Case、Train/Validation/Test、数据血缘、质量报告等所有资产，组织成一个既能训练、又能评测、还能审计和复现的正式
+Dataset？</strong></p>
+</blockquote>
+<p>先看第四课最终总图。</p>
+<pre class="text"><code>                    原始政府采购文件
+                            │
+                            ▼
+                     ParsedDocument
+                       可信文档解析
+                            │
+                            ▼
+                       ClauseUnit
+                      条款结构恢复
+                            │
+                            ▼
+                       CleanClause
+                      安全规范化文本
+                            │
+                            ▼
+                    DedupedClauseSet
+                       独立信息集合
+                            │
+                            ▼
+                 Group-aware Dataset Split
+                  按项目/血缘安全切分
+                            │
+                            ▼
+                       Leakage Audit
+                        数据泄漏审计
+                            │
+                            ▼
+                    Expert Annotation
+                         专家标注
+                            │
+                            ▼
+                 Double Review + Adjudication
+                       双标复核与裁决
+                            │
+                            ▼
+                       HardCaseSet
+                        高价值难例
+                            │
+                            ▼
+                  Version + Lineage + QA
+                    版本、血缘、质检
+                            │
+                            ▼
+              ┌───────────────────────────┐
+              │ ProcurementDataset_V0.1  │
+              │ 政府采购AI第一版数据资产 │
+              └───────────────────────────┘
+                         │        │
+                         ▼        ▼
+                     Training   Evaluation
+                       训练        评测</code></pre>
+<p>中文只记：</p>
+<blockquote>
+<p><strong>原始文件 → 可信 Clause → 专家判断 → 安全切分 → 任务视图 →
+正式发布。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二本阶段最重要的-5-个核心心智模型-1">二、本阶段最重要的 5
+个核心心智模型</h1>
+<p>这次先把最重要的东西说透。</p>
+<hr />
+<h2 id="心智模型-1dataset-train.jsonl">心智模型 1：Dataset ≠
+<code>train.jsonl</code></h2>
+<p>这是第四课最后必须纠正的一个误区。</p>
+<p>很多人认为：</p>
+<pre class="text"><code>我已经有 train.jsonl
+所以我已经有 Dataset</code></pre>
+<p>不对。</p>
+<p>真正的 <code>ProcurementDataset_V0.1</code>
+至少同时包含三层东西：</p>
+<pre class="text"><code>Master Data
+主数据
+
+Task Views
+训练 / 评测视图
+
+Governance Assets
+治理与审计资产</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mo>≠</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Dataset
+\neq
+TrainingFile
+}
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mo>=</mo><mi>M</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi><mo>+</mo><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Dataset
+=
+MasterData
++
+TaskViews
++
+Governance
+}
+</annotation></semantics></math></p>
+<p>其中 <code>train.jsonl</code>：</p>
+<blockquote>
+<p>只是 Dataset 派生出来的一种使用方式。</p>
+</blockquote>
+<hr />
+<h2 id="心智模型-2master-data-是真相源训练文件只是投影视图">心智模型
+2：Master Data 是“真相源”，训练文件只是“投影视图”</h2>
+<h1 id="master-data">Master Data</h1>
+<h2 id="主数据-single-source-of-truth">主数据 / Single Source of
+Truth</h2>
+<p>我们前面保存了很多信息：</p>
+<pre class="text"><code>raw_text
+normalized_text
+section_path
+project_id
+source_page
+risk_present
+risk_type
+rationale
+evidence
+annotation_status
+split
+lineage</code></pre>
+<p>这些信息不能因为某个模型不需要：</p>
+<blockquote>
+<p>就直接删掉。</p>
+</blockquote>
+<p>真正正确的关系是：</p>
+<pre class="text"><code>                 Master Dataset
+                 完整主数据
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+ Classification     SFT View     Evaluation
+    分类视图          微调视图       评测视图</code></pre>
+<p>也就是我们这一课反复出现的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>i</mi><mi>c</mi><mi>h</mi><mi>M</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>→</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RichMasterData
+\rightarrow
+TaskSpecificViews
+}
+</annotation></semantics></math></p>
+<p>不要反过来：</p>
+<blockquote>
+<p>用第一版模型需要什么，决定整个数据库永远只能保存什么。</p>
+</blockquote>
+<hr />
+<h2 id="心智模型-3数据存在-数据允许喂给模型">心智模型 3：数据“存在” ≠
+数据“允许喂给模型”</h2>
+<p>这是整个 Dataset 组装里最重要的安全原则之一。</p>
+<p>Master Data 里面可能存在：</p>
+<pre class="text"><code>gold_label
+gold_rationale
+adjudication_comment
+future_outcome
+reviewer_note
+benchmark_slice</code></pre>
+<p>这些字段：</p>
+<blockquote>
+<p>为了治理、评测、审计，非常有价值。</p>
+</blockquote>
+<p>但它们绝不能因此：</p>
+<blockquote>
+<p>自动成为模型 Input。</p>
+</blockquote>
+<p>所以必须建立：</p>
+<h1 id="input-firewall">Input Firewall</h1>
+<h2 id="模型输入防火墙">模型输入防火墙</h2>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>i</mi><mi>e</mi><mi>l</mi><mi>d</mi><mo>≠</mo><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>w</mi><mi>e</mi><mi>d</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+StoredField
+\neq
+AllowedModelInput
+}
+</annotation></semantics></math></p>
+<p>这句话特别重要。</p>
+<hr />
+<h2 id="心智模型-4split-是样本血缘属性不是文件夹属性">心智模型 4：Split
+是样本血缘属性，不是文件夹属性</h2>
+<p>很多人会这样理解：</p>
+<pre class="text"><code>把一些JSON放进train文件夹
+→ 它就是Train</code></pre>
+<p>这太脆弱。</p>
+<p>真正应该保存的是：</p>
+<pre class="text"><code>sample_id → split
+project_id → split
+lineage_group → split</code></pre>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>一个样本属于 Train / Validation /
+Test，是数据身份的一部分。</strong></p>
+</blockquote>
+<p>不是复制文件时临时决定的。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mo>=</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Split
+=
+LineageProperty
+}
+</annotation></semantics></math></p>
+<p>这直接保证：</p>
+<pre class="text"><code>原样本
+近重复样本
+Counterfactual
+Hard Case Pair
+Synthetic派生样本</code></pre>
+<p>不会被错误拆到考试两边。</p>
+<hr />
+<h2
+id="心智模型-5正式-dataset-是-build-出来的不是手工拖文件拼出来的">心智模型
+5：正式 Dataset 是 Build 出来的，不是手工拖文件拼出来的</h2>
+<p>最终数据产品最好不是：</p>
+<blockquote>
+<p>小王复制几个 CSV，小李补一个 JSON，再压成 ZIP。</p>
+</blockquote>
+<p>而应该是一条明确的：</p>
+<h1 id="dataset-build-pipeline">Dataset Build Pipeline</h1>
+<h2 id="数据集构建流水线">数据集构建流水线</h2>
+<pre class="text"><code>Master Data
+    ↓
+Schema Validation
+    ↓
+Lineage Validation
+    ↓
+Split Validation
+    ↓
+Leakage Audit
+    ↓
+Task View Generation
+    ↓
+Quality Checks
+    ↓
+Manifest + Hash
+    ↓
+Release Gate
+    ↓
+Frozen Dataset Version</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>=</mo><mi>R</mi><mi>e</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>B</mi><mi>u</mi><mi>i</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DatasetRelease
+=
+ReproducibleBuild
+}
+</annotation></semantics></math></p>
+<p>这才叫工程化。</p>
+<hr />
+<h1 id="三现在真正打开-procurementdataset_v0.1">三、现在真正打开
+<code>ProcurementDataset_V0.1</code></h1>
+<p>第一版正式数据资产，可以设计成这样的目录。</p>
+<pre class="text"><code>ProcurementDataset_V0.1/
+│
+├── README.md
+├── CHANGELOG.md
+├── manifest.json
+│
+├── schemas/
+│   ├── master_schema.json
+│   ├── annotation_schema.json
+│   ├── hardcase_schema.json
+│   └── data_contract.md
+│
+├── source_registry/
+│   └── documents.jsonl
+│
+├── master/
+│   ├── clauses.jsonl
+│   ├── annotations.jsonl
+│   ├── lineage.jsonl
+│   └── split_map.jsonl
+│
+├── views/
+│   ├── classification/
+│   │   ├── train.jsonl
+│   │   ├── validation.jsonl
+│   │   └── test.jsonl
+│   │
+│   ├── sft_candidate/
+│   │   ├── train.jsonl
+│   │   └── validation.jsonl
+│   │
+│   └── retrieval/
+│       └── evidence_pairs.jsonl
+│
+├── evaluation/
+│   ├── heldout_gold.jsonl
+│   ├── hard_cases.jsonl
+│   └── slices.json
+│
+├── audit/
+│   ├── leakage_report.json
+│   ├── dedup_report.json
+│   └── annotation_agreement.json
+│
+└── reports/
+    ├── DatasetQualityReport_V0.1.md
+    └── DatasetQualityReport_V0.1.json</code></pre>
+<p>先别急着记目录。</p>
+<p>真正重要的是：</p>
+<blockquote>
+<p><strong>每类文件职责完全不同。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四第一层source_registry">四、第一层：<code>source_registry/</code></h1>
+<p>这里不是训练数据。</p>
+<p>它解决的是：</p>
+<blockquote>
+<p>原始文件到底是谁？</p>
+</blockquote>
+<p>例如：</p>
+<div class="sourceCode" id="cb2100"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2100-1"><a href="#cb2100-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2100-2"><a href="#cb2100-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2100-3"><a href="#cb2100-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROJECT-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2100-4"><a href="#cb2100-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_type&quot;</span><span class="fu">:</span> <span class="st">&quot;tender_document&quot;</span><span class="fu">,</span></span>
+<span id="cb2100-5"><a href="#cb2100-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_filename&quot;</span><span class="fu">:</span> <span class="st">&quot;某项目采购文件.pdf&quot;</span><span class="fu">,</span></span>
+<span id="cb2100-6"><a href="#cb2100-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;file_sha256&quot;</span><span class="fu">:</span> <span class="st">&quot;8f1c...&quot;</span><span class="fu">,</span></span>
+<span id="cb2100-7"><a href="#cb2100-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;publication_date&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-18&quot;</span><span class="fu">,</span></span>
+<span id="cb2100-8"><a href="#cb2100-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_status&quot;</span><span class="fu">:</span> <span class="st">&quot;verified&quot;</span></span>
+<span id="cb2100-9"><a href="#cb2100-9" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>注意：</p>
+<p>这里可以只保存：</p>
+<blockquote>
+<p>原文件 Registry / 引用。</p>
+</blockquote>
+<p>不一定必须把所有原始 PDF：</p>
+<blockquote>
+<p>直接打进发布给训练人员的数据包。</p>
+</blockquote>
+<p>原文件如何存储：</p>
+<blockquote>
+<p>应按照项目授权、隐私、安全和数据治理要求决定。</p>
+</blockquote>
+<hr />
+<h1 id="五第二层master">五、第二层：<code>master/</code></h1>
+<p>这是整个 Dataset 的核心。</p>
+<p>可以把它理解成：</p>
+<h1 id="数据总账">数据总账</h1>
+<hr />
+<h2 id="clauses.jsonl"><code>clauses.jsonl</code></h2>
+<p>保存：</p>
+<blockquote>
+<p>采购 Clause 本身。</p>
+</blockquote>
+<p>例如：</p>
+<div class="sourceCode" id="cb2101"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2101-1"><a href="#cb2101-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2101-2"><a href="#cb2101-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SAMPLE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-3"><a href="#cb2101-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2101-4"><a href="#cb2101-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROJECT-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-5"><a href="#cb2101-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-6"><a href="#cb2101-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-7"><a href="#cb2101-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2101-8"><a href="#cb2101-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_path&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2101-9"><a href="#cb2101-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;第三章 采购需求&quot;</span><span class="ot">,</span></span>
+<span id="cb2101-10"><a href="#cb2101-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;3.2 售后服务&quot;</span></span>
+<span id="cb2101-11"><a href="#cb2101-11" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb2101-12"><a href="#cb2101-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2101-13"><a href="#cb2101-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;raw_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后 2 小时内到达项目现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-14"><a href="#cb2101-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalized_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后2小时内到达项目现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-15"><a href="#cb2101-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2101-16"><a href="#cb2101-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_page&quot;</span><span class="fu">:</span> <span class="dv">27</span><span class="fu">,</span></span>
+<span id="cb2101-17"><a href="#cb2101-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2101-18"><a href="#cb2101-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parser_version&quot;</span><span class="fu">:</span> <span class="st">&quot;parser_v0.3&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-19"><a href="#cb2101-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;structure_version&quot;</span><span class="fu">:</span> <span class="st">&quot;structure_v0.2&quot;</span><span class="fu">,</span></span>
+<span id="cb2101-20"><a href="#cb2101-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalizer_version&quot;</span><span class="fu">:</span> <span class="st">&quot;normalize_v0.2&quot;</span></span>
+<span id="cb2101-21"><a href="#cb2101-21" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这回答：</p>
+<blockquote>
+<p>文本是什么？</p>
+</blockquote>
+<hr />
+<h1 id="六annotations.jsonl">六、<code>annotations.jsonl</code></h1>
+<p>保存：</p>
+<blockquote>
+<p>专家判断是什么？</p>
+</blockquote>
+<p>例如：</p>
+<div class="sourceCode" id="cb2102"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2102-1"><a href="#cb2102-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2102-2"><a href="#cb2102-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SAMPLE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb2102-3"><a href="#cb2102-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2102-4"><a href="#cb2102-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span><span class="fu">,</span></span>
+<span id="cb2102-5"><a href="#cb2102-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;primary_risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;C&quot;</span><span class="fu">,</span></span>
+<span id="cb2102-6"><a href="#cb2102-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb2102-7"><a href="#cb2102-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2102-8"><a href="#cb2102-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;rationale&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2102-9"><a href="#cb2102-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;observed_fact&quot;</span><span class="fu">:</span> <span class="st">&quot;要求2小时内到达现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb2102-10"><a href="#cb2102-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_concern&quot;</span><span class="fu">:</span> <span class="st">&quot;需要结合项目实际判断该服务时限的必要性。&quot;</span><span class="fu">,</span></span>
+<span id="cb2102-11"><a href="#cb2102-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;context_needed&quot;</span><span class="fu">:</span> <span class="st">&quot;项目性质、停机影响、履约地点及服务模式。&quot;</span></span>
+<span id="cb2102-12"><a href="#cb2102-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb2102-13"><a href="#cb2102-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2102-14"><a href="#cb2102-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_status&quot;</span><span class="fu">:</span> <span class="st">&quot;gold&quot;</span><span class="fu">,</span></span>
+<span id="cb2102-15"><a href="#cb2102-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2102-16"><a href="#cb2102-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_schema_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_schema_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2102-17"><a href="#cb2102-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;guideline_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_guideline_v0.1&quot;</span></span>
+<span id="cb2102-18"><a href="#cb2102-18" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这回答：</p>
+<blockquote>
+<p>专家怎么看？</p>
+</blockquote>
+<hr />
+<h1 id="七为什么-clause-和-annotation-可以分开">七、为什么 Clause 和
+Annotation 可以分开？</h1>
+<p>因为文本和 Label：</p>
+<blockquote>
+<p>生命周期并不完全相同。</p>
+</blockquote>
+<p>Clause 可能不变，</p>
+<p>但是：</p>
+<pre class="text"><code>Annotation Guideline v0.1
+→
+v0.2</code></pre>
+<p>专家可能重新裁决。</p>
+<p>如果文本和 Label 永远硬编码成一个无法拆开的对象：</p>
+<blockquote>
+<p>后面更新比较麻烦。</p>
+</blockquote>
+<p>所以工程上可以根据实际存储技术决定是否物理分表，</p>
+<p>但概念上一定要知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mi>J</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SourceContent
+\neq
+ExpertJudgment
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="八第三个核心文件lineage.jsonl">八、第三个核心文件：<code>lineage.jsonl</code></h1>
+<p>它保存：</p>
+<blockquote>
+<p>这条数据从哪里来的。</p>
+</blockquote>
+<p>例如：</p>
+<div class="sourceCode" id="cb2104"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2104-1"><a href="#cb2104-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2104-2"><a href="#cb2104-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SAMPLE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb2104-3"><a href="#cb2104-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2104-4"><a href="#cb2104-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROJECT-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2104-5"><a href="#cb2104-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2104-6"><a href="#cb2104-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2104-7"><a href="#cb2104-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_block_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2104-8"><a href="#cb2104-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;BLOCK-00872&quot;</span></span>
+<span id="cb2104-9"><a href="#cb2104-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb2104-10"><a href="#cb2104-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2104-11"><a href="#cb2104-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parent_sample_ids&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb2104-12"><a href="#cb2104-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2104-13"><a href="#cb2104-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;derived_sample_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2104-14"><a href="#cb2104-14" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;HC-00318&quot;</span></span>
+<span id="cb2104-15"><a href="#cb2104-15" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb2104-16"><a href="#cb2104-16" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>如果是一条 Counterfactual Hard Case：</p>
+<div class="sourceCode" id="cb2105"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2105-1"><a href="#cb2105-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2105-2"><a href="#cb2105-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;HC-00318&quot;</span><span class="fu">,</span></span>
+<span id="cb2105-3"><a href="#cb2105-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2105-4"><a href="#cb2105-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parent_sample_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2105-5"><a href="#cb2105-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;SAMPLE-00178&quot;</span></span>
+<span id="cb2105-6"><a href="#cb2105-6" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb2105-7"><a href="#cb2105-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2105-8"><a href="#cb2105-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;derivation_type&quot;</span><span class="fu">:</span> <span class="st">&quot;counterfactual_edit&quot;</span><span class="fu">,</span></span>
+<span id="cb2105-9"><a href="#cb2105-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2105-10"><a href="#cb2105-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;pair_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PAIR-00072&quot;</span></span>
+<span id="cb2105-11"><a href="#cb2105-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这就是：</p>
+<h1 id="data-lineage-2">Data Lineage</h1>
+<hr />
+<h1
+id="九第四个核心文件split_map.jsonl">九、第四个核心文件：<code>split_map.jsonl</code></h1>
+<p>例如：</p>
+<div class="sourceCode" id="cb2106"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2106-1"><a href="#cb2106-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2106-2"><a href="#cb2106-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SAMPLE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb2106-3"><a href="#cb2106-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;project_id&quot;</span><span class="fu">:</span> <span class="st">&quot;PROJECT-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2106-4"><a href="#cb2106-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;lineage_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;LG-00152&quot;</span><span class="fu">,</span></span>
+<span id="cb2106-5"><a href="#cb2106-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split&quot;</span><span class="fu">:</span> <span class="st">&quot;train&quot;</span><span class="fu">,</span></span>
+<span id="cb2106-6"><a href="#cb2106-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_split_v0.1&quot;</span></span>
+<span id="cb2106-7"><a href="#cb2106-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>真正重要的是：</p>
+<blockquote>
+<p>Split 信息独立保存。</p>
+</blockquote>
+<p>这样无论以后派生：</p>
+<pre class="text"><code>Classification View
+SFT View
+RAG View
+Hard Case View</code></pre>
+<p>都必须读取：</p>
+<blockquote>
+<p>同一份 <code>split_map</code>。</p>
+</blockquote>
+<hr />
+<h1 id="十这解决一个非常危险的问题">十、这解决一个非常危险的问题</h1>
+<p>假设：</p>
+<pre class="text"><code>SAMPLE-00178
+→ Train</code></pre>
+<p>然后根据它生成：</p>
+<pre class="text"><code>HC-00318</code></pre>
+<p>如果 View Builder 自己 Random Split，</p>
+<p>可能出现：</p>
+<pre class="text"><code>SAMPLE-00178
+→ Train
+
+HC-00318
+→ Test</code></pre>
+<p>这就是：</p>
+<h1 id="leakage-1">Leakage</h1>
+<p>所以我们的规则是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>S</mi><mi>a</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>I</mi><mi>n</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>F</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DerivedSample
+InheritsSplitFromLineageGroup
+}
+</annotation></semantics></math></p>
+<p>派生样本：</p>
+<blockquote>
+<p>继承父级血缘 Group 的 Split。</p>
+</blockquote>
+<hr />
+<h1 id="十一现在进入最关键的-views">十一、现在进入最关键的
+<code>views/</code></h1>
+<p>这才是：</p>
+<blockquote>
+<p><strong>真正给模型使用的文件。</strong></p>
+</blockquote>
+<p>注意：</p>
+<p>Master Data：</p>
+<blockquote>
+<p>不是默认直接训练。</p>
+</blockquote>
+<p>而应该经过：</p>
+<h1 id="view-builder">View Builder</h1>
+<h2 id="任务视图生成器">任务视图生成器</h2>
+<hr />
+<h1 id="十二例如-classification-view">十二、例如 Classification
+View</h1>
+<p>Master 中：</p>
+<pre class="text"><code>raw_text
+normalized_text
+project_id
+section_path
+expert_rationale
+gold_label
+evidence
+adjudication_comment
+...</code></pre>
+<p>我们构造分类任务：</p>
+<p>Input：</p>
+<pre class="text"><code>normalized_text
+section_path
+允许的上下文</code></pre>
+<p>Target：</p>
+<pre class="text"><code>risk_present
+primary_risk_type</code></pre>
+<p>于是最终 Training Record 可能只有：</p>
+<div class="sourceCode" id="cb2114"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2114-1"><a href="#cb2114-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2114-2"><a href="#cb2114-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SAMPLE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb2114-3"><a href="#cb2114-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2114-4"><a href="#cb2114-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;input&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2114-5"><a href="#cb2114-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;clause_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后2小时内到达项目现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb2114-6"><a href="#cb2114-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;section_path&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2114-7"><a href="#cb2114-7" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;第三章 采购需求&quot;</span><span class="ot">,</span></span>
+<span id="cb2114-8"><a href="#cb2114-8" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;3.2 售后服务&quot;</span></span>
+<span id="cb2114-9"><a href="#cb2114-9" aria-hidden="true" tabindex="-1"></a>    <span class="ot">]</span></span>
+<span id="cb2114-10"><a href="#cb2114-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb2114-11"><a href="#cb2114-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2114-12"><a href="#cb2114-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;target&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2114-13"><a href="#cb2114-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span><span class="fu">,</span></span>
+<span id="cb2114-14"><a href="#cb2114-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;primary_risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;C&quot;</span></span>
+<span id="cb2114-15"><a href="#cb2114-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb2114-16"><a href="#cb2114-16" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="十三注意消失了什么">十三、注意消失了什么</h1>
+<p>这里没有：</p>
+<pre class="text"><code>adjudication_reason
+gold_evidence
+reviewer_note
+future_outcome</code></pre>
+<p>为什么？</p>
+<p>因为这些：</p>
+<blockquote>
+<p>是答案侧信息。</p>
+</blockquote>
+<p>不能偷偷出现在 Input。</p>
+<p>这就是：</p>
+<h1 id="input-firewall-1">Input Firewall</h1>
+<hr />
+<h1 id="十四现在正式定义三类字段">十四、现在正式定义三类字段</h1>
+<p>这是 <code>ProcurementDataset_V0.1</code> 中非常重要的一张表。</p>
+<table>
+<thead>
+<tr class="header">
+<th>字段类型</th>
+<th>含义</th>
+<th>是否可直接进入模型输入</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Input Field</strong></td>
+<td>真实推理时能够获得的信息</td>
+<td>可以</td>
+</tr>
+<tr class="even">
+<td><strong>Target Field</strong></td>
+<td>希望模型学习预测/生成的信息</td>
+<td>只能作为训练目标</td>
+</tr>
+<tr class="odd">
+<td><strong>Audit Field</strong></td>
+<td>Gold、裁决、血缘、未来结果等治理信息</td>
+<td>默认禁止</td>
+</tr>
+</tbody>
+</table>
+<p>例如：</p>
+<pre class="text"><code>clause_text
+→ Input
+
+risk_present
+→ Target
+
+adjudication_comment
+→ Audit</code></pre>
+<hr />
+<h1 id="十五最重要的规则之一">十五、最重要的规则之一</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>T</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>A</mi><mi>v</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>⇒</mo><mi>P</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>a</mi><mi>l</mi><mi>I</mi><mi>n</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+InferenceTimeAvailable
+\Rightarrow
+PotentialInput
+}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>只有真实上线推理时也能够获得的信息，才适合成为普通模型
+Input。</strong></p>
+</blockquote>
+<p>这是判断一个字段是否可能泄漏的最好问题。</p>
+<hr />
+<h1 id="十六举个明显的错误">十六、举个明显的错误</h1>
+<p>模型 Input：</p>
+<pre class="text"><code>项目条款：
+供应商须……
+
+专家复核状态：
+已确认高风险
+
+请判断是否存在风险。</code></pre>
+<p>模型当然表现极好。</p>
+<p>因为：</p>
+<blockquote>
+<p>答案已经写在题目里。</p>
+</blockquote>
+<p>这就是典型：</p>
+<h1 id="label-leakage-5">Label Leakage</h1>
+<hr />
+<h1
+id="十七sft_candidate-为什么叫-candidate">十七、<code>sft_candidate/</code>
+为什么叫 Candidate？</h1>
+<p>因为第四课还没有正式学习：</p>
+<pre class="text"><code>Chat Template
+Loss Mask
+Packing
+SFT格式</code></pre>
+<p>这些是第五课的内容。</p>
+<p>所以第四课可以先生成：</p>
+<h1 id="sft-candidate-view">SFT Candidate View</h1>
+<h2 id="sft-候选视图">SFT 候选视图</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb2119"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2119-1"><a href="#cb2119-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2119-2"><a href="#cb2119-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sample_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SAMPLE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb2119-3"><a href="#cb2119-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2119-4"><a href="#cb2119-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;input&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2119-5"><a href="#cb2119-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;target_clause&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后2小时内到达项目现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb2119-6"><a href="#cb2119-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;section_context&quot;</span><span class="fu">:</span> <span class="st">&quot;第三章采购需求 / 售后服务&quot;</span></span>
+<span id="cb2119-7"><a href="#cb2119-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb2119-8"><a href="#cb2119-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2119-9"><a href="#cb2119-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;target&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2119-10"><a href="#cb2119-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;risk_present&quot;</span><span class="fu">:</span> <span class="st">&quot;uncertain&quot;</span><span class="fu">,</span></span>
+<span id="cb2119-11"><a href="#cb2119-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb2119-12"><a href="#cb2119-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;需要结合项目性质与现场服务必要性进一步判断。&quot;</span></span>
+<span id="cb2119-13"><a href="#cb2119-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb2119-14"><a href="#cb2119-14" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>到了第五课：</p>
+<blockquote>
+<p>再把它正式转换成 Chat Template。</p>
+</blockquote>
+<hr />
+<h1
+id="十八这是课程之间非常重要的边界">十八、这是课程之间非常重要的边界</h1>
+<p>第四课负责：</p>
+<blockquote>
+<p><strong>数据内容正确。</strong></p>
+</blockquote>
+<p>第五课负责：</p>
+<blockquote>
+<p><strong>怎样把内容喂给模型训练。</strong></p>
+</blockquote>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>o</mi><mi>n</mi><mn>4</mn><mo>=</mo><mi>W</mi><mi>h</mi><mi>a</mi><mi>t</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Lesson4
+=
+WhatData
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>o</mi><mi>n</mi><mn>5</mn><mo>=</mo><mi>H</mi><mi>o</mi><mi>w</mi><mi>T</mi><mi>o</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Lesson5
+=
+HowToTrain
+}
+</annotation></semantics></math></p>
+<p>不要混在一起。</p>
+<hr />
+<h1 id="十九现在进入-evaluation">十九、现在进入
+<code>evaluation/</code></h1>
+<p>这个目录跟 Train 完全不同。</p>
+<p>它的任务不是：</p>
+<blockquote>
+<p>教模型。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>考模型。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十heldout_gold.jsonl">二十、<code>heldout_gold.jsonl</code></h1>
+<p>这是：</p>
+<h1 id="held-out-gold">Held-out Gold</h1>
+<h2 id="完全隔离的-gold-测试集">完全隔离的 Gold 测试集</h2>
+<p>例如包含：</p>
+<pre class="text"><code>Input
+Gold Label
+Gold Rationale
+Gold Evidence
+Difficulty
+Slice</code></pre>
+<p>但评测程序必须保证：</p>
+<blockquote>
+<p>Gold Answer 不进入模型 Input。</p>
+</blockquote>
+<hr />
+<h1
+id="二十一这里顺便澄清一个非常容易混淆的概念">二十一、这里顺便澄清一个非常容易混淆的概念</h1>
+<h1 id="gold-test">Gold ≠ Test</h1>
+<p><code>gold</code> 描述的是：</p>
+<blockquote>
+<p><strong>标注质量。</strong></p>
+</blockquote>
+<p><code>test</code> 描述的是：</p>
+<blockquote>
+<p><strong>数据用途。</strong></p>
+</blockquote>
+<p>因此可能存在：</p>
+<pre class="text"><code>Gold Train Sample</code></pre>
+<p>高质量专家数据，用于训练。</p>
+<p>也可以存在：</p>
+<pre class="text"><code>Gold Test Sample</code></pre>
+<p>高质量专家数据，用于考试。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>s</mi><mo>≠</mo><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldStatus
+\neq
+Split
+}
+</annotation></semantics></math></p>
+<p>这是一个很重要的专业区别。</p>
+<hr />
+<h1 id="二十二真正的-benchmark-gold-必须同时满足">二十二、真正的
+Benchmark Gold 必须同时满足</h1>
+<pre class="text"><code>annotation_status = gold
++
+split = test
++
+leakage_status = passed</code></pre>
+<p>才能成为：</p>
+<blockquote>
+<p>可靠考试数据。</p>
+</blockquote>
+<hr />
+<h1
+id="二十三hard_cases.jsonl">二十三、<code>hard_cases.jsonl</code></h1>
+<p>这里保存第 10 阶段的：</p>
+<pre class="text"><code>Hard Positive
+Hard Negative
+Boundary Case
+Contrastive Pair</code></pre>
+<p>但最好明确：</p>
+<blockquote>
+<p>哪些属于 Train Hard Case，</p>
+</blockquote>
+<p>哪些属于：</p>
+<blockquote>
+<p>Evaluation Hard Case。</p>
+</blockquote>
+<p>两边不能混用。</p>
+<hr />
+<h1 id="二十四slices.json">二十四、<code>slices.json</code></h1>
+<h1 id="slice">Slice</h1>
+<h2 id="评测切片">评测切片</h2>
+<p>例如：</p>
+<div class="sourceCode" id="cb2125"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2125-1"><a href="#cb2125-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2125-2"><a href="#cb2125-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_types&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2125-3"><a href="#cb2125-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;supplier_qualification&quot;</span><span class="ot">,</span></span>
+<span id="cb2125-4"><a href="#cb2125-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;technical_requirement&quot;</span><span class="ot">,</span></span>
+<span id="cb2125-5"><a href="#cb2125-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;commercial_requirement&quot;</span><span class="ot">,</span></span>
+<span id="cb2125-6"><a href="#cb2125-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;scoring_rule&quot;</span><span class="ot">,</span></span>
+<span id="cb2125-7"><a href="#cb2125-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;procurement_requirement&quot;</span></span>
+<span id="cb2125-8"><a href="#cb2125-8" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb2125-9"><a href="#cb2125-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2125-10"><a href="#cb2125-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;difficulty&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2125-11"><a href="#cb2125-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;easy&quot;</span><span class="ot">,</span></span>
+<span id="cb2125-12"><a href="#cb2125-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;hard&quot;</span><span class="ot">,</span></span>
+<span id="cb2125-13"><a href="#cb2125-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;boundary&quot;</span></span>
+<span id="cb2125-14"><a href="#cb2125-14" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb2125-15"><a href="#cb2125-15" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>未来第 8 课评测时，</p>
+<p>我们就可以问：</p>
+<pre class="text"><code>模型整体表现怎样？
+
+资格风险怎样？
+
+技术参数怎样？
+
+Hard Negative怎样？
+
+Boundary Case怎样？</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>只有一个总 Accuracy。</p>
+</blockquote>
+<hr />
+<h1 id="二十五现在进入-audit">二十五、现在进入 <code>audit/</code></h1>
+<p>这里的文件：</p>
+<blockquote>
+<p><strong>绝对不是训练素材。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>leakage_report.json
+dedup_report.json
+annotation_agreement.json</code></pre>
+<p>这些文件是：</p>
+<h1 id="governance-data">Governance Data</h1>
+<h2 id="数据治理信息">数据治理信息</h2>
+<p>它们帮助人：</p>
+<blockquote>
+<p>判断 Dataset 是否可信。</p>
+</blockquote>
+<p>不是帮助模型：</p>
+<blockquote>
+<p>回答采购问题。</p>
+</blockquote>
+<hr />
+<h1
+id="二十六这引出了一个极重要的隔离原则">二十六、这引出了一个极重要的隔离原则</h1>
+<p>可以把整个 Dataset 分成三个安全区：</p>
+<pre class="text"><code>Zone A
+Model Input Zone
+模型允许看到
+
+Zone B
+Target Zone
+训练阶段作为答案
+
+Zone C
+Governance / Gold Zone
+只用于评测、审计、治理</code></pre>
+<p>模型运行时：</p>
+<blockquote>
+<p>不应该随意穿越这些区。</p>
+</blockquote>
+<hr />
+<h1 id="二十七这实际上就是-dataset-层面的权限设计">二十七、这实际上就是
+Dataset 层面的权限设计</h1>
+<p>以后大型团队里，</p>
+<p>甚至可以物理分权限：</p>
+<pre class="text"><code>训练团队
+看Train View
+
+评测团队
+掌握Benchmark Gold
+
+审计人员
+查看Lineage和裁决记录</code></pre>
+<p>这样能够降低：</p>
+<blockquote>
+<p>Benchmark 被无意污染的风险。</p>
+</blockquote>
+<hr />
+<h1
+id="二十八现在第一次真正定义-procurementdataset_v0.1">二十八、现在第一次真正定义
+<code>ProcurementDataset_V0.1</code></h1>
+<p>它不是一个表。</p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><msub><mi>t</mi><mrow><mi>V</mi><mn>0.1</mn></mrow></msub><mo>=</mo><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>M</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mo>+</mo><mi>A</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mo>+</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>g</mi><mi>e</mi><mo>+</mo><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>M</mi><mi>a</mi><mi>p</mi><mo>+</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi><mo>+</mo><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>e</mi><mi>t</mi><mo>+</mo><mi>A</mi><mi>u</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>R</mi><mi>e</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>t</mi><mi>s</mi><mo>+</mo><mi>M</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>f</mi><mi>e</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementDataset_{V0.1}
+=
+SourceRegistry
++
+MasterData
++
+Annotations
++
+Lineage
++
+SplitMap
++
+TaskViews
++
+EvaluationSet
++
+AuditReports
++
+Manifest
+}
+</annotation></semantics></math></p>
+<p>中文就是：</p>
+<blockquote>
+<p><strong>来源 + 主数据 + 专家判断 + 数据血缘 + 安全切分 + 训练视图 +
+测试视图 + 质检证据 + 版本身份。</strong></p>
+</blockquote>
+<p>这才是一个真正的数据产品。</p>
+<hr />
+<h1
+id="二十九那么真正发布-v0.1-之前要按什么顺序-build">二十九、那么真正发布
+V0.1 之前，要按什么顺序 Build？</h1>
+<p>不要手工拼。</p>
+<p>正确心智模型是：</p>
+<pre class="text"><code>Freeze Source Snapshot
+冻结来源
+        ↓
+Validate Master Data
+验证主数据
+        ↓
+Validate Annotation
+验证专家标签
+        ↓
+Resolve Lineage Groups
+确定血缘组
+        ↓
+Apply Frozen Split
+应用冻结切分
+        ↓
+Run Leakage Audit
+泄漏审计
+        ↓
+Generate Task Views
+生成任务视图
+        ↓
+Validate Input Firewall
+检查答案是否泄漏
+        ↓
+Generate Quality Report
+生成质量报告
+        ↓
+Compute Hashes
+生成内容Hash
+        ↓
+Release Gate
+发布门槛
+        ↓
+Freeze V0.1
+正式冻结</code></pre>
+<p>这条链：</p>
+<blockquote>
+<p>就是第四课最后的工程总流程。</p>
+</blockquote>
+<hr />
+<h1 id="三十这里为什么要先-split再派生-view">三十、这里为什么要“先
+Split，再派生 View”？</h1>
+<p>因为如果先：</p>
+<pre class="text"><code>生成各种改写
+生成Hard Case
+生成SFT数据</code></pre>
+<p>然后各自 Random Split，</p>
+<p>极容易产生：</p>
+<blockquote>
+<p>血缘泄漏。</p>
+</blockquote>
+<p>所以更专业的思路是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>p</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>→</mo><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GroupIdentity
+\rightarrow
+Split
+\rightarrow
+DerivedViews
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>V</mi><mi>i</mi><mi>e</mi><mi>w</mi><mi>s</mi><mo>→</mo><mi>R</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>o</mi><mi>m</mi><mi>S</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+DerivedViews
+\rightarrow
+RandomSplit
+</annotation></semantics></math></p>
+<p>这是第四课一个很重要的总原则。</p>
+<hr />
+<h1 id="三十一一个正式-build-最好失败得响亮">三十一、一个正式 Build
+最好“失败得响亮”</h1>
+<p>假设发现：</p>
+<pre class="text"><code>Test Sample
+与
+Train Sample
+共享同一个lineage_group</code></pre>
+<p>不要：</p>
+<blockquote>
+<p>打个 warning 然后继续发版。</p>
+</blockquote>
+<p>应该：</p>
+<h1 id="fail">FAIL</h1>
+<p>同理：</p>
+<pre class="text"><code>Gold样本缺source provenance</code></pre>
+<p>如果这是项目硬要求：</p>
+<blockquote>
+<p>Build 直接失败。</p>
+</blockquote>
+<hr />
+<h1 id="三十二这叫">三十二、这叫：</h1>
+<h1 id="fail-loudly-1">Fail Loudly</h1>
+<h2 id="显式失败">显式失败</h2>
+<p>宁可 Dataset 发布失败，</p>
+<p>也不要：</p>
+<blockquote>
+<p>悄悄生成一个看起来正常的错误数据集。</p>
+</blockquote>
+<hr />
+<h1 id="三十三所以最终-release-gate-可以长这样">三十三、所以最终 Release
+Gate 可以长这样</h1>
+<table>
+<thead>
+<tr class="header">
+<th>检查项</th>
+<th>V0.1 发布要求</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Schema Validation</td>
+<td>必须通过</td>
+</tr>
+<tr class="even">
+<td>Cross-field Validation</td>
+<td>无 Critical Error</td>
+</tr>
+<tr class="odd">
+<td>Train/Test Project Overlap</td>
+<td>0</td>
+</tr>
+<tr class="even">
+<td>Confirmed Leakage</td>
+<td>0</td>
+</tr>
+<tr class="odd">
+<td>Critical Gold Disagreement</td>
+<td>已处理</td>
+</tr>
+<tr class="even">
+<td>Manifest</td>
+<td>完整</td>
+</tr>
+<tr class="odd">
+<td>Hash</td>
+<td>已生成</td>
+</tr>
+<tr class="even">
+<td>Known Limitations</td>
+<td>已记录</td>
+</tr>
+<tr class="odd">
+<td>Quality Report</td>
+<td>已生成</td>
+</tr>
+</tbody>
+</table>
+<p>实际阈值：</p>
+<blockquote>
+<p>由真实项目决定。</p>
+</blockquote>
+<p>但“有发布门槛”这件事：</p>
+<blockquote>
+<p>必须存在。</p>
+</blockquote>
+<hr />
+<h1
+id="三十四现在模拟一次完整的数据流">三十四、现在模拟一次完整的数据流</h1>
+<p>原始采购文件：</p>
+<pre class="text"><code>DOC-00152.pdf</code></pre>
+<p>Stage 2：</p>
+<pre class="text"><code>ParsedDocument</code></pre>
+<p>Stage 3：</p>
+<pre class="text"><code>CLAUSE-00178</code></pre>
+<p>Stage 4：</p>
+<pre class="text"><code>CleanClause-00178</code></pre>
+<p>Stage 5：</p>
+<pre class="text"><code>duplicate_cluster = DC-0021</code></pre>
+<p>Stage 6：</p>
+<pre class="text"><code>project_id PROJECT-00152
+→ train</code></pre>
+<p>Stage 7：</p>
+<pre class="text"><code>leakage_status = passed</code></pre>
+<p>Stage 8：</p>
+<pre class="text"><code>risk_present = uncertain</code></pre>
+<p>Stage 9：</p>
+<pre class="text"><code>annotation_status = gold</code></pre>
+<p>Stage 10：</p>
+<pre class="text"><code>case_type = boundary_case</code></pre>
+<p>Stage 11：</p>
+<pre class="text"><code>dataset_version = 0.1</code></pre>
+<p>最终：</p>
+<pre class="text"><code>ProcurementDataset_V0.1</code></pre>
+<p>中它可能进入：</p>
+<pre class="text"><code>Train Master
++
+SFT Candidate Train View
++
+Boundary Case Statistics</code></pre>
+<p>但因为：</p>
+<pre class="text"><code>split = train</code></pre>
+<p>它：</p>
+<blockquote>
+<p>永远不能突然出现在 Test。</p>
+</blockquote>
+<hr />
+<h1
+id="三十五这就是整个第四课最重要的一个贯穿关系">三十五、这就是整个第四课最重要的一个贯穿关系</h1>
+<p>一条数据：</p>
+<blockquote>
+<p>从出生到最终使用，</p>
+</blockquote>
+<p>所有状态应该彼此相连。</p>
+<pre class="text"><code>Raw File
+   ↓
+Parsed Block
+   ↓
+Clause
+   ↓
+Normalized Clause
+   ↓
+Dedup Group
+   ↓
+Split Group
+   ↓
+Annotation
+   ↓
+Gold Status
+   ↓
+Hard Case Status
+   ↓
+Task View
+   ↓
+Model Experiment</code></pre>
+<p>这叫：</p>
+<h1 id="end-to-end-lineage">End-to-End Lineage</h1>
+<h2 id="端到端数据血缘">端到端数据血缘</h2>
+<hr />
+<h1
+id="三十六到了第五课我们真正需要哪些文件">三十六、到了第五课，我们真正需要哪些文件？</h1>
+<p>这点要非常明确。</p>
+<p>第五课训练模型时，</p>
+<p>最主要使用的是：</p>
+<pre class="text"><code>views/sft_candidate/train.jsonl
+views/sft_candidate/validation.jsonl</code></pre>
+<p>以及必要的：</p>
+<pre class="text"><code>schema
+manifest</code></pre>
+<p>用于确认：</p>
+<blockquote>
+<p>数据到底是什么版本。</p>
+</blockquote>
+<hr />
+<h1
+id="三十七第五课绝对不应该直接把这些文件喂给模型">三十七、第五课绝对不应该直接把这些文件喂给模型</h1>
+<pre class="text"><code>evaluation/heldout_gold.jsonl
+audit/leakage_report.json
+master/adjudication_comments
+reviewer_notes
+future_outcomes</code></pre>
+<p>尤其：</p>
+<h1 id="heldout_gold"><code>heldout_gold</code></h1>
+<p>在模型最终测试之前：</p>
+<blockquote>
+<p>必须像真正考试卷一样保护。</p>
+</blockquote>
+<hr />
+<h1 id="三十八为什么-test-必须像考试卷">三十八、为什么 Test
+必须像考试卷？</h1>
+<p>因为模型开发阶段很容易发生：</p>
+<pre class="text"><code>测试一次
+看错题
+改Prompt
+
+再测试
+继续看错题
+再改</code></pre>
+<p>做得次数足够多，</p>
+<p>Test：</p>
+<blockquote>
+<p>实际上已经变成开发数据。</p>
+</blockquote>
+<hr />
+<h1 id="三十九所以-validation-和-test-的职责必须分开">三十九、所以
+Validation 和 Test 的职责必须分开</h1>
+<h1 id="validation-2">Validation</h1>
+<h2 id="验证集">验证集</h2>
+<p>用来：</p>
+<blockquote>
+<p>调模型、调参数、选方案。</p>
+</blockquote>
+<h1 id="test">Test</h1>
+<h2 id="测试集">测试集</h2>
+<p>用来：</p>
+<blockquote>
+<p>最终评估泛化能力。</p>
+</blockquote>
+<p>可以简单记：</p>
+<pre class="text"><code>Train
+=
+学习
+
+Validation
+=
+练习考试
+
+Test
+=
+正式考试</code></pre>
+<hr />
+<h1
+id="四十这就是为什么第四课-stage-6-那么重要">四十、这就是为什么第四课
+Stage 6 那么重要</h1>
+<p>如果这个边界从一开始就错：</p>
+<p>后面：</p>
+<pre class="text"><code>SFT
+LoRA
+RAG
+Benchmark</code></pre>
+<p>所有数字都可能：</p>
+<blockquote>
+<p>看起来很科学，实际上不可信。</p>
+</blockquote>
+<hr />
+<h1 id="四十一现在看-manifest.json-的最终角色">四十一、现在看
+<code>manifest.json</code> 的最终角色</h1>
+<p>它可能记录：</p>
+<div class="sourceCode" id="cb2155"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2155-1"><a href="#cb2155-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2155-2"><a href="#cb2155-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dataset_name&quot;</span><span class="fu">:</span> <span class="st">&quot;ProcurementDataset&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-3"><a href="#cb2155-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dataset_version&quot;</span><span class="fu">:</span> <span class="st">&quot;0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-4"><a href="#cb2155-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2155-5"><a href="#cb2155-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;master_schema_version&quot;</span><span class="fu">:</span> <span class="st">&quot;master_schema_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-6"><a href="#cb2155-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_schema_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_schema_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-7"><a href="#cb2155-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;annotation_guideline_version&quot;</span><span class="fu">:</span> <span class="st">&quot;annotation_guideline_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-8"><a href="#cb2155-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2155-9"><a href="#cb2155-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parser_version&quot;</span><span class="fu">:</span> <span class="st">&quot;parser_v0.3&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-10"><a href="#cb2155-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;structure_version&quot;</span><span class="fu">:</span> <span class="st">&quot;structure_v0.2&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-11"><a href="#cb2155-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalizer_version&quot;</span><span class="fu">:</span> <span class="st">&quot;normalize_v0.2&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-12"><a href="#cb2155-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_version&quot;</span><span class="fu">:</span> <span class="st">&quot;dedup_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-13"><a href="#cb2155-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2155-14"><a href="#cb2155-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;split_version&quot;</span><span class="fu">:</span> <span class="st">&quot;procurement_split_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-15"><a href="#cb2155-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;leakage_audit_version&quot;</span><span class="fu">:</span> <span class="st">&quot;leakage_audit_v0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb2155-16"><a href="#cb2155-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2155-17"><a href="#cb2155-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;release_status&quot;</span><span class="fu">:</span> <span class="st">&quot;released&quot;</span></span>
+<span id="cb2155-18"><a href="#cb2155-18" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这相当于：</p>
+<blockquote>
+<p><strong>整个第四课所有版本的最终汇合点。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四十二质量报告则回答这版到底值不值得用">四十二、质量报告则回答“这版到底值不值得用”</h1>
+<p>例如：</p>
+<pre class="text"><code>ProcurementDataset_V0.1
+
+Schema Validation:
+PASS
+
+Cross-split Project Overlap:
+0
+
+Confirmed Leakage:
+0
+
+Gold Annotation:
+verified
+
+Hard Case Coverage:
+present
+
+Known Limitations:
+D类评分规则Hard Positive仍不足
+
+Release Decision:
+PASS WITH KNOWN LIMITATIONS</code></pre>
+<p>注意：</p>
+<blockquote>
+<p><code>PASS WITH KNOWN LIMITATIONS</code></p>
+</blockquote>
+<p>完全可以是专业的发布状态。</p>
+<p>专业不是：</p>
+<blockquote>
+<p>假装没有问题。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>知道问题在哪里。</p>
+</blockquote>
+<hr />
+<h1
+id="四十三第四课从第一阶段走到这里其实完成了一次巨大的转变">四十三、第四课从第一阶段走到这里，其实完成了一次巨大的转变</h1>
+<p>一开始我们看到的是：</p>
+<pre class="text"><code>10万份PDF</code></pre>
+<p>这只是：</p>
+<h1 id="documents">Documents</h1>
+<p>现在得到的是：</p>
+<pre class="text"><code>ProcurementDataset_V0.1</code></pre>
+<p>它已经包含：</p>
+<pre class="text"><code>可定位的Clause
+可追溯的来源
+安全规范化文本
+重复关系
+固定Split
+泄漏审计
+专家结构化判断
+Gold质量状态
+Hard Case
+任务视图
+数据版本
+质量报告</code></pre>
+<p>这才叫：</p>
+<h1 id="training-asset">Training Asset</h1>
+<h2 id="可训练的数据资产">可训练的数据资产</h2>
+<hr />
+<h1
+id="四十四第四课最容易犯的终极错误">四十四、第四课最容易犯的终极错误</h1>
+<p>就是：</p>
+<blockquote>
+<p>“文件都清洗好了，所以可以开始训练了。”</p>
+</blockquote>
+<p>其实真正应该问的是：</p>
+<pre class="text"><code>这条数据为什么在Train？
+它的父样本是谁？
+专家标签是哪一版？
+有没有近重复进入Test？
+它的Input里有没有答案信息？
+这个Gold是不是已经裁决？
+这个Dataset到底是哪一版？</code></pre>
+<p>如果这些回答不了：</p>
+<blockquote>
+<p>还不应该急着训练。</p>
+</blockquote>
+<hr />
+<h1 id="四十五第-12-阶段真正的专业升级">四十五、第 12
+阶段真正的专业升级</h1>
+<p>前面很多阶段是在：</p>
+<blockquote>
+<p>优化数据内容。</p>
+</blockquote>
+<p>最后这一阶段是在建立：</p>
+<h1 id="data-boundary">Data Boundary</h1>
+<h2 id="数据使用边界">数据使用边界</h2>
+<p>它规定：</p>
+<pre class="text"><code>什么是事实
+什么是Label
+什么能训练
+什么只能评测
+什么只能审计
+什么绝对不能泄漏</code></pre>
+<p>这比单纯“数据格式整理漂亮”：</p>
+<blockquote>
+<p>重要得多。</p>
+</blockquote>
+<hr />
+<h1
+id="四十六第四课最后只需要牢牢记住-5-个核心心智模型">四十六、第四课最后只需要牢牢记住
+5 个核心心智模型</h1>
+<blockquote>
+<p><strong>第一，Dataset 不是一个训练文件，而是 Master Data、Task View
+和 Governance Asset 的组合。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Master Data
+是完整真相源，训练数据只是从它派生出来的任务视图。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，数据存在于数据库里，不代表它允许进入模型
+Input；Gold、裁决、未来结果必须建立 Input Firewall。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Split
+是数据血缘的一部分，所有近重复、Counterfactual、Hard Case 和 Synthetic
+派生样本必须继承同一个 Leakage Group。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，正式 Dataset 必须通过可复现的 Build Pipeline 和 Release
+Gate 生成，而不是人工拖文件拼出来。</strong></p>
+</blockquote>
+<p>如果第四课只长期记住这五句话：</p>
+<blockquote>
+<p>整套政府采购数据工程的大方向就不会走偏。</p>
+</blockquote>
+<hr />
+<h1
+id="四十七现在正式定义本课最终工程交付物">四十七、现在正式定义本课最终工程交付物</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><msub><mi>t</mi><mrow><mi>V</mi><mn>0.1</mn></mrow></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementDataset_{V0.1}
+}
+</annotation></semantics></math></p>
+<p>它至少满足：</p>
+<pre class="text"><code>来源可追溯
+结构可理解
+文本可训练
+重复可识别
+Split可复现
+Leakage可审计
+Label可解释
+Gold可验证
+Hard Case可分析
+版本可冻结
+质量可报告
+任务视图可生成</code></pre>
+<p>这 12 个性质，</p>
+<p>比：</p>
+<blockquote>
+<p>“有多少 GB 数据”</p>
+</blockquote>
+<p>重要得多。</p>
+<hr />
+<h1 id="四十八第四课最终掌握测试">四十八、第四课最终掌握测试</h1>
+<p>现在不回看前面十二阶段，你应该已经能完整讲出这样一条链：</p>
+<p>一份政府采购 PDF 为什么不能直接等于一个训练样本；为什么首先要定义
+Task Schema；为什么解析成功不等于获得可信文本；为什么 Clause
+Segmentation 不能简单按句号切；为什么 Cleaning
+不能改写原始业务含义；为什么 Exact Duplicate
+只是去重最容易的一层；为什么 Train / Validation / Test
+应按项目、血缘或时间等安全单位切分；为什么 Benchmark Leakage
+会制造虚假成绩；为什么 <code>unknown</code> 不能等同于
+<code>false</code>；为什么专家 Gold
+需要双人独立标注、分歧分析和裁决；为什么 Hard Negative
+能阻止模型学习关键词捷径；为什么 Counterfactual Pair 必须保持 Split
+一致；为什么 Dataset Version 不是文件名；为什么 Lineage 能让一条 Gold
+Label 一路追到原始 PDF；为什么 Dataset Quality 必须拆成多个维度；为什么
+Master Data 和 Training View 不应该是同一个东西；为什么 Gold
+字段不能因为存在就进入模型 Input；为什么 Validation 与 Test
+的职责不同；以及为什么一个真正可以交付的 Dataset
+必须同时具备版本、血缘、质量、使用边界和可复现 Build。</p>
+<p>如果这一整条链已经能够自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十九第四课最后只记一句话">四十九、第四课最后只记一句话</h1>
+<blockquote>
+<p><strong>政府采购 AI 的训练数据，不是“把很多 PDF 清洗成
+JSON”，而是把原始采购文件经过可信解析、业务结构恢复、安全规范化、去重、安全切分、防泄漏、专家标注、分歧裁决、Hard
+Case 建设、版本治理和质量验证，最终封装成一个 Master Data
+完整、训练与考试边界清楚、可追溯、可复现、可审计的数据产品。</strong></p>
+</blockquote>
+<p>最终就是：</p>
+<h1
+id="procurementdataset_v0.1-3"><code>ProcurementDataset_V0.1</code></h1>
+<hr />
+<h1 id="五十第四课最终总图">五十、第四课最终总图</h1>
+<pre class="text"><code>                 政府采购原始文件
+                        │
+                        ▼
+             ┌────────────────────┐
+             │  1. Task Schema    │
+             │   定义一条数据是什么 │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 2. Document Parse  │
+             │     可信文档解析     │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 3. Clause Restore  │
+             │   恢复业务条款结构   │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 4. Normalization   │
+             │    安全文本规范化    │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │     5. Dedup       │
+             │   精确/近似/模板去重 │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │      6. Split      │
+             │ Train / Val / Test │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │  7. Leakage Audit  │
+             │       防止偷题       │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 8. Label Schema    │
+             │    专家到底标什么    │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 9. Expert Gold     │
+             │ 双标、复核、专家裁决 │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 10. Hard Cases     │
+             │     学习决策边界     │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 11. Governance     │
+             │ 版本、血缘、质量报告 │
+             └─────────┬──────────┘
+                       ▼
+             ┌────────────────────┐
+             │ 12. Dataset Build  │
+             │ 主数据→任务视图→发布 │
+             └─────────┬──────────┘
+                       ▼
+        ╔══════════════════════════════╗
+        ║   ProcurementDataset_V0.1  ║
+        ║   政府采购AI第一版数据资产   ║
+        ╚══════════════╤═══════════════╝
+                       │
+                       ▼
+                 第五课开始
+              SFT + LoRA / QLoRA</code></pre>
+<hr />
+<h1 id="第四课正式结束">第四课正式结束</h1>
+<p>到这里，我们已经完成整个课程里的第 <strong>4 / 10 课</strong>。</p>
+<p>前三课解决：</p>
+<pre class="text"><code>第一课
+机器学习到底在学什么
+
+第二课
+LLM内部到底怎样工作
+
+第三课
+怎样真正把一个开源大模型跑起来</code></pre>
+<p>第四课解决：</p>
+<blockquote>
+<p><strong>拿什么教它。</strong></p>
+</blockquote>
+<p>而第五课终于进入一个非常关键的转折：</p>
+<h1 id="第五课sft-lora-qlora-微调">第五课：SFT + LoRA / QLoRA 微调</h1>
+<h2
+id="我们怎样第一次真正改变一个开源大模型的行为">我们怎样第一次真正改变一个开源大模型的行为？</h2>
+<p>第五课开始以后，我们会从：</p>
+<pre class="text"><code>ProcurementDataset_V0.1</code></pre>
+<p>真正走到：</p>
+<pre class="text"><code>ProcurementLM_V0.1</code></pre>
+<p>其中第 1 阶段不会急着跑训练命令。</p>
+<p>我们首先会解决：</p>
+<h1 id="chat-templatepromptresponse-与-loss-mask">Chat
+Template、Prompt、Response 与 Loss Mask</h1>
+<h2
+id="模型训练时到底哪些-token-是题目哪些-token-才是它真正应该学习预测的答案">模型训练时，到底哪些
+Token 是“题目”，哪些 Token 才是它真正应该学习预测的答案？</h2>
+<p>因为如果这一点没搞清楚，即使 Dataset 做得再好：</p>
+<blockquote>
+<p>SFT 也可能从第一批 Token 就训错。</p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage11.html">← 第 11 阶段</a><a class="btn" href="../lesson05/stage01.html">第 5 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

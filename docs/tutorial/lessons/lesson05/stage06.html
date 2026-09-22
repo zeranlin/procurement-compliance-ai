@@ -1,0 +1,1568 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第6阶段：LoRA 到底在改什么？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第6阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>把 Base Model 某一层删掉，再装一个小层。</li><li>Base Model 保留原能力，LoRA 在旁边提供任务相关的修正。</li><li>“重新学习这个巨大矩阵。”</li></ul></div><h1 id="第五课-第-6-阶段">第五课 · 第 6 阶段</h1>
+<h1 id="lora-到底在改什么-1">LoRA 到底在改什么？</h1>
+<h2
+id="为什么两个很小的矩阵就能改变一个几十亿参数模型的行为">为什么两个很小的矩阵，就能改变一个几十亿参数模型的行为？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-5">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-5">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>把 Base Model 某一层删掉，再装一个小层。</strong></li>
+<li><strong>Base Model 保留原能力，LoRA
+在旁边提供任务相关的修正。</strong></li>
+<li><strong>“重新学习这个巨大矩阵。”</strong></li>
+<li><strong>“学习这个巨大矩阵需要改变多少。”</strong></li>
+<li><strong>原矩阵
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+本身是低秩的。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-5">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="even">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="odd">
+<td><code>Alpha</code></td>
+<td>LoRA Alpha：控制低秩更新缩放幅度</td>
+</tr>
+<tr class="even">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="odd">
+<td><code>Adapter</code></td>
+<td>适配器：附加在基座模型上的轻量可训练参数模块</td>
+</tr>
+<tr class="even">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-5">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>上一阶段我们最后停在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W&#39; = W + \Delta W
+</annotation></semantics></math></p>
+<p>这句话其实已经把 LoRA 的门打开了一半。</p>
+<p>Base Model 原来的参数是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>领域微调真正需要学习的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>为了让模型更符合政府采购任务，原来的权重到底需要发生怎样的变化？</strong></p>
+</blockquote>
+<p>Full Fine-Tuning 的思路是：</p>
+<blockquote>
+<p>直接让整个
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+自己变化。</p>
+</blockquote>
+<p>LoRA 的思路完全不同：</p>
+<blockquote>
+<p><strong>冻结
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>，不直接训练它；另外学习一个很小的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>。</strong></p>
+</blockquote>
+<p>而 LoRA 最核心的一步是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\Delta W = BA
+}
+</annotation></semantics></math></p>
+<p>本阶段只需要彻底搞懂这一件事。</p>
+<p>最终形成：</p>
+<h1 id="loraupdatemodel_v0.1"><code>LoRAUpdateModel_V0.1</code></h1>
+<hr />
+<h1 id="一本阶段只有一个核心问题">一、本阶段只有一个核心问题</h1>
+<p>假设 Transformer 中有一个巨大线性层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y = Wx
+</annotation></semantics></math></p>
+<p>其中
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+有几百万甚至几千万参数。</p>
+<p>如果我们想微调它，为什么不直接训练整个：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>而要额外增加：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>A</mi><annotation encoding="application/x-tex">
+A
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">
+B
+</annotation></semantics></math></p>
+<p>两个小矩阵？</p>
+<p>整个 LoRA 流程可以先压缩成：</p>
+<pre class="text"><code>输入 x
+  │
+  ├──────────────► Frozen W ──────────┐
+  │                                   │
+  └──► A ──► 小空间 ──► B ───────────┤
+                                      ▼
+                                    相加
+                                      │
+                                      ▼
+                                 最终输出 y</code></pre>
+<p>数学上就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi><mo>+</mo><mi>B</mi><mi>A</mi><mi>x</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+y = Wx + BAx
+}
+</annotation></semantics></math></p>
+<p>先把这张图锁进脑子。</p>
+<hr />
+<h1 id="二先锁死-5-个核心心智模型-2">二、先锁死 5 个核心心智模型</h1>
+<h2
+id="心智模型-1lora-不替换-base-model而是在原模型旁边学习一个修正量">心智模型
+1：LoRA 不替换 Base Model，而是在原模型旁边学习一个“修正量”</h2>
+<p>原模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx
+</annotation></semantics></math></p>
+<p>LoRA：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+BAx
+</annotation></semantics></math></p>
+<p>最终：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi><mo>+</mo><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx + BAx
+</annotation></semantics></math></p>
+<p>所以 LoRA 不是：</p>
+<blockquote>
+<p>把 Base Model 某一层删掉，再装一个小层。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>Base Model 保留原能力，LoRA
+在旁边提供任务相关的修正。</strong></p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mo>=</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>B</mi><mi>e</mi><mi>h</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>o</mi><mi>r</mi><mo>+</mo><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LoRA
+=
+BaseBehavior
++
+TaskSpecificCorrection
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="心智模型-2真正学习的是-delta-w不是重新学习-w">心智模型
+2：真正学习的是
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>，不是重新学习
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math></h2>
+<p>LoRA 可以理解成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W&#39; = W + \Delta W
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>冻结。</p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+</annotation></semantics></math></p>
+<p>可学习。</p>
+<p>于是训练问题从：</p>
+<blockquote>
+<p>“重新学习这个巨大矩阵。”</p>
+</blockquote>
+<p>变成：</p>
+<blockquote>
+<p><strong>“学习这个巨大矩阵需要改变多少。”</strong></p>
+</blockquote>
+<p>这是一种非常重要的思维转变。</p>
+<hr />
+<h2
+id="心智模型-3lora-的关键假设是有用的参数变化可能存在于低维子空间">心智模型
+3：LoRA 的关键假设是——有用的参数变化可能存在于低维子空间</h2>
+<p>LoRA 并不是说：</p>
+<blockquote>
+<p>原矩阵
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+本身是低秩的。</p>
+</blockquote>
+<p>这一点千万别混。</p>
+<p>它真正假设的是：</p>
+<blockquote>
+<p><strong>下游任务所需要的权重变化
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>，可能不需要拥有完整矩阵那么高的自由度。</strong></p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mspace width="0.222em"></mspace><mi>可</mi><mi>以</mi><mi>很</mi><mi>复</mi><mi>杂</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+W\ 可以很复杂
+}
+</annotation></semantics></math></p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Δ</mi><mi>W</mi><mspace width="0.222em"></mspace><mi>可</mi><mi>能</mi><mi>可</mi><mi>以</mi><mi>用</mi><mi>低</mi><mi>秩</mi><mi>结</mi><mi>构</mi><mi>近</mi><mi>似</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\Delta W\ 可能可以用低秩结构近似
+}
+</annotation></semantics></math></p>
+<p>这是 LoRA 最核心的数学直觉。</p>
+<hr />
+<h2 id="心智模型-4rank-控制的是允许-lora-学多少种独立变化方向">心智模型
+4：Rank 控制的是“允许 LoRA 学多少种独立变化方向”</h2>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+\Delta W = BA
+</annotation></semantics></math></p>
+<p>中间维度是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">
+r
+</annotation></semantics></math></p>
+<p>这个
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>
+就叫：</p>
+<h1 id="rank">Rank</h1>
+<h2 id="秩-低秩维度">秩 / 低秩维度</h2>
+<p>直觉上：</p>
+<blockquote>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>
+越小，允许表达的变化空间越受限制。</p>
+</blockquote>
+<blockquote>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>
+越大，LoRA 拥有更多调整自由度。</p>
+</blockquote>
+<p>今天先理解这个意义。</p>
+<p>具体：</p>
+<pre class="text"><code>r 到底选 8、16、32 还是 64？
+alpha 怎么配？
+dropout 怎么配？</code></pre>
+<p>放到下一阶段专门解决。</p>
+<hr />
+<h2
+id="心智模型-5lora-省参数的真正原因是把一个大矩阵拆成两个瘦矩阵">心智模型
+5：LoRA 省参数的真正原因，是把一个“大矩阵”拆成两个“瘦矩阵”</h2>
+<p>这是最重要的计算直觉。</p>
+<p>一个大矩阵：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+</annotation></semantics></math></p>
+<p>本来可能需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>×</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+d_{out}\times d_{in}
+</annotation></semantics></math></p>
+<p>个参数。</p>
+<p>LoRA 改成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+B A
+</annotation></semantics></math></p>
+<p>只需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+r(d_{in}+d_{out})
+</annotation></semantics></math></p>
+<p>个参数。</p>
+<p>只要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>≪</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>,</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+r \ll d_{in},d_{out}
+</annotation></semantics></math></p>
+<p>参数量就会大幅下降。</p>
+<hr />
+<h1 id="三先从最普通的-linear-layer-开始">三、先从最普通的 Linear Layer
+开始</h1>
+<p>Transformer 里大量计算都可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y = Wx
+</annotation></semantics></math></p>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>∈</mo><msup><mi>ℝ</mi><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></msup></mrow><annotation encoding="application/x-tex">
+x\in\mathbb{R}^{d_{in}}
+</annotation></semantics></math></p>
+<p>权重：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>×</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></msup></mrow><annotation encoding="application/x-tex">
+W\in\mathbb{R}^{d_{out}\times d_{in}}
+</annotation></semantics></math></p>
+<p>那么输出：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>∈</mo><msup><mi>ℝ</mi><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></msup></mrow><annotation encoding="application/x-tex">
+y\in\mathbb{R}^{d_{out}}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四如果做-full-fine-tuning">四、如果做 Full Fine-Tuning</h1>
+<p>直接修改：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>=</mo><mn>4096</mn><mo>×</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+W
+=
+4096\times4096
+</annotation></semantics></math></p>
+<p>那么一个矩阵的参数量就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn><mo>=</mo><mn>16</mn><mo>,</mo><mn>777</mn><mo>,</mo><mn>216</mn></mrow><annotation encoding="application/x-tex">
+4096\times4096
+=
+16,777,216
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>约 1678 万个参数。</p>
+</blockquote>
+<p>仅仅：</p>
+<blockquote>
+<p>一个矩阵。</p>
+</blockquote>
+<p>Transformer 里这样的矩阵：</p>
+<blockquote>
+<p>有很多。</p>
+</blockquote>
+<hr />
+<h1 id="五lora-怎么做">五、LoRA 怎么做？</h1>
+<p>LoRA 不直接训练：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+W&#39; = W + BA
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><mi>r</mi><mo>×</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></msup></mrow><annotation encoding="application/x-tex">
+A\in\mathbb{R}^{r\times d_{in}}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>×</mo><mi>r</mi></mrow></msup></mrow><annotation encoding="application/x-tex">
+B\in\mathbb{R}^{d_{out}\times r}
+</annotation></semantics></math></p>
+<p>所以：</p>
+<pre class="text"><code>输入维度 d_in
+      │
+      ▼
+      A
+d_in → r
+      │
+      ▼
+一个很小的中间空间
+      │
+      ▼
+      B
+r → d_out
+      │
+      ▼
+输出维度 d_out</code></pre>
+<hr />
+<h1 id="六这里真正发生了一次压缩-展开">六、这里真正发生了一次“压缩 →
+展开”</h1>
+<p>矩阵 A：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>:</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>→</mo><mi>r</mi></mrow><annotation encoding="application/x-tex">
+A:
+d_{in}\rightarrow r
+</annotation></semantics></math></p>
+<p>把高维输入：</p>
+<blockquote>
+<p>投影到一个很小的低维空间。</p>
+</blockquote>
+<p>然后矩阵 B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>:</mo><mi>r</mi><mo>→</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+B:
+r\rightarrow d_{out}
+</annotation></semantics></math></p>
+<p>再把这个低维变化：</p>
+<blockquote>
+<p>投影回原来的输出维度。</p>
+</blockquote>
+<p>所以 LoRA 的直觉可以压成：</p>
+<pre class="text"><code>高维输入
+   ↓
+A
+   ↓
+低维任务变化空间
+   ↓
+B
+   ↓
+高维修正量</code></pre>
+<p>这个“低维任务变化空间”：</p>
+<blockquote>
+<p>就是 LoRA 真正省参数的地方。</p>
+</blockquote>
+<hr />
+<h1 id="七用一个数字例子彻底看懂">七、用一个数字例子彻底看懂</h1>
+<p>仍然假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn></mrow></msup></mrow><annotation encoding="application/x-tex">
+W\in\mathbb{R}^{4096\times4096}
+</annotation></semantics></math></p>
+<p>如果直接训练完整更新矩阵：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+</annotation></semantics></math></p>
+<p>需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>16</mn><mo>,</mo><mn>777</mn><mo>,</mo><mn>216</mn></mrow><annotation encoding="application/x-tex">
+16,777,216
+</annotation></semantics></math></p>
+<p>个自由参数。</p>
+<p>现在假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">
+r=8
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>:</mo><mn>8</mn><mo>×</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+A:
+8\times4096
+</annotation></semantics></math></p>
+<p>参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>32</mn><mo>,</mo><mn>768</mn></mrow><annotation encoding="application/x-tex">
+32,768
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>:</mo><mn>4096</mn><mo>×</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">
+B:
+4096\times8
+</annotation></semantics></math></p>
+<p>参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>32</mn><mo>,</mo><mn>768</mn></mrow><annotation encoding="application/x-tex">
+32,768
+</annotation></semantics></math></p>
+<p>总共：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>65</mn><mo>,</mo><mn>536</mn></mrow><annotation encoding="application/x-tex">
+65,536
+</annotation></semantics></math></p>
+<p>所以：</p>
+<pre class="text"><code>完整矩阵变化
+≈ 1678万参数
+
+LoRA低秩变化
+≈ 6.55万参数</code></pre>
+<p>差距非常大。</p>
+<hr />
+<h1 id="八但最终-delta-w-的形状没有变">八、但最终
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>
+的形状没有变</h1>
+<p>这一点特别重要。</p>
+<p>虽然：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>A</mi><annotation encoding="application/x-tex">
+A
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">
+B
+</annotation></semantics></math></p>
+<p>很小，</p>
+<p>乘起来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+BA
+</annotation></semantics></math></p>
+<p>仍然得到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>×</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+d_{out}\times d_{in}
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+BA
+</annotation></semantics></math></p>
+<p>与：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>形状完全兼容。</p>
+<p>所以才能：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>+</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+W+BA
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九这就是-lora-最漂亮的地方">九、这就是 LoRA 最漂亮的地方</h1>
+<p>它不是：</p>
+<blockquote>
+<p>只修改原矩阵的一小块。</p>
+</blockquote>
+<p>也不是：</p>
+<blockquote>
+<p>输出一个低维答案。</p>
+</blockquote>
+<p>最终产生的修正：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+\Delta W=BA
+</annotation></semantics></math></p>
+<p>仍然作用在：</p>
+<blockquote>
+<p><strong>完整高维权重空间。</strong></p>
+</blockquote>
+<p>只是这个变化：</p>
+<blockquote>
+<p>被限制在一个低秩结构中。</p>
+</blockquote>
+<hr />
+<h1 id="十为什么叫-low-rank-adaptation">十、为什么叫 Low-Rank
+Adaptation？</h1>
+<h1 id="low-rank-adaptation">Low-Rank Adaptation</h1>
+<h2 id="低秩适配">低秩适配</h2>
+<p>名字来自：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+\Delta W = BA
+</annotation></semantics></math></p>
+<p>因为它的秩最多受：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">
+r
+</annotation></semantics></math></p>
+<p>限制。</p>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>rank</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mi>A</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≤</mo><mi>r</mi></mrow><annotation encoding="application/x-tex">
+\operatorname{rank}(BA)\le r
+</annotation></semantics></math></p>
+<p>所以当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>≪</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+r\ll4096
+</annotation></semantics></math></p>
+<p>时：</p>
+<blockquote>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>
+是一个低秩变化。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="lora">LoRA</h1>
+<p>名字真正的来源。</p>
+<hr />
+<h1 id="十一低秩到底意味着什么">十一、低秩到底意味着什么？</h1>
+<p>不要把“秩”搞成纯数学名词。</p>
+<p>可以把一个大矩阵能够做的变化想成：</p>
+<blockquote>
+<p>有很多很多可能的独立方向。</p>
+</blockquote>
+<p>完整矩阵更新：</p>
+<pre class="text"><code>方向1
+方向2
+方向3
+方向4
+……
+可能非常多</code></pre>
+<p>LoRA 说：</p>
+<blockquote>
+<p>对这个具体领域任务，也许实际上只需要少数几个主要变化方向。</p>
+</blockquote>
+<p>例如非常粗略地想象政府采购任务：</p>
+<pre class="text"><code>变化方向 A
+更关注资格条件
+
+变化方向 B
+减少关键词Shortcut
+
+变化方向 C
+证据不足时更愿意needs_review
+
+变化方向 D
+输出结构更加稳定</code></pre>
+<p>真实神经网络当然不会这么整齐地“一方向对应一规则”。</p>
+<p>但这种类比能帮助理解：</p>
+<blockquote>
+<p><strong>领域适配可能只需要改变原模型行为空间中的有限几个主方向。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十二为什么这个假设可能成立">十二、为什么这个假设可能成立？</h1>
+<p>因为 Base Model 已经不是一张白纸。</p>
+<p>它本来已经会：</p>
+<pre class="text"><code>中文
+法律语言
+推理
+分类
+解释
+生成
+结构化输出</code></pre>
+<p>我们不是在要求它：</p>
+<blockquote>
+<p>学会一种全新的智能。</p>
+</blockquote>
+<p>我们更多是在要求：</p>
+<blockquote>
+<p><strong>重新组合和偏置已经存在的能力。</strong></p>
+</blockquote>
+<p>所以可能不需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">
+4096\times4096
+</annotation></semantics></math></p>
+<p>这么多独立变化自由度。</p>
+<p>只需要：</p>
+<blockquote>
+<p>一个小得多的有效适配空间。</p>
+</blockquote>
+<hr />
+<h1
+id="十三把它和政府采购项目对应起来">十三、把它和政府采购项目对应起来</h1>
+<p>Base Model 本身可能已经理解：</p>
+<pre class="text"><code>“供应商”
+“资格条件”
+“本地”
+“履约”
+“评分”
+“风险”</code></pre>
+<p>但它没有形成我们希望的稳定决策边界。</p>
+<p>例如原模型：</p>
+<pre class="text"><code>看到“本地”
+       ↓
+很容易直接报警</code></pre>
+<p>我们的数据则不断告诉它：</p>
+<pre class="text"><code>投标前必须已有本地机构
+        ≠
+中标后保证本地服务能力</code></pre>
+<p>LoRA 并不需要：</p>
+<blockquote>
+<p>重新创造“本地”“供应商”这些概念。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>调整这些已有表示在任务中的使用方式。</p>
+</blockquote>
+<p>这正是低秩适配特别有吸引力的地方。</p>
+<hr />
+<h1 id="十四训练时到底谁会变">十四、训练时到底谁会变？</h1>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi><mo>+</mo><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y = Wx + BAx
+</annotation></semantics></math></p>
+<p>训练开始：</p>
+<pre class="text"><code>W
+Frozen
+不更新
+
+A
+Trainable
+
+B
+Trainable</code></pre>
+<p>Forward：</p>
+<pre class="text"><code>x
+│
+├──► W x
+│
+└──► B A x
+       │
+       ▼
+      相加
+       │
+       ▼
+       y</code></pre>
+<p>然后：</p>
+<pre class="text"><code>y
+↓
+Loss
+↓
+Backward</code></pre>
+<p>梯度主要更新：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>,</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">
+A,B
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五所以第-2-阶段的-gradient-链现在可以升级了">十五、所以第 2
+阶段的 Gradient 链现在可以升级了</h1>
+<p>以前：</p>
+<pre class="text"><code>Loss
+↓
+Backward
+↓
+Gradient
+↓
+Model Parameters</code></pre>
+<p>现在 LoRA 场景变成：</p>
+<pre class="text"><code>Loss
+      ↓
+Backward
+      ↓
+┌───────────────────────┐
+│ Frozen Base W         │
+│ 不由Optimizer更新     │
+│                       │
+│ LoRA A       ✓ grad   │
+│ LoRA B       ✓ grad   │
+└──────────┬────────────┘
+           ↓
+      Optimizer
+           ↓
+      更新 A / B</code></pre>
+<p>这就是：</p>
+<blockquote>
+<p><strong>LoRA 真正训练的东西。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十六一个非常重要的理解base-path-和-lora-path-同时存在">十六、一个非常重要的理解：Base
+Path 和 LoRA Path 同时存在</h1>
+<p>很多人第一次看 LoRA 会误以为：</p>
+<pre class="text"><code>W
+被BA替代了</code></pre>
+<p>不是。</p>
+<p>实际上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx
+</annotation></semantics></math></p>
+<p>还在。</p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+BAx
+</annotation></semantics></math></p>
+<p>是额外加上去的。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>=</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>+</mo><mi>A</mi><mi>d</mi><mi>a</mi><mi>p</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>O</mi><mi>u</mi><mi>t</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LoRAOutput
+=
+BaseOutput
++
+AdaptationOutput
+}
+</annotation></semantics></math></p>
+<p>这句话非常重要。</p>
+<hr />
+<h1
+id="十七为什么刚开始训练时不能一下把模型行为破坏掉">十七、为什么刚开始训练时不能一下把模型行为破坏掉？</h1>
+<p>理想情况下：</p>
+<blockquote>
+<p>LoRA 刚挂上去时，应尽量接近原 Base Model 行为。</p>
+</blockquote>
+<p>也就是初始：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\Delta W\approx0
+</annotation></semantics></math></p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>≈</mo><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W&#39; \approx W
+</annotation></semantics></math></p>
+<p>常见实现会让两个 LoRA 矩阵中的一个：</p>
+<blockquote>
+<p>随机初始化，</p>
+</blockquote>
+<p>另一个：</p>
+<blockquote>
+<p>零初始化，</p>
+</blockquote>
+<p>从而让初始：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+BA=0
+</annotation></semantics></math></p>
+<p>或非常接近 0。</p>
+<p>具体初始化规则由实现决定。</p>
+<p>心智模型只记：</p>
+<blockquote>
+<p><strong>LoRA 刚加入时尽量不改变 Base
+Model，然后通过训练逐渐长出任务修正量。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十八这件事非常漂亮">十八、这件事非常漂亮</h1>
+<p>训练刚开始：</p>
+<pre class="text"><code>Base Model
+100%
+
+LoRA Correction
+≈ 0</code></pre>
+<p>训练逐渐进行：</p>
+<pre class="text"><code>Base能力
++
+越来越有意义的领域修正</code></pre>
+<p>所以 LoRA 的训练不是：</p>
+<blockquote>
+<p>先把原模型打碎，再重新拼。</p>
+</blockquote>
+<p>而更像：</p>
+<blockquote>
+<p><strong>在稳定底模旁边逐步学出一层任务偏置。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十九lora-forward-更完整的公式">十九、LoRA Forward
+更完整的公式</h1>
+<p>实际常见形式会带一个缩放因子：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi><mo>+</mo><mi>s</mi><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y
+=
+Wx
++
+sBAx
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>s</mi><annotation encoding="application/x-tex">
+s
+</annotation></semantics></math></p>
+<p>控制：</p>
+<blockquote>
+<p>LoRA 分支的整体作用强度。</p>
+</blockquote>
+<p>一种常见形式是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mfrac><mi>α</mi><mi>r</mi></mfrac></mrow><annotation encoding="application/x-tex">
+s=\frac{\alpha}{r}
+</annotation></semantics></math></p>
+<p>也就是后面会看到的：</p>
+<pre class="text"><code>lora_alpha
+rank r</code></pre>
+<p>但今天先不要陷入参数选择。</p>
+<p>只知道：</p>
+<blockquote>
+<p><strong>A、B 决定变化方向和内容，Scaling
+决定这条变化分支整体有多强。</strong></p>
+</blockquote>
+<p>下一阶段专门讲：</p>
+<pre class="text"><code>Rank
+Alpha
+Dropout</code></pre>
+<hr />
+<h1 id="二十现在精准区分四个对象">二十、现在精准区分四个对象</h1>
+<table>
+<thead>
+<tr class="header">
+<th>对象</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math></td>
+<td>Base Model 原权重，通常冻结</td>
+</tr>
+<tr class="even">
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>A</mi><annotation encoding="application/x-tex">A</annotation></semantics></math></td>
+<td>将输入映射到低维 LoRA 空间</td>
+</tr>
+<tr class="odd">
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">B</annotation></semantics></math></td>
+<td>将低维变化映射回输出空间</td>
+</tr>
+<tr class="even">
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">BA</annotation></semantics></math></td>
+<td>实际产生的权重修正
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math></td>
+</tr>
+</tbody>
+</table>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+\Delta W = BA
+}
+</annotation></semantics></math></p>
+<p>不是两个完全独立的模型。</p>
+<p>而是一整个：</p>
+<blockquote>
+<p><strong>低秩更新结构。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十一lora-参数少为什么-checkpoint-也小">二十一、LoRA
+参数少，为什么 Checkpoint 也小？</h1>
+<p>因为保存 Adapter 时：</p>
+<blockquote>
+<p>主要保存训练出来的 A、B 等 Adapter 参数。</p>
+</blockquote>
+<p>并不需要重新保存：</p>
+<blockquote>
+<p>整套巨大 Base Model。</p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>Base Model
+7B
+保持原样
+
++
+
+LoRA Adapter
+只保存小量新增参数</code></pre>
+<p>所以实验版本可以是：</p>
+<pre class="text"><code>Base Model
+│
+├── LoRA-A
+├── LoRA-B
+├── LoRA-C
+└── LoRA-D</code></pre>
+<p>这也是为什么 LoRA 特别适合：</p>
+<blockquote>
+<p>快速实验和版本对比。</p>
+</blockquote>
+<hr />
+<h1
+id="二十二推理时是不是每次都必须保留两个分支">二十二、推理时是不是每次都必须保留两个分支？</h1>
+<p>不一定。</p>
+<p>有两种常见思路。</p>
+<h3 id="adapter-模式">Adapter 模式</h3>
+<p>推理时：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi><mo>+</mo><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx + BAx
+</annotation></semantics></math></p>
+<p>两个分支一起计算。</p>
+<p>优点：</p>
+<blockquote>
+<p>Adapter 可以自由挂载和切换。</p>
+</blockquote>
+<hr />
+<h3 id="merge-模式">Merge 模式</h3>
+<p>因为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+W&#39; = W + BA
+</annotation></semantics></math></p>
+<p>可以事先计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mtext mathvariant="normal">merged</mtext></msub><mo>=</mo><mi>W</mi><mo>+</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+W_{\text{merged}}
+=
+W+BA
+</annotation></semantics></math></p>
+<p>然后推理时直接：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><msub><mi>W</mi><mtext mathvariant="normal">merged</mtext></msub><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y=W_{\text{merged}}x
+</annotation></semantics></math></p>
+<p>这叫：</p>
+<h1 id="merge">Merge</h1>
+<p>后面的 Checkpoint / Adapter 阶段会详细讲。</p>
+<hr />
+<h1 id="二十三所以-lora-既可以外挂也可以合并">二十三、所以 LoRA
+既可以“外挂”，也可以“合并”</h1>
+<pre class="text"><code>训练阶段
+
+Base W Frozen
+     +
+LoRA A/B
+     ↓
+得到 Adapter</code></pre>
+<p>然后：</p>
+<pre class="text"><code>方案 A
+Base + Adapter
+动态使用</code></pre>
+<p>或者：</p>
+<pre class="text"><code>方案 B
+W + BA
+   ↓
+Merged Weight</code></pre>
+<p>但要记住：</p>
+<blockquote>
+<p>Merge 改变的是部署表达方式，不改变 LoRA 当初学习的数学含义。</p>
+</blockquote>
+<hr />
+<h1 id="二十四lora-到底应该加在哪些矩阵上">二十四、LoRA
+到底应该加在哪些矩阵上？</h1>
+<p>现在我们知道 Transformer 有：</p>
+<pre class="text"><code>q_proj
+k_proj
+v_proj
+o_proj
+
+up_proj
+gate_proj
+down_proj
+...</code></pre>
+<p>理论上：</p>
+<blockquote>
+<p>可以给不同 Linear Layer 加 LoRA。</p>
+</blockquote>
+<p>但是：</p>
+<blockquote>
+<p>加到哪里，会直接决定哪些模型计算路径拥有可训练修正。</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="target-modules">Target Modules</h1>
+<p>不过这里先踩刹车。</p>
+<p>今天只需要知道：</p>
+<blockquote>
+<p><strong>LoRA 并不是自动加到整个模型所有地方。</strong></p>
+</blockquote>
+<p>下一阶段之后我们会专门讨论：</p>
+<blockquote>
+<p>q/k/v/o、MLP 到底怎么选。</p>
+</blockquote>
+<hr />
+<h1 id="二十五所以-lora-有两个不同维度的容量">二十五、所以 LoRA
+有两个不同维度的“容量”</h1>
+<p>以后千万不要只盯着 Rank。</p>
+<p>第一个：</p>
+<h1 id="每个-adapter-有多宽">每个 Adapter 有多宽？</h1>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">
+r
+</annotation></semantics></math></p>
+<hr />
+<p>第二个：</p>
+<h1 id="到底给多少层多少模块装-adapter">到底给多少层、多少模块装
+Adapter？</h1>
+<p>也就是：</p>
+<pre class="text"><code>Target Modules
++
+Number of Layers</code></pre>
+<p>因此真正 LoRA 总容量大致受到：</p>
+<pre class="text"><code>Rank
+×
+Target Module数量
+×
+Layer数量</code></pre>
+<p>共同影响。</p>
+<p>这就是为什么：</p>
+<blockquote>
+<p>单纯问“r=8 好还是 r=16 好”其实信息不够。</p>
+</blockquote>
+<hr />
+<h1 id="二十六现在来算-lora-参数量公式">二十六、现在来算 LoRA
+参数量公式</h1>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>×</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></msup></mrow><annotation encoding="application/x-tex">
+W
+\in
+\mathbb{R}^{d_{out}\times d_{in}}
+</annotation></semantics></math></p>
+<p>完整矩阵：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mtext mathvariant="normal">full</mtext></msub><mo>=</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+N_{\text{full}}
+=
+d_{out}d_{in}
+</annotation></semantics></math></p>
+<p>LoRA：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><mi>r</mi><mo>×</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow></msup></mrow><annotation encoding="application/x-tex">
+A
+\in
+\mathbb{R}^{r\times d_{in}}
+</annotation></semantics></math></p>
+<p>参数数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+rd_{in}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>×</mo><mi>r</mi></mrow></msup></mrow><annotation encoding="application/x-tex">
+B
+\in
+\mathbb{R}^{d_{out}\times r}
+</annotation></semantics></math></p>
+<p>参数数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mi>r</mi></mrow><annotation encoding="application/x-tex">
+d_{out}r
+</annotation></semantics></math></p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>N</mi><mtext mathvariant="normal">LoRA</mtext></msub><mo>=</mo><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+N_{\text{LoRA}}
+=
+r(d_{in}+d_{out})
+}
+</annotation></semantics></math></p>
+<p>这条公式值得记。</p>
+<hr />
+<h1 id="二十七什么时候-lora-不再很省">二十七、什么时候 LoRA
+不再“很省”？</h1>
+<p>如果：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">
+r
+</annotation></semantics></math></p>
+<p>越来越接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>,</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+d_{in},d_{out}
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+r(d_{in}+d_{out})
+</annotation></semantics></math></p>
+<p>自然越来越大。</p>
+<p>所以 LoRA 有意义的基本前提之一就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>r</mi><mo>≪</mo><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+r\ll d
+}
+</annotation></semantics></math></p>
+<p>即：</p>
+<blockquote>
+<p>中间低秩空间远小于原模型隐藏维度。</p>
+</blockquote>
+<hr />
+<h1 id="二十八rank-太小是不是一定不够">二十八、Rank
+太小是不是一定不够？</h1>
+<p>不一定。</p>
+<p>这就是为什么不能靠直觉拍参数。</p>
+<p>如果任务变化非常简单：</p>
+<blockquote>
+<p>很小的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>
+可能已经足够。</p>
+</blockquote>
+<p>如果任务非常复杂：</p>
+<blockquote>
+<p>更大
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>
+可能带来额外容量。</p>
+</blockquote>
+<p>真正答案需要：</p>
+<pre class="text"><code>固定 Dataset
++
+固定 Benchmark
++
+控制变量实验</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>“网上都用 64，所以我们也用 64。”</p>
+</blockquote>
+<hr />
+<h1
+id="二十九这和第四课的数据思想完全一致">二十九、这和第四课的数据思想完全一致</h1>
+<p>LoRA Rank 是：</p>
+<blockquote>
+<p>模型容量变量。</p>
+</blockquote>
+<p>而是否足够：</p>
+<blockquote>
+<p>必须由 Hard Case / Validation / Benchmark 证明。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>Config
+        ↓
+Train
+        ↓
+Validation
+        ↓
+Slice / Hard Case
+        ↓
+决定是否增加容量</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>参数越大
+        ↓
+肯定越好</code></pre>
+<hr />
+<h1 id="三十lora-真正改变的是概率分布不是插入规则">三十、LoRA
+真正改变的是概率分布，不是“插入规则”</h1>
+<p>这和第 2 阶段必须连起来。</p>
+<p>LoRA 训练以后：</p>
+<blockquote>
+<p>不是在模型里出现了一条：</p>
+</blockquote>
+<pre class="text"><code>IF 条款含“本地”
+THEN 风险=true</code></pre>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>,</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">
+A,B
+</annotation></semantics></math></p>
+<p>改变了网络中的中间表示和最终 Logits。</p>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>R</mi><mi>e</mi><mi>s</mi><mi>p</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>e</mi><mo>∣</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+P_\theta(Response\mid Prompt)
+</annotation></semantics></math></p>
+<p>发生变化。</p>
+<p>例如：</p>
+<pre class="text"><code>训练前
+
+P(存在潜在风险)
+= 0.31</code></pre>
+<p>训练后：</p>
+<pre class="text"><code>P(存在潜在风险)
+= 0.74</code></pre>
+<p>这是：</p>
+<blockquote>
+<p>概率行为被低秩更新重新塑造。</p>
+</blockquote>
+<hr />
+<h1 id="三十一lora-不等于知识库">三十一、LoRA 不等于知识库</h1>
+<p>这点必须再次强调。</p>
+<p>如果明天法规更新：</p>
+<blockquote>
+<p>LoRA 参数不会自动知道。</p>
+</blockquote>
+<p>LoRA 更适合学习：</p>
+<pre class="text"><code>任务行为
+输出格式
+专业判断模式
+偏好
+决策边界</code></pre>
+<p>而：</p>
+<pre class="text"><code>最新法规全文
+最新政策日期
+实时文件</code></pre>
+<p>通常仍然应该通过：</p>
+<blockquote>
+<p>RAG / Knowledge System</p>
+</blockquote>
+<p>动态提供。</p>
+<hr />
+<h1 id="三十二一个政府采购例子">三十二、一个政府采购例子</h1>
+<p>假设 Base Model 原本面对：</p>
+<pre class="text"><code>供应商须在投标截止前
+在项目所在地设立分支机构。</code></pre>
+<p>模型倾向：</p>
+<pre class="text"><code>无明显风险</code></pre>
+<p>经过专家 SFT：</p>
+<pre class="text"><code>Prompt
++
+Gold Response</code></pre>
+<p>Loss 不断推动 LoRA：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>,</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">
+A,B
+</annotation></semantics></math></p>
+<p>改变。</p>
+<p>最终 LoRA 分支可能使内部表示更重视：</p>
+<pre class="text"><code>“投标截止前”
++
+“已经设立”
++
+“作为参与条件”</code></pre>
+<p>而不是只看：</p>
+<pre class="text"><code>“本地”</code></pre>
+<p>于是模型对类似案例：</p>
+<blockquote>
+<p>风险识别概率上升。</p>
+</blockquote>
+<hr />
+<h1 id="三十三再加入-hard-negative">三十三、再加入 Hard Negative</h1>
+<p>另一条：</p>
+<pre class="text"><code>中标后应保证项目现场
+2小时内响应。
+供应商可自行选择服务实现方式。</code></pre>
+<p>如果模型因为：</p>
+<pre class="text"><code>现场
++
+本地</code></pre>
+<p>而错误报警，</p>
+<p>Hard Negative 会产生相反方向的 Gradient。</p>
+<p>于是同一组 LoRA 参数逐渐学习：</p>
+<blockquote>
+<p><strong>不是关键词本身，而是关键词与条件结构之间的关系。</strong></p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="decision-boundary-adaptation">Decision Boundary Adaptation</h1>
+<hr />
+<h1
+id="三十四这也解释了为什么-lora-容量不是越大越好">三十四、这也解释了为什么
+LoRA 容量不是越大越好</h1>
+<p>如果容量太大、数据又少：</p>
+<blockquote>
+<p>Adapter 也可能记住训练表达。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>见到某个固定模板
+→ 直接输出固定答案</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>学到真正稳定的边界。</p>
+</blockquote>
+<p>所以 LoRA 仍然需要：</p>
+<pre class="text"><code>Hard Negative
+Validation
+Data Diversity
+Leakage Control</code></pre>
+<p>PEFT 并没有取消机器学习基本规律。</p>
+<hr />
+<h1 id="三十五本阶段最容易混淆的-5-件事">三十五、本阶段最容易混淆的 5
+件事</h1>
+<h3 id="误区-1">误区 1</h3>
+<blockquote>
+<p>LoRA 把大模型变成小模型。</p>
+</blockquote>
+<p>错。</p>
+<p>Base Model：</p>
+<blockquote>
+<p>仍然完整存在。</p>
+</blockquote>
+<hr />
+<h3 id="误区-2">误区 2</h3>
+<blockquote>
+<p>LoRA 认为 Base Weight
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+是低秩的。</p>
+</blockquote>
+<p>错。</p>
+<p>LoRA 重点约束的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\Delta W
+</annotation></semantics></math></p>
+<hr />
+<h3 id="误区-3">误区 3</h3>
+<blockquote>
+<p>A、B 是两个独立答案模型。</p>
+</blockquote>
+<p>错。</p>
+<p>它们一起表达：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi><mo>=</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+BA=\Delta W
+</annotation></semantics></math></p>
+<hr />
+<h3 id="误区-4">误区 4</h3>
+<blockquote>
+<p>Rank 越大一定越好。</p>
+</blockquote>
+<p>错。</p>
+<p>它只是增加适配容量和参数成本。</p>
+<hr />
+<h3 id="误区-5">误区 5</h3>
+<blockquote>
+<p>LoRA 挂上去以后 Base Model 不再参与计算。</p>
+</blockquote>
+<p>错。</p>
+<p>最终仍然有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十六现在给-lora-建立一个精准的三层模型">三十六、现在给 LoRA
+建立一个精准的三层模型</h1>
+<h2 id="第一层base-capability">第一层：Base Capability</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx
+</annotation></semantics></math></p>
+<p>回答：</p>
+<blockquote>
+<p>Base Model 原本会什么？</p>
+</blockquote>
+<hr />
+<h2 id="第二层adaptation-capacity">第二层：Adaptation Capacity</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+BAx
+</annotation></semantics></math></p>
+<p>回答：</p>
+<blockquote>
+<p>我允许领域任务改变多少？</p>
+</blockquote>
+<hr />
+<h2 id="第三层final-behavior">第三层：Final Behavior</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi><mo>+</mo><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx+BAx
+</annotation></semantics></math></p>
+<p>回答：</p>
+<blockquote>
+<p>Base 能力加上领域修正以后，最终怎么表现？</p>
+</blockquote>
+<p>这三层不要再混。</p>
+<hr />
+<h1
+id="三十七本阶段工程产物loraupdatemodel_v0.1">三十七、本阶段工程产物：<code>LoRAUpdateModel_V0.1</code></h1>
+<p>现在应该能够记录：</p>
+<pre class="text"><code>base_weight
+=
+frozen
+
+update_parameterization
+=
+B @ A
+
+rank
+=
+r
+
+input_dimension
+=
+d_in
+
+output_dimension
+=
+d_out
+
+trainable_parameters
+=
+r * (d_in + d_out)
+
+scaling
+=
+framework/config defined
+
+initial_delta_weight
+≈
+0
+
+merge_supported
+=
+true / implementation dependent</code></pre>
+<p>此外还必须关联：</p>
+<pre class="text"><code>base_model_revision
+target_module
+layer
+adapter_version</code></pre>
+<p>这样 Adapter 才真正可复现。</p>
+<hr />
+<h1 id="三十八本阶段最核心的一张图">三十八、本阶段最核心的一张图</h1>
+<pre class="text"><code>                         输入 x
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+             ▼                           ▼
+       Base Model Path              LoRA Path
+             │                           │
+             ▼                           ▼
+        Frozen W                     Matrix A
+             │                      d_in → r
+             │                           │
+             │                           ▼
+             │                      Low-rank Space
+             │                           │
+             │                           ▼
+             │                        Matrix B
+             │                      r → d_out
+             │                           │
+             ▼                           ▼
+            Wx                          BAx
+             │                           │
+             └─────────────┬─────────────┘
+                           ▼
+                          相加
+                           │
+                           ▼
+                 y = Wx + BAx
+                           │
+                           ▼
+                         Loss
+                           │
+                           ▼
+                       Backward
+                           │
+                           ▼
+                    A / B 得到梯度
+                           │
+                           ▼
+                  Optimizer 更新 A / B
+                           │
+                           ▼
+                      W 保持冻结</code></pre>
+<p>如果这张图已经能在脑中直接运行：</p>
+<blockquote>
+<p>LoRA 最核心的 80% 已经掌握。</p>
+</blockquote>
+<hr />
+<h1
+id="三十九把整个阶段压成最精准的-5-句话">三十九、把整个阶段压成最精准的
+5 句话</h1>
+<blockquote>
+<p><strong>第一，LoRA 不重新训练 Base Weight，而是在冻结的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+旁边学习一个任务修正量
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，LoRA 的核心是
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">\Delta W=BA</annotation></semantics></math>：用两个瘦矩阵表示一个完整高维权重变化。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，低秩假设针对的是“任务所需的权重变化可能只占少数有效方向”，不是说
+Base Model 本身很简单。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Forward 仍然使用完整 Base Model，最终输出是
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi><mo>+</mo><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">Wx+BAx</annotation></semantics></math>；Backward
+主要更新 A、B，而 W 保持冻结。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，LoRA 节省参数的本质来自
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>≪</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">r(d_{in}+d_{out})\ll d_{in}d_{out}</annotation></semantics></math>，但
+Rank 多大、装在哪些模块上，必须由任务和 Benchmark 决定。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十本阶段掌握测试-1">四十、本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够自己解释：LoRA 的全称是什么；为什么 LoRA
+不等于把大模型变成小模型；<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">W&#39; = W+\Delta W</annotation></semantics></math>
+表示什么；为什么 LoRA 冻结
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+而学习
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>；为什么
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>
+可以写成
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">BA</annotation></semantics></math>；A、B
+的形状分别是什么；为什么
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">BA</annotation></semantics></math>
+最终仍然和
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>
+具有相同形状；什么叫 Low Rank；为什么
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>rank</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>B</mi><mi>A</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≤</mo><mi>r</mi></mrow><annotation encoding="application/x-tex">\operatorname{rank}(BA)\le r</annotation></semantics></math>；为什么
+LoRA 的低秩假设针对的是参数更新而不是 Base Weight；为什么
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><mo>+</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">r(d_{in}+d_{out})</annotation></semantics></math>
+会比
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi></mrow></msub><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">d_{in}d_{out}</annotation></semantics></math>
+小很多；为什么 Base Path 和 LoRA Path 会同时存在；为什么刚初始化 LoRA
+时希望
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>
+接近 0；为什么 LoRA Adapter 通常依赖对应 Base Model；Adapter 模式和
+Merge 模式有什么关系；为什么 Target Modules 也会影响 LoRA
+总容量；以及为什么 LoRA 最终改变的仍然是
+<code>P(Response | Prompt)</code>，而不是在模型内部硬编码一条采购规则。</p>
+<p>如果这些能自己完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>6</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第6阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-5">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>LoRA 的本质不是“训练一个小模型”，而是在完整且冻结的 Base
+Model 旁边学习一个低秩权重修正
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">\Delta W=BA</annotation></semantics></math>：Base
+Model 保留原能力，A、B
+用极少参数学习政府采购任务真正需要改变的少数方向，最终通过
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">W&#39; = W+BA</annotation></semantics></math>
+重塑模型的专业行为。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-7-阶段">下一阶段：第五课 · 第 7 阶段</h1>
+<h1 id="lora-rankalphadropout">LoRA Rank、Alpha、Dropout</h1>
+<h2
+id="ralphadropout-到底在控制什么"><code>r</code>、<code>alpha</code>、<code>dropout</code>
+到底在控制什么？</h2>
+<p>现在我们已经真正理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+\Delta W=BA
+</annotation></semantics></math></p>
+<p>下一阶段就不再把：</p>
+<pre class="text"><code>r = 16
+lora_alpha = 32
+lora_dropout = 0.05</code></pre>
+<p>当成网上抄来的三个数字。</p>
+<p>我们会精准区分：</p>
+<pre class="text"><code>Rank
+=
+容量
+
+Alpha / Scaling
+=
+修正分支的作用尺度
+
+Dropout
+=
+训练时对LoRA路径的正则化</code></pre>
+<p>并建立一条真正能自己选参数的判断链：</p>
+<pre class="text"><code>Task Complexity
+      ↓
+Rank Capacity
+      ↓
+Scaling Strength
+      ↓
+Regularization
+      ↓
+Validation / Hard Case
+      ↓
+是否需要扩大或收缩 LoRA
+
+&lt;!-- integration-only repair: close unmatched fence at stage boundary; canonical stage file unchanged --&gt;</code></pre>
+<hr /><div class="nav"><a class="btn" href="stage05.html">← 第 5 阶段</a><a class="btn" href="stage07.html">第 7 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

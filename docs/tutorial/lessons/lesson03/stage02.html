@@ -1,0 +1,1887 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第2阶段：Driver、CUDA、PyTorch 到底是什么关系？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>Driver ≠ CUDA Toolkit ≠ PyTorch CUDA Build。三者是不同层级，必须分别确认版本与兼容性。</li><li>nvidia-smi 能看到 GPU ≠ PyTorch 一定能用 CUDA；它只能证明驱动层基本工作。</li><li>正确诊断顺序应从 Hardware/Driver → Python Environment → PyTorch Build → cuda.is_available() → Tensor/Model 实测。</li></ul></div><h1 id="第三课-第-2-阶段drivercudapytorch-到底是什么关系">第三课 · 第 2
+阶段：Driver、CUDA、PyTorch 到底是什么关系？</h1>
+<h2
+id="为什么电脑里明明有-nvidia-gpupython-却可能告诉你-cuda-unavailable">为什么电脑里明明有
+NVIDIA GPU，Python 却可能告诉你 <code>CUDA unavailable</code>？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Driver ≠ CUDA Toolkit ≠ PyTorch CUDA
+Build。三者是不同层级，必须分别确认版本与兼容性。</strong></li>
+<li><strong>nvidia-smi 能看到 GPU ≠ PyTorch 一定能用
+CUDA；它只能证明驱动层基本工作。</strong></li>
+<li><strong>正确诊断顺序应从 Hardware/Driver → Python Environment →
+PyTorch Build → cuda.is_available() → Tensor/Model 实测。</strong></li>
+<li><strong>Python Interpreter / Virtual Environment
+也是环境链的一部分，同一机器不同环境可能安装完全不同的
+PyTorch。</strong></li>
+<li><strong>遇到 CUDA unavailable
+时先定位断在哪一层，不要直接“全卸载重装”。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="even">
+<td><code>CUDA</code></td>
+<td>CUDA：NVIDIA GPU 通用并行计算平台与软件生态</td>
+</tr>
+<tr class="odd">
+<td><code>PyTorch</code></td>
+<td>PyTorch：张量计算、自动求导和训练/推理框架</td>
+</tr>
+<tr class="even">
+<td><code>Driver</code></td>
+<td>驱动：操作系统与 GPU 硬件之间的底层接口</td>
+</tr>
+<tr class="odd">
+<td><code>CPU</code></td>
+<td>CPU：负责通用控制、数据准备和部分算子</td>
+</tr>
+<tr class="even">
+<td><code>CUDA Toolkit</code></td>
+<td>CUDA 工具包：开发、编译和运行 CUDA 程序的工具与库</td>
+</tr>
+<tr class="odd">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+<tr class="even">
+<td><code>Transformers</code></td>
+<td>Transformers：Hugging Face 的模型加载与推理库</td>
+</tr>
+<tr class="odd">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="even">
+<td><code>MLP</code></td>
+<td>MLP/前馈网络：对每个位置表示做非线性变换</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>这一阶段先不急着安装任何东西。</p>
+<p>我们先把上一阶段留下的这条链真正看懂：</p>
+<pre class="text"><code>你的 Python 程序
+        ↓
+      PyTorch
+        ↓
+ CUDA Runtime / CUDA Libraries
+        ↓
+   NVIDIA Driver
+        ↓
+    NVIDIA GPU</code></pre>
+<p>今天真正需要带走的不是一堆版本号，而是 <strong>5
+个核心心智模型</strong>：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mtext mathvariant="normal">① GPU 是硬件，Driver 是硬件的翻译官</mtext></menclose><annotation encoding="application/x-tex">
+\boxed{\text{① GPU 是硬件，Driver 是硬件的翻译官}}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mtext mathvariant="normal">② CUDA 是 GPU 计算生态，不等于显卡，也不等于 Driver</mtext></menclose><annotation encoding="application/x-tex">
+\boxed{\text{② CUDA 是 GPU 计算生态，不等于显卡，也不等于 Driver}}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mtext mathvariant="normal">③ PyTorch 是我们真正编写深度学习程序的上层框架</mtext></menclose><annotation encoding="application/x-tex">
+\boxed{\text{③ PyTorch 是我们真正编写深度学习程序的上层框架}}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mtext mathvariant="normal">④ 有 NVIDIA GPU，不代表 PyTorch 一定能使用它</mtext></menclose><annotation encoding="application/x-tex">
+\boxed{\text{④ 有 NVIDIA GPU，不代表 PyTorch 一定能使用它}}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mtext mathvariant="normal">⑤ 排查 GPU 环境，本质是在逐层检查一条调用链</mtext></menclose><annotation encoding="application/x-tex">
+\boxed{\text{⑤ 排查 GPU 环境，本质是在逐层检查一条调用链}}
+</annotation></semantics></math></p>
+<p>我们会用一个贯穿全阶段的采购 AI 场景：</p>
+<blockquote>
+<p><strong>你有一台服务器，准备运行
+ProcurementLM。操作系统能看到显卡，但执行
+<code>torch.cuda.is_available()</code> 返回
+<code>False</code>。到底是哪一层出了问题？</strong></p>
+</blockquote>
+<hr />
+<h1 id="一先看一张六层楼总图">一、先看一张“六层楼”总图</h1>
+<p>把整套 GPU 软件环境想成一栋楼：</p>
+<pre class="text"><code>┌───────────────────────────────┐
+│ 第6层：你的 ProcurementAI 代码 │
+│ model.generate(...)            │
+├───────────────────────────────┤
+│ 第5层：Transformers / vLLM      │
+│ 模型加载、生成、推理框架         │
+├───────────────────────────────┤
+│ 第4层：PyTorch                  │
+│ Tensor、矩阵乘法、Autograd       │
+├───────────────────────────────┤
+│ 第3层：CUDA Runtime / Libraries │
+│ GPU计算库、矩阵计算实现           │
+├───────────────────────────────┤
+│ 第2层：NVIDIA Driver           │
+│ 软件 ↔ GPU硬件通信              │
+├───────────────────────────────┤
+│ 第1层：NVIDIA GPU              │
+│ 真正执行并行计算的硬件           │
+└───────────────────────────────┘</code></pre>
+<p>以后环境出问题，不要第一反应就是：</p>
+<blockquote>
+<p>“CUDA 坏了。”</p>
+</blockquote>
+<p>真正的问题是：</p>
+<blockquote>
+<p><strong>哪一层断了？</strong></p>
+</blockquote>
+<p>这就是本阶段最重要的诊断方式。</p>
+<hr />
+<h1 id="二先从最底层开始gpu-hardware">二、先从最底层开始：GPU
+Hardware</h1>
+<h2 id="gpu-是实体硬件">1. GPU 是实体硬件</h2>
+<p>例如你机器里插着一张 NVIDIA GPU。</p>
+<p>它有：</p>
+<blockquote>
+<p>GPU 芯片、显存、计算单元、PCIe 接口等。</p>
+</blockquote>
+<p>它和 CPU、内存条、SSD 一样，是现实存在的硬件。</p>
+<hr />
+<h2 id="但是-gpu-本身不会理解-python">2. 但是 GPU 本身不会理解
+Python</h2>
+<p>你写：</p>
+<div class="sourceCode" id="cb24"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> torch.randn(<span class="dv">1000</span>, <span class="dv">1000</span>)</span></code></pre></div>
+<p>GPU 不知道：</p>
+<blockquote>
+<p><code>torch.randn</code> 是什么意思。</p>
+</blockquote>
+<p>甚至操作系统也不能凭空知道：</p>
+<blockquote>
+<p>该怎样向这块显卡发送命令。</p>
+</blockquote>
+<p>所以硬件上面必须有：</p>
+<h1 id="driver">Driver</h1>
+<hr />
+<h1
+id="三第一个核心心智模型driver-是硬件翻译官">三、第一个核心心智模型：Driver
+是“硬件翻译官”</h1>
+<h2 id="driver-到底在做什么">3. Driver 到底在做什么？</h2>
+<p>可以把 GPU 想成一台进口大型工业设备。</p>
+<p>它很强。</p>
+<p>但电脑操作系统不能直接喊：</p>
+<blockquote>
+<p>“帮我做一个 4096×4096 的矩阵乘法。”</p>
+</blockquote>
+<p>需要有一套接口：</p>
+<blockquote>
+<p>告诉系统怎样识别 GPU、管理显存、提交任务、读取结果。</p>
+</blockquote>
+<p>这套关键软件之一就是：</p>
+<h1 id="nvidia-driver">NVIDIA Driver</h1>
+<hr />
+<h2 id="一个非常直观的类比">4. 一个非常直观的类比</h2>
+<pre class="text"><code>Python程序
+    ↓
+“我要计算这个矩阵”
+    ↓
+软件系统
+    ↓
+NVIDIA Driver
+    ↓
+把请求翻译成GPU能够接受的命令
+    ↓
+GPU执行</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>P</mi><mi>U</mi><mo>=</mo><mi>工</mi><mi>厂</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GPU=工厂
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>r</mi><mo>=</mo><mi>工</mi><mi>厂</mi><mi>的</mi><mi>官</mi><mi>方</mi><mi>控</mi><mi>制</mi><mi>系</mi><mi>统</mi><mi>/</mi><mi>翻</mi><mi>译</mi><mi>官</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Driver=工厂的官方控制系统/翻译官
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="没有-driver-会怎么样">5. 没有 Driver 会怎么样？</h2>
+<p>可能出现：</p>
+<blockquote>
+<p>操作系统无法正确识别 GPU。</p>
+</blockquote>
+<p>或者：</p>
+<blockquote>
+<p>能看到某种显示设备，但无法用于 CUDA 计算。</p>
+</blockquote>
+<hr />
+<h1
+id="四你以后最常见的第一个检查nvidia-smi">四、你以后最常见的第一个检查：<code>nvidia-smi</code></h1>
+<p>在 NVIDIA GPU 环境里，经常先运行：</p>
+<div class="sourceCode" id="cb26"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvidia-smi</span></span></code></pre></div>
+<p>它非常值得理解，而不是死记。</p>
+<hr />
+<h2 id="nvidia-smi-主要是在问什么">6. <code>nvidia-smi</code>
+主要是在问什么？</h2>
+<p>粗略理解：</p>
+<blockquote>
+<p>“NVIDIA Driver 能不能正常和 GPU 对话？”</p>
+</blockquote>
+<p>如果它能显示类似：</p>
+<pre class="text"><code>GPU Name
+Driver Version
+Memory Usage
+GPU Utilization
+Processes</code></pre>
+<p>至少说明：</p>
+<blockquote>
+<p>GPU + NVIDIA Driver 这一层大体是通的。</p>
+</blockquote>
+<hr />
+<h2 id="所以第一层诊断可以画成">7. 所以第一层诊断可以画成</h2>
+<pre class="text"><code>GPU
+ ↑
+Driver
+ ↑
+nvidia-smi</code></pre>
+<p>如果：</p>
+<div class="sourceCode" id="cb29"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvidia-smi</span></span></code></pre></div>
+<p>都失败，</p>
+<p>通常还没必要先去怀疑：</p>
+<blockquote>
+<p>Transformers。</p>
+</blockquote>
+<p>因为底层都还没通。</p>
+<hr />
+<h1
+id="五一个最容易误解的字段cuda-version">五、一个最容易误解的字段：<code>CUDA Version</code></h1>
+<p>运行 <code>nvidia-smi</code> 时，你可能看到：</p>
+<pre class="text"><code>Driver Version: ...
+CUDA Version: ...</code></pre>
+<p>很多初学者马上认为：</p>
+<blockquote>
+<p>“太好了，我已经安装这个版本的 CUDA Toolkit。”</p>
+</blockquote>
+<p>这个结论不一定对。</p>
+<hr />
+<h2 id="这里显示的-cuda-version-更接近什么">8. 这里显示的 CUDA Version
+更接近什么？</h2>
+<p>更准确地理解：</p>
+<blockquote>
+<p><strong>当前 Driver 大致能够支持到什么 CUDA 兼容级别。</strong></p>
+</blockquote>
+<p>它不自动证明：</p>
+<blockquote>
+<p>你的电脑里安装了对应版本的完整 CUDA Toolkit。</p>
+</blockquote>
+<hr />
+<h2 id="这一点非常重要">9. 这一点非常重要</h2>
+<p>假设你看到：</p>
+<pre class="text"><code>nvidia-smi
+CUDA Version: 12.x</code></pre>
+<p>然后输入：</p>
+<div class="sourceCode" id="cb32"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvcc</span> <span class="at">--version</span></span></code></pre></div>
+<p>却提示：</p>
+<pre class="text"><code>command not found</code></pre>
+<p>这完全可能。</p>
+<hr />
+<h2 id="为什么不矛盾">10. 为什么不矛盾？</h2>
+<p>因为：</p>
+<pre class="text"><code>nvidia-smi</code></pre>
+<p>主要反映：</p>
+<blockquote>
+<p>Driver / GPU。</p>
+</blockquote>
+<p>而：</p>
+<pre class="text"><code>nvcc</code></pre>
+<p>属于：</p>
+<blockquote>
+<p>CUDA Toolkit 中的 CUDA 编译器。</p>
+</blockquote>
+<p>这是两个不同层面。</p>
+<hr />
+<h1
+id="六第二个核心心智模型cuda-不是一个单一软件">六、第二个核心心智模型：CUDA
+不是一个单一软件</h1>
+<p>很多初学者听到 CUDA，会以为：</p>
+<blockquote>
+<p>“CUDA 就是我安装的某个程序。”</p>
+</blockquote>
+<p>实际上更适合把 CUDA 看成：</p>
+<h1 id="nvidia-gpu-通用计算生态">NVIDIA GPU 通用计算生态</h1>
+<p>里面有很多东西。</p>
+<hr />
+<h2 id="你可以先把-cuda-想成一整套高速公路系统">11. 你可以先把 CUDA
+想成“一整套高速公路系统”</h2>
+<p>GPU 是城市。</p>
+<p>Driver 是：</p>
+<blockquote>
+<p>进入城市的官方交通管理系统。</p>
+</blockquote>
+<p>CUDA 生态则包含：</p>
+<blockquote>
+<p>道路规则、高速公路、工具、数学库、开发工具。</p>
+</blockquote>
+<hr />
+<h2 id="其中一个很重要的部分cuda-runtime">12. 其中一个很重要的部分：CUDA
+Runtime</h2>
+<p>程序真正执行 GPU 计算时：</p>
+<blockquote>
+<p>需要 CUDA Runtime 等组件帮助创建和运行 GPU 工作。</p>
+</blockquote>
+<hr />
+<h2 id="还有很多-cuda-libraries">13. 还有很多 CUDA Libraries</h2>
+<p>例如做：</p>
+<blockquote>
+<p>大规模矩阵乘法。</p>
+</blockquote>
+<p>并不是 PyTorch 每次从头自己发明一个矩阵乘法算法。</p>
+<p>底层通常会利用高度优化的 GPU 库。</p>
+<hr />
+<h2 id="对-llm-来说尤其重要">14. 对 LLM 来说尤其重要</h2>
+<p>因为第二课已经知道：</p>
+<pre class="text"><code>Q/K/V Projection
+Attention
+MLP
+LM Head</code></pre>
+<p>大量核心计算都是：</p>
+<blockquote>
+<p>Matrix Multiplication。</p>
+</blockquote>
+<p>所以底层高性能数学库非常关键。</p>
+<hr />
+<h1 id="七cuda-toolkit-又是什么">七、CUDA Toolkit 又是什么？</h1>
+<p>CUDA Toolkit 可以粗略理解成：</p>
+<blockquote>
+<p><strong>给开发者使用的一整套 CUDA 开发工具。</strong></p>
+</blockquote>
+<p>其中包括很多组件。</p>
+<p>我们今天只抓住一个最容易见到的：</p>
+<h1 id="nvcc"><code>nvcc</code></h1>
+<hr />
+<h2 id="nvcc-是什么">15. <code>nvcc</code> 是什么？</h2>
+<p>它是 NVIDIA CUDA Compiler。</p>
+<p>如果你自己写 CUDA 程序，例如：</p>
+<pre class="text"><code>my_kernel.cu</code></pre>
+<p>需要编译成 GPU 能执行的代码，</p>
+<p>可能就会用：</p>
+<div class="sourceCode" id="cb38"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvcc</span></span></code></pre></div>
+<hr />
+<h2 id="但这里出现一个非常重要的现实问题">16.
+但这里出现一个非常重要的现实问题</h2>
+<h3 id="跑-pytorch一定必须自己安装完整-cuda-toolkit-吗">跑
+PyTorch，一定必须自己安装完整 CUDA Toolkit 吗？</h3>
+<p><strong>不一定。</strong></p>
+<p>这句话一定要记住。</p>
+<hr />
+<h1
+id="八这是很多教程最容易把人绕晕的地方">八、这是很多教程最容易把人绕晕的地方</h1>
+<p>以前很多安装教程会让你：</p>
+<pre class="text"><code>先装 Driver
+再装 CUDA Toolkit
+再装 cuDNN
+再装 PyTorch</code></pre>
+<p>于是初学者形成了：</p>
+<blockquote>
+<p>“不用自己装完整 CUDA Toolkit，PyTorch 就绝对不能用 GPU。”</p>
+</blockquote>
+<p>并不总是这样。</p>
+<hr />
+<h2
+id="现代-pytorch-发行包通常会带上它所需要的一部分-cuda-runtime-libraries">17.
+现代 PyTorch 发行包通常会带上它所需要的一部分 CUDA Runtime /
+Libraries</h2>
+<p>也就是说，你可能：</p>
+<blockquote>
+<p>没有系统级 <code>nvcc</code>。</p>
+</blockquote>
+<p>但 PyTorch：</p>
+<blockquote>
+<p>仍然能够正常使用 NVIDIA GPU。</p>
+</blockquote>
+<hr />
+<h2 id="一个非常好用的类比">18. 一个非常好用的类比</h2>
+<p>你去餐厅吃饭。</p>
+<p>你需要：</p>
+<blockquote>
+<p>厨房能做菜。</p>
+</blockquote>
+<p>但你不一定需要：</p>
+<blockquote>
+<p>自己拥有完整餐饮培训学校和厨师培训设备。</p>
+</blockquote>
+<hr />
+<h2 id="cuda-toolkit-更像">19. CUDA Toolkit 更像</h2>
+<blockquote>
+<p>完整开发工具箱。</p>
+</blockquote>
+<p>而普通 PyTorch 用户很多时候只是：</p>
+<blockquote>
+<p>使用已经打包好的 GPU 能力。</p>
+</blockquote>
+<hr />
+<h1 id="九什么时候-cuda-toolkit-会更重要">九、什么时候 CUDA Toolkit
+会更重要？</h1>
+<p>例如你需要：</p>
+<blockquote>
+<p>自己编译 CUDA Extension。</p>
+</blockquote>
+<p>或者某些特殊库需要：</p>
+<blockquote>
+<p>本地编译 CUDA Kernel。</p>
+</blockquote>
+<p>这时：</p>
+<div class="sourceCode" id="cb40"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvcc</span></span></code></pre></div>
+<p>和本地 CUDA Toolkit 就更加重要。</p>
+<hr />
+<h2 id="对我们-procurementlm-第一阶段来说">20. 对我们 ProcurementLM
+第一阶段来说</h2>
+<p>最开始：</p>
+<blockquote>
+<p><strong>不需要急着自己写 CUDA Kernel。</strong></p>
+</blockquote>
+<p>我们的目标先是：</p>
+<pre class="text"><code>PyTorch
+↓
+能识别GPU
+↓
+模型能运行</code></pre>
+<hr />
+<h1 id="十现在轮到-pytorch">十、现在轮到 PyTorch</h1>
+<p>PyTorch 是什么？</p>
+<p>很多人说：</p>
+<blockquote>
+<p>“PyTorch 是一个 AI 框架。”</p>
+</blockquote>
+<p>这没错，但有点抽象。</p>
+<hr />
+<h2 id="最简单的理解">21. 最简单的理解</h2>
+<p>PyTorch 给我们提供：</p>
+<h1 id="tensor-neural-network-autograd-gpu-operations">Tensor + Neural
+Network + Autograd + GPU Operations</h1>
+<p>也就是说：</p>
+<blockquote>
+<p>它把你和底层 CUDA 之间隔开。</p>
+</blockquote>
+<hr />
+<h2 id="如果没有-pytorch">22. 如果没有 PyTorch</h2>
+<p>你要训练一个模型，可能需要自己处理：</p>
+<ul>
+<li>GPU 内存；</li>
+<li>CUDA Kernel；</li>
+<li>Gradient；</li>
+<li>Matrix Operations；</li>
+<li>Device Management。</li>
+</ul>
+<p>这会极其痛苦。</p>
+<hr />
+<h2 id="有了-pytorch">23. 有了 PyTorch</h2>
+<p>你可以写：</p>
+<div class="sourceCode" id="cb42"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> torch.tensor([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>])</span></code></pre></div>
+<hr />
+<h2 id="然后可以告诉它">24. 然后可以告诉它</h2>
+<blockquote>
+<p>“把这个 Tensor 搬到 GPU。”</p>
+</blockquote>
+<p>概念上：</p>
+<div class="sourceCode" id="cb43"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> x.to(<span class="st">&quot;cuda&quot;</span>)</span></code></pre></div>
+<hr />
+<h2 id="之后很多运算">25. 之后很多运算</h2>
+<p>PyTorch 会：</p>
+<blockquote>
+<p>自动选择相应 CUDA 实现。</p>
+</blockquote>
+<p>所以你写的是：</p>
+<div class="sourceCode" id="cb44"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> x <span class="op">@</span> W</span></code></pre></div>
+<p>而不是：</p>
+<blockquote>
+<p>亲自控制几千个 GPU 计算线程。</p>
+</blockquote>
+<hr />
+<h1 id="十一第三个核心心智模型">十一、第三个核心心智模型</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>y</mi><mi>T</mi><mi>o</mi><mi>r</mi><mi>c</mi><mi>h</mi><mo>=</mo><mi>我</mi><mi>们</mi><mi>操</mi><mi>作</mi><mi>T</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>o</mi><mi>r</mi><mi>和</mi><mi>神</mi><mi>经</mi><mi>网</mi><mi>络</mi><mi>的</mi><mi>高</mi><mi>级</mi><mi>控</mi><mi>制</mi><mi>台</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PyTorch
+=
+我们操作Tensor和神经网络的高级控制台
+}
+</annotation></semantics></math></p>
+<p>而底层：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>y</mi><mi>T</mi><mi>o</mi><mi>r</mi><mi>c</mi><mi>h</mi><mo>→</mo><mi>C</mi><mi>U</mi><mi>D</mi><mi>A</mi><mo>→</mo><mi>D</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>G</mi><mi>P</mi><mi>U</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PyTorch
+\rightarrow
+CUDA
+\rightarrow
+Driver
+\rightarrow
+GPU
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二为什么-python-里可能出现-cuda-unavailable">十二、为什么
+Python 里可能出现 <code>CUDA unavailable</code>？</h1>
+<p>现在终于进入今天最核心的诊断问题。</p>
+<p>假设：</p>
+<div class="sourceCode" id="cb45"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(torch.cuda.is_available())</span></code></pre></div>
+<p>输出：</p>
+<pre class="text"><code>False</code></pre>
+<p>它不等于：</p>
+<blockquote>
+<p>“你没有 GPU。”</p>
+</blockquote>
+<hr />
+<h2 id="它真正表示什么">26. 它真正表示什么？</h2>
+<p>粗略说：</p>
+<blockquote>
+<p>当前这份 PyTorch 环境无法正常使用 CUDA GPU。</p>
+</blockquote>
+<p>这中间有很多可能原因。</p>
+<hr />
+<h1 id="十三案例一电脑根本没有-nvidia-gpu">十三、案例一：电脑根本没有
+NVIDIA GPU</h1>
+<p>这是最简单的。</p>
+<pre class="text"><code>PyTorch
+↓
+寻找CUDA设备
+↓
+没有NVIDIA CUDA GPU
+↓
+False</code></pre>
+<hr />
+<h1 id="十四案例二有-nvidia-gpu但-driver-没有正常工作">十四、案例二：有
+NVIDIA GPU，但 Driver 没有正常工作</h1>
+<p>机器硬件：</p>
+<pre class="text"><code>有GPU</code></pre>
+<p>但是：</p>
+<div class="sourceCode" id="cb49"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvidia-smi</span></span></code></pre></div>
+<p>失败。</p>
+<p>那问题大概率还在：</p>
+<pre class="text"><code>GPU
+↕
+Driver</code></pre>
+<p>这一层。</p>
+<hr />
+<h1
+id="十五案例三gpu-和-driver-都正常但装了-cpu-版-pytorch">十五、案例三：GPU
+和 Driver 都正常，但装了 CPU 版 PyTorch</h1>
+<p>这是非常经典的坑。</p>
+<hr />
+<h2 id="想象一下">27. 想象一下</h2>
+<p>底层 GPU：</p>
+<blockquote>
+<p>完全正常。</p>
+</blockquote>
+<p>Driver：</p>
+<blockquote>
+<p>也正常。</p>
+</blockquote>
+<p>但是你安装的 PyTorch：</p>
+<blockquote>
+<p>本身没有 CUDA 支持。</p>
+</blockquote>
+<p>那么：</p>
+<div class="sourceCode" id="cb51"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>torch.cuda.is_available()</span></code></pre></div>
+<p>仍然可能是：</p>
+<pre class="text"><code>False</code></pre>
+<hr />
+<h2 id="这说明">28. 这说明</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>有</mi><mi>G</mi><mi>P</mi><mi>U</mi><mo>≠</mo><mi>当</mi><mi>前</mi><mi>P</mi><mi>y</mi><mi>T</mi><mi>o</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>支</mi><mi>持</mi><mi>G</mi><mi>P</mi><mi>U</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+有GPU
+\neq
+当前PyTorch支持GPU
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六把这个案例画出来">十六、把这个案例画出来</h1>
+<pre class="text"><code>NVIDIA GPU       ✅
+    ↑
+Driver           ✅
+    ↑
+PyTorch CPU版    ❌
+    ↑
+Python</code></pre>
+<p>系统仍然：</p>
+<blockquote>
+<p>无法通过这份 PyTorch 使用 CUDA。</p>
+</blockquote>
+<hr />
+<h1 id="十七案例四driver-太旧">十七、案例四：Driver 太旧</h1>
+<p>假设你的 PyTorch 是按一个较新的 CUDA Runtime 构建的。</p>
+<p>但机器 Driver：</p>
+<blockquote>
+<p>太旧，无法支持它。</p>
+</blockquote>
+<p>那么就可能出现：</p>
+<blockquote>
+<p>兼容性问题。</p>
+</blockquote>
+<hr />
+<h2 id="所以不是版本号越新越好">29. 所以不是“版本号越新越好”</h2>
+<p>真正的问题是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Compatibility
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十八第四个核心心智模型">十八、第四个核心心智模型</h1>
+<h3 id="gpu-软件环境不是装几个东西而是一条兼容性链">GPU
+软件环境不是“装几个东西”，而是一条兼容性链</h3>
+<pre class="text"><code>GPU Hardware
+       ↓
+Driver Compatibility
+       ↓
+PyTorch CUDA Build
+       ↓
+Libraries
+       ↓
+Model</code></pre>
+<p>你以后排错：</p>
+<blockquote>
+<p>不要乱卸载重装所有东西。</p>
+</blockquote>
+<p>先确定：</p>
+<blockquote>
+<p>哪一层不通。</p>
+</blockquote>
+<hr />
+<h1
+id="十九现在认识几个最重要的检查命令">十九、现在认识几个最重要的检查命令</h1>
+<p>这一阶段我们不执行，只理解它们分别在问谁。</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>检查</th>
+<th>主要在看什么</th>
+<th>如果失败，优先怀疑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>nvidia-smi</code></td>
+<td>GPU + Driver</td>
+<td>Driver / GPU</td>
+</tr>
+<tr class="even">
+<td><code>nvcc --version</code></td>
+<td>本地 CUDA Toolkit 编译器</td>
+<td>Toolkit 是否安装</td>
+</tr>
+<tr class="odd">
+<td><code>torch.__version__</code></td>
+<td>PyTorch 版本</td>
+<td>当前 Python 环境</td>
+</tr>
+<tr class="even">
+<td><code>torch.version.cuda</code></td>
+<td>这份 PyTorch 对应的 CUDA 构建信息</td>
+<td>PyTorch CUDA Build</td>
+</tr>
+<tr class="odd">
+<td><code>torch.cuda.is_available()</code></td>
+<td>PyTorch 能否真正使用 CUDA</td>
+<td>整条 PyTorch→CUDA→Driver→GPU 链</td>
+</tr>
+<tr class="even">
+<td><code>torch.cuda.get_device_name(0)</code></td>
+<td>PyTorch 实际看到哪块 GPU</td>
+<td>Device 识别</td>
+</tr>
+</tbody>
+</table>
+<p>这是本阶段唯一值得保留的一张表。</p>
+<hr />
+<h1 id="二十重点理解-torch.version.cuda">二十、重点理解
+<code>torch.version.cuda</code></h1>
+<p>假设：</p>
+<div class="sourceCode" id="cb55"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(torch.version.cuda)</span></code></pre></div>
+<p>输出类似：</p>
+<pre class="text"><code>12.x</code></pre>
+<p>它更接近表示：</p>
+<blockquote>
+<p>当前这份 PyTorch 是围绕某个 CUDA 版本构建/打包的。</p>
+</blockquote>
+<hr />
+<h2 id="它不一定等于">30. 它不一定等于</h2>
+<div class="sourceCode" id="cb57"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvcc</span> <span class="at">--version</span></span></code></pre></div>
+<p>显示的系统 Toolkit 版本。</p>
+<hr />
+<h2 id="更不一定等于">31. 更不一定等于</h2>
+<div class="sourceCode" id="cb58"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvidia-smi</span></span></code></pre></div>
+<p>顶部的 CUDA Version。</p>
+<p>这三个地方：</p>
+<blockquote>
+<p>可能出现三个不同数字。</p>
+</blockquote>
+<p>而且不一定有问题。</p>
+<hr />
+<h1
+id="二十一这是本阶段最容易产生的困惑">二十一、这是本阶段最容易产生的困惑</h1>
+<p>假设机器显示：</p>
+<pre class="text"><code>nvidia-smi
+CUDA Version: A</code></pre>
+<p>然后：</p>
+<pre class="text"><code>nvcc --version
+CUDA Toolkit: B</code></pre>
+<p>PyTorch：</p>
+<div class="sourceCode" id="cb61"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>torch.version.cuda</span></code></pre></div>
+<p>显示：</p>
+<pre class="text"><code>C</code></pre>
+<p>很多人看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>≠</mo><mi>B</mi><mo>≠</mo><mi>C</mi></mrow><annotation encoding="application/x-tex">
+A\neq B\neq C
+</annotation></semantics></math></p>
+<p>立即认为：</p>
+<blockquote>
+<p>“环境彻底坏了。”</p>
+</blockquote>
+<p>不一定。</p>
+<hr />
+<h1 id="二十二为什么会有三个版本">二十二、为什么会有三个版本？</h1>
+<p>因为它们在回答三个不同问题。</p>
+<pre class="text"><code>nvidia-smi
+↓
+Driver大概支持什么CUDA能力
+
+
+nvcc
+↓
+系统安装的CUDA开发Toolkit是什么版本
+
+
+torch.version.cuda
+↓
+当前PyTorch构建时使用/绑定的CUDA运行版本是什么</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>名</mi><mi>字</mi><mi>里</mi><mi>都</mi><mi>有</mi><mi>C</mi><mi>U</mi><mi>D</mi><mi>A</mi><mo>≠</mo><mi>它</mi><mi>们</mi><mi>是</mi><mi>同</mi><mi>一</mi><mi>个</mi><mi>东</mi><mi>西</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+名字里都有CUDA
+\neq
+它们是同一个东西
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十三一个医院类比">二十三、一个医院类比</h1>
+<p>为了彻底消化这件事，我们不用电脑，换成医院。</p>
+<p>GPU：</p>
+<blockquote>
+<p>CT 机器。</p>
+</blockquote>
+<p>Driver：</p>
+<blockquote>
+<p>CT 机器官方控制软件。</p>
+</blockquote>
+<p>CUDA Runtime：</p>
+<blockquote>
+<p>让医学程序调用 CT 计算能力的运行接口。</p>
+</blockquote>
+<p>CUDA Toolkit：</p>
+<blockquote>
+<p>给设备研发工程师用的完整开发工具箱。</p>
+</blockquote>
+<p>PyTorch：</p>
+<blockquote>
+<p>医生使用的高级诊断软件。</p>
+</blockquote>
+<p>Transformers：</p>
+<blockquote>
+<p>某一种专门的智能诊断应用。</p>
+</blockquote>
+<p>模型：</p>
+<blockquote>
+<p>已经训练好的“专科知识”。</p>
+</blockquote>
+<hr />
+<h2 id="你真正使用模型时">32. 你真正使用模型时</h2>
+<p>你通常不是直接：</p>
+<blockquote>
+<p>拆开 CT 机器控制电路。</p>
+</blockquote>
+<p>而是：</p>
+<pre class="text"><code>医生
+↓
+诊断软件
+↓
+运行接口
+↓
+设备Driver
+↓
+CT设备</code></pre>
+<p>这就是我们日常使用 PyTorch GPU 的关系。</p>
+<hr />
+<h1 id="二十四transformers-又在哪一层">二十四、Transformers
+又在哪一层？</h1>
+<p>Hugging Face Transformers 并不替代 PyTorch。</p>
+<p>它是在更上层。</p>
+<hr />
+<h2 id="例如你以后会写">33. 例如你以后会写</h2>
+<div class="sourceCode" id="cb65"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoModelForCausalLM</span></code></pre></div>
+<hr />
+<h2 id="transformers-帮你处理">34. Transformers 帮你处理</h2>
+<p>例如：</p>
+<blockquote>
+<p>模型结构。</p>
+</blockquote>
+<blockquote>
+<p>Tokenizer。</p>
+</blockquote>
+<blockquote>
+<p>模型权重加载。</p>
+</blockquote>
+<blockquote>
+<p><code>generate()</code>。</p>
+</blockquote>
+<hr />
+<h2 id="但真正-tensor-计算">35. 但真正 Tensor 计算</h2>
+<p>很多时候仍然通过：</p>
+<h1 id="pytorch">PyTorch</h1>
+<p>完成。</p>
+<hr />
+<h1 id="二十五把整个-procurementlm-软件栈画完整">二十五、把整个
+ProcurementLM 软件栈画完整</h1>
+<pre class="text"><code>你的采购AI应用
+        │
+        ▼
+┌────────────────────┐
+│ Transformers / vLLM │
+│ 模型加载、推理       │
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│      PyTorch        │
+│ Tensor / NN / GPU   │
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│ CUDA Runtime / Libs│
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│ NVIDIA Driver      │
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│ NVIDIA GPU + VRAM  │
+└────────────────────┘</code></pre>
+<p>这张图应该成为你这一阶段最重要的长期记忆。</p>
+<hr />
+<h1
+id="二十六为什么虚拟环境也会制造问题">二十六、为什么虚拟环境也会制造问题？</h1>
+<p>假设你电脑上有：</p>
+<pre class="text"><code>Python环境 A
+Python环境 B
+Python环境 C</code></pre>
+<hr />
+<h2 id="环境-a-可能装的是">36. 环境 A 可能装的是</h2>
+<blockquote>
+<p>GPU 版 PyTorch。</p>
+</blockquote>
+<hr />
+<h2 id="环境-b">37. 环境 B</h2>
+<p>可能装的是：</p>
+<blockquote>
+<p>CPU 版 PyTorch。</p>
+</blockquote>
+<hr />
+<h2 id="你在终端测试环境-a">38. 你在终端测试环境 A</h2>
+<div class="sourceCode" id="cb68"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a>torch.cuda.is_available()</span></code></pre></div>
+<p>得到：</p>
+<pre class="text"><code>True</code></pre>
+<hr />
+<h2 id="但-jupyter-notebook-实际使用环境-b">39. 但 Jupyter Notebook
+实际使用环境 B</h2>
+<p>结果：</p>
+<pre class="text"><code>False</code></pre>
+<hr />
+<h2 id="你可能开始怀疑">40. 你可能开始怀疑</h2>
+<blockquote>
+<p>Driver、CUDA、显卡。</p>
+</blockquote>
+<p>其实真正问题只是：</p>
+<blockquote>
+<p><strong>你根本没在同一个 Python 环境里。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十七这个坑为什么特别常见">二十七、这个坑为什么特别常见？</h1>
+<p>因为系统里可能同时有：</p>
+<pre class="text"><code>Python
+Conda
+venv
+Jupyter Kernel
+IDE Interpreter</code></pre>
+<p>每一个都可能：</p>
+<blockquote>
+<p>指向不同环境。</p>
+</blockquote>
+<hr />
+<h2 id="所以以后诊断时还要问一句">41. 所以以后诊断时还要问一句</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>我</mi><mi>现</mi><mi>在</mi><mi>运</mi><mi>行</mi><mi>的</mi><mi>到</mi><mi>底</mi><mi>是</mi><mi>哪</mi><mi>一</mi><mi>个</mi><mi>P</mi><mi>y</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>n</mi><mi>？</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+我现在运行的到底是哪一个Python？
+}
+</annotation></semantics></math></p>
+<p>这句话极其重要。</p>
+<hr />
+<h1
+id="二十八一个真实风格的故障现场">二十八、一个真实风格的故障现场</h1>
+<p>假设工程师告诉你：</p>
+<blockquote>
+<p>“服务器 GPU 坏了，PyTorch 检测不到。”</p>
+</blockquote>
+<p>你不要马上信。</p>
+<p>应该按层查。</p>
+<hr />
+<h2 id="第一步">42. 第一步</h2>
+<p>运行：</p>
+<div class="sourceCode" id="cb72"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvidia-smi</span></span></code></pre></div>
+<p>结果：</p>
+<pre class="text"><code>GPU 正常显示</code></pre>
+<p>说明：</p>
+<blockquote>
+<p>GPU + Driver 基本正常。</p>
+</blockquote>
+<hr />
+<h2 id="第二步">43. 第二步</h2>
+<p>Python：</p>
+<div class="sourceCode" id="cb74"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(torch.__version__)</span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(torch.version.cuda)</span></code></pre></div>
+<p>发现：</p>
+<pre class="text"><code>torch.version.cuda = None</code></pre>
+<p>这就非常可疑。</p>
+<hr />
+<h2 id="很可能是什么">44. 很可能是什么？</h2>
+<p>当前安装的是：</p>
+<blockquote>
+<p>CPU Build 的 PyTorch。</p>
+</blockquote>
+<hr />
+<h2 id="所以根本无需">45. 所以根本无需</h2>
+<blockquote>
+<p>重装 GPU Driver。</p>
+</blockquote>
+<p>问题发生在：</p>
+<pre class="text"><code>PyTorch层</code></pre>
+<hr />
+<h1 id="二十九另一个故障案例">二十九、另一个故障案例</h1>
+<p><code>nvidia-smi</code>：</p>
+<pre class="text"><code>正常</code></pre>
+<p>PyTorch：</p>
+<pre class="text"><code>有CUDA构建</code></pre>
+<p>但：</p>
+<div class="sourceCode" id="cb79"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a>torch.cuda.is_available()</span></code></pre></div>
+<p>仍异常。</p>
+<p>这时候才进一步考虑：</p>
+<blockquote>
+<p>Driver compatibility、运行环境、设备权限、容器配置等。</p>
+</blockquote>
+<hr />
+<h1
+id="三十这就是第五个核心心智模型">三十、这就是第五个核心心智模型</h1>
+<h3 id="环境排错-从下往上逐层验证而不是乱重装">环境排错 =
+从下往上逐层验证，而不是乱重装</h3>
+<p>正确思路：</p>
+<pre class="text"><code>1. GPU存在吗？
+      ↓
+2. Driver正常吗？
+      ↓
+3. 当前Python是谁？
+      ↓
+4. 当前PyTorch是什么Build？
+      ↓
+5. PyTorch能看到GPU吗？
+      ↓
+6. Tensor真的能放GPU吗？
+      ↓
+7. 模型能加载吗？</code></pre>
+<p>这条顺序以后会给你省非常多时间。</p>
+<hr />
+<h1
+id="三十一torch.cuda.is_available-到底有多重要">三十一、<code>torch.cuda.is_available()</code>
+到底有多重要？</h1>
+<p>它是非常方便的：</p>
+<blockquote>
+<p><strong>快速总检查。</strong></p>
+</blockquote>
+<p>但是它不是：</p>
+<blockquote>
+<p>完整诊断报告。</p>
+</blockquote>
+<hr />
+<h2 id="false">46. <code>False</code></h2>
+<p>只能说明：</p>
+<blockquote>
+<p>当前 PyTorch CUDA 使用链不通。</p>
+</blockquote>
+<p>不能单凭这一行判断：</p>
+<blockquote>
+<p>是 GPU 坏了。</p>
+</blockquote>
+<hr />
+<h2 id="true">47. <code>True</code></h2>
+<p>又说明什么？</p>
+<p>至少说明：</p>
+<blockquote>
+<p>当前 PyTorch 环境大体能够访问 CUDA GPU。</p>
+</blockquote>
+<p>这是非常好的第一道门。</p>
+<hr />
+<h1 id="三十二然后为什么还要-get_device_name">三十二、然后为什么还要
+<code>get_device_name()</code>？</h1>
+<p>假设服务器有：</p>
+<blockquote>
+<p>4 张 GPU。</p>
+</blockquote>
+<p>PyTorch 需要知道：</p>
+<blockquote>
+<p>它到底能看到哪些。</p>
+</blockquote>
+<hr />
+<h2 id="例如">48. 例如：</h2>
+<div class="sourceCode" id="cb81"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a>torch.cuda.device_count()</span></code></pre></div>
+<p>可以检查：</p>
+<blockquote>
+<p>PyTorch 看到多少 CUDA Device。</p>
+</blockquote>
+<hr />
+<h2 id="然后">49. 然后：</h2>
+<div class="sourceCode" id="cb82"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a>torch.cuda.get_device_name(<span class="dv">0</span>)</span></code></pre></div>
+<p>问的是：</p>
+<blockquote>
+<p>第 0 号 GPU 到底叫什么。</p>
+</blockquote>
+<hr />
+<h1 id="三十三gpu-编号-cuda0-是什么">三十三、GPU 编号
+<code>cuda:0</code> 是什么？</h1>
+<p>如果机器有四张卡：</p>
+<pre class="text"><code>GPU 0
+GPU 1
+GPU 2
+GPU 3</code></pre>
+<p>PyTorch 中可能表示：</p>
+<pre class="text"><code>cuda:0
+cuda:1
+cuda:2
+cuda:3</code></pre>
+<hr />
+<h2 id="所以">50. 所以：</h2>
+<div class="sourceCode" id="cb85"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a>model.to(<span class="st">&quot;cuda:0&quot;</span>)</span></code></pre></div>
+<p>粗略意思是：</p>
+<blockquote>
+<p>把模型搬到第 0 个可见 CUDA Device。</p>
+</blockquote>
+<hr />
+<h1 id="三十四但注意一个工程坑">三十四、但注意一个工程坑</h1>
+<p>系统物理上的：</p>
+<blockquote>
+<p>“第 0 张卡”</p>
+</blockquote>
+<p>和程序里：</p>
+<blockquote>
+<p><code>cuda:0</code></p>
+</blockquote>
+<p>不一定永远指同一个物理设备。</p>
+<hr />
+<h2 id="为什么-1">51. 为什么？</h2>
+<p>因为可以使用：</p>
+<pre class="text"><code>CUDA_VISIBLE_DEVICES</code></pre>
+<p>之类的环境机制重新定义：</p>
+<blockquote>
+<p>哪些 GPU 对程序可见。</p>
+</blockquote>
+<hr />
+<h2 id="例如物理上有">52. 例如物理上有</h2>
+<pre class="text"><code>GPU0
+GPU1
+GPU2
+GPU3</code></pre>
+<p>程序只允许看到：</p>
+<pre class="text"><code>GPU2</code></pre>
+<p>那么程序里的：</p>
+<pre class="text"><code>cuda:0</code></pre>
+<p>可能实际就是：</p>
+<blockquote>
+<p>物理 GPU2。</p>
+</blockquote>
+<hr />
+<h2 id="现在不需要学习配置语法">53. 现在不需要学习配置语法</h2>
+<p>只建立认知：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>y</mi><mi>T</mi><mi>o</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>D</mi><mi>e</mi><mi>v</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>I</mi><mi>D</mi><mo>≠</mo><mi>永</mi><mi>远</mi><mi>等</mi><mi>于</mi><mi>机</mi><mi>箱</mi><mi>物</mi><mi>理</mi><mi>编</mi><mi>号</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PyTorchDeviceID
+\neq
+永远等于机箱物理编号
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三十五为什么服务器经常这样做">三十五、为什么服务器经常这样做？</h1>
+<p>因为多人共享机器。</p>
+<p>例如：</p>
+<pre class="text"><code>研究员A → GPU0, GPU1
+研究员B → GPU2
+研究员C → GPU3</code></pre>
+<p>每个人程序里：</p>
+<blockquote>
+<p>都可能看到自己的 <code>cuda:0</code>。</p>
+</blockquote>
+<hr />
+<h1
+id="三十六现在说一个很实用的概念device">三十六、现在说一个很实用的概念：Device</h1>
+<p>PyTorch Tensor 不仅有：</p>
+<blockquote>
+<p>Shape、Dtype。</p>
+</blockquote>
+<p>还拥有：</p>
+<h1 id="device">Device</h1>
+<hr />
+<h2 id="例如-1">54. 例如</h2>
+<pre class="text"><code>Tensor A
+device = cpu</code></pre>
+<hr />
+<h2 id="tensor-b">55. Tensor B</h2>
+<pre class="text"><code>device = cuda:0</code></pre>
+<hr />
+<h2 id="这两个-tensor">56. 这两个 Tensor</h2>
+<p>如果直接一起计算：</p>
+<blockquote>
+<p>往往会报 Device Mismatch。</p>
+</blockquote>
+<hr />
+<h1 id="三十七为什么">三十七、为什么？</h1>
+<p>因为一个数据：</p>
+<blockquote>
+<p>在 CPU RAM。</p>
+</blockquote>
+<p>另一个：</p>
+<blockquote>
+<p>在 GPU VRAM。</p>
+</blockquote>
+<p>它们物理上不在同一个计算设备。</p>
+<hr />
+<h2 id="可以想象">57. 可以想象</h2>
+<p>你在东京办公室有一份文件。</p>
+<p>同事在大阪工厂有另一份。</p>
+<p>你不能直接说：</p>
+<blockquote>
+<p>“把这两张纸立即做矩阵乘法。”</p>
+</blockquote>
+<p>先得：</p>
+<blockquote>
+<p>搬到同一工作地点。</p>
+</blockquote>
+<hr />
+<h1 id="三十八所以-.tocuda-真正发生了什么">三十八、所以
+<code>.to("cuda")</code> 真正发生了什么？</h1>
+<p>概念上：</p>
+<div class="sourceCode" id="cb93"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb93-1"><a href="#cb93-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> x.to(<span class="st">&quot;cuda&quot;</span>)</span></code></pre></div>
+<p>不是一句魔法。</p>
+<p>它实际上意味着：</p>
+<blockquote>
+<p><strong>把 Tensor 数据从 CPU Memory 搬到 GPU Memory。</strong></p>
+</blockquote>
+<hr />
+<h2 id="这叫">58. 这叫</h2>
+<h1 id="host-to-device-transfer">Host-to-Device Transfer</h1>
+<p>CPU 侧：</p>
+<blockquote>
+<p>Host。</p>
+</blockquote>
+<p>GPU：</p>
+<blockquote>
+<p>Device。</p>
+</blockquote>
+<hr />
+<h1 id="三十九把模型-.tocuda-又意味着什么">三十九、把模型
+<code>.to("cuda")</code> 又意味着什么？</h1>
+<p>模型内部有很多参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mi>Q</mi></msub><mo>,</mo><msub><mi>W</mi><mi>K</mi></msub><mo>,</mo><msub><mi>W</mi><mi>V</mi></msub><mo>,</mo><mi>…</mi></mrow><annotation encoding="application/x-tex">
+W_Q,W_K,W_V,\ldots
+</annotation></semantics></math></p>
+<hr />
+<h2 id="model.tocuda">59. <code>model.to("cuda")</code></h2>
+<p>本质上是在把这些 Parameter：</p>
+<blockquote>
+<p>搬进 GPU 显存。</p>
+</blockquote>
+<hr />
+<h2 id="所以又回到第三课第-1-阶段">60. 所以又回到第三课第 1 阶段</h2>
+<p>如果模型太大：</p>
+<blockquote>
+<p>VRAM 装不下。</p>
+</blockquote>
+<p>于是：</p>
+<h1 id="oom-1">OOM</h1>
+<hr />
+<h1 id="四十为什么-cpu-gpu-数据传输也有成本">四十、为什么 CPU → GPU
+数据传输也有成本？</h1>
+<p>GPU 很快。</p>
+<p>但是如果每一次计算都做：</p>
+<pre class="text"><code>RAM
+↓
+VRAM
+↓
+RAM
+↓
+VRAM</code></pre>
+<p>大量来回搬运，</p>
+<p>性能可能：</p>
+<blockquote>
+<p>被数据传输拖慢。</p>
+</blockquote>
+<hr />
+<h2 id="这就像一个超级工厂">61. 这就像一个超级工厂</h2>
+<p>每秒能加工：</p>
+<blockquote>
+<p>一万件产品。</p>
+</blockquote>
+<p>但运输卡车：</p>
+<blockquote>
+<p>每分钟只送 10 件。</p>
+</blockquote>
+<p>那么：</p>
+<blockquote>
+<p>工厂大部分时间都在等货。</p>
+</blockquote>
+<hr />
+<h1 id="四十一所以-gpu-利用率低不一定因为-gpu-太差">四十一、所以 GPU
+利用率低不一定因为 GPU 太差</h1>
+<p>可能是：</p>
+<blockquote>
+<p>数据没有及时送进去。</p>
+</blockquote>
+<p>例如 ProcurementAI：</p>
+<pre class="text"><code>PDF Parsing 太慢
+↓
+Tokenizer 太慢
+↓
+Batch 准备太慢
+↓
+GPU 等待</code></pre>
+<p>最终你看到：</p>
+<pre class="text"><code>GPU utilization: 20%</code></pre>
+<hr />
+<h2 id="错误做法">62. 错误做法</h2>
+<blockquote>
+<p>“再买更贵 GPU。”</p>
+</blockquote>
+<hr />
+<h2 id="正确问题">63. 正确问题</h2>
+<blockquote>
+<p>“GPU 为什么在等待？”</p>
+</blockquote>
+<p>这就是系统思维。</p>
+<hr />
+<h1 id="四十二cuda-和-apple-gpu-是什么关系">四十二、CUDA 和 Apple GPU
+是什么关系？</h1>
+<p>这也很值得提前知道。</p>
+<p>CUDA：</p>
+<blockquote>
+<p>是 NVIDIA 生态。</p>
+</blockquote>
+<hr />
+<h2 id="如果电脑是-apple-silicon">64. 如果电脑是 Apple Silicon</h2>
+<p>GPU 不是 NVIDIA。</p>
+<p>所以通常不会走：</p>
+<pre class="text"><code>CUDA</code></pre>
+<p>这条路线。</p>
+<hr />
+<h2 id="pytorch-在-apple-平台可以使用其它-backend">65. PyTorch 在 Apple
+平台可以使用其它 Backend</h2>
+<p>例如：</p>
+<h1 id="mps">MPS</h1>
+<p>所以可能写：</p>
+<pre class="text"><code>device = &quot;mps&quot;</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>cuda</code></pre>
+<hr />
+<h2 id="这再次说明">66. 这再次说明</h2>
+<p>PyTorch：</p>
+<blockquote>
+<p>是上层 Framework。</p>
+</blockquote>
+<p>它下面可以有不同硬件 Backend。</p>
+<p>概念上：</p>
+<pre class="text"><code>                ┌─ CUDA → NVIDIA GPU
+PyTorch ────────┼─ MPS → Apple GPU
+                └─ CPU → CPU</code></pre>
+<hr />
+<h1 id="四十三cuda-不是所有-gpu-的统称">四十三、CUDA 不是“所有 GPU
+的统称”</h1>
+<p>这一点请彻底固定。</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>U</mi><mi>D</mi><mi>A</mi><mo>=</mo><mi>N</mi><mi>V</mi><mi>I</mi><mi>D</mi><mi>I</mi><mi>A</mi><mi>G</mi><mi>P</mi><mi>U</mi><mi>计</mi><mi>算</mi><mi>生</mi><mi>态</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CUDA
+=
+NVIDIA GPU计算生态
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>P</mi><mi>U</mi><mi>的</mi><mi>另</mi><mi>一</mi><mi>个</mi><mi>名</mi><mi>字</mi></mrow><annotation encoding="application/x-tex">
+GPU的另一个名字
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四十四为什么我们课程仍以-cuda-为主">四十四、为什么我们课程仍以
+CUDA 为主？</h1>
+<p>因为目前大量：</p>
+<ul>
+<li>大模型训练；</li>
+<li>开源 LLM；</li>
+<li>PyTorch 高性能生态；</li>
+<li>分布式训练；</li>
+<li>推理框架；</li>
+</ul>
+<p>围绕 NVIDIA CUDA 非常成熟。</p>
+<p>所以学习 ProcurementLM：</p>
+<blockquote>
+<p>掌握 CUDA 路线非常实用。</p>
+</blockquote>
+<hr />
+<h1 id="四十五回到-procurementlm一次模型加载经过哪些层">四十五、回到
+ProcurementLM：一次模型加载经过哪些层？</h1>
+<p>假设以后我们执行：</p>
+<div class="sourceCode" id="cb101"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> AutoModelForCausalLM.from_pretrained(...)</span></code></pre></div>
+<p>这背后不是：</p>
+<blockquote>
+<p>“Transformers 自己把答案算出来。”</p>
+</blockquote>
+<p>而更接近：</p>
+<pre class="text"><code>模型文件
+   ↓
+Transformers解析模型结构
+   ↓
+PyTorch创建Parameter Tensor
+   ↓
+Parameter进入RAM
+   ↓
+搬到VRAM
+   ↓
+PyTorch调用CUDA计算
+   ↓
+Driver提交GPU任务
+   ↓
+GPU执行Transformer</code></pre>
+<p>这张图非常关键。</p>
+<hr />
+<h1
+id="四十六如果模型加载成功但特别慢怎么想">四十六、如果模型加载成功但特别慢，怎么想？</h1>
+<p>不要第一反应只看：</p>
+<blockquote>
+<p>模型本身。</p>
+</blockquote>
+<p>先问：</p>
+<pre class="text"><code>模型是不是其实跑在CPU？</code></pre>
+<hr />
+<h2 id="因为模型即使成功加载">67. 因为模型即使成功加载</h2>
+<p>也可能：</p>
+<blockquote>
+<p>根本没有使用 GPU。</p>
+</blockquote>
+<hr />
+<h2 id="于是你看到">68. 于是你看到</h2>
+<pre class="text"><code>CPU 100%
+GPU 0%</code></pre>
+<p>回答每个 Token：</p>
+<blockquote>
+<p>慢得离谱。</p>
+</blockquote>
+<hr />
+<h2 id="这时问题可能不是">69. 这时问题可能不是</h2>
+<blockquote>
+<p>模型太大。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>Device Placement 错了。</p>
+</blockquote>
+<hr />
+<h1
+id="四十七一个非常实用的诊断场景">四十七、一个非常实用的诊断场景</h1>
+<p>你运行 ProcurementLM。</p>
+<p>回答一句话用了：</p>
+<blockquote>
+<p>3 分钟。</p>
+</blockquote>
+<p>老板说：</p>
+<blockquote>
+<p>“模型不行。”</p>
+</blockquote>
+<p>你应该先检查：</p>
+<pre class="text"><code>GPU有没有被识别？
+↓
+模型是不是在cuda？
+↓
+GPU利用率是多少？
+↓
+显存用了多少？</code></pre>
+<p>再谈：</p>
+<blockquote>
+<p>模型能力。</p>
+</blockquote>
+<hr />
+<h1
+id="四十八性能问题和模型质量问题是两回事">四十八、性能问题和模型质量问题是两回事</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>l</mi><mi>o</mi><mi>w</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>≠</mo><mi>B</mi><mi>a</mi><mi>d</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SlowModel
+\neq
+BadModel
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="慢">70. 慢</h2>
+<p>可能是：</p>
+<ul>
+<li>CPU 推理；</li>
+<li>Device 搬运；</li>
+<li>GPU 吃不饱；</li>
+<li>Quantization 配置；</li>
+<li>推理框架问题。</li>
+</ul>
+<hr />
+<h2 id="回答错误">71. 回答错误</h2>
+<p>才更多属于：</p>
+<blockquote>
+<p>模型质量 / 数据 / Prompt / RAG / Fine-tuning。</p>
+</blockquote>
+<p>这是两个不同诊断方向。</p>
+<hr />
+<h1
+id="四十九一个很重要的环境原则先最小化验证">四十九、一个很重要的环境原则：先最小化验证</h1>
+<p>不要一上来就：</p>
+<blockquote>
+<p>下载 70B 模型。</p>
+</blockquote>
+<hr />
+<h2 id="环境刚配好时">72. 环境刚配好时</h2>
+<p>先做最小测试：</p>
+<pre class="text"><code>PyTorch 能不能 import？
+↓
+CUDA 能不能识别？
+↓
+能不能创建GPU Tensor？
+↓
+小矩阵能不能计算？
+↓
+再加载小模型
+↓
+最后加载目标模型</code></pre>
+<hr />
+<h1
+id="五十为什么这叫最小可验证路径">五十、为什么这叫最小可验证路径？</h1>
+<p>因为如果直接：</p>
+<pre class="text"><code>70B模型
++
+Transformers
++
+Quantization
++
+FlashAttention
++
+多GPU
++
+vLLM</code></pre>
+<p>然后报错，</p>
+<p>你不知道：</p>
+<blockquote>
+<p>到底哪一层坏了。</p>
+</blockquote>
+<hr />
+<h2 id="而最小化测试">73. 而最小化测试</h2>
+<p>每次只增加一个变量。</p>
+<p>这其实就是第一课学过的：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ControlledExperiment
+}
+</annotation></semantics></math></p>
+<p>再次回来了。</p>
+<hr />
+<h1
+id="五十一环境搭建本身也是一个实验">五十一、环境搭建本身也是一个实验</h1>
+<p>假设：</p>
+<pre class="text"><code>Step 1 Driver ✅
+Step 2 PyTorch CUDA ✅
+Step 3 Tensor GPU ✅
+Step 4 Small Model ✅
+Step 5 Large Model ❌</code></pre>
+<p>那么你已经知道：</p>
+<blockquote>
+<p>问题大概率发生在模型规模/显存/模型依赖这一层。</p>
+</blockquote>
+<hr />
+<h2 id="而不是-driver">74. 而不是 Driver</h2>
+<p>因为 Driver：</p>
+<blockquote>
+<p>前面已经验证成功。</p>
+</blockquote>
+<hr />
+<h1
+id="五十二专业工程师和乱试教程的区别">五十二、专业工程师和“乱试教程”的区别</h1>
+<p>初学者常见：</p>
+<pre class="text"><code>报错
+↓
+Google一个帖子
+↓
+卸载CUDA
+↓
+换PyTorch
+↓
+换Python
+↓
+重装Driver
+↓
+又出现新错误</code></pre>
+<hr />
+<h2 id="专业思路">75. 专业思路</h2>
+<pre class="text"><code>建立系统层级
+↓
+定位失败层
+↓
+形成假设
+↓
+做最小实验
+↓
+验证
+↓
+只改一件事</code></pre>
+<hr />
+<h2 id="这就是第一课的方法论">76. 这就是第一课的方法论</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>y</mi><mi>p</mi><mi>o</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>s</mi><mo>→</mo><mi>E</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>M</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>D</mi><mi>i</mi><mi>a</mi><mi>g</mi><mi>n</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Hypothesis
+\rightarrow
+Experiment
+\rightarrow
+Measurement
+\rightarrow
+Diagnosis
+}
+</annotation></semantics></math></p>
+<p>现在真的开始落地了。</p>
+<hr />
+<h1 id="五十三第三课第-2-阶段的五个核心心智模型">五十三、第三课第 2
+阶段的五个核心心智模型</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>心智模型</th>
+<th>你应该真正理解的东西</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① Driver = 硬件翻译官</strong></td>
+<td>GPU 硬件必须通过 Driver 与操作系统和上层软件协作</td>
+</tr>
+<tr class="even">
+<td><strong>② CUDA = NVIDIA GPU 计算生态</strong></td>
+<td>CUDA 不等于 GPU，也不等于单独一个 Toolkit</td>
+</tr>
+<tr class="odd">
+<td><strong>③ PyTorch = 高级 Tensor/神经网络控制层</strong></td>
+<td>我们通常通过 PyTorch 使用 CUDA，而不是直接操作 GPU</td>
+</tr>
+<tr class="even">
+<td><strong>④ GPU 可用性是一条兼容链</strong></td>
+<td>GPU、Driver、PyTorch CUDA Build、运行环境任何一层都可能出错</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ Debug 要逐层验证</strong></td>
+<td><code>nvidia-smi → Python → PyTorch → CUDA → Tensor → Model</code>，不要乱重装</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1
+id="五十四把整个阶段压成一幅脑内地图">五十四、把整个阶段压成一幅“脑内地图”</h1>
+<pre class="text"><code>                         你写的ProcurementAI
+                                  │
+                                  ▼
+                        Transformers / vLLM
+                                  │
+                                  ▼
+                              PyTorch
+                       Tensor / NN / Autograd
+                                  │
+                                  ▼
+                         CUDA Runtime/Libraries
+                                  │
+                                  ▼
+                           NVIDIA Driver
+                                  │
+                                  ▼
+                       NVIDIA GPU + VRAM</code></pre>
+<p>如果上面任意一层断掉：</p>
+<pre class="text"><code>模型
+↓
+可能无法使用GPU</code></pre>
+<hr />
+<h1 id="五十五再给你一个故障定位图">五十五、再给你一个“故障定位图”</h1>
+<pre class="text"><code>nvidia-smi 失败
+      │
+      └── 优先看 GPU / Driver
+
+
+nvidia-smi 正常
+torch.cuda.is_available() = False
+      │
+      └── 看 Python环境 / PyTorch Build / Driver兼容
+
+
+torch.cuda.is_available() = True
+但模型很慢
+      │
+      └── 看 Device Placement / GPU利用率 / 数据流水线
+
+
+模型加载时报 CUDA OOM
+      │
+      └── 看 VRAM / 模型大小 / Precision / Context / Batch</code></pre>
+<p>以后真遇到问题，这张图比“重装 CUDA”有用得多。</p>
+<hr />
+<h1 id="五十六本阶段四个思维实验">五十六、本阶段四个思维实验</h1>
+<h3 id="思维实验-a">思维实验 A</h3>
+<p>你的机器：</p>
+<pre class="text"><code>nvidia-smi 正常</code></pre>
+<p>但：</p>
+<div class="sourceCode" id="cb115"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a>torch.cuda.is_available()</span></code></pre></div>
+<p>返回：</p>
+<pre class="text"><code>False</code></pre>
+<p>能不能马上判断 GPU 坏了？</p>
+<p><strong>不能。</strong></p>
+<p>底层 GPU/Driver 反而已经有证据说明大体正常。</p>
+<p>更应该查：</p>
+<blockquote>
+<p>当前 Python 和 PyTorch。</p>
+</blockquote>
+<hr />
+<h3 id="思维实验-b">思维实验 B</h3>
+<p><code>nvidia-smi</code> 显示 CUDA 12.x，</p>
+<p>但：</p>
+<div class="sourceCode" id="cb117"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nvcc</span></span></code></pre></div>
+<p>不存在。</p>
+<p>CUDA 环境一定坏了吗？</p>
+<p><strong>不一定。</strong></p>
+<p>这可能只是：</p>
+<blockquote>
+<p>Driver 支持 CUDA，但系统没安装完整 CUDA Toolkit。</p>
+</blockquote>
+<p>PyTorch 仍可能正常 GPU 推理。</p>
+<hr />
+<h3 id="思维实验-c">思维实验 C</h3>
+<p>PyTorch：</p>
+<div class="sourceCode" id="cb118"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb118-1"><a href="#cb118-1" aria-hidden="true" tabindex="-1"></a>torch.cuda.is_available()</span></code></pre></div>
+<p>是：</p>
+<pre class="text"><code>True</code></pre>
+<p>模型却 100% 跑 CPU。</p>
+<p>有没有可能？</p>
+<p><strong>有。</strong></p>
+<p>因为：</p>
+<blockquote>
+<p>PyTorch 能看到 GPU，不代表 Model 已经被放到 GPU。</p>
+</blockquote>
+<hr />
+<h3 id="思维实验-d">思维实验 D</h3>
+<p>模型在 GPU，GPU 利用率只有 15%。</p>
+<p>是不是应该买更贵的卡？</p>
+<p><strong>先别买。</strong></p>
+<p>很可能 GPU：</p>
+<blockquote>
+<p>正在等 CPU、Tokenizer、磁盘或数据传输。</p>
+</blockquote>
+<hr />
+<h1 id="五十七本阶段掌握标准">五十七、本阶段掌握标准</h1>
+<p>学完后，你应该可以用自己的话回答：</p>
+<blockquote>
+<p>GPU 与 CUDA 为什么不是同一个东西？</p>
+</blockquote>
+<blockquote>
+<p>Driver 在整个系统里到底起什么作用？</p>
+</blockquote>
+<blockquote>
+<p><code>nvidia-smi</code> 主要检查哪一层？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>nvidia-smi</code> 里的 CUDA Version
+不等于本机一定安装了同版本 CUDA Toolkit？</p>
+</blockquote>
+<blockquote>
+<p><code>nvcc</code> 是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么很多普通 PyTorch 用户没有 <code>nvcc</code> 也可能正常使用
+GPU？</p>
+</blockquote>
+<blockquote>
+<p>PyTorch 与 CUDA 是什么关系？</p>
+</blockquote>
+<blockquote>
+<p>Transformers 与 PyTorch 又是什么关系？</p>
+</blockquote>
+<blockquote>
+<p>为什么电脑有 NVIDIA GPU，<code>torch.cuda.is_available()</code>
+仍可能是 <code>False</code>？</p>
+</blockquote>
+<blockquote>
+<p>CPU 版 PyTorch 是什么意思？</p>
+</blockquote>
+<blockquote>
+<p>为什么三个“CUDA 版本号”可能不一样却仍然正常？</p>
+</blockquote>
+<blockquote>
+<p><code>.to("cuda")</code> 从物理上大概发生了什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Tensor 和 Model 必须注意 Device？</p>
+</blockquote>
+<blockquote>
+<p>为什么 GPU utilization 低不一定说明 GPU 太弱？</p>
+</blockquote>
+<blockquote>
+<p>为什么环境排错应该自下而上，而不是全部重装？</p>
+</blockquote>
+<p>如果这些你都能解释：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>三</mi><mi>课</mi><mi>第</mi><mn>2</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第三课第2阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="五十八这一阶段真正只记一句话">五十八、这一阶段真正只记一句话</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>y</mi><mi>T</mi><mi>o</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>并</mi><mi>不</mi><mi>是</mi><mi>直</mi><mi>接</mi><mo>“</mo><mi>看</mi><mi>见</mi><mo>”</mo><mi>G</mi><mi>P</mi><mi>U</mi><mi>，</mi><mi>它</mi><mi>要</mi><mi>通</mi><mi>过</mi><mi>一</mi><mi>整</mi><mi>条</mi><mi>G</mi><mi>P</mi><mi>U</mi><mi>软</mi><mi>件</mi><mi>栈</mi><mi>去</mi><mi>使</mi><mi>用</mi><mi>硬</mi><mi>件</mi><mi>；</mi><mi>环</mi><mi>境</mi><mi>排</mi><mi>错</mi><mi>的</mi><mi>本</mi><mi>质</mi><mi>，</mi><mi>就</mi><mi>是</mi><mi>找</mi><mi>到</mi><mi>这</mi><mi>条</mi><mi>链</mi><mi>究</mi><mi>竟</mi><mi>断</mi><mi>在</mi><mi>哪</mi><mi>一</mi><mi>层</mi><mi>。</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PyTorch并不是直接“看见”GPU，
+它要通过一整条GPU软件栈去使用硬件；
+环境排错的本质，就是找到这条链究竟断在哪一层。
+}
+</annotation></semantics></math></p>
+<p>再压缩：</p>
+<pre class="text"><code>GPU
+↑
+Driver
+↑
+CUDA
+↑
+PyTorch
+↑
+Transformers
+↑
+你的ProcurementAI</code></pre>
+<hr />
+<h1 id="下一阶段第三课-第-3-阶段">下一阶段：第三课 · 第 3 阶段</h1>
+<h2
+id="一个开源大模型下载下来后文件夹里到底有什么">一个开源大模型下载下来后，文件夹里到底有什么？</h2>
+<p>下一阶段会开始真正接触一个模型目录，但仍然先讲“地图”，不先背文件名。</p>
+<p>我们会把一个模型拆成三大件：</p>
+<pre class="text"><code>模型文件夹
+│
+├── ① Architecture
+│      config.json
+│      ↓
+│      “这个模型长什么样”
+│
+├── ② Tokenizer
+│      tokenizer.json / vocab ...
+│      ↓
+│      “文字怎样变成Token”
+│
+└── ③ Weights
+       model-*.safetensors
+       ↓
+       “这个模型到底学到了哪些参数”</code></pre>
+<p>到第三阶段结束，你看到
+<code>config.json</code>、<code>tokenizer.json</code>、<code>generation_config.json</code>、<code>.safetensors</code>、Shard、Index
+文件时，不再是一堆陌生文件，而会知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>模</mi><mi>型</mi><mo>=</mo><mi>结</mi><mi>构</mi><mi>说</mi><mi>明</mi><mi>书</mi><mo>+</mo><mi>语</mi><mi>言</mi><mi>切</mi><mi>分</mi><mi>规</mi><mi>则</mi><mo>+</mo><mi>真</mi><mi>正</mi><mi>学</mi><mi>到</mi><mi>的</mi><mi>参</mi><mi>数</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+模型
+=
+结构说明书
++
+语言切分规则
++
+真正学到的参数
+}
+</annotation></semantics></math></p>
+<p>这一步一旦看懂，第四阶段的 <code>from_pretrained()</code>
+就会非常自然。</p>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

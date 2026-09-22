@@ -1,0 +1,960 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第7阶段：BM25 + Dense Retrieval：为什么只靠向量检索不够？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第7阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，BM25 属于 Sparse Retrieval，依赖词项匹配、IDF、词频饱和和长度归一化；它尤其擅长文号、金额、条款号、标准号和专有名词等精确信号。</li><li>第二，Dense Retrieval 擅长同义改写和语义泛化，但可能淡化数字、编号和细粒度字面差异；因此 Sparse 与 Dense 的盲区具有明显互补性。</li><li>第三，Hybrid Retrieval 的稳妥第一版是 BM25 与 Dense 并行召回，各自得到候选，再做去重、融合和后续排序，而不是让其中一条路径先把另一条路径的候选空间砍掉。</li></ul></div><h1 id="第六课-第-7-阶段">第六课 · 第 7 阶段</h1>
+<h1 id="bm25-dense-retrieval为什么只靠向量检索不够-1">BM25 + Dense
+Retrieval：为什么只靠向量检索不够？</h1>
+<h2
+id="当字面精确匹配和语义相似匹配各有盲区时怎样把两种-retriever-接成一个更可靠的-hybrid-retrieval">当“字面精确匹配”和“语义相似匹配”各有盲区时，怎样把两种
+Retriever 接成一个更可靠的 Hybrid Retrieval？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-6">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-6">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，BM25 属于 Sparse
+Retrieval，依赖词项匹配、IDF、词频饱和和长度归一化；它尤其擅长文号、金额、条款号、标准号和专有名词等精确信号。</strong></li>
+<li><strong>第二，Dense Retrieval
+擅长同义改写和语义泛化，但可能淡化数字、编号和细粒度字面差异；因此
+Sparse 与 Dense 的盲区具有明显互补性。</strong></li>
+<li><strong>第三，Hybrid Retrieval 的稳妥第一版是 BM25 与 Dense
+并行召回，各自得到候选，再做去重、融合和后续排序，而不是让其中一条路径先把另一条路径的候选空间砍掉。</strong></li>
+<li><strong>第四，BM25 Score 和 Dense Similarity
+通常不能直接裸相加；Score Fusion 需要归一化 / 校准，而 RRF
+可以直接利用排名进行相对稳健的融合。</strong></li>
+<li><strong>第五，Hybrid 是否值得采用，必须回到
+ProcurementRetrievalBenchmark_V0.1 比较 Hit@K、Recall@K、MRR、Hard
+Negative、No-answer 和
+Latency，不能因为“用了两种检索”就默认更强。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-6">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>BM25</code></td>
+<td>BM25：基于词频和逆文档频率的经典词法检索算法</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>Hybrid Retrieval</code></td>
+<td>混合检索：结合词法/稀疏检索与向量语义检索</td>
+</tr>
+<tr class="even">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-6">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 6 阶段，我们已经有了正式的：</p>
+<h1
+id="procurementretrievalbenchmark_v0.1-1"><code>ProcurementRetrievalBenchmark_V0.1</code></h1>
+<p>现在我们终于可以不靠感觉，真正比较 Retriever。</p>
+<p>到目前为止，我们主要使用的是：</p>
+<h1 id="dense-retrieval">Dense Retrieval</h1>
+<h2 id="稠密向量检索">稠密向量检索</h2>
+<p>也就是：</p>
+<pre class="text"><code>Query
+↓
+Embedding
+↓
+Query Vector
+↓
+Vector Index
+↓
+Top-K</code></pre>
+<p>它特别擅长：</p>
+<blockquote>
+<p><strong>文字不完全相同，但语义接近。</strong></p>
+</blockquote>
+<p>例如用户问：</p>
+<blockquote>
+<p>“投标前要求供应商必须在本地设立机构是否存在风险？”</p>
+</blockquote>
+<p>而法规写的是：</p>
+<blockquote>
+<p>“不得以供应商所在地或者要求预先设立本地分支机构等条件限制供应商。”</p>
+</blockquote>
+<p>即使词面不完全一致，</p>
+<p>Dense Retrieval 仍有机会把它们拉近。</p>
+<p>但政府采购文档里还有另一类信息：</p>
+<pre class="text"><code>财库〔2026〕17号
+第十二条
+100万元
+30日
+财政部
+项目编号 XYZ-2026-001
+ISO 9001
+GB/T 19001</code></pre>
+<p>这些内容的价值，往往就在于：</p>
+<blockquote>
+<p><strong>必须精确命中。</strong></p>
+</blockquote>
+<p>这时候只靠语义向量并不总是最稳。</p>
+<p>所以今天正式进入：</p>
+<h1 id="hybrid-retrieval">Hybrid Retrieval</h1>
+<h2 id="混合检索">混合检索</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementhybridretrievalpolicy_v0.1-1"><code>ProcurementHybridRetrievalPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-3">一、先锁死本阶段最重要的一句话</h1>
+<p>Sparse Retrieval 和 Dense Retrieval 不是：</p>
+<blockquote>
+<p><strong>两个互相淘汰的时代。</strong></p>
+</blockquote>
+<p>更准确地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>擅</mi><mi>长</mi><mi>字</mi><mi>面</mi><mi>精</mi><mi>确</mi><mi>性</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Sparse
+擅长字面精确性
+}
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>擅</mi><mi>长</mi><mi>语</mi><mi>义</mi><mi>泛</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Dense
+擅长语义泛化
+}
+</annotation></semantics></math></p>
+<p>而 Hybrid Retrieval 的目标是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>x</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>L</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ExactLexicalSignal
++
+SemanticSignal
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p><strong>让“说得一样”和“意思一样”两种证据同时有机会进入候选集。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二什么是-sparse-retrieval">二、什么是 Sparse Retrieval？</h1>
+<p>Sparse Retrieval：</p>
+<h1 id="稀疏检索">稀疏检索</h1>
+<p>最经典的思路之一，就是：</p>
+<blockquote>
+<p>根据 Query 中出现的词，与文档中出现的词进行匹配。</p>
+</blockquote>
+<p>这里的“Sparse”不是说：</p>
+<blockquote>
+<p>文档内容很少。</p>
+</blockquote>
+<p>而是说：</p>
+<blockquote>
+<p>表示空间通常非常高维，但单条文本只激活其中少量词项维度。</p>
+</blockquote>
+<p>可以把词表想象成：</p>
+<pre class="text"><code>供应商
+采购人
+资格条件
+本地机构
+中标
+合同
+投诉
+财政部
+财库
+第十二条
+...</code></pre>
+<p>一条文档只会命中其中一部分。</p>
+<p>所以它的表示是：</p>
+<blockquote>
+<p><strong>高维、但大量维度为 0。</strong></p>
+</blockquote>
+<p>这和 Dense Embedding：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>0.13</mn><mo>,</mo><mi>−</mi><mn>0.72</mn><mo>,</mo><mn>0.08</mn><mo>,</mo><mi>…</mi><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[0.13,-0.72,0.08,\ldots]
+</annotation></semantics></math></p>
+<p>这种几乎每一维都有连续数值的向量不同。</p>
+<hr />
+<h1 id="三bm25-到底在做什么">三、BM25 到底在做什么？</h1>
+<p>BM25 是经典的 Sparse Retrieval 排序方法之一。</p>
+<p>不要先死记公式。</p>
+<p>它真正想回答三个问题：</p>
+<pre class="text"><code>1. Query里的词
+在这篇文档里出现了吗？
+
+2. 出现得越多
+是不是应该更加分？
+
+3. 一篇很长的文档
+仅仅因为词更多
+是不是不应该天然占便宜？</code></pre>
+<p>经典 BM25 的一个常见形式可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>D</mi><mo>,</mo><mi>Q</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><munder><mo>∑</mo><mrow><mi>t</mi><mo>∈</mo><mi>Q</mi></mrow></munder><mi>I</mi><mi>D</mi><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>⋅</mo><mfrac><mrow><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>t</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>k</mi><mn>1</mn></msub><mo>+</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>t</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><msub><mi>k</mi><mn>1</mn></msub><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>b</mi><mo>+</mo><mi>b</mi><mfrac><mrow><mo stretchy="true" form="prefix">|</mo><mi>D</mi><mo stretchy="true" form="postfix">|</mo></mrow><mrow><mi>a</mi><mi>v</mi><mi>g</mi><mi>d</mi><mi>l</mi></mrow></mfrac><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+score(D,Q)
+=
+\sum_{t \in Q}
+IDF(t)
+\cdot
+\frac{
+f(t,D)(k_1+1)
+}{
+f(t,D)
++
+k_1
+\left(
+1-b+b\frac{|D|}{avgdl}
+\right)
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Q</mi><annotation encoding="application/x-tex">Q</annotation></semantics></math>：Query；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>D</mi><annotation encoding="application/x-tex">D</annotation></semantics></math>：Document
+/ Chunk；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>t</mi><annotation encoding="application/x-tex">t</annotation></semantics></math>：Query
+中的词项；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>t</mi><mo>,</mo><mi>D</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">f(t,D)</annotation></semantics></math>：词项
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>t</mi><annotation encoding="application/x-tex">t</annotation></semantics></math>
+在文档中的出现次数；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">|</mo><mi>D</mi><mo stretchy="true" form="postfix">|</mo></mrow><annotation encoding="application/x-tex">|D|</annotation></semantics></math>：当前文档长度；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>a</mi><mi>v</mi><mi>g</mi><mi>d</mi><mi>l</mi></mrow><annotation encoding="application/x-tex">avgdl</annotation></semantics></math>：语料平均文档长度；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>k</mi><mn>1</mn></msub><annotation encoding="application/x-tex">k_1</annotation></semantics></math>：控制
+Term Frequency 饱和程度；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>b</mi><annotation encoding="application/x-tex">b</annotation></semantics></math>：控制文档长度归一化强度；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mi>D</mi><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">IDF(t)</annotation></semantics></math>：衡量词项在整个语料中有多“稀有”。</li>
+</ul>
+<p>不同实现对 IDF 的具体写法可能略有差异，</p>
+<p>但核心思想不变。</p>
+<hr />
+<h1 id="四为什么-idf-很重要">四、为什么 IDF 很重要？</h1>
+<p>假设 Query 是：</p>
+<blockquote>
+<p>“财库〔2026〕17号第十二条”</p>
+</blockquote>
+<p>其中：</p>
+<pre class="text"><code>“第”
+“条”
+“采购”</code></pre>
+<p>可能在很多文档里都出现。</p>
+<p>但：</p>
+<pre class="text"><code>财库〔2026〕17号</code></pre>
+<p>可能非常稀有。</p>
+<p>所以 BM25 会更重视：</p>
+<blockquote>
+<p><strong>能够区分文档身份的稀有词项。</strong></p>
+</blockquote>
+<p>这就是 IDF 的直觉：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>越</mi><mi>少</mi><mi>见</mi><mi>的</mi><mi>词</mi><mi>通</mi><mi>常</mi><mi>区</mi><mi>分</mi><mi>力</mi><mi>越</mi><mi>强</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+越少见的词
+通常区分力越强
+}
+</annotation></semantics></math></p>
+<p>因此 BM25 对下面这些特别有价值：</p>
+<pre class="text"><code>文号
+项目编号
+标准编号
+机构名称
+专有名词
+条款编号
+精确金额
+特定日期</code></pre>
+<hr />
+<h1
+id="五为什么词频不是出现越多分数无限上涨">五、为什么词频不是“出现越多分数无限上涨”？</h1>
+<p>假设 Query 有：</p>
+<blockquote>
+<p>“供应商”</p>
+</blockquote>
+<p>文档 A 出现 2 次。</p>
+<p>文档 B 出现 50 次。</p>
+<p>如果简单按词频线性加分，</p>
+<p>B 可能因为机械重复“供应商”就远远超过 A。</p>
+<p>BM25 不这么做。</p>
+<p>它引入：</p>
+<h1 id="tf-saturation">TF Saturation</h1>
+<h2 id="词频饱和">词频饱和</h2>
+<p>直觉上：</p>
+<pre class="text"><code>出现0次
+非常重要
+
+0 → 1次
+加分很明显
+
+1 → 2次
+还有价值
+
+20 → 21次
+额外价值已经很小</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>T</mi><mi>e</mi><mi>r</mi><mi>m</mi><mi>F</mi><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreTermFrequency
+\neq
+LinearMoreRelevance
+}
+</annotation></semantics></math></p>
+<p>这也是 BM25 相比简单关键词计数更成熟的地方。</p>
+<hr />
+<h1
+id="六为什么还要做文档长度归一化">六、为什么还要做文档长度归一化？</h1>
+<p>假设：</p>
+<pre class="text"><code>Chunk A
+200 Tokens
+
+Chunk B
+3000 Tokens</code></pre>
+<p>Chunk B 因为更长，</p>
+<p>天然更容易“碰巧”出现 Query 里的词。</p>
+<p>如果完全不处理，</p>
+<p>长文档容易获得不公平优势。</p>
+<p>所以 BM25 用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mfrac><mrow><mo stretchy="true" form="prefix">|</mo><mi>D</mi><mo stretchy="true" form="postfix">|</mo></mrow><mrow><mi>a</mi><mi>v</mi><mi>g</mi><mi>d</mi><mi>l</mi></mrow></mfrac><annotation encoding="application/x-tex">
+\frac{|D|}{avgdl}
+</annotation></semantics></math></p>
+<p>参与长度归一化。</p>
+<p>参数：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>b</mi><annotation encoding="application/x-tex">
+b
+</annotation></semantics></math></p>
+<p>控制这种长度惩罚有多强。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>n</mi><mi>g</mi><mi>t</mi><mi>h</mi><mi>N</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>是</mi><mi>为</mi><mi>了</mi><mi>减</mi><mi>少</mi><mo>“</mo><mi>长</mi><mi>文</mi><mi>本</mi><mi>天</mi><mi>然</mi><mi>更</mi><mi>容</mi><mi>易</mi><mi>命</mi><mi>中</mi><mi>词</mi><mo>”</mo><mi>带</mi><mi>来</mi><mi>的</mi><mi>偏</mi><mi>差</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LengthNormalization
+是为了减少
+“长文本天然更容易命中词”
+带来的偏差
+}
+</annotation></semantics></math></p>
+<p>这也再次说明：</p>
+<blockquote>
+<p>Chunking Policy 会直接影响 BM25 的统计特性。</p>
+</blockquote>
+<hr />
+<h1 id="七bm25-的弱点也非常明确它不天然理解同义表达">七、BM25
+的弱点也非常明确：它不天然理解“同义表达”</h1>
+<p>假设用户问：</p>
+<blockquote>
+<p>“投标前必须有本地分公司合法吗？”</p>
+</blockquote>
+<p>法规写的是：</p>
+<blockquote>
+<p>“不得将预先设立区域性服务机构作为参与采购活动的条件。”</p>
+</blockquote>
+<p>两边可能没有大量完全相同的词。</p>
+<p>BM25 可能找得不够好。</p>
+<p>因为它主要依赖：</p>
+<blockquote>
+<p><strong>Lexical Match，字面词项匹配。</strong></p>
+</blockquote>
+<p>而 Dense Retrieval 有机会理解：</p>
+<pre class="text"><code>本地分公司
+≈
+区域性服务机构
+
+投标前必须有
+≈
+预先设立作为参与条件</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>M</mi><mn>25</mn><mi>不</mi><mi>擅</mi><mi>长</mi><mi>跨</mi><mi>表</mi><mi>达</mi><mi>方</mi><mi>式</mi><mi>的</mi><mi>语</mi><mi>义</mi><mi>泛</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BM25
+不擅长跨表达方式的语义泛化
+}
+</annotation></semantics></math></p>
+<p>这正是 Dense Retrieval 的优势。</p>
+<hr />
+<h1 id="八dense-retrieval-的弱点恰好又是-bm25-的强项">八、Dense
+Retrieval 的弱点，恰好又是 BM25 的强项</h1>
+<p>Dense Retrieval 能处理：</p>
+<blockquote>
+<p>文字不同但语义相似。</p>
+</blockquote>
+<p>但它可能对一些极其精确的 Token 不够敏感。</p>
+<p>例如：</p>
+<pre class="text"><code>Query A:
+财库〔2026〕17号
+
+Query B:
+财库〔2026〕71号</code></pre>
+<p>对人来说：</p>
+<blockquote>
+<p>17 和 71 是完全不同的文号。</p>
+</blockquote>
+<p>但对于某些 Embedding Model，</p>
+<p>两句话整体语义可能仍然非常接近。</p>
+<p>同样：</p>
+<pre class="text"><code>100万元
+vs
+1000万元</code></pre>
+<p>或者：</p>
+<pre class="text"><code>第十二条
+vs
+第二十二条</code></pre>
+<p>这些差异：</p>
+<blockquote>
+<p>字面只差一点，</p>
+</blockquote>
+<p>但业务含义可能完全不同。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>可</mi><mi>能</mi><mi>会</mi><mi>淡</mi><mi>化</mi><mi>E</mi><mi>x</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SemanticSimilarity
+可能会淡化
+ExactIdentifierDifference
+}
+</annotation></semantics></math></p>
+<p>而 BM25 往往更容易保留这种字面精确性。</p>
+<hr />
+<h1 id="九中文-bm25-的质量很大程度取决于-analyzer-tokenizer">九、中文
+BM25 的质量，很大程度取决于 Analyzer / Tokenizer</h1>
+<p>英语里单词之间天然有空格。</p>
+<p>中文没有。</p>
+<p>例如：</p>
+<pre class="text"><code>供应商不得在投标截止日前设立本地机构</code></pre>
+<p>系统到底切成：</p>
+<pre class="text"><code>供应商
+不得
+投标
+截止日
+本地
+机构</code></pre>
+<p>还是：</p>
+<pre class="text"><code>供应
+商不得
+投标截止
+日前
+本地机构</code></pre>
+<p>会直接影响 BM25。</p>
+<p>因此中文 Sparse Retrieval 必须记录：</p>
+<h1 id="analyzer-tokenizer-policy">Analyzer / Tokenizer Policy</h1>
+<p>包括：</p>
+<pre class="text"><code>中文分词策略
+数字处理
+英文字母大小写
+标点归一化
+文号保留
+条款号保留
+同义词扩展
+停用词策略</code></pre>
+<p>特别是政府采购里：</p>
+<pre class="text"><code>财库〔2026〕17号
+GB/T 19001
+XYZ-2026-001</code></pre>
+<p>这些结构化标识符：</p>
+<blockquote>
+<p>不应该被预处理随手拆坏。</p>
+</blockquote>
+<hr />
+<h1 id="十hybrid-retrieval-最稳妥的第一版并行召回再合并">十、Hybrid
+Retrieval 最稳妥的第一版：并行召回，再合并</h1>
+<p>第一版不要先追求复杂模型。</p>
+<p>可以直接：</p>
+<pre class="text"><code>                   Query
+                     │
+          ┌──────────┴──────────┐
+          ▼                     ▼
+       BM25                  Dense
+     Top-N_sparse          Top-N_dense
+          │                     │
+          └──────────┬──────────┘
+                     ▼
+                 Candidate Union
+                     │
+                     ▼
+                   Dedup
+                     │
+                     ▼
+               Fusion / Rerank
+                     │
+                     ▼
+                  Final Top-K</code></pre>
+<p>关键点是：</p>
+<blockquote>
+<p>BM25 和 Dense 都先独立拥有一次“召回机会”。</p>
+</blockquote>
+<p>然后再合并。</p>
+<p>这比：</p>
+<blockquote>
+<p>先用 Dense 把候选砍到 5 条，再在这 5 条里跑 BM25</p>
+</blockquote>
+<p>更能保留二者互补性。</p>
+<hr />
+<h1
+id="十一为什么不能直接把-bm25-score-和-cosine-score-相加">十一、为什么不能直接把
+BM25 Score 和 Cosine Score 相加？</h1>
+<p>假设：</p>
+<pre class="text"><code>BM25 Score
+=
+12.7
+
+Cosine Similarity
+=
+0.83</code></pre>
+<p>直接：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>12.7</mn><mo>+</mo><mn>0.83</mn></mrow><annotation encoding="application/x-tex">
+12.7+0.83
+</annotation></semantics></math></p>
+<p>没有稳定意义。</p>
+<p>因为两个分数：</p>
+<blockquote>
+<p><strong>量纲、范围、分布都不同。</strong></p>
+</blockquote>
+<p>不同 Query 下 BM25 分布也可能变化。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>w</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mrow><mi>B</mi><mi>M</mi><mn>25</mn></mrow></msub><mo>+</mo><mi>R</mi><mi>a</mi><mi>w</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mrow><mi>D</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi></mrow></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RawScore_{BM25}
++
+RawScore_{Dense}
+}
+</annotation></semantics></math></p>
+<p>通常不是一个稳健的默认方案。</p>
+<p>如果要做 Weighted Score Fusion：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mo>=</mo><mi>α</mi><msub><mi>S</mi><mrow><mi>s</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi></mrow></msub><mo>+</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="true" form="postfix">)</mo></mrow><msub><mi>S</mi><mrow><mi>d</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+Score
+=
+\alpha S_{sparse}
++
+(1-\alpha)S_{dense}
+</annotation></semantics></math></p>
+<p>通常需要先考虑：</p>
+<pre class="text"><code>Score Normalization
+Score Calibration
+Query-level Distribution</code></pre>
+<p>否则一个 Retriever 可能仅仅因为分数范围更大而支配结果。</p>
+<hr />
+<h1
+id="十二rrf不比原始分数直接融合排名">十二、RRF：不比原始分数，直接融合“排名”</h1>
+<p>一种很实用的方法叫：</p>
+<h1 id="reciprocal-rank-fusion">Reciprocal Rank Fusion</h1>
+<h2 id="rrf-倒数排名融合">RRF / 倒数排名融合</h2>
+<p>它不要求 BM25 Score 和 Dense Score 在同一个尺度上。</p>
+<p>概念公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>R</mi><mi>F</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><munder><mo>∑</mo><mrow><mi>r</mi><mo>∈</mo><mi>R</mi></mrow></munder><mfrac><mn>1</mn><mrow><mi>k</mi><mo>+</mo><mi>r</mi><mi>a</mi><mi>n</mi><msub><mi>k</mi><mi>r</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+RRF(d)
+=
+\sum_{r \in R}
+\frac{1}{k + rank_r(d)}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>R</mi><annotation encoding="application/x-tex">R</annotation></semantics></math>：多个
+Retriever；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mi>a</mi><mi>n</mi><msub><mi>k</mi><mi>r</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">rank_r(d)</annotation></semantics></math>：文档
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>d</mi><annotation encoding="application/x-tex">d</annotation></semantics></math>
+在 Retriever
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>
+中的排名；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>：用于减小前几名之间过大差异的常数。</li>
+</ul>
+<p>注意这里的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>：</p>
+<blockquote>
+<p><strong>不是 Top-K 的那个 K。</strong></p>
+</blockquote>
+<p>例如某个 Chunk：</p>
+<pre class="text"><code>BM25 排第 1
+Dense 排第 4</code></pre>
+<p>另一个 Chunk：</p>
+<pre class="text"><code>BM25 排第 20
+Dense 排第 2</code></pre>
+<p>RRF 会根据：</p>
+<blockquote>
+<p>两条排名共同计算融合分数。</p>
+</blockquote>
+<p>它最大的工程优点是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>不</mi><mi>需</mi><mi>要</mi><mi>直</mi><mi>接</mi><mi>比</mi><mi>较</mi><mi>B</mi><mi>M</mi><mn>25</mn><mi>原</mi><mi>始</mi><mi>分</mi><mi>数</mi><mi>和</mi><mi>D</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>原</mi><mi>始</mi><mi>分</mi><mi>数</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+不需要直接比较
+BM25原始分数
+和
+Dense原始分数
+}
+</annotation></semantics></math></p>
+<p>所以很适合做第一版 Hybrid Baseline。</p>
+<hr />
+<h1 id="十三hybrid-retrieval-不是简单结果取并集">十三、Hybrid Retrieval
+不是简单“结果取并集”</h1>
+<p>如果只是：</p>
+<pre class="text"><code>BM25 Top-20
++
+Dense Top-20
+=
+40条</code></pre>
+<p>然后全部送给 LLM，</p>
+<p>这不是一个完整 Hybrid Retrieval。</p>
+<p>我们还需要解决：</p>
+<pre class="text"><code>重复Chunk
+同一Parent下大量相邻Chunk
+不同Retriever重复命中
+旧版本和新版本同时出现
+Hard Negative挤进前排</code></pre>
+<p>所以 Candidate Union 后至少需要：</p>
+<pre class="text"><code>Dedup
+Version / Validity Check
+Metadata Constraint
+Fusion</code></pre>
+<p>后面第 8 阶段还会继续加：</p>
+<h1 id="reranker">Reranker</h1>
+<p>因此完整链更接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>p</mi><mi>a</mi><mi>r</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>+</mo><mi>D</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>→</mo><mi>F</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SparseRecall
++
+DenseRecall
+\rightarrow
+Fusion
+\rightarrow
+Rerank
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十四hybrid-到底有没有变好必须由-stage-6-benchmark-判">十四、Hybrid
+到底有没有变好，必须由 Stage 6 Benchmark 判</h1>
+<p>我们现在已经有：</p>
+<h1
+id="procurementretrievalbenchmark_v0.1-2"><code>ProcurementRetrievalBenchmark_V0.1</code></h1>
+<p>所以可以正式做四组实验：</p>
+<pre class="text"><code>A
+BM25 Only
+
+B
+Dense Only
+
+C
+BM25 + Dense + RRF
+
+D
+BM25 + Dense + Score Fusion</code></pre>
+<p>固定：</p>
+<pre class="text"><code>同一Query Set
+同一Knowledge Base
+同一Chunk Policy
+同一Metadata Filter
+同一Gold Evidence
+同一Top-K</code></pre>
+<p>比较：</p>
+<pre class="text"><code>Hit@K
+Recall@K
+MRR
+Median Gold Rank
+Hard Negative Above Gold Rate
+No-answer False Retrieval Rate
+Latency</code></pre>
+<p>这时候才能回答：</p>
+<blockquote>
+<p>Hybrid 是否真的比单一路径更好。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>y</mi><mi>b</mi><mi>r</mi><mi>i</mi><mi>d</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Hybrid
+\neq
+AutomaticallyBetter
+}
+</annotation></semantics></math></p>
+<p>如果融合策略不好，</p>
+<p>它完全可能：</p>
+<blockquote>
+<p>把两边的噪声也一起合并。</p>
+</blockquote>
+<hr />
+<h1
+id="十五政府采购里哪些-query-特别适合-sparse哪些特别适合-dense">十五、政府采购里，哪些
+Query 特别适合 Sparse，哪些特别适合 Dense？</h1>
+<p>可以建立一个非常实用的第一版映射。</p>
+<table>
+<thead>
+<tr class="header">
+<th>Query 类型</th>
+<th style="text-align: right;">Sparse / BM25</th>
+<th style="text-align: right;">Dense</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>文号</td>
+<td style="text-align: right;">强</td>
+<td style="text-align: right;">可辅助</td>
+</tr>
+<tr class="even">
+<td>法条编号</td>
+<td style="text-align: right;">强</td>
+<td style="text-align: right;">可辅助</td>
+</tr>
+<tr class="odd">
+<td>项目编号</td>
+<td style="text-align: right;">强</td>
+<td style="text-align: right;">通常弱</td>
+</tr>
+<tr class="even">
+<td>精确金额</td>
+<td style="text-align: right;">强</td>
+<td style="text-align: right;">可辅助</td>
+</tr>
+<tr class="odd">
+<td>标准编号</td>
+<td style="text-align: right;">强</td>
+<td style="text-align: right;">通常弱</td>
+</tr>
+<tr class="even">
+<td>机构正式名称</td>
+<td style="text-align: right;">强</td>
+<td style="text-align: right;">可辅助</td>
+</tr>
+<tr class="odd">
+<td>同义改写</td>
+<td style="text-align: right;">弱</td>
+<td style="text-align: right;">强</td>
+</tr>
+<tr class="even">
+<td>自然语言问题</td>
+<td style="text-align: right;">中</td>
+<td style="text-align: right;">强</td>
+</tr>
+<tr class="odd">
+<td>隐含语义</td>
+<td style="text-align: right;">弱</td>
+<td style="text-align: right;">强</td>
+</tr>
+<tr class="even">
+<td>长问题概括</td>
+<td style="text-align: right;">中</td>
+<td style="text-align: right;">强</td>
+</tr>
+</tbody>
+</table>
+<p>但不要把它变成：</p>
+<blockquote>
+<p>“看到文号就只跑 BM25。”</p>
+</blockquote>
+<p>更稳妥的默认仍然是：</p>
+<blockquote>
+<p><strong>并行召回，再由融合与后续 Reranker 判断。</strong></p>
+</blockquote>
+<p>除非 Benchmark 证明某些 Query Routing 策略确实更好。</p>
+<hr />
+<h1
+id="十六本阶段工程产物procurementhybridretrievalpolicy_v0.1">十六、本阶段工程产物：<code>ProcurementHybridRetrievalPolicy_V0.1</code></h1>
+<p>第一版至少记录：</p>
+<pre class="text"><code>sparse_retriever
+=
+BM25
+
+sparse_analyzer_version
+
+dense_embedding_model
+dense_embedding_revision
+
+dense_index_version
+
+sparse_top_n
+dense_top_n
+
+candidate_union_policy
+
+dedup_policy
+
+fusion_method
+=
+rrf / weighted_score / other
+
+rrf_k
+如果采用RRF
+
+score_normalization
+如果采用Score Fusion
+
+metadata_filter_policy
+
+version_validity_policy
+
+final_top_k
+
+retrieval_benchmark_version</code></pre>
+<p>同时必须记录实验结果：</p>
+<pre class="text"><code>bm25_only_metrics
+dense_only_metrics
+hybrid_metrics
+
+delta_hit_at_k
+delta_recall_at_k
+delta_mrr
+
+hard_negative_delta
+no_answer_delta
+
+latency_delta</code></pre>
+<p>我们最终不是保存一句：</p>
+<blockquote>
+<p>“Hybrid 开启。”</p>
+</blockquote>
+<p>而是保存：</p>
+<blockquote>
+<p><strong>为什么开启，以及它到底改善了什么。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十七把本阶段压成最精准的-5-句话-1">十七、把本阶段压成最精准的 5
+句话</h1>
+<blockquote>
+<p><strong>第一，BM25 属于 Sparse
+Retrieval，依赖词项匹配、IDF、词频饱和和长度归一化；它尤其擅长文号、金额、条款号、标准号和专有名词等精确信号。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Dense Retrieval
+擅长同义改写和语义泛化，但可能淡化数字、编号和细粒度字面差异；因此
+Sparse 与 Dense 的盲区具有明显互补性。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Hybrid Retrieval 的稳妥第一版是 BM25 与 Dense
+并行召回，各自得到候选，再做去重、融合和后续排序，而不是让其中一条路径先把另一条路径的候选空间砍掉。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，BM25 Score 和 Dense Similarity
+通常不能直接裸相加；Score Fusion 需要归一化 / 校准，而 RRF
+可以直接利用排名进行相对稳健的融合。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Hybrid 是否值得采用，必须回到
+<code>ProcurementRetrievalBenchmark_V0.1</code> 比较
+Hit@K、Recall@K、MRR、Hard Negative、No-answer 和
+Latency，不能因为“用了两种检索”就默认更强。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-6">本阶段最核心的一张图</h1>
+<pre class="text"><code>                           Query
+                             │
+              ┌──────────────┴──────────────┐
+              │                             │
+              ▼                             ▼
+        Sparse Retrieval              Dense Retrieval
+             BM25                       Embedding
+              │                             │
+              ▼                             ▼
+        Sparse Top-N                  Dense Top-N
+              │                             │
+              └──────────────┬──────────────┘
+                             ▼
+                       Candidate Union
+                             │
+                             ▼
+                           Dedup
+                             │
+                             ▼
+                    Fusion / RRF / Score
+                             │
+                             ▼
+                         Reranker
+                             │
+                             ▼
+                        Final Top-K
+                             │
+                             ▼
+                    Retrieval Benchmark</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>BM25 找“字面必须对得上”的证据，Dense
+找“意思相近但说法不同”的证据；Hybrid
+的价值，就是让两种信号同时进入候选竞争。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-7-阶段掌握测试">第六课 · 第 7 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Sparse Retrieval 和 Dense Retrieval
+的表示方式有什么不同；BM25 为什么不是简单关键词计数；IDF、Term Frequency
+Saturation 和 Length Normalization
+分别解决什么问题；为什么文号、金额、法条编号和项目编号特别适合 Sparse
+Retrieval；为什么 BM25 对同义改写存在天然弱点；为什么 Dense Retrieval
+可能把“17号”和“71号”看得过于接近；为什么中文 Analyzer 会直接影响
+BM25；为什么 Hybrid 第一版应该优先并行召回再融合；为什么 BM25 Score 和
+Cosine Score 不能直接裸相加；RRF 的核心思想是什么；RRF 公式里的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>
+为什么不是 Top-K；为什么 Candidate Union 后还需要 Dedup
+和版本有效性处理；以及为什么最终必须用第 6 阶段的 Retrieval Benchmark
+来证明 Hybrid 真的变好。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>7</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第7阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第六课-第-8-阶段">下一阶段：第六课 · 第 8 阶段</h1>
+<h1
+id="reranker为什么先召回再精排比直接-top-k-更可靠">Reranker：为什么“先召回，再精排”比直接
+Top-K 更可靠？</h1>
+<p>到第 7 阶段，我们已经有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>M</mi><mn>25</mn><mo>+</mo><mi>D</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>→</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>S</mi><mi>e</mi><mi>t</mi></mrow><annotation encoding="application/x-tex">
+BM25
++
+DenseRetrieval
+\rightarrow
+CandidateSet
+</annotation></semantics></math></p>
+<p>下一阶段要解决：</p>
+<blockquote>
+<p><strong>召回阶段为了不漏掉 Gold
+Evidence，通常宁愿多拿一些候选；但真正送进 LLM 的 Context
+很宝贵，怎样从几十条候选里重新判断谁最值得排在前面？</strong></p>
+</blockquote>
+<p>我们会正式区分：</p>
+<pre class="text"><code>Retriever
+负责高Recall召回
+
+Reranker
+负责高Precision精排</code></pre>
+<p>并进入：</p>
+<h1 id="cross-encoder">Cross-Encoder</h1>
+<p>以及：</p>
+<h1
+id="procurementrerankingpolicy_v0.1"><code>ProcurementRerankingPolicy_V0.1</code></h1>
+<p>这会是 RAG 检索链从：</p>
+<blockquote>
+<p>“找得到”</p>
+</blockquote>
+<p>走向：</p>
+<blockquote>
+<p><strong>“把最正确的证据排到最前面”</strong></p>
+</blockquote>
+<p>的关键一步。</p>
+<hr /><div class="nav"><a class="btn" href="stage06.html">← 第 6 阶段</a><a class="btn" href="stage08.html">第 8 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

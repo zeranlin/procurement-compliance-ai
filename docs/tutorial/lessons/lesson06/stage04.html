@@ -1,0 +1,883 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第4阶段：Embedding：文本为什么可以变成“语义向量”？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，Embedding 是把 Query 或 Chunk 映射成固定维度向量，使语义相关的文本在模型学出的向量空间里尽量靠近。</li><li>第二，Dense Retrieval 的核心就是分别得到 Query Vector 和 Document Vector，再用 Cosine、Dot Product 或其它兼容度量做 Top-K 排序。</li><li>第三，Query 和 Document 必须进入兼容的检索表示空间；有些模型是对称编码，有些模型需要不同的 Query / Document Prefix 或任务指令。</li></ul></div><h1 id="第六课-第-4-阶段">第六课 · 第 4 阶段</h1>
+<h1
+id="embedding文本为什么可以变成语义向量-1">Embedding：文本为什么可以变成“语义向量”？</h1>
+<h2
+id="为什么文字不同却能在向量空间里靠得很近">为什么文字不同，却能在向量空间里靠得很近？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Embedding 是把 Query 或 Chunk
+映射成固定维度向量，使语义相关的文本在模型学出的向量空间里尽量靠近。</strong></li>
+<li><strong>第二，Dense Retrieval 的核心就是分别得到 Query Vector 和
+Document Vector，再用 Cosine、Dot Product 或其它兼容度量做 Top-K
+排序。</strong></li>
+<li><strong>第三，Query 和 Document
+必须进入兼容的检索表示空间；有些模型是对称编码，有些模型需要不同的 Query
+/ Document Prefix 或任务指令。</strong></li>
+<li><strong>第四，Embedding Similarity
+只负责候选召回，不等于最终业务正确性；政府采购里的“投标前 vs 中标后”等
+Hard Negative 仍可能让语义向量犯错。</strong></li>
+<li><strong>第五，Embedding Model、Revision、Normalization、Similarity
+Metric
+和编码策略必须版本锁定；换模型通常意味着旧知识向量需要重新计算。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="odd">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="even">
+<td><code>Representation</code></td>
+<td>表示：模型内部承载语义或特征的向量结构</td>
+</tr>
+<tr class="odd">
+<td><code>Cosine Similarity</code></td>
+<td>余弦相似度：比较两个向量方向相似程度</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 3 阶段，我们已经把长文档处理成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">
+Document
+\rightarrow
+Chunk
+</annotation></semantics></math></p>
+<p>也就是说，我们终于拥有了真正可以被检索的知识单元。</p>
+<p>但现在还有一个问题：</p>
+<blockquote>
+<p><strong>Retriever 怎么知道用户的问题和哪个 Chunk
+更相关？</strong></p>
+</blockquote>
+<p>如果用户问：</p>
+<blockquote>
+<p>“采购文件能不能要求供应商投标前在本地设立分支机构？”</p>
+</blockquote>
+<p>知识库里的正确证据可能写成：</p>
+<blockquote>
+<p>“不得以供应商所在地、经营年限、预先设立本地机构等条件限制或者排斥潜在供应商。”</p>
+</blockquote>
+<p>两段文字并不完全一样。</p>
+<p>如果系统只做：</p>
+<pre class="text"><code>字符串相等
+关键词完全匹配</code></pre>
+<p>很可能找不到。</p>
+<p>所以我们需要一种表示方法，把：</p>
+<blockquote>
+<p><strong>一段文本的语义</strong></p>
+</blockquote>
+<p>压缩成：</p>
+<blockquote>
+<p><strong>一个可以计算相似度的数值向量。</strong></p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="embedding">Embedding</h1>
+<h2 id="语义向量表示">语义向量表示</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementembeddingpolicy_v0.1"><code>ProcurementEmbeddingPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-1">一、先锁死本阶段最重要的一句话</h1>
+<p>Embedding 的本质不是：</p>
+<blockquote>
+<p><strong>把一句话翻译成一串“人类可读的数字含义”。</strong></p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>把文本映射到一个向量空间，使语义上相近的文本，在这个空间里尽量靠近。</strong></p>
+</blockquote>
+<p>可以写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>𝐞</mi><mo>∈</mo><msup><mi>ℝ</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">
+f_{\theta}(text)
+=
+\mathbf{e}
+\in
+\mathbb{R}^{d}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>f</mi><mi>θ</mi></msub><annotation encoding="application/x-tex">f_{\theta}</annotation></semantics></math>：Embedding
+Model；</li>
+<li><code>text</code>：Query 或 Chunk；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>𝐞</mi><annotation encoding="application/x-tex">\mathbf{e}</annotation></semantics></math>：输出向量；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>d</mi><annotation encoding="application/x-tex">d</annotation></semantics></math>：Embedding
+Dimension。</li>
+</ul>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝐞</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">[</mo><mn>0.13</mn><mo>,</mo><mi>−</mi><mn>0.72</mn><mo>,</mo><mn>0.08</mn><mo>,</mo><mi>…</mi><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathbf{e}
+=
+[0.13,-0.72,0.08,\ldots]
+</annotation></semantics></math></p>
+<p>这个向量通常有几百到几千个维度。</p>
+<p>真正重要的不是某一维“代表什么”，而是：</p>
+<blockquote>
+<p><strong>向量之间的几何关系。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二embedding-不是词典编码而是学习出来的表示">二、Embedding
+不是“词典编码”，而是学习出来的表示</h1>
+<p>假设有三句话：</p>
+<pre class="text"><code>A:
+投标人必须在本市设立固定办公场所
+
+B:
+供应商在参与投标前须已经具有本地分支机构
+
+C:
+中标后应提供2小时现场服务响应</code></pre>
+<p>从字符表面看：</p>
+<pre class="text"><code>A 和 B
+用词并不完全相同
+
+A 和 C
+都出现“本地 / 现场”一类空间概念</code></pre>
+<p>但从业务语义看：</p>
+<pre class="text"><code>A 和 B
+都在讨论
+“投标前预设本地机构作为准入条件”
+
+C
+讨论的是
+“中标后的履约响应要求”</code></pre>
+<p>一个好的 Embedding Model 应尽量形成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>i</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>&gt;</mo><mi>s</mi><mi>i</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>A</mi><mo>,</mo><mi>C</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+sim(A,B)
+&gt;
+sim(A,C)
+</annotation></semantics></math></p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>相似度应该更接近业务语义，而不是仅仅接近字面重合。</strong></p>
+</blockquote>
+<p>这就是 Dense Retrieval 能超过纯关键词匹配的核心原因之一。</p>
+<hr />
+<h1 id="三为什么-query-和-chunk-可以互相比较">三、为什么 Query 和 Chunk
+可以互相比较？</h1>
+<p>在 RAG 中，我们通常会分别计算：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝐪</mi><mo>=</mo><msub><mi>f</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathbf{q}
+=
+f_{\theta}(Query)
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>𝐝</mi><mi>𝐢</mi></msub><mo>=</mo><msub><mi>f</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><msub><mi>k</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathbf{d_i}
+=
+f_{\theta}(Chunk_i)
+</annotation></semantics></math></p>
+<p>然后比较：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>i</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>𝐪</mi><mo>,</mo><msub><mi>𝐝</mi><mi>𝐢</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+sim(\mathbf{q},\mathbf{d_i})
+</annotation></semantics></math></p>
+<p>如果 Query 和 Chunk 被映射到：</p>
+<blockquote>
+<p><strong>同一个可比较的向量空间</strong></p>
+</blockquote>
+<p>那么就可以把：</p>
+<pre class="text"><code>用户问题</code></pre>
+<p>与：</p>
+<pre class="text"><code>知识库里的每个Chunk</code></pre>
+<p>做相似度排序。</p>
+<p>最终：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>o</mi><mi>p</mi><mi>K</mi><mo>=</mo><msub><mo>arg topk</mo><mi>i</mi></msub><mspace width="0.278em"></mspace><mi>s</mi><mi>i</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>𝐪</mi><mo>,</mo><msub><mi>𝐝</mi><mi>𝐢</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+TopK
+=
+\operatorname{arg\,topk}_{i}
+\;
+sim(\mathbf{q},\mathbf{d_i})
+</annotation></semantics></math></p>
+<p>中文就是：</p>
+<blockquote>
+<p><strong>找出和 Query 向量最接近的 K 个 Chunk。</strong></p>
+</blockquote>
+<p>这就是 Dense Retrieval 最核心的计算。</p>
+<hr />
+<h1
+id="四但同一个模型编码不等于-query-和-document-必须完全同一种写法">四、但“同一个模型编码”不等于
+Query 和 Document 必须完全同一种写法</h1>
+<p>这是一个很重要的精度点。</p>
+<p>有些 Embedding Model 是：</p>
+<h1 id="symmetric">Symmetric</h1>
+<h2 id="对称任务">对称任务</h2>
+<p>适合比较：</p>
+<pre class="text"><code>句子 A
+vs
+句子 B</code></pre>
+<p>两边形式差不多。</p>
+<p>但检索任务经常是：</p>
+<h1 id="asymmetric-retrieval">Asymmetric Retrieval</h1>
+<h2 id="非对称检索">非对称检索</h2>
+<p>也就是：</p>
+<pre class="text"><code>Query:
+“投标前必须设本地机构合法吗？”
+
+Document:
+一整段法规条文</code></pre>
+<p>Query 很短，</p>
+<p>Document 更长、更正式。</p>
+<p>所以很多检索型 Embedding Model 会区分：</p>
+<pre class="text"><code>query representation
+document representation</code></pre>
+<p>甚至要求不同的：</p>
+<pre class="text"><code>prefix
+instruction
+task type</code></pre>
+<p>因此长期正确心智模型是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>和</mi><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>必</mi><mi>须</mi><mi>进</mi><mi>入</mi><mi>兼</mi><mi>容</mi><mi>的</mi><mi>检</mi><mi>索</mi><mi>表</mi><mi>示</mi><mi>空</mi><mi>间</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Query
+和
+Document
+必须进入
+兼容的检索表示空间
+}
+</annotation></semantics></math></p>
+<p>而不是死记：</p>
+<blockquote>
+<p>“两边只要直接调用同一个函数就一定正确。”</p>
+</blockquote>
+<hr />
+<h1 id="五一个-chunk-最后为什么会变成一个向量">五、一个 Chunk
+最后为什么会变成“一个向量”？</h1>
+<p>Transformer 对一段文本内部通常会产生很多 Token Representation。</p>
+<p>例如：</p>
+<pre class="text"><code>Chunk
+↓
+Token 1 → h1
+Token 2 → h2
+Token 3 → h3
+...
+Token n → hn</code></pre>
+<p>但向量检索需要的通常是：</p>
+<blockquote>
+<p><strong>整个 Chunk 的单个固定长度向量。</strong></p>
+</blockquote>
+<p>于是需要一个：</p>
+<h1 id="pooling">Pooling</h1>
+<h2 id="汇聚">汇聚</h2>
+<p>把多个 Token Representation 变成一个 Sentence / Passage
+Embedding。</p>
+<p>概念上可能是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝐞</mi><mo>=</mo><mi>P</mi><mi>o</mi><mi>o</mi><mi>l</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>𝐡</mi><mn>1</mn></msub><mo>,</mo><msub><mi>𝐡</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>𝐡</mi><mi>n</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathbf{e}
+=
+Pool(
+\mathbf{h}_1,
+\mathbf{h}_2,
+\ldots,
+\mathbf{h}_n
+)
+</annotation></semantics></math></p>
+<p>不同模型可能使用：</p>
+<pre class="text"><code>Mean Pooling
+特殊Token表示
+加权Pooling
+模型专门训练出的Pooling机制</code></pre>
+<p>所以：</p>
+<blockquote>
+<p><strong>Embedding 不是简单把 Token Embedding
+平均一下的同义词。</strong></p>
+</blockquote>
+<p>具体怎样 Pool：</p>
+<blockquote>
+<p>是 Embedding Model 架构和训练方式的一部分。</p>
+</blockquote>
+<hr />
+<h1 id="六cosine-similarity-到底在比较什么">六、Cosine Similarity
+到底在比较什么？</h1>
+<p>最常见的相似度之一是：</p>
+<h1 id="cosine-similarity">Cosine Similarity</h1>
+<h2 id="余弦相似度">余弦相似度</h2>
+<p>公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mrow><mi>𝐪</mi><mo>⋅</mo><mi>𝐝</mi></mrow><mrow><mo stretchy="false" form="postfix">∥</mo><mi>𝐪</mi><mo stretchy="false" form="postfix">∥</mo><mo stretchy="false" form="postfix">∥</mo><mi>𝐝</mi><mo stretchy="false" form="postfix">∥</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\cos(\theta)
+=
+\frac{
+\mathbf{q}\cdot\mathbf{d}
+}{
+\|\mathbf{q}\|
+\|\mathbf{d}\|
+}
+</annotation></semantics></math></p>
+<p>它比较的是：</p>
+<blockquote>
+<p>两个向量方向有多接近。</p>
+</blockquote>
+<p>如果方向非常接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\cos(\theta)
+\approx 1
+</annotation></semantics></math></p>
+<p>如果接近正交：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\cos(\theta)
+\approx 0
+</annotation></semantics></math></p>
+<p>如果方向相反：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+\cos(\theta)
+&lt;0
+</annotation></semantics></math></p>
+<p>但这里不要形成一个错误理解：</p>
+<blockquote>
+<p>“Cosine = 人类语义相似度真理。”</p>
+</blockquote>
+<p>不是。</p>
+<p>它只是：</p>
+<blockquote>
+<p><strong>在这个 Embedding Model
+学出的空间里，用一个几何函数比较向量关系。</strong></p>
+</blockquote>
+<p>效果好不好，最终仍取决于：</p>
+<blockquote>
+<p>Embedding Model 有没有把我们的业务语义组织好。</p>
+</blockquote>
+<hr />
+<h1 id="七dot-productcosinel2-distance-不要混">七、Dot
+Product、Cosine、L2 Distance 不要混</h1>
+<p>除了 Cosine，还经常见：</p>
+<h1 id="dot-product">Dot Product</h1>
+<h2 id="点积">点积</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝐪</mi><mo>⋅</mo><mi>𝐝</mi></mrow><annotation encoding="application/x-tex">
+\mathbf{q}\cdot\mathbf{d}
+</annotation></semantics></math></p>
+<p>以及：</p>
+<h1 id="euclidean-distance">Euclidean Distance</h1>
+<h2 id="欧氏距离-l2-distance">欧氏距离 / L2 Distance</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="postfix">∥</mo><mi>𝐪</mi><mo>−</mo><mi>𝐝</mi><msub><mo stretchy="false" form="postfix">∥</mo><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">
+\|\mathbf{q}-\mathbf{d}\|_2
+</annotation></semantics></math></p>
+<p>三者不是一回事。</p>
+<p>如果向量已经做了：</p>
+<h1 id="l2-normalization">L2 Normalization</h1>
+<h2 id="l2-归一化">L2 归一化</h2>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>𝐞</mi><mo accent="true">̂</mo></mover><mo>=</mo><mfrac><mi>𝐞</mi><mrow><mo stretchy="false" form="postfix">∥</mo><mi>𝐞</mi><mo stretchy="false" form="postfix">∥</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\hat{\mathbf{e}}
+=
+\frac{\mathbf{e}}{\|\mathbf{e}\|}
+</annotation></semantics></math></p>
+<p>那么对于单位向量：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>𝐪</mi><mo accent="true">̂</mo></mover><mo>⋅</mo><mover><mi>𝐝</mi><mo accent="true">̂</mo></mover><mo>=</mo><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\hat{\mathbf{q}}
+\cdot
+\hat{\mathbf{d}}
+=
+\cos(\theta)
+</annotation></semantics></math></p>
+<p>这时候：</p>
+<blockquote>
+<p>Dot Product 和 Cosine 排序会变得等价。</p>
+</blockquote>
+<p>而单位向量之间的 L2 距离也和 Cosine 存在固定关系：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="postfix">∥</mo><mover><mi>𝐪</mi><mo accent="true">̂</mo></mover><mo>−</mo><mover><mi>𝐝</mi><mo accent="true">̂</mo></mover><msubsup><mo stretchy="false" form="postfix">∥</mo><mn>2</mn><mn>2</mn></msubsup><mo>=</mo><mn>2</mn><mo>−</mo><mn>2</mn><mo>cos</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\|\hat{\mathbf{q}}-\hat{\mathbf{d}}\|_2^2
+=
+2-2\cos(\theta)
+</annotation></semantics></math></p>
+<p>所以工程上真正要记录的是：</p>
+<pre class="text"><code>Embedding Model
+是否Normalize
+Similarity Metric
+Index Metric</code></pre>
+<p>必须彼此一致。</p>
+<hr />
+<h1 id="八embedding-dimension-越大不代表语义一定越强">八、Embedding
+Dimension 越大，不代表语义一定越强</h1>
+<p>假设两个模型：</p>
+<pre class="text"><code>Model A
+768 dimensions
+
+Model B
+1536 dimensions</code></pre>
+<p>不能直接推出：</p>
+<blockquote>
+<p>Model B 一定更懂政府采购。</p>
+</blockquote>
+<p>Dimension 只是：</p>
+<blockquote>
+<p>表示空间的宽度之一。</p>
+</blockquote>
+<p>真正效果还取决于：</p>
+<pre class="text"><code>训练数据
+训练目标
+模型架构
+多语言能力
+检索任务训练
+领域分布
+Query / Document格式</code></pre>
+<p>而更高维通常还意味着：</p>
+<pre class="text"><code>向量存储更大
+索引更大
+计算成本更高
+内存占用更高</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>e</mi><mi>r</mi><mi>D</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>G</mi><mi>u</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>e</mi><mi>d</mi><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HigherDimension
+\neq
+GuaranteedBetterRetrieval
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九embedding-的每一维通常没有稳定的人类语义">九、Embedding
+的每一维通常没有稳定的人类语义</h1>
+<p>看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">[</mo><mn>0.13</mn><mo>,</mo><mi>−</mi><mn>0.72</mn><mo>,</mo><mn>0.08</mn><mo>,</mo><mi>…</mi><mo stretchy="true" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">
+[0.13,-0.72,0.08,\ldots]
+</annotation></semantics></math></p>
+<p>不要问：</p>
+<blockquote>
+<p>“第 37 维是不是代表地域限制？”</p>
+</blockquote>
+<p>通常不是这样理解。</p>
+<p>Embedding 的意义是：</p>
+<blockquote>
+<p><strong>分布式表示。</strong></p>
+</blockquote>
+<p>业务概念往往不是单独存放在某一个维度，而是体现在：</p>
+<pre class="text"><code>很多维度
+共同组成的方向
+距离
+局部几何结构</code></pre>
+<p>所以我们使用 Embedding 时，</p>
+<p>关注的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>e</mi><mi>o</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>y</mi></mrow><annotation encoding="application/x-tex">
+Geometry
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>每一维的人类解释。</p>
+</blockquote>
+<p>这和第二课里“神经网络知识是分布式表示”是一脉相承的。</p>
+<hr />
+<h1 id="十embedding-解决的是候选召回不是最终法律判断">十、Embedding
+解决的是“候选召回”，不是最终法律判断</h1>
+<p>这是政府采购场景必须特别小心的边界。</p>
+<p>假设 Query：</p>
+<blockquote>
+<p>“要求投标前设立本地分公司是否存在风险？”</p>
+</blockquote>
+<p>Embedding 找到两个高相似 Chunk：</p>
+<pre class="text"><code>Chunk A
+不得以供应商所在地限制供应商
+
+Chunk B
+中标后可要求供应商建立本地服务团队</code></pre>
+<p>它们都可能和：</p>
+<pre class="text"><code>本地
+供应商
+服务机构</code></pre>
+<p>语义相关。</p>
+<p>但哪一条真正回答用户问题，</p>
+<p>还需要：</p>
+<pre class="text"><code>时间条件
+投标前 / 中标后
+
+法律关系
+资格准入 / 履约要求
+
+适用区域
+文件版本
+具体上下文</code></pre>
+<p>所以 Embedding 更接近：</p>
+<h1 id="candidate-retrieval">Candidate Retrieval</h1>
+<h2 id="候选召回">候选召回</h2>
+<p>而不是：</p>
+<h1 id="final-legal-reasoning">Final Legal Reasoning</h1>
+<h2 id="最终业务判断">最终业务判断</h2>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>S</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighSimilarity
+\neq
+CorrectAnswer
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一embedding-也会产生语义假朋友">十一、Embedding
+也会产生“语义假朋友”</h1>
+<p>关键词检索会被字面相似骗。</p>
+<p>Embedding 也一样会有自己的错误。</p>
+<p>例如：</p>
+<pre class="text"><code>Query:
+投标前必须在本地设立机构
+
+Chunk A:
+不得要求供应商投标前在采购人所在地设立机构
+
+Chunk B:
+供应商中标后应建立本地售后服务机构</code></pre>
+<p>Embedding 可能认为：</p>
+<blockquote>
+<p>A、B 都很相关。</p>
+</blockquote>
+<p>因为它们共享大量语义概念：</p>
+<pre class="text"><code>供应商
+本地
+机构
+要求</code></pre>
+<p>但真正的业务决策边界在：</p>
+<pre class="text"><code>投标前
+vs
+中标后</code></pre>
+<p>所以我们第五课一直强调的 Hard Negative，</p>
+<p>到了 RAG 一样重要。</p>
+<p>这里可以把它叫：</p>
+<h1 id="retrieval-hard-negative">Retrieval Hard Negative</h1>
+<h2 id="检索困难负例">检索困难负例</h2>
+<p>也就是：</p>
+<blockquote>
+<p><strong>语义看起来很近，但实际上不是正确证据。</strong></p>
+</blockquote>
+<p>这也是后面为什么需要：</p>
+<pre class="text"><code>Hybrid Retrieval
+Reranker
+Metadata Filter</code></pre>
+<hr />
+<h1 id="十二真正的离线向量化流程">十二、真正的离线向量化流程</h1>
+<p>当 Chunking 完成以后，Offline Indexing 可以继续：</p>
+<pre class="text"><code>Chunk
+  │
+  ▼
+Embedding Model
+  │
+  ▼
+Vector
+  │
+  ├── chunk_id
+  ├── document_id
+  ├── metadata
+  └── embedding
+  │
+  ▼
+Vector Index</code></pre>
+<p>概念上：</p>
+<pre class="text"><code>DOC_001_A12_C01
+→
+[0.13, -0.72, ..., 0.08]
+
+DOC_002_A07_C03
+→
+[-0.22, 0.51, ..., 0.19]</code></pre>
+<p>这一步通常是：</p>
+<blockquote>
+<p><strong>离线完成。</strong></p>
+</blockquote>
+<p>不是用户每问一次，</p>
+<p>就重新对整个知识库做 Embedding。</p>
+<hr />
+<h1 id="十三在线-query-流程则只编码当前问题">十三、在线 Query
+流程则只编码当前问题</h1>
+<p>用户发来：</p>
+<pre class="text"><code>Query
+=
+“供应商投标前必须有本地分公司合法吗？”</code></pre>
+<p>在线流程：</p>
+<pre class="text"><code>Query
+  │
+  ▼
+Embedding Model
+  │
+  ▼
+Query Vector
+  │
+  ▼
+和知识库向量比较
+  │
+  ▼
+Top-K Candidates</code></pre>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>𝐪</mi><mo>=</mo><msub><mi>f</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\mathbf{q}
+=
+f_{\theta}(Query)
+</annotation></semantics></math></p>
+<p>然后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mi>i</mi></msub><mo>=</mo><mi>s</mi><mi>i</mi><mi>m</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>𝐪</mi><mo>,</mo><msub><mi>𝐝</mi><mi>𝐢</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+score_i
+=
+sim(
+\mathbf{q},
+\mathbf{d_i}
+)
+</annotation></semantics></math></p>
+<p>最后按：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">
+score_i
+</annotation></semantics></math></p>
+<p>排序。</p>
+<p>这就是 Dense Retrieval 的最小数学骨架。</p>
+<hr />
+<h1
+id="十四怎样判断一个-embedding-model-适不适合政府采购">十四、怎样判断一个
+Embedding Model 适不适合政府采购？</h1>
+<p>不能只看：</p>
+<blockquote>
+<p>公共榜单排名。</p>
+</blockquote>
+<p>至少要检查五件事：</p>
+<pre class="text"><code>中文能力
+法规 / 政策文本能力
+Query-Document非对称检索能力
+长Chunk处理能力
+领域Hard Negative区分能力</code></pre>
+<p>最终还必须拿自己的：</p>
+<h1 id="retrieval-benchmark">Retrieval Benchmark</h1>
+<p>来测。</p>
+<p>例如设计：</p>
+<pre class="text"><code>Query 001
+Gold Evidence = 第十二条
+
+Query 002
+Gold Evidence = 第二十四条第二款
+
+Query 003
+Gold Evidence = 某地方文件旧版本
+
+Query 004
+Gold Evidence = needs_review / 无充分证据</code></pre>
+<p>然后看：</p>
+<blockquote>
+<p>正确证据是否进入 Top-K。</p>
+</blockquote>
+<p>也就是说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>用</mi><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>验</mi><mi>证</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EmbeddingModelQuality
+必须用RetrievalTask验证
+}
+</annotation></semantics></math></p>
+<p>不能只看向量维度或模型参数量。</p>
+<hr />
+<h1
+id="十五本阶段工程产物procurementembeddingpolicy_v0.1">十五、本阶段工程产物：<code>ProcurementEmbeddingPolicy_V0.1</code></h1>
+<p>第一版至少记录：</p>
+<pre class="text"><code>embedding_model_id
+embedding_model_revision
+
+embedding_dimension
+
+query_encoding_mode
+document_encoding_mode
+
+query_prefix
+document_prefix
+
+max_input_tokens
+
+pooling_strategy
+如果模型需要记录
+
+normalize_embeddings
+
+similarity_metric
+
+batch_size
+
+device
+dtype
+
+chunk_policy_version
+
+embedding_created_at
+
+embedding_version</code></pre>
+<p>这里有一个特别重要的工程规则：</p>
+<blockquote>
+<p><strong>Embedding
+一旦更换模型或关键编码策略，已有向量通常不能继续和新向量混用。</strong></p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>V1 Knowledge Vectors
+来自 EmbeddingModel_A
+
+Query Vector
+来自 EmbeddingModel_B</code></pre>
+<p>即使维度碰巧一样，</p>
+<p>也不代表：</p>
+<blockquote>
+<p>它们处在同一个语义空间。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>D</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>S</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameDimension
+\neq
+SameVectorSpace
+}
+</annotation></semantics></math></p>
+<p>更换 Embedding Model 后，</p>
+<p>通常需要：</p>
+<blockquote>
+<p><strong>重新 Embedding / Re-index。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十六把本阶段压成最精准的-5-句话">十六、把本阶段压成最精准的 5
+句话</h1>
+<blockquote>
+<p><strong>第一，Embedding 是把 Query 或 Chunk
+映射成固定维度向量，使语义相关的文本在模型学出的向量空间里尽量靠近。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Dense Retrieval 的核心就是分别得到 Query Vector 和
+Document Vector，再用 Cosine、Dot Product 或其它兼容度量做 Top-K
+排序。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Query 和 Document
+必须进入兼容的检索表示空间；有些模型是对称编码，有些模型需要不同的 Query
+/ Document Prefix 或任务指令。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Embedding Similarity
+只负责候选召回，不等于最终业务正确性；政府采购里的“投标前 vs 中标后”等
+Hard Negative 仍可能让语义向量犯错。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Embedding Model、Revision、Normalization、Similarity
+Metric
+和编码策略必须版本锁定；换模型通常意味着旧知识向量需要重新计算。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-3">本阶段最核心的一张图</h1>
+<pre class="text"><code>                   Offline Knowledge Path
+
+                       Chunk
+                         │
+                         ▼
+                  Embedding Model
+                         │
+                         ▼
+                  Document Vector
+                         │
+                         ▼
+                    Vector Index
+
+
+                    Online Query Path
+
+                      User Query
+                         │
+                         ▼
+                  Embedding Model
+                         │
+                         ▼
+                    Query Vector
+                         │
+                         ▼
+              Similarity / Distance
+                         │
+                         ▼
+                      Top-K
+                         │
+                         ▼
+                Candidate Evidence</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Embedding
+不是答案，它只是把“这个问题可能和哪些知识最相关”变成可以计算的几何问题。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-4-阶段掌握测试">第六课 · 第 4 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：Embedding
+到底是什么；为什么它不是传统词典编码；为什么语义相近但字面不同的文本可以在向量空间里靠近；Query
+Vector 和 Document Vector
+为什么能够比较；什么是对称检索与非对称检索；为什么一个 Chunk 最后需要
+Pooling 成一个固定长度向量；Cosine Similarity、Dot Product、L2 Distance
+分别在比较什么；为什么 L2 Normalization 后 Dot Product 可以和 Cosine
+等价排序；为什么更高的 Embedding Dimension
+不保证更好；为什么不能把某一维解释成“地域限制维度”；为什么高相似度不等于正确业务答案；什么是
+Retrieval Hard Negative；Offline Embedding 和 Online Query Encoding
+分别发生什么；以及为什么换 Embedding Model
+后通常需要重新向量化整个知识库。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>4</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第4阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第六课-第-5-阶段">下一阶段：第六课 · 第 5 阶段</h1>
+<h1 id="vector-index-vector-database向量到底怎样被快速找到">Vector Index
+/ Vector Database：向量到底怎样被快速找到？</h1>
+<p>到这里我们已经有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mo>→</mo><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>V</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>o</mi><mi>r</mi></mrow><annotation encoding="application/x-tex">
+Chunk
+\rightarrow
+EmbeddingVector
+</annotation></semantics></math></p>
+<p>下一阶段要解决的是：</p>
+<blockquote>
+<p><strong>如果知识库有 1,000 个向量，逐个比较还可以；如果有 1,000
+万个向量，难道每次 Query
+都和所有向量做一次完整相似度计算吗？</strong></p>
+</blockquote>
+<p>我们会正式进入：</p>
+<pre class="text"><code>Exact Search
+Approximate Nearest Neighbor
+ANN
+Vector Index
+HNSW
+IVF
+Vector Database
+Top-K Search
+Recall / Latency Trade-off</code></pre>
+<p>并真正理解：</p>
+<blockquote>
+<p><strong>Vector Database
+最核心的价值不是“保存向量”，而是让大规模近邻搜索、Metadata
+Filter、持久化和工程管理变得可用。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

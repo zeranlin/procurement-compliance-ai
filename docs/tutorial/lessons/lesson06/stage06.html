@@ -1,0 +1,820 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第6阶段：Retrieval：Top-K 找到了，真的代表找对了吗？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第6阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，Retriever 的目标不是让“看起来相关”的文本靠前，而是让真正能够支持问题的 Gold Evidence 尽可能进入足够靠前的位置。</li><li>第二，Hit@K 看是否至少命中，Recall@K 看 Gold Set 覆盖率，MRR 看第一条正确证据出现得有多早；三者回答的问题不同。</li><li>第三，政府采购 Retrieval Benchmark 必须包含 Hard Negative、时间版本、辖区和 No-answer Query，否则无法测出真正的业务边界。</li></ul></div><h1 id="第六课-第-6-阶段">第六课 · 第 6 阶段</h1>
+<h1 id="retrievaltop-k-找到了真的代表找对了吗-1">Retrieval：Top-K
+找到了，真的代表找对了吗？</h1>
+<h2
+id="从向量上接近走向业务上找到正确证据">从“向量上接近”走向“业务上找到正确证据”</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-5">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-5">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Retriever
+的目标不是让“看起来相关”的文本靠前，而是让真正能够支持问题的 Gold
+Evidence 尽可能进入足够靠前的位置。</strong></li>
+<li><strong>第二，Hit@K 看是否至少命中，Recall@K 看 Gold Set 覆盖率，MRR
+看第一条正确证据出现得有多早；三者回答的问题不同。</strong></li>
+<li><strong>第三，政府采购 Retrieval Benchmark 必须包含 Hard
+Negative、时间版本、辖区和 No-answer
+Query，否则无法测出真正的业务边界。</strong></li>
+<li><strong>第四，正确证据没进 Top-K 时，要区分
+Knowledge、Chunking、Metadata Filter、Embedding、ANN、Ranking、Version
+和 Duplicate 等失败类型，不能一律归咎于 Embedding。</strong></li>
+<li><strong>第五，Retrieval Evaluation 必须和 Generation Evaluation
+分离：先证明“证据找到了”，再讨论“模型有没有正确使用证据”。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-5">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="even">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="odd">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="even">
+<td><code>Chunking</code></td>
+<td>分块：把长文档切成适合检索和上下文组装的片段</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-5">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 5 阶段，我们已经解决了一个工程问题：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>怎</mi><mi>样</mi><mi>快</mi><mi>速</mi><mi>找</mi><mi>到</mi><mi>向</mi><mi>量</mi><mi>上</mi><mi>最</mi><mi>接</mi><mi>近</mi><mi>的</mi><mi>候</mi><mi>选</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+怎样快速找到向量上最接近的候选
+}
+</annotation></semantics></math></p>
+<p>但今天要解决更重要的问题：</p>
+<blockquote>
+<p><strong>最接近的候选，真的是正确证据吗？</strong></p>
+</blockquote>
+<p>假设用户问：</p>
+<blockquote>
+<p>“采购文件要求供应商在投标截止前已经在本地设立服务机构，这种条件是否存在风险？”</p>
+</blockquote>
+<p>Retriever 返回：</p>
+<pre class="text"><code>Top-1:
+中标后供应商应保证本地现场服务能力
+
+Top-2:
+不得以供应商所在地限制或者排斥供应商
+
+Top-3:
+供应商应具备履行合同所必需的设备和专业技术能力</code></pre>
+<p>从语义相似度看：</p>
+<blockquote>
+<p>Top-1 可能很像。</p>
+</blockquote>
+<p>但真正能回答“投标前本地机构准入条件”的证据，</p>
+<p>可能是：</p>
+<blockquote>
+<p>Top-2。</p>
+</blockquote>
+<p>所以今天开始，我们第一次正式把：</p>
+<h1 id="retrieval-evaluation">Retrieval Evaluation</h1>
+<h2 id="检索评测">检索评测</h2>
+<p>从 Generation Evaluation 中拆出来。</p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementretrievalbenchmark_v0.1"><code>ProcurementRetrievalBenchmark_V0.1</code></h1>
+<hr />
+<h1
+id="一先锁死本阶段最重要的一句话-2">一、先锁死本阶段最重要的一句话</h1>
+<p>Retriever 的目标不是：</p>
+<blockquote>
+<p><strong>把“看起来相关”的文本排在前面。</strong></p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>让真正能够支持当前问题的 Gold Evidence
+尽可能进入足够靠前的位置。</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Similarity
+\neq
+Relevance
+}
+</annotation></semantics></math></p>
+<p>更进一步：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>S</mi><mi>u</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Relevance
+\neq
+Sufficiency
+}
+</annotation></semantics></math></p>
+<p>一段 Chunk 可能：</p>
+<blockquote>
+<p>和问题主题相关，</p>
+</blockquote>
+<p>但仍然不足以支持最终判断。</p>
+<p>因此我们评测 Retrieval 时，真正关心的是：</p>
+<blockquote>
+<p><strong>正确证据有没有被召回、排到了哪里、是否足够完整。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二什么是-gold-evidence">二、什么是 Gold Evidence？</h1>
+<p>要评测 Retrieval，必须先知道：</p>
+<blockquote>
+<p>“正确答案应该搜到哪一条证据？”</p>
+</blockquote>
+<p>这就是：</p>
+<h1 id="gold-evidence">Gold Evidence</h1>
+<h2 id="标准证据">标准证据</h2>
+<p>例如：</p>
+<pre class="text"><code>Query:
+“投标前必须设本地机构是否存在风险？”
+
+Gold Evidence:
+DOC_001_A12_C01</code></pre>
+<p>这里的 Gold Evidence 不一定只能有一条。</p>
+<p>真实问题可能需要：</p>
+<pre class="text"><code>Gold Evidence Set
+=
+{
+  A,
+  B,
+  C
+}</code></pre>
+<p>例如：</p>
+<pre class="text"><code>A
+一般规则
+
+B
+地方适用规则
+
+C
+例外条款</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>可</mi><mi>以</mi><mi>是</mi><mi>集</mi><mi>合</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoldEvidence
+可以是集合
+}
+</annotation></semantics></math></p>
+<p>而不是永远只有单一 Chunk。</p>
+<hr />
+<h1 id="三gold-evidence-必须按证据粒度定义">三、Gold Evidence
+必须按“证据粒度”定义</h1>
+<p>这是一个很容易做错的地方。</p>
+<p>假设完整正确证据是：</p>
+<pre class="text"><code>第十二条</code></pre>
+<p>但 Chunking 后它被拆成：</p>
+<pre class="text"><code>A12_C01
+A12_C02
+A12_C03</code></pre>
+<p>如果只把：</p>
+<pre class="text"><code>A12_C02</code></pre>
+<p>标成 Gold，</p>
+<p>可能过于严格。</p>
+<p>反过来，</p>
+<p>如果整份文档：</p>
+<pre class="text"><code>DOC_001</code></pre>
+<p>都算 Gold，</p>
+<p>又太宽松。</p>
+<p>所以 Gold Label 必须与我们的：</p>
+<h1 id="retrieval-unit">Retrieval Unit</h1>
+<h2 id="检索粒度">检索粒度</h2>
+<p>对齐。</p>
+<p>常见做法是定义：</p>
+<pre class="text"><code>Exact Gold Chunk
+Relevant Chunk Set
+Parent Article
+Document-level Relevance</code></pre>
+<p>然后分别评估。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>u</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>和</mi><mi>C</mi><mi>h</mi><mi>u</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>对</mi><mi>齐</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EvaluationGranularity
+必须和
+ChunkingGranularity
+对齐
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四hitk正确证据有没有进入前-k-名">四、Hit@K：正确证据有没有进入前
+K 名？</h1>
+<p>最简单的指标是：</p>
+<h1 id="hitk">Hit@K</h1>
+<p>如果一个 Query 的 Gold Evidence 进入 Top-K：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>i</mi><mi>t</mi><mi>@</mi><mi>K</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+Hit@K=1
+</annotation></semantics></math></p>
+<p>否则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>i</mi><mi>t</mi><mi>@</mi><mi>K</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Hit@K=0
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>Gold = B
+
+Top-5 =
+A
+C
+B
+D
+E</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>i</mi><mi>t</mi><mi>@</mi><mn>5</mn><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+Hit@5=1
+</annotation></semantics></math></p>
+<p>因为 B 在前 5 名里。</p>
+<p>如果：</p>
+<pre class="text"><code>Top-2 =
+A
+C</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi><mi>i</mi><mi>t</mi><mi>@</mi><mn>2</mn><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Hit@2=0
+</annotation></semantics></math></p>
+<p>Hit@K 回答的是：</p>
+<blockquote>
+<p><strong>“至少有没有一条正确证据进入候选集？”</strong></p>
+</blockquote>
+<hr />
+<h1 id="五recallk多个-gold-evidence-找回了多少">五、Recall@K：多个 Gold
+Evidence 找回了多少？</h1>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>=</mo><mo stretchy="false" form="prefix">{</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo>,</mo><mi>C</mi><mo>,</mo><mi>D</mi><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">
+Gold
+=
+\{A,B,C,D\}
+</annotation></semantics></math></p>
+<p>Retriever Top-5 找到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">{</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo>,</mo><mi>X</mi><mo>,</mo><mi>Y</mi><mo>,</mo><mi>Z</mi><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">
+\{A,B,X,Y,Z\}
+</annotation></semantics></math></p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>@</mi><mn>5</mn><mo>=</mo><mfrac><mn>2</mn><mn>4</mn></mfrac><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">
+Recall@5
+=
+\frac{2}{4}
+=
+0.5
+</annotation></semantics></math></p>
+<p>因为四条 Gold Evidence 中只找回两条。</p>
+<p>所以：</p>
+<h1 id="recallk">Recall@K</h1>
+<p>回答：</p>
+<blockquote>
+<p><strong>所有应该找到的证据里，前 K 名找回了多少。</strong></p>
+</blockquote>
+<p>这和 Hit@K 不同。</p>
+<p>Hit@K 只关心：</p>
+<blockquote>
+<p>有没有至少命中一个。</p>
+</blockquote>
+<p>Recall@K 更关心：</p>
+<blockquote>
+<p>Gold Set 被覆盖了多少。</p>
+</blockquote>
+<hr />
+<h1
+id="六mrr正确证据排得够不够靠前">六、MRR：正确证据排得够不够靠前？</h1>
+<p>假设每个 Query 只关心第一个正确证据出现的位置。</p>
+<p>如果：</p>
+<pre class="text"><code>Gold 第1名出现</code></pre>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>R</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+RR=1
+</annotation></semantics></math></p>
+<p>如果：</p>
+<pre class="text"><code>Gold 第2名出现</code></pre>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>R</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac></mrow><annotation encoding="application/x-tex">
+RR=\frac{1}{2}
+</annotation></semantics></math></p>
+<p>如果：</p>
+<pre class="text"><code>Gold 第5名出现</code></pre>
+<p>则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>R</mi><mo>=</mo><mfrac><mn>1</mn><mn>5</mn></mfrac></mrow><annotation encoding="application/x-tex">
+RR=\frac{1}{5}
+</annotation></semantics></math></p>
+<p>这叫：</p>
+<h1 id="reciprocal-rank">Reciprocal Rank</h1>
+<h2 id="倒数排名">倒数排名</h2>
+<p>多个 Query 取平均：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>R</mi><mi>R</mi><mo>=</mo><mfrac><mn>1</mn><mi>Q</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>Q</mi></munderover><mfrac><mn>1</mn><mrow><mi>r</mi><mi>a</mi><mi>n</mi><msub><mi>k</mi><mi>i</mi></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+MRR
+=
+\frac{1}{Q}
+\sum_{i=1}^{Q}
+\frac{1}{rank_i}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Q</mi><annotation encoding="application/x-tex">
+Q
+</annotation></semantics></math></p>
+<p>是 Query 数量。</p>
+<p>MRR 关心的是：</p>
+<blockquote>
+<p><strong>第一条正确证据出现得有多早。</strong></p>
+</blockquote>
+<p>这对 RAG 很重要，</p>
+<p>因为最终 Context 往往不会塞进几十条证据。</p>
+<hr />
+<h1 id="七为什么只看-hitk-不够">七、为什么只看 Hit@K 不够？</h1>
+<p>假设两个 Retriever：</p>
+<pre class="text"><code>Retriever A
+Gold总在第1～2名
+
+Retriever B
+Gold总在第9～10名</code></pre>
+<p>如果只看：</p>
+<pre class="text"><code>Hit@10</code></pre>
+<p>它们可能都是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>100</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+100\%
+</annotation></semantics></math></p>
+<p>但实际体验完全不同。</p>
+<p>因为：</p>
+<pre class="text"><code>A
+Reranker压力小
+Context更干净
+
+B
+需要更大的候选池
+无关Chunk更多
+后续成本更高</code></pre>
+<p>所以最好联合看：</p>
+<pre class="text"><code>Hit@K
+Recall@K
+MRR
+Rank Distribution</code></pre>
+<p>而不是一个指标包打天下。</p>
+<hr />
+<h1 id="八retrieval-benchmark-必须包含-hard-negative">八、Retrieval
+Benchmark 必须包含 Hard Negative</h1>
+<p>这和第五课训练 Benchmark 完全呼应。</p>
+<p>例如：</p>
+<pre class="text"><code>Query:
+投标前要求本地机构</code></pre>
+<p>正确证据：</p>
+<pre class="text"><code>Gold:
+不得要求供应商在投标前预先设立本地机构</code></pre>
+<p>困难负例：</p>
+<pre class="text"><code>Hard Negative:
+中标后应建立本地售后服务体系</code></pre>
+<p>两者词面和语义都很接近，</p>
+<p>真正差别在：</p>
+<pre class="text"><code>投标前
+vs
+中标后
+
+准入
+vs
+履约</code></pre>
+<p>如果 Retriever 经常把 Hard Negative 排在 Gold 前面，</p>
+<p>说明：</p>
+<blockquote>
+<p>它抓住了大主题，却没有抓住真正业务边界。</p>
+</blockquote>
+<p>因此我们需要专门记录：</p>
+<h1 id="hard-negative-rank">Hard Negative Rank</h1>
+<p>以及：</p>
+<h1 id="gold-vs-hard-negative-margin">Gold-vs-Hard-Negative Margin</h1>
+<p>概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>i</mi><mi>n</mi><mo>=</mo><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>G</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>N</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Margin
+=
+score(Gold)
+-
+score(HardNegative)
+</annotation></semantics></math></p>
+<p>如果 Margin 经常小于 0：</p>
+<blockquote>
+<p>说明检索空间没有很好地区分关键边界。</p>
+</blockquote>
+<hr />
+<h1 id="九no-answer-query没有正确证据时怎么办">九、No-answer
+Query：没有正确证据时怎么办？</h1>
+<p>真实系统里并不是每个问题：</p>
+<blockquote>
+<p>知识库里一定有答案。</p>
+</blockquote>
+<p>例如用户问：</p>
+<blockquote>
+<p>“某内部未公开规则是否允许这样做？”</p>
+</blockquote>
+<p>知识库可能根本没有该规则。</p>
+<p>如果 Benchmark 只包含：</p>
+<pre class="text"><code>一定存在Gold Evidence</code></pre>
+<p>Retriever 很容易学成：</p>
+<blockquote>
+<p>无论什么问题都给你找几个“看起来像”的 Chunk。</p>
+</blockquote>
+<p>所以我们还需要：</p>
+<h1 id="no-answer-query">No-answer Query</h1>
+<h2 id="无充分证据问题">无充分证据问题</h2>
+<p>目标不是让 Retriever：</p>
+<blockquote>
+<p>返回空一定最好。</p>
+</blockquote>
+<p>而是让系统能够识别：</p>
+<blockquote>
+<p><strong>当前知识库没有足够可信的支持证据。</strong></p>
+</blockquote>
+<p>这会影响后面的：</p>
+<pre class="text"><code>score threshold
+needs_review
+abstention</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>o</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>也</mi><mi>是</mi><mi>一</mi><mi>种</mi><mi>正</mi><mi>确</mi><mi>结</mi><mi>果</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NoEvidence
+也是一种正确结果
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十score-thresholdtop-k-不代表都该进入-context">十、Score
+Threshold：Top-K 不代表都该进入 Context</h1>
+<p>假设 Top-5 分数：</p>
+<pre class="text"><code>0.91
+0.87
+0.43
+0.39
+0.37</code></pre>
+<p>前两条明显相关，</p>
+<p>后面三条可能已经很弱。</p>
+<p>如果系统死板地：</p>
+<pre class="text"><code>永远塞满Top-5</code></pre>
+<p>就会把噪声一起送给 LLM。</p>
+<p>所以可以考虑：</p>
+<h1 id="score-threshold">Score Threshold</h1>
+<h2 id="相似度阈值">相似度阈值</h2>
+<p>例如只保留：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>c</mi><mi>o</mi><mi>r</mi><msub><mi>e</mi><mi>i</mi></msub><mo>≥</mo><mi>τ</mi></mrow><annotation encoding="application/x-tex">
+score_i \ge \tau
+</annotation></semantics></math></p>
+<p>的候选。</p>
+<p>但这里必须非常小心：</p>
+<blockquote>
+<p>不同 Embedding Model 的 Score 分布不同。</p>
+</blockquote>
+<p>甚至同一个模型在不同任务上：</p>
+<blockquote>
+<p>分数尺度也可能变化。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>必</mi><mi>须</mi><mi>通</mi><mi>过</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>校</mi><mi>准</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Threshold
+必须通过Benchmark校准
+}
+</annotation></semantics></math></p>
+<p>而不能拍脑袋写：</p>
+<pre class="text"><code>score &gt; 0.8 就一定相关</code></pre>
+<hr />
+<h1
+id="十一retrieval-failure-analysis找错了以后怎么定位">十一、Retrieval
+Failure Analysis：找错了以后怎么定位？</h1>
+<p>以后发现正确证据没进 Top-K，</p>
+<p>不能只说：</p>
+<blockquote>
+<p>“Embedding 不行。”</p>
+</blockquote>
+<p>至少要把失败拆成几类。</p>
+<pre class="text"><code>1. Knowledge Missing
+知识库里根本没有正确证据
+
+2. Chunking Failure
+正确文档有，但证据被切碎
+
+3. Metadata Filter Failure
+正确证据被错误过滤掉
+
+4. Embedding Failure
+语义向量没有把Query和Gold拉近
+
+5. ANN Index Failure
+Exact能找到，但ANN漏掉
+
+6. Ranking Failure
+Gold被召回，但排名太低
+
+7. Version / Temporal Failure
+找到了错误版本
+
+8. Duplicate Domination
+Top-K被重复内容占满</code></pre>
+<p>这张错误地图非常重要。</p>
+<p>因为每一类问题的解决方式完全不同。</p>
+<hr />
+<h1 id="十二怎样构造-procurementretrievalbenchmark_v0.1">十二、怎样构造
+<code>ProcurementRetrievalBenchmark_V0.1</code>？</h1>
+<p>每条 Query 至少应该记录：</p>
+<div class="sourceCode" id="cb207"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb207-1"><a href="#cb207-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb207-2"><a href="#cb207-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_id&quot;</span><span class="fu">:</span> <span class="st">&quot;Q_0001&quot;</span><span class="fu">,</span></span>
+<span id="cb207-3"><a href="#cb207-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query&quot;</span><span class="fu">:</span> <span class="st">&quot;投标前必须设本地机构是否存在风险？&quot;</span><span class="fu">,</span></span>
+<span id="cb207-4"><a href="#cb207-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-5"><a href="#cb207-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17&quot;</span><span class="fu">,</span></span>
+<span id="cb207-6"><a href="#cb207-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;example&quot;</span><span class="fu">,</span></span>
+<span id="cb207-7"><a href="#cb207-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-8"><a href="#cb207-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;gold_chunk_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb207-9"><a href="#cb207-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;DOC_001_A12_C01&quot;</span></span>
+<span id="cb207-10"><a href="#cb207-10" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb207-11"><a href="#cb207-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-12"><a href="#cb207-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;acceptable_parent_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb207-13"><a href="#cb207-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;DOC_001_A12&quot;</span></span>
+<span id="cb207-14"><a href="#cb207-14" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb207-15"><a href="#cb207-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-16"><a href="#cb207-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;hard_negative_chunk_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb207-17"><a href="#cb207-17" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;DOC_009_A03_C02&quot;</span></span>
+<span id="cb207-18"><a href="#cb207-18" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb207-19"><a href="#cb207-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-20"><a href="#cb207-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;answerability&quot;</span><span class="fu">:</span> <span class="st">&quot;answerable&quot;</span><span class="fu">,</span></span>
+<span id="cb207-21"><a href="#cb207-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb207-22"><a href="#cb207-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;notes&quot;</span><span class="fu">:</span> <span class="st">&quot;重点区分投标前准入与中标后履约&quot;</span></span>
+<span id="cb207-23"><a href="#cb207-23" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>对于无充分证据问题：</p>
+<pre class="text"><code>answerability
+=
+no_evidence</code></pre>
+<p>这样 Benchmark 才能同时测：</p>
+<pre class="text"><code>找得到
+排得前
+分得清
+没证据时不乱找</code></pre>
+<hr />
+<h1 id="十三第一版-retrieval-指标应该记录什么">十三、第一版 Retrieval
+指标应该记录什么？</h1>
+<p>我们先不追求几十个指标。</p>
+<p>第一版足够实用的是：</p>
+<pre class="text"><code>Hit@1
+Hit@3
+Hit@5
+Hit@10
+
+Recall@5
+Recall@10
+
+MRR
+
+Median Gold Rank
+P95 Gold Rank
+
+Hard Negative Above Gold Rate
+
+No-answer False Retrieval Rate</code></pre>
+<p>再按 Slice 拆：</p>
+<pre class="text"><code>Normal
+Hard Positive
+Hard Negative
+Boundary
+Temporal
+Jurisdiction
+Version-sensitive
+No-answer</code></pre>
+<p>这样我们就能知道：</p>
+<blockquote>
+<p>总体还可以，</p>
+</blockquote>
+<p>到底是哪一类检索在拖后腿。</p>
+<hr />
+<h1
+id="十四retrieval-evaluation-和-generation-evaluation-必须彻底分开">十四、Retrieval
+Evaluation 和 Generation Evaluation 必须彻底分开</h1>
+<p>这是本阶段最重要的系统工程升级。</p>
+<p>如果最终答案错了，</p>
+<p>先问：</p>
+<pre class="text"><code>正确证据进入Top-K了吗？</code></pre>
+<p>如果：</p>
+<h1 id="没有">没有</h1>
+<p>这是：</p>
+<h1 id="retrieval-failure">Retrieval Failure</h1>
+<p>LLM 没机会。</p>
+<p>如果：</p>
+<h1 id="有">有</h1>
+<p>再问：</p>
+<pre class="text"><code>正确证据进入最终Context了吗？</code></pre>
+<p>如果没有：</p>
+<blockquote>
+<p>是 Ranking / Context Selection 问题。</p>
+</blockquote>
+<p>如果也有，</p>
+<p>但最终答案仍错：</p>
+<blockquote>
+<p>才开始重点怀疑 Generation / Reasoning。</p>
+</blockquote>
+<p>所以错误链应该是：</p>
+<pre class="text"><code>Knowledge
+↓
+Retrieval
+↓
+Ranking
+↓
+Context
+↓
+Generation</code></pre>
+<p>每层单独验收。</p>
+<hr />
+<h1
+id="十五本阶段工程产物procurementretrievalbenchmark_v0.1">十五、本阶段工程产物：<code>ProcurementRetrievalBenchmark_V0.1</code></h1>
+<p>最终我们要形成：</p>
+<pre class="text"><code>benchmark_version
+
+query_set_version
+
+gold_evidence_policy
+
+chunk_granularity
+
+query_slices
+
+top_k_values
+
+score_threshold_policy
+
+metrics:
+  hit_at_k
+  recall_at_k
+  mrr
+  gold_rank
+  hard_negative_rank
+  no_answer_behavior
+
+failure_labels:
+  knowledge_missing
+  chunking_failure
+  metadata_filter_failure
+  embedding_failure
+  ann_failure
+  ranking_failure
+  version_failure
+  duplicate_domination</code></pre>
+<p>这套 Benchmark 会成为后面：</p>
+<pre class="text"><code>Embedding Model比较
+Vector Index调参
+Hybrid Retrieval
+Reranker
+Query Rewrite</code></pre>
+<p>的共同裁判。</p>
+<p>否则每次优化都只是在：</p>
+<blockquote>
+<p>“感觉好像搜得更好了。”</p>
+</blockquote>
+<hr />
+<h1 id="十六把本阶段压成最精准的-5-句话-1">十六、把本阶段压成最精准的 5
+句话</h1>
+<blockquote>
+<p><strong>第一，Retriever
+的目标不是让“看起来相关”的文本靠前，而是让真正能够支持问题的 Gold
+Evidence 尽可能进入足够靠前的位置。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，Hit@K 看是否至少命中，Recall@K 看 Gold Set 覆盖率，MRR
+看第一条正确证据出现得有多早；三者回答的问题不同。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，政府采购 Retrieval Benchmark 必须包含 Hard
+Negative、时间版本、辖区和 No-answer
+Query，否则无法测出真正的业务边界。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，正确证据没进 Top-K 时，要区分
+Knowledge、Chunking、Metadata Filter、Embedding、ANN、Ranking、Version
+和 Duplicate 等失败类型，不能一律归咎于 Embedding。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Retrieval Evaluation 必须和 Generation Evaluation
+分离：先证明“证据找到了”，再讨论“模型有没有正确使用证据”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-5">本阶段最核心的一张图</h1>
+<pre class="text"><code>                        User Query
+                            │
+                            ▼
+                        Retrieval
+                            │
+                            ▼
+                         Top-K
+                            │
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+          Hit@K          Recall@K          MRR
+             │              │              │
+             └──────────────┼──────────────┘
+                            ▼
+                     Gold Rank Analysis
+                            │
+                            ▼
+                  Hard Negative Analysis
+                            │
+                            ▼
+                    Failure Diagnosis
+                            │
+          ┌─────────────────┼──────────────────┐
+          ▼                 ▼                  ▼
+      Knowledge          Retrieval          Ranking
+      / Chunking         / Filter           / Version
+                            │
+                            ▼
+                   Retrieval Benchmark</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>Top-K 只是候选列表；真正的检索质量，要看 Gold Evidence
+是否被找回、排得够前、并且能压过那些“很像但不对”的 Hard
+Negative。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-6-阶段掌握测试">第六课 · 第 6 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Similarity 不等于
+Relevance；为什么 Relevance 也不一定等于 Sufficiency；什么是 Gold
+Evidence；为什么 Gold Evidence 可以是集合；为什么 Gold Label 必须和
+Chunking 粒度对齐；Hit@K、Recall@K、MRR 分别测什么；为什么 Hit@10
+一样高的两个 Retriever 可能实际表现差很多；什么是 Retrieval Hard
+Negative；为什么“投标前本地机构”和“中标后本地服务”是典型 Hard
+Negative；为什么 No-answer Query 必须进入 Benchmark；Score Threshold
+为什么不能拍脑袋设；为什么正确证据没进 Top-K 时不能直接怪
+Embedding；以及为什么 Retrieval Evaluation 必须先于 Generation
+Evaluation 独立完成。</p>
+<p>如果这些都能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>6</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第6阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="下一阶段第六课-第-7-阶段">下一阶段：第六课 · 第 7 阶段</h1>
+<h1 id="bm25-dense-retrieval为什么只靠向量检索不够">BM25 + Dense
+Retrieval：为什么只靠向量检索不够？</h1>
+<p>到这里我们已经能准确评测：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>到</mi><mi>底</mi><mi>找</mi><mi>没</mi><mi>找</mi><mi>对</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Retriever到底找没找对
+}
+</annotation></semantics></math></p>
+<p>下一阶段要解决一个非常现实的问题：</p>
+<blockquote>
+<p><strong>Embedding
+很擅长语义，但法条编号、金额、机构名称、精确术语、文号这些信息，为什么有时反而是关键词检索更可靠？</strong></p>
+</blockquote>
+<p>我们会正式把：</p>
+<pre class="text"><code>Sparse Retrieval
+BM25
+Dense Retrieval
+Score Fusion
+Hybrid Retrieval</code></pre>
+<p>接起来。</p>
+<p>并建立下一件工程产物：</p>
+<h1
+id="procurementhybridretrievalpolicy_v0.1"><code>ProcurementHybridRetrievalPolicy_V0.1</code></h1>
+<p>目标是：</p>
+<blockquote>
+<p><strong>让“字面精确匹配”和“语义相似匹配”互补，而不是让两种 Retriever
+互相替代。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage05.html">← 第 5 阶段</a><a class="btn" href="stage07.html">第 7 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

@@ -1,0 +1,1211 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第8阶段：Target Modules：LoRA 到底插在哪里？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第8阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>A 容量一定更大，因为 64 &gt; 16。</li><li>“Rank 用多少？”</li><li>Rank 多大，并且 LoRA 装在哪里？</li></ul></div><h1 id="第五课-第-8-阶段">第五课 · 第 8 阶段</h1>
+<h1 id="target-moduleslora-到底插在哪里-1">Target Modules：LoRA
+到底插在哪里？</h1>
+<h2
+id="q_projk_projv_projo_proj-和-mlp到底该训练哪些"><code>q_proj</code>、<code>k_proj</code>、<code>v_proj</code>、<code>o_proj</code>
+和 MLP，到底该训练哪些？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-7">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-7">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>A 容量一定更大，因为 64 &gt; 16。</strong></li>
+<li><strong>“Rank 用多少？”</strong></li>
+<li><strong>Rank 多大，并且 LoRA 装在哪里？</strong></li>
+<li><strong>只训练 Attention 和同时训练
+MLP，给模型的适配自由度是不一样的。</strong></li>
+<li><strong>“知识全在 MLP。”</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-7">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Target Modules</code></td>
+<td>目标模块：指定 LoRA 插入哪些线性层</td>
+</tr>
+<tr class="even">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="odd">
+<td><code>MLP</code></td>
+<td>MLP/前馈网络：对每个位置表示做非线性变换</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="odd">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="even">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-7">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到现在，我们已经理解：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+\Delta W = BA
+</annotation></semantics></math></p>
+<p>也知道了：</p>
+<pre class="text"><code>Rank
+=
+每个 LoRA Adapter 有多少容量</code></pre>
+<p>但还有一个比 Rank 更基础的问题：</p>
+<blockquote>
+<p><strong>这个 Adapter 到底装在哪个权重矩阵上？</strong></p>
+</blockquote>
+<p>因为 Transformer 里不是只有一个
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>。</p>
+<p>一层里就可能有：</p>
+<pre class="text"><code>Attention
+├── q_proj
+├── k_proj
+├── v_proj
+└── o_proj
+
+MLP
+├── gate_proj
+├── up_proj
+└── down_proj</code></pre>
+<p>LoRA 不需要天然装到所有地方。</p>
+<p>你必须决定：</p>
+<blockquote>
+<p><strong>哪些计算路径允许政府采购数据去修改。</strong></p>
+</blockquote>
+<p>这就是今天的核心：</p>
+<h1 id="target-modules-1">Target Modules</h1>
+<h2 id="lora-目标模块">LoRA 目标模块</h2>
+<p>本阶段最终形成：</p>
+<h1
+id="loratargetmodulepolicy_v0.1"><code>LoRATargetModulePolicy_V0.1</code></h1>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-6">一、本阶段只解决一个核心问题</h1>
+<p>假设某个 Transformer 权重：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mi>m</mi></msub><annotation encoding="application/x-tex">
+W_m
+</annotation></semantics></math></p>
+<p>被选为 LoRA Target Module。</p>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mi>m</mi></msub><mi>′</mi><mo>=</mo><msub><mi>W</mi><mi>m</mi></msub><mo>+</mo><mfrac><mi>α</mi><mi>r</mi></mfrac><msub><mi>B</mi><mi>m</mi></msub><msub><mi>A</mi><mi>m</mi></msub></mrow><annotation encoding="application/x-tex">
+W_m&#39;
+=
+W_m
++
+\frac{\alpha}{r}B_mA_m
+</annotation></semantics></math></p>
+<p>如果它<strong>没有</strong>被选中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mi>m</mi></msub><mi>′</mi><mo>=</mo><msub><mi>W</mi><mi>m</mi></msub></mrow><annotation encoding="application/x-tex">
+W_m&#39;=W_m
+</annotation></semantics></math></p>
+<p>继续冻结。</p>
+<p>所以 Target Modules 本质上是在回答：</p>
+<blockquote>
+<p><strong>Transformer
+的哪些矩阵拥有“可学习的领域修正通道”？</strong></p>
+</blockquote>
+<p>整个流程先锁成这一张图：</p>
+<pre class="text"><code>                    Transformer Layer
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+             ▼                           ▼
+         Attention                      MLP
+             │                           │
+     ┌───────┼───────┐           ┌───────┼───────┐
+     ▼       ▼       ▼           ▼       ▼       ▼
+   q_proj  k_proj  v_proj      gate    up      down
+     │       │       │
+     └── o_proj ─────┘
+
+             ↓ Target Modules 决策
+
+        哪些 W 保持完全 Frozen？
+        哪些 W 旁边增加 LoRA ΔW？</code></pre>
+<p>一句话压缩：</p>
+<blockquote>
+<p><strong>Rank 决定“改多宽”，Target Modules 决定“改哪里”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二先锁死-5-个核心心智模型-4">二、先锁死 5 个核心心智模型</h1>
+<h2 id="心智模型-1target-modules-决定修改路径rank-决定修改容量">心智模型
+1：Target Modules 决定“修改路径”，Rank 决定“修改容量”</h2>
+<p>这两个必须彻底分开。</p>
+<p>假设：</p>
+<pre class="text"><code>配置 A
+
+r = 64
+只给 q_proj 装 LoRA</code></pre>
+<p>另一组：</p>
+<pre class="text"><code>配置 B
+
+r = 16
+给 q/k/v/o + MLP
+全部装 LoRA</code></pre>
+<p>你不能简单说：</p>
+<blockquote>
+<p>A 容量一定更大，因为 64 &gt; 16。</p>
+</blockquote>
+<p>因为真实可训练空间同时受：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>n</mi><mi>k</mi><mo>×</mo><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>s</mi><mo>×</mo><mi>L</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rank
+\times
+TargetModules
+\times
+Layers
+}
+</annotation></semantics></math></p>
+<p>影响。</p>
+<p>所以以后不要只问：</p>
+<blockquote>
+<p>“Rank 用多少？”</p>
+</blockquote>
+<p>要问：</p>
+<blockquote>
+<p><strong>Rank 多大，并且 LoRA 装在哪里？</strong></p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-2attention-modules-和-mlp-modules-改的是不同计算路径">心智模型
+2：Attention Modules 和 MLP Modules 改的是不同计算路径</h2>
+<p>极简理解：</p>
+<pre class="text"><code>Attention
+更直接参与：
+当前 Token 如何从上下文读取、组合信息
+
+MLP
+更直接参与：
+读取后的表示怎样被非线性转换、重编码</code></pre>
+<p>因此：</p>
+<blockquote>
+<p>只训练 Attention 和同时训练 MLP，给模型的适配自由度是不一样的。</p>
+</blockquote>
+<p>注意，这只是工程直觉。</p>
+<p>不能简单粗暴地说：</p>
+<blockquote>
+<p>“知识全在 MLP。”</p>
+</blockquote>
+<p>或者：</p>
+<blockquote>
+<p>“推理全在 Attention。”</p>
+</blockquote>
+<p>真实能力是整个网络共同产生的。</p>
+<hr />
+<h2 id="心智模型-3qkvo-不是四个同义矩阵">心智模型
+3：<code>q/k/v/o</code> 不是四个同义矩阵</h2>
+<p>它们都属于 Attention，但角色不同。</p>
+<p>非常粗略地记：</p>
+<pre class="text"><code>q_proj
+当前 Token 用什么表示去“寻找”相关信息
+
+k_proj
+上下文信息以什么表示被“匹配”
+
+v_proj
+匹配到以后真正携带什么内容
+
+o_proj
+多头 Attention 的结果怎样重新投回主表示空间</code></pre>
+<p>这不是四个装饰性的名字。</p>
+<p>它们控制的是：</p>
+<blockquote>
+<p>Attention 计算不同阶段的表示变换。</p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-4target-modules-越多自由度和成本通常都越大但不保证业务效果越好">心智模型
+4：Target Modules
+越多，自由度和成本通常都越大，但不保证业务效果越好</h2>
+<p>更多模块：</p>
+<pre class="text"><code>Trainable Parameters ↑
+Adapter Size ↑
+Optimizer State ↑
+训练计算 ↑
+适配自由度 ↑</code></pre>
+<p>同时也可能：</p>
+<pre class="text"><code>过拟合空间 ↑
+实验变量 ↑
+调试难度 ↑</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>s</mi><mo>≠</mo><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>y</mi><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreTargetModules
+\neq
+AutomaticallyBetter
+}
+</annotation></semantics></math></p>
+<p>真正要找的是：</p>
+<blockquote>
+<p><strong>完成任务所需的足够修改范围。</strong></p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-5模块选择最终必须靠-benchmark而不是模块名称的听感">心智模型
+5：模块选择最终必须靠 Benchmark，而不是模块名称的“听感”</h2>
+<p><code>q_proj</code> 看起来重要。</p>
+<p><code>v_proj</code> 也看起来重要。</p>
+<p>MLP 更看起来重要。</p>
+<p>但真正问题不是：</p>
+<blockquote>
+<p>哪个名字更高级？</p>
+</blockquote>
+<p>而是：</p>
+<pre class="text"><code>固定 Dataset
++
+固定 Rank / Alpha
++
+改变 Target Modules
++
+验证 Validation / Hard Case</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>o</mi><mi>i</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>E</mi><mi>m</mi><mi>p</mi><mi>i</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>s</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TargetModuleChoice
+=
+EmpiricalDesignDecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三重新把-attention-拉回来">三、重新把 Attention 拉回来</h1>
+<p>第二课我们已经学过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>Q</mi></msub></mrow><annotation encoding="application/x-tex">
+Q=XW_Q
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">
+K=XW_K
+</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>V</mi></msub></mrow><annotation encoding="application/x-tex">
+V=XW_V
+</annotation></semantics></math></p>
+<p>Attention：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><mi>K</mi><mo>,</mo><mi>V</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>S</mi><mi>o</mi><mi>f</mi><mi>t</mi><mi>m</mi><mi>a</mi><mi>x</mi><mrow><mo stretchy="true" form="prefix">(</mo><mfrac><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><msqrt><msub><mi>d</mi><mi>k</mi></msub></msqrt></mfrac><mo stretchy="true" form="postfix">)</mo></mrow><mi>V</mi></mrow><annotation encoding="application/x-tex">
+Attention(Q,K,V)
+=
+Softmax
+\left(
+\frac{QK^T}{\sqrt{d_k}}
+\right)V
+</annotation></semantics></math></p>
+<p>最后还通常有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo>=</mo><mi>A</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>Q</mi><mo>,</mo><mi>K</mi><mo>,</mo><mi>V</mi><mo stretchy="true" form="postfix">)</mo></mrow><msub><mi>W</mi><mi>O</mi></msub></mrow><annotation encoding="application/x-tex">
+O = Attention(Q,K,V)W_O
+</annotation></semantics></math></p>
+<p>对应到代码名称，大致就是：</p>
+<pre class="text"><code>W_Q → q_proj
+W_K → k_proj
+W_V → v_proj
+W_O → o_proj</code></pre>
+<p>LoRA 所做的事情就是：</p>
+<blockquote>
+<p>对其中选中的某些
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>，允许增加一个低秩
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">\Delta W</annotation></semantics></math>。</p>
+</blockquote>
+<hr />
+<h1
+id="四q_proj改变当前表示怎样提出查询">四、<code>q_proj</code>：改变“当前表示怎样提出查询”</h1>
+<p>原本：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>Q</mi></msub></mrow><annotation encoding="application/x-tex">
+Q=XW_Q
+</annotation></semantics></math></p>
+<p>加 LoRA 后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo>=</mo><mi>X</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mi>Q</mi></msub><mo>+</mo><mi>Δ</mi><msub><mi>W</mi><mi>Q</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Q
+=
+X
+\left(
+W_Q+\Delta W_Q
+\right)
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><msub><mi>W</mi><mi>Q</mi></msub><mo>=</mo><msub><mi>B</mi><mi>Q</mi></msub><msub><mi>A</mi><mi>Q</mi></msub></mrow><annotation encoding="application/x-tex">
+\Delta W_Q=B_QA_Q
+</annotation></semantics></math></p>
+<p>直觉上，它会影响：</p>
+<blockquote>
+<p>当前 Token 用怎样的内部表示去匹配上下文。</p>
+</blockquote>
+<p>放到政府采购场景里，可以粗略理解：</p>
+<p>模型看到：</p>
+<pre class="text"><code>投标人在投标截止日前
+须已在本市设立固定服务机构</code></pre>
+<p>它到底更重视：</p>
+<pre class="text"><code>“本市”</code></pre>
+<p>还是更重视：</p>
+<pre class="text"><code>“投标截止日前”
++
+“须已设立”
++
+“参与资格”</code></pre>
+<p>其中一部分适配可能通过 Query 表示改变而实现。</p>
+<p>再次强调：</p>
+<blockquote>
+<p>这不是“q_proj 专门存判断规则”。</p>
+</blockquote>
+<p>而是它改变 Attention 中查询表示形成的方式。</p>
+<hr />
+<h1
+id="五k_proj改变上下文怎样被建立匹配索引">五、<code>k_proj</code>：改变“上下文怎样被建立匹配索引”</h1>
+<p>Key 可以粗略理解成：</p>
+<blockquote>
+<p>每个上下文位置拿什么表示参与 Query–Key 匹配。</p>
+</blockquote>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">
+K=XW_K
+</annotation></semantics></math></p>
+<p>加 LoRA：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mi>X</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mi>K</mi></msub><mo>+</mo><mi>Δ</mi><msub><mi>W</mi><mi>K</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+K
+=
+X
+\left(
+W_K+\Delta W_K
+\right)
+</annotation></semantics></math></p>
+<p>它会影响：</p>
+<blockquote>
+<p>哪些上下文位置与当前 Query 更容易形成高匹配。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>资格条件
+投标前
+本地机构
+中标后
+服务响应</code></pre>
+<p>哪些信息之间应该建立更强的关系，</p>
+<p>理论上都可能受到 K 路径适配的影响。</p>
+<hr />
+<h1
+id="六v_proj改变被读取的信息实际携带什么表示">六、<code>v_proj</code>：改变“被读取的信息实际携带什么表示”</h1>
+<p>Attention 权重最终作用在：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>V</mi><annotation encoding="application/x-tex">
+V
+</annotation></semantics></math></p>
+<p>上。</p>
+<p>所以 V 可以粗略记成：</p>
+<blockquote>
+<p><strong>匹配完成以后，被带走的内容表示。</strong></p>
+</blockquote>
+<p>公式：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>=</mo><mi>X</mi><msub><mi>W</mi><mi>V</mi></msub></mrow><annotation encoding="application/x-tex">
+V=XW_V
+</annotation></semantics></math></p>
+<p>LoRA：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>=</mo><mi>X</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mi>V</mi></msub><mo>+</mo><mi>Δ</mi><msub><mi>W</mi><mi>V</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+V
+=
+X
+\left(
+W_V+\Delta W_V
+\right)
+</annotation></semantics></math></p>
+<p>因此调整 <code>v_proj</code>：</p>
+<blockquote>
+<p>会改变上下文信息被 Attention 读取后，以怎样的内部表示传递出去。</p>
+</blockquote>
+<p>这也是为什么 <code>q_proj</code> / <code>v_proj</code>
+经常会作为一个简洁 LoRA Baseline 的候选组合。</p>
+<hr />
+<h1
+id="七o_proj改变-attention-结果怎样重新写回主表示流">七、<code>o_proj</code>：改变
+Attention 结果怎样重新写回主表示流</h1>
+<p>Attention 并不是最终直接结束。</p>
+<p>多个 Head 产生的结果还需要重新映射：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mtext mathvariant="normal">attn</mtext></msub><msub><mi>W</mi><mi>O</mi></msub></mrow><annotation encoding="application/x-tex">
+H_{\text{attn}}
+W_O
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<pre class="text"><code>o_proj</code></pre>
+<p>可以粗略理解：</p>
+<blockquote>
+<p><strong>Attention 已经读到的信息，怎样重新整合进模型的 Residual
+Stream。</strong></p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>q/k/v</code></pre>
+<p>主要影响：</p>
+<blockquote>
+<p>Attention 内部怎样构造和读取信息。</p>
+</blockquote>
+<p>而：</p>
+<pre class="text"><code>o_proj</code></pre>
+<p>影响：</p>
+<blockquote>
+<p>读取结果怎样重新进入后续 Transformer 计算。</p>
+</blockquote>
+<hr />
+<h1 id="八现在进入-mlpgate_proj-up_proj-down_proj">八、现在进入
+MLP：<code>gate_proj / up_proj / down_proj</code></h1>
+<p>现代 LLM 的 MLP 往往不只是一个简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+Wx
+</annotation></semantics></math></p>
+<p>例如常见门控 MLP 可以抽象成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>L</mi><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><msub><mi>W</mi><mrow><mi>d</mi><mi>o</mi><mi>w</mi><mi>n</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">[</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mrow><mi>g</mi><mi>a</mi><mi>t</mi><mi>e</mi></mrow></msub><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>⊙</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mrow><mi>u</mi><mi>p</mi></mrow></msub><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+MLP(x)
+=
+W_{down}
+\left[
+\sigma(W_{gate}x)
+\odot
+(W_{up}x)
+\right]
+</annotation></semantics></math></p>
+<p>具体不同模型会不同。</p>
+<p>但核心结构可以理解成：</p>
+<pre class="text"><code>hidden state
+     │
+     ├── gate_proj
+     │
+     └── up_proj
+           │
+           ▼
+     高维中间表示
+           │
+           ▼
+       down_proj
+           │
+           ▼
+回到 hidden dimension</code></pre>
+<p>所以 MLP 是：</p>
+<blockquote>
+<p>Transformer 中另一个非常大的表示变换路径。</p>
+</blockquote>
+<hr />
+<h1 id="九三个-mlp-projection-怎么理解">九、三个 MLP Projection
+怎么理解？</h1>
+<p>不需要死抠名字。</p>
+<h3 id="up_proj"><code>up_proj</code></h3>
+<p>大致把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mrow><mi>m</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></msub><annotation encoding="application/x-tex">
+d_{model}
+</annotation></semantics></math></p>
+<p>映射到更高的中间维度。</p>
+<p>可以记成：</p>
+<blockquote>
+<p><strong>展开表示空间。</strong></p>
+</blockquote>
+<hr />
+<h3 id="gate_proj"><code>gate_proj</code></h3>
+<p>与门控激活一起：</p>
+<blockquote>
+<p>决定哪些中间特征被激活和保留。</p>
+</blockquote>
+<p>可以记成：</p>
+<blockquote>
+<p><strong>控制特征通路。</strong></p>
+</blockquote>
+<hr />
+<h3 id="down_proj"><code>down_proj</code></h3>
+<p>最后把高维中间表示：</p>
+<blockquote>
+<p>压回模型 Hidden Size。</p>
+</blockquote>
+<p>可以记成：</p>
+<blockquote>
+<p><strong>把转换后的特征重新写回主表示流。</strong></p>
+</blockquote>
+<p>因此：</p>
+<pre class="text"><code>Attention
+=
+怎么读取上下文
+
+MLP
+=
+读完以后怎样转换表示</code></pre>
+<p>作为长期直觉已经够用了。</p>
+<hr />
+<h1 id="十所以-lora-target-modules-实际上有几种典型范围">十、所以 LoRA
+Target Modules 实际上有几种典型“范围”</h1>
+<p>为了建立清晰心智模型，可以把它分成三档。</p>
+<h3 id="窄范围">窄范围</h3>
+<pre class="text"><code>q_proj
+v_proj</code></pre>
+<p>特点：</p>
+<blockquote>
+<p>参数少、实验简单、训练成本低。</p>
+</blockquote>
+<p>适合：</p>
+<blockquote>
+<p>做一个非常轻量的 Baseline。</p>
+</blockquote>
+<hr />
+<h3 id="attention-全投影">Attention 全投影</h3>
+<pre class="text"><code>q_proj
+k_proj
+v_proj
+o_proj</code></pre>
+<p>意味着：</p>
+<blockquote>
+<p>整个 Attention Projection 路径都获得 LoRA 适配能力。</p>
+</blockquote>
+<p>相比 q/v：</p>
+<blockquote>
+<p>修改范围更广。</p>
+</blockquote>
+<hr />
+<h3 id="attention-mlp">Attention + MLP</h3>
+<pre class="text"><code>q_proj
+k_proj
+v_proj
+o_proj
+gate_proj
+up_proj
+down_proj</code></pre>
+<p>这通常意味着：</p>
+<blockquote>
+<p>Transformer Layer 中主要 Linear Projection 都获得低秩适配能力。</p>
+</blockquote>
+<p>适配容量明显更大。</p>
+<p>同时：</p>
+<blockquote>
+<p>参数量和训练成本也更高。</p>
+</blockquote>
+<hr />
+<h1
+id="十一为什么不能直接永远选择全部-linear">十一、为什么不能直接永远选择“全部
+Linear”？</h1>
+<p>因为我们真正追求的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>m</mi><mi>u</mi><mi>m</mi><mi>S</mi><mi>u</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>d</mi><mi>a</mi><mi>p</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MinimumSufficientAdaptation
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>i</mi><mi>m</mi><mi>u</mi><mi>m</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>A</mi><mi>d</mi><mi>a</mi><mi>p</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+MaximumPossibleAdaptation
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>q/v 已经能让
+Procurement Benchmark
+达到目标</code></pre>
+<p>那么增加：</p>
+<pre class="text"><code>k/o + MLP</code></pre>
+<p>如果没有明显业务收益，</p>
+<p>就只是在增加：</p>
+<pre class="text"><code>参数
+成本
+Checkpoint
+实验复杂度</code></pre>
+<p>没有必要。</p>
+<hr />
+<h1
+id="十二反过来为什么不能永远只用-q_proj-v_proj">十二、反过来，为什么不能永远只用
+<code>q_proj + v_proj</code>？</h1>
+<p>因为任务可能需要：</p>
+<blockquote>
+<p>更广泛地调整 Transformer 内部表示。</p>
+</blockquote>
+<p>如果出现：</p>
+<pre class="text"><code>简单格式学会了
+
+基础分类学会了
+
+但复杂决策边界长期不足
+
+增加 Rank 收益很小
+
+数据与训练配置已确认正常</code></pre>
+<p>这时候真正的瓶颈可能不是：</p>
+<blockquote>
+<p>Adapter 不够宽。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>允许修改的模型路径太窄。</strong></p>
+</blockquote>
+<p>也就是：</p>
+<h1 id="module-coverage-bottleneck">Module Coverage Bottleneck</h1>
+<p>这时候扩大 Target Modules：</p>
+<blockquote>
+<p>可能比继续堆 Rank 更合理。</p>
+</blockquote>
+<hr />
+<h1 id="十三rank-和-target-modules-是两个完全不同的扩容方向">十三、Rank
+和 Target Modules 是两个完全不同的扩容方向</h1>
+<p>这是今天最重要的工程判断之一。</p>
+<h3 id="增大-rank">增大 Rank</h3>
+<pre class="text"><code>原来的模块
+装更宽的 Adapter</code></pre>
+<p>回答：</p>
+<blockquote>
+<p><strong>同一个地方多给一些修改容量。</strong></p>
+</blockquote>
+<hr />
+<h3 id="增加-target-modules">增加 Target Modules</h3>
+<pre class="text"><code>让更多模型路径
+可以被修改</code></pre>
+<p>回答：</p>
+<blockquote>
+<p><strong>扩大可以动手术的位置。</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>n</mi><mi>c</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>a</mi><mi>n</mi><mi>k</mi><mo>≠</mo><mi>I</mi><mi>n</mi><mi>c</mi><mi>r</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+IncreaseRank
+\neq
+IncreaseModuleCoverage
+}
+</annotation></semantics></math></p>
+<p>一个是：</p>
+<blockquote>
+<p>深一点。</p>
+</blockquote>
+<p>一个是：</p>
+<blockquote>
+<p>广一点。</p>
+</blockquote>
+<hr />
+<h1 id="十四总-lora-参数量到底怎么计算">十四、总 LoRA
+参数量到底怎么计算？</h1>
+<p>如果 Target Modules 有多个，</p>
+<p>总参数量大致就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mtext mathvariant="normal">LoRA,total</mtext></msub><mo>=</mo><munder><mo>∑</mo><mrow><mi>m</mi><mo>∈</mo><mi>M</mi></mrow></munder><msub><mi>r</mi><mi>m</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>n</mi><mo>,</mo><mi>m</mi></mrow></msub><mo>+</mo><msub><mi>d</mi><mrow><mi>o</mi><mi>u</mi><mi>t</mi><mo>,</mo><mi>m</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+N_{\text{LoRA,total}}
+=
+\sum_{m\in M}
+r_m
+\left(
+d_{in,m}+d_{out,m}
+\right)
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>M</mi><annotation encoding="application/x-tex">
+M
+</annotation></semantics></math></p>
+<p>就是：</p>
+<blockquote>
+<p>所有 Target Modules。</p>
+</blockquote>
+<p>如果所有模块 Rank 相同：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>m</mi></msub><mo>=</mo><mi>r</mi></mrow><annotation encoding="application/x-tex">
+r_m=r
+</annotation></semantics></math></p>
+<p>那么模块越多：</p>
+<blockquote>
+<p>总可训练参数自然越多。</p>
+</blockquote>
+<p>所以实际实验必须记录：</p>
+<pre class="text"><code>Target Modules
++
+Rank
++
+Trainable Parameter Count</code></pre>
+<p>而不能只保存：</p>
+<pre class="text"><code>r = 16</code></pre>
+<hr />
+<h1
+id="十五这里还有一个重要现实不同-base-model-的模块名称并不完全一样">十五、这里还有一个重要现实：不同
+Base Model 的模块名称并不完全一样</h1>
+<p>不要认为所有模型一定叫：</p>
+<pre class="text"><code>q_proj
+k_proj
+v_proj
+o_proj</code></pre>
+<p>有些架构：</p>
+<blockquote>
+<p>名字不同。</p>
+</blockquote>
+<p>有些：</p>
+<blockquote>
+<p>QKV 可能采用组合投影。</p>
+</blockquote>
+<p>还有些模型使用：</p>
+<pre class="text"><code>Grouped Query Attention
+Multi-Query Attention</code></pre>
+<p>此时 Q、K、V 的维度甚至可能不同。</p>
+<p>所以真正开始训练以前：</p>
+<blockquote>
+<p><strong>必须检查 <code>model.named_modules()</code>
+或模型架构，而不是照抄别人模型的
+<code>target_modules</code>。</strong></p>
+</blockquote>
+<p>这是非常关键的工程习惯。</p>
+<hr />
+<h1
+id="十六最危险的-bug你以为装了-lora其实根本没装到目标层">十六、最危险的
+Bug：你以为装了 LoRA，其实根本没装到目标层</h1>
+<p>例如配置：</p>
+<div class="sourceCode" id="cb716"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb716-1"><a href="#cb716-1" aria-hidden="true" tabindex="-1"></a>target_modules<span class="op">=</span>[<span class="st">&quot;q_proj&quot;</span>, <span class="st">&quot;v_proj&quot;</span>]</span></code></pre></div>
+<p>但当前 Base Model：</p>
+<blockquote>
+<p>实际模块命名完全不同。</p>
+</blockquote>
+<p>轻则：</p>
+<blockquote>
+<p>框架直接报错。</p>
+</blockquote>
+<p>更危险的情况是：</p>
+<blockquote>
+<p>部分匹配错误或训练范围和预期不同。</p>
+</blockquote>
+<p>所以训练前必须打印：</p>
+<pre class="text"><code>Matched Target Modules</code></pre>
+<p>以及：</p>
+<pre class="text"><code>Trainable Parameter Count</code></pre>
+<p>确认：</p>
+<blockquote>
+<p>LoRA 到底被插进了哪里。</p>
+</blockquote>
+<hr />
+<h1 id="十七第一版-procurementlm-怎么选更专业">十七、第一版
+ProcurementLM 怎么选更专业？</h1>
+<p>不要一开始做几十组组合爆炸。</p>
+<p>建议建立三档实验。</p>
+<pre class="text"><code>Experiment A
+Narrow Baseline
+
+q_proj
+v_proj</code></pre>
+<pre class="text"><code>Experiment B
+Attention Coverage
+
+q_proj
+k_proj
+v_proj
+o_proj</code></pre>
+<pre class="text"><code>Experiment C
+Broad Linear Coverage
+
+q_proj
+k_proj
+v_proj
+o_proj
+gate_proj
+up_proj
+down_proj</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>Rank、Alpha、Learning Rate 等主要变量尽量固定。</p>
+</blockquote>
+<p>比较：</p>
+<pre class="text"><code>Validation
+Hard Negative
+Boundary Case
+General Capability Regression
+Trainable Parameters
+Training Cost</code></pre>
+<p>这才真正回答：</p>
+<blockquote>
+<p>扩大修改范围是否值得。</p>
+</blockquote>
+<hr />
+<h1 id="十八一个-procurementai-的诊断例子">十八、一个 ProcurementAI
+的诊断例子</h1>
+<p>假设配置 A：</p>
+<pre class="text"><code>q_proj + v_proj
+
+r = 16</code></pre>
+<p>结果：</p>
+<pre class="text"><code>输出格式             很好
+简单风险识别         很好
+Hard Negative        一般
+复杂理由              一般
+Boundary Case         较弱</code></pre>
+<p>第一反应不要立刻：</p>
+<pre class="text"><code>r = 128</code></pre>
+<p>而应该建立两个假设：</p>
+<pre class="text"><code>假设 1
+当前模块已经合适
+只是容量不够
+
+→ 增大 Rank</code></pre>
+<pre class="text"><code>假设 2
+修改路径太窄
+
+→ 扩大 Target Modules</code></pre>
+<p>然后：</p>
+<blockquote>
+<p>做控制变量实验。</p>
+</blockquote>
+<p>这就是专业调参和“玄学调参”的区别。</p>
+<hr />
+<h1
+id="十九哪些东西第一版通常不要随便动">十九、哪些东西第一版通常不要随便动？</h1>
+<p>例如：</p>
+<pre class="text"><code>Embedding
+LM Head
+LayerNorm</code></pre>
+<p>不是说：</p>
+<blockquote>
+<p>永远不能训练。</p>
+</blockquote>
+<p>而是第一版 LoRA Baseline：</p>
+<blockquote>
+<p>没有充分证据时，不要为了“多训练一些”随意把所有模块都纳入。</p>
+</blockquote>
+<p>原因非常简单：</p>
+<blockquote>
+<p>每增加一类 Trainable Scope，都增加新的实验变量。</p>
+</blockquote>
+<p>第一版最重要的是：</p>
+<h1 id="attribution">Attribution</h1>
+<h2 id="可归因性">可归因性</h2>
+<p>也就是：</p>
+<blockquote>
+<p>模型为什么变好或变坏，我们能够解释。</p>
+</blockquote>
+<hr />
+<h1 id="二十target-modules-和模型能力不是一一对应关系">二十、Target
+Modules 和模型能力不是一一对应关系</h1>
+<p>这是一个必须纠正的直觉。</p>
+<p>不要说：</p>
+<pre class="text"><code>q_proj
+=
+学习推理
+
+v_proj
+=
+学习知识
+
+MLP
+=
+储存知识</code></pre>
+<p>这种说法太绝对。</p>
+<p>正确理解是：</p>
+<blockquote>
+<p>不同模块承担不同数学计算角色，但最终语言能力、知识使用、推理行为都是整个
+Transformer 联合形成的。</p>
+</blockquote>
+<p>因此 Target Modules 选择：</p>
+<blockquote>
+<p>不是把业务需求机械映射成某个单独矩阵。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>决定允许哪些计算路径获得任务适配自由度。</p>
+</blockquote>
+<hr />
+<h1
+id="二十一我们现在可以建立一个非常清楚的调参顺序">二十一、我们现在可以建立一个非常清楚的调参顺序</h1>
+<p>不要这样：</p>
+<pre class="text"><code>模型效果不好
+↓
+Rank改
+Alpha改
+Dropout改
+Modules改
+LR改
+全部一起改</code></pre>
+<p>应该：</p>
+<pre class="text"><code>Step 1
+确认 Dataset / Mask / Training 正确
+
+        ↓
+
+Step 2
+建立稳定 Target Module Baseline
+
+        ↓
+
+Step 3
+确认 Rank 是否足够
+
+        ↓
+
+Step 4
+如果出现 Module Coverage Bottleneck
+再扩大 Target Modules
+
+        ↓
+
+Step 5
+用 Benchmark 判断收益是否值得成本</code></pre>
+<p>这样每一次变化：</p>
+<blockquote>
+<p>都有解释。</p>
+</blockquote>
+<hr />
+<h1
+id="二十二这一阶段最重要的模块地图">二十二、这一阶段最重要的“模块地图”</h1>
+<table>
+<thead>
+<tr class="header">
+<th>模块</th>
+<th>所处位置</th>
+<th>最简工程直觉</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>q_proj</code></td>
+<td>Attention</td>
+<td>当前表示怎样构造 Query</td>
+</tr>
+<tr class="even">
+<td><code>k_proj</code></td>
+<td>Attention</td>
+<td>上下文怎样构造 Key 参与匹配</td>
+</tr>
+<tr class="odd">
+<td><code>v_proj</code></td>
+<td>Attention</td>
+<td>被读取的信息携带什么表示</td>
+</tr>
+<tr class="even">
+<td><code>o_proj</code></td>
+<td>Attention</td>
+<td>Attention 结果怎样写回主表示</td>
+</tr>
+<tr class="odd">
+<td><code>gate_proj</code></td>
+<td>MLP</td>
+<td>中间特征怎样被门控</td>
+</tr>
+<tr class="even">
+<td><code>up_proj</code></td>
+<td>MLP</td>
+<td>怎样扩展到中间表示空间</td>
+</tr>
+<tr class="odd">
+<td><code>down_proj</code></td>
+<td>MLP</td>
+<td>怎样压回 Hidden Size</td>
+</tr>
+</tbody>
+</table>
+<p>这张表不是让你背定义。</p>
+<p>它是让你看到：</p>
+<blockquote>
+<p><strong>选择 Target Modules，其实是在选择允许修改 Transformer
+的哪些计算路径。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十三本阶段工程产物loratargetmodulepolicy_v0.1">二十三、本阶段工程产物：<code>LoRATargetModulePolicy_V0.1</code></h1>
+<p>正式记录至少应该包括：</p>
+<pre class="text"><code>base_model
+base_model_revision
+
+architecture_family
+
+available_linear_modules
+
+target_modules
+
+excluded_modules
+
+target_layer_scope
+
+rank
+alpha
+dropout
+
+matched_module_count
+
+trainable_parameter_count
+trainable_parameter_ratio
+
+target_module_policy_version</code></pre>
+<p>训练启动前必须额外验证：</p>
+<pre class="text"><code>1. 配置中的模块名称真实存在
+
+2. 匹配数量符合预期
+
+3. Trainable Parameter Count 符合预期
+
+4. Base Parameters 仍正确 Frozen
+
+5. Adapter 确实只出现在目标模块</code></pre>
+<p>这一步叫：</p>
+<h1 id="adapter-injection-audit">Adapter Injection Audit</h1>
+<h2 id="adapter-注入审计">Adapter 注入审计</h2>
+<hr />
+<h1 id="二十四本阶段最危险的-6-个反例">二十四、本阶段最危险的 6
+个反例</h1>
+<p><strong>第一，只看 Rank，不看 Target Modules。</strong><br />
+LoRA 总容量同时取决于“每个 Adapter 多宽”和“装了多少位置”。</p>
+<p><strong>第二，认为 q/k/v/o 都做同一件事。</strong><br />
+它们处于 Attention 的不同变换阶段。</p>
+<p><strong>第三，认为 MLP 只是附属模块。</strong><br />
+它是 Transformer 中极大的表示变换路径之一。</p>
+<p><strong>第四，一上来就
+<code>all-linear</code>，然后发现效果好，却不知道究竟哪些模块带来了收益。</strong><br />
+失去实验可归因性。</p>
+<p><strong>第五，把别的模型的 <code>target_modules</code>
+原样复制。</strong><br />
+不同架构的模块命名和形状可能不同。</p>
+<p><strong>第六，配置写完以后不检查真正 Trainable
+Parameters。</strong><br />
+你以为在训练的东西和实际训练的东西可能不是一回事。</p>
+<hr />
+<h1
+id="二十五现在把本阶段压成最精准的-5-句话">二十五、现在把本阶段压成最精准的
+5 句话</h1>
+<blockquote>
+<p><strong>第一，Rank 决定 LoRA 在一个目标矩阵上“能改多宽”，Target
+Modules 决定 Transformer “哪些计算路径允许被改”。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，<code>q/k/v/o</code> 分别参与 Attention 的
+Query、Key、Value 和输出投影；MLP 的 <code>gate/up/down</code>
+则参与后续非线性表示转换。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，增加 Rank 和增加 Target Modules
+是两种不同扩容方式：一个增加局部容量，一个扩大修改覆盖范围。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，更多 Target Modules
+会增加可训练参数和适配自由度，但是否带来真实业务收益必须由
+Validation、Hard Case 和成本共同判断。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，永远不要照抄模块名称；训练前必须检查模型真实架构、实际匹配模块和
+Trainable Parameter Count。</strong></p>
+</blockquote>
+<p>如果这五句能脱口而出：</p>
+<blockquote>
+<p>Target Modules 就不再是配置文件里一串莫名其妙的字符串。</p>
+</blockquote>
+<hr />
+<h1 id="二十六本阶段最核心的一张图">二十六、本阶段最核心的一张图</h1>
+<pre class="text"><code>                     Transformer Layer
+                            │
+            ┌───────────────┴───────────────┐
+            │                               │
+            ▼                               ▼
+        Attention                          MLP
+            │                               │
+   ┌────────┼────────┐             ┌────────┼────────┐
+   ▼        ▼        ▼             ▼        ▼        ▼
+ q_proj   k_proj   v_proj       gate      up       down
+   │                 │
+   └────── o_proj ───┘
+            │
+            ▼
+       Target Modules
+            │
+      哪些位置加 LoRA？
+            │
+            ▼
+   Frozen W + ΔW=BA
+            │
+            ▼
+       Trainable Scope
+            │
+     ┌──────┴───────┐
+     ▼              ▼
+  Rank              Module Coverage
+局部容量             修改范围
+     │              │
+     └──────┬───────┘
+            ▼
+     Validation / Hard Case
+            │
+            ▼
+   是否值得扩大修改范围？</code></pre>
+<p>脑中只记：</p>
+<blockquote>
+<p><strong>Rank 决定“改多宽”，Target Modules 决定“改哪里”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十七本阶段掌握测试">二十七、本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能自己解释：Target Modules
+到底决定什么；为什么它和 Rank
+不是同一个超参数；<code>q_proj / k_proj / v_proj / o_proj</code> 在
+Attention 中分别处于什么位置；为什么不能简单说“Q 是推理、V 是知识”；MLP
+的 <code>gate/up/down</code> 大致完成什么计算；为什么
+<code>q+v</code>、完整 Attention、Attention+MLP
+是不同的适配范围；为什么增加 Rank 和增加 Target Modules
+是两种不同的扩容方式；为什么模型效果不足不能总靠提高 Rank；什么叫 Module
+Coverage Bottleneck；为什么不同 Base Model
+不能照抄同一组模块名称；为什么训练前必须检查实际匹配模块和 Trainable
+Parameter Count；为什么第一版不应该没有证据就随便训练 Embedding、LM Head
+等更多模块；以及为什么最终模块选择必须回到固定 Benchmark 上验证。</p>
+<p>如果这些能够自己讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>8</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第8阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-7">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>LoRA 不只是决定“用多大的 Adapter”，还必须决定“把 Adapter
+装在哪里”：Rank 控制每个低秩更新的容量，Target Modules 控制哪些
+Transformer 计算路径获得领域适配权；专业的模块选择不是把
+<code>q_proj/v_proj</code>
+当口诀，而是先看真实模型架构，再通过可归因的控制实验验证修改范围是否真正改善
+Procurement Benchmark。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-9-阶段">下一阶段：第五课 · 第 9 阶段</h1>
+<h1 id="qlora-与-4-bit-nf4">QLoRA 与 4-bit / NF4</h1>
+<h2
+id="为什么-base-model-可以用-4-bit-加载却仍然能够训练出高质量-lora-adapter">为什么
+Base Model 可以用 4-bit 加载，却仍然能够训练出高质量 LoRA Adapter？</h2>
+<p>现在我们已经知道：</p>
+<pre class="text"><code>Base Model
+Frozen
+
++
+
+选定 Target Modules
+安装 LoRA
+
++
+
+A / B
+真正训练</code></pre>
+<p>但还有一个大头：</p>
+<blockquote>
+<p><strong>Frozen Base Model 虽然不更新，它依然占显存。</strong></p>
+</blockquote>
+<p>第 9 阶段会解决：</p>
+<pre class="text"><code>7B / 14B Base Model
+        ↓
+4-bit Quantization
+        ↓
+NF4
+        ↓
+低显存保存 Frozen Base
+        +
+BF16 / FP16 等计算路径
+        +
+LoRA Adapter 继续训练</code></pre>
+<p>最后真正建立：</p>
+<blockquote>
+<p><strong>量化的是谁、谁仍然训练、计算时为什么还能保持足够精度——这三件事必须彻底分开。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage07.html">← 第 7 阶段</a><a class="btn" href="stage09.html">第 9 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

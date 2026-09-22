@@ -1,0 +1,1214 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课 · 第11阶段：真正搭建 `ProcurementRAG_V0.1`：端到端检索、生成与评测</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第6课 · 第11阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 RAG 召回、Chunk、Embedding、BM25、Rerank、Context 和 Citation。<ul><li>第一，Fine-tuning 改变模型参数和稳定行为，RAG 改变推理时模型能看到的外部证据；两者是互补关系。</li><li>第二，RAG 的上限首先受知识库质量限制：来源、版本、时间、辖区和有效性如果错，后面的检索越强只会越快找到错误证据。</li><li>第三，Chunking 定义检索单元，Embedding 定义语义空间，Vector Index 定义怎样快速找到候选；三者分别解决不同层的问题。</li></ul></div><h1 id="第六课-第-11-阶段">第六课 · 第 11 阶段</h1>
+<h1 id="真正搭建-procurementrag_v0.1端到端检索生成与评测-1">真正搭建
+<code>ProcurementRAG_V0.1</code>：端到端检索、生成与评测</h1>
+<h2
+id="把前-10-个阶段真正接成一个可以运行可以评测可以定位错误的政府采购-rag-系统">把前
+10 个阶段真正接成一个可以运行、可以评测、可以定位错误的政府采购 RAG
+系统</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-10">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-10">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>第一，Fine-tuning 改变模型参数和稳定行为，RAG
+改变推理时模型能看到的外部证据；两者是互补关系。</strong></li>
+<li><strong>第二，RAG
+的上限首先受知识库质量限制：来源、版本、时间、辖区和有效性如果错，后面的检索越强只会越快找到错误证据。</strong></li>
+<li><strong>第三，Chunking 定义检索单元，Embedding 定义语义空间，Vector
+Index 定义怎样快速找到候选；三者分别解决不同层的问题。</strong></li>
+<li><strong>第四，Retriever 的目标是高 Recall，Hybrid Retrieval 用 BM25
+和 Dense 互补，Reranker 再负责把真正 Gold Evidence
+压到前排。</strong></li>
+<li><strong>第五，Query Processing
+负责恢复真实检索意图，但不能注入不存在的条件；Metadata Filter
+可以显著提升质量，但错误 Hard Filter 会直接杀掉 Gold
+Evidence。</strong></li>
+<li><strong>第六，Context Assembly 决定哪些证据真正进入 Prompt，Citation
+必须形成从 Claim 到 Evidence、Chunk、Document、Source
+的可审计映射，证据不足时 Abstention 是正确行为。</strong></li>
+<li><strong>第七，真正的 RAG 不是“LLM +
+向量库”四个字，而是一套可以分别评测
+Knowledge、Retrieval、Ranking、Context、Generation 和 Citation，并能沿
+Trace 定位错误的完整系统。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-10">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="odd">
+<td><code>Rank</code></td>
+<td>LoRA Rank：低秩增量的容量参数</td>
+</tr>
+<tr class="even">
+<td><code>Citation</code></td>
+<td>引用：把生成结论和具体来源建立可追踪链接</td>
+</tr>
+<tr class="odd">
+<td><code>Evidence</code></td>
+<td>证据：可回到采购文件或法规来源的支撑片段</td>
+</tr>
+<tr class="even">
+<td><code>Reranker</code></td>
+<td>重排器：对初筛候选做更精细相关性排序</td>
+</tr>
+<tr class="odd">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+<tr class="even">
+<td><code>BM25</code></td>
+<td>BM25：基于词频和逆文档频率的经典词法检索算法</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-10">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>到第 10 阶段，第六课所有核心零件已经齐了：</p>
+<pre class="text"><code>Knowledge Base
+Chunking
+Embedding
+Vector Index
+Retrieval Benchmark
+BM25
+Dense Retrieval
+Hybrid Retrieval
+Reranker
+Query Processing
+Context Assembly
+Citation
+Grounded Generation</code></pre>
+<p>但“零件都有”还不等于：</p>
+<blockquote>
+<p><strong>系统已经成立。</strong></p>
+</blockquote>
+<p>真正的工程问题是：</p>
+<blockquote>
+<p><strong>这些模块怎样按固定数据契约接起来，怎样留下可追踪日志，怎样做端到端评测，怎样知道最终提升到底来自哪里？</strong></p>
+</blockquote>
+<p>所以本阶段不再增加新的核心概念。</p>
+<p>我们要做的是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>把</mi><mi>第</mi><mi>六</mi><mi>课</mi><mi>前</mi><mn>10</mn><mi>阶</mi><mi>段</mi><mi>组</mi><mi>装</mi><mi>成</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+把第六课前10阶段
+组装成
+ProcurementRAG\_V0.1
+}
+</annotation></semantics></math></p>
+<p>这是第六课最终交付物。</p>
+<hr />
+<h1 id="一先把最终系统边界锁死">一、先把最终系统边界锁死</h1>
+<p><code>ProcurementRAG_V0.1</code> 不是一个新的 Base Model。</p>
+<p>也不是第六课又训练出一个新的 Adapter。</p>
+<p>它是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>+</mo><mi>E</mi><mi>x</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.1
++
+ExternalEvidenceSystem
+}
+</annotation></semantics></math></p>
+<p>其中：</p>
+<pre class="text"><code>ProcurementLM_V0.1
+负责：
+业务判断方式
+输出Schema
+稳定行为
+推理习惯
+
+External Evidence System
+负责：
+当前知识
+证据召回
+版本过滤
+上下文组装
+引用映射</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGRelease
+\neq
+ModelWeightsOnly
+}
+</annotation></semantics></math></p>
+<p>真正发布的是：</p>
+<blockquote>
+<p><strong>模型 + 知识资产 + 检索策略 + 上下文策略 + 评测基线 +
+版本清单。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二最终端到端链路">二、最终端到端链路</h1>
+<p>现在把整个第六课压成一条完整 Pipeline：</p>
+<pre class="text"><code>                         Offline Path
+
+Raw Sources
+    │
+    ▼
+Source Verification
+    │
+    ▼
+Knowledge Base
+    │
+    ▼
+Structure-aware Chunking
+    │
+    ▼
+Chunks + Metadata
+    │
+    ├──────────────► BM25 / Sparse Index
+    │
+    ▼
+Embedding
+    │
+    ▼
+Vector Index
+
+
+                         Online Path
+
+User Query
+    │
+    ▼
+Query Processing
+    │
+    ├── Rewrite
+    ├── Metadata Extraction
+    ├── Temporal / Jurisdiction Filter
+    └── Multi-query
+    │
+    ▼
+Hybrid Retrieval
+    │
+    ├── BM25
+    └── Dense Retrieval
+    │
+    ▼
+Fusion / Dedup
+    │
+    ▼
+Reranker
+    │
+    ▼
+Evidence Top-K
+    │
+    ▼
+Context Assembly
+    │
+    ├── Version Check
+    ├── Parent Expansion
+    ├── Evidence Selection
+    ├── Token Budget
+    ├── Ordering
+    └── Citation Mapping
+    │
+    ▼
+ProcurementLM_V0.1
+    │
+    ▼
+Grounded Answer
+    │
+    ▼
+Answer + Citations + Trace</code></pre>
+<p>这就是：</p>
+<h1 id="procurementrag_v0.1-1"><code>ProcurementRAG_V0.1</code></h1>
+<hr />
+<h1
+id="三真正让系统可维护的关键模块之间必须有-data-contract">三、真正让系统可维护的关键：模块之间必须有
+Data Contract</h1>
+<p>如果每个模块都只是：</p>
+<blockquote>
+<p>“传一段字符串给下一个模块。”</p>
+</blockquote>
+<p>系统很快就会失控。</p>
+<p>我们至少需要几类稳定对象。</p>
+<p>第一类：</p>
+<h1 id="queryrequest">QueryRequest</h1>
+<div class="sourceCode" id="cb406"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb406-1"><a href="#cb406-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb406-2"><a href="#cb406-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_id&quot;</span><span class="fu">:</span> <span class="st">&quot;Q_20260917_0001&quot;</span><span class="fu">,</span></span>
+<span id="cb406-3"><a href="#cb406-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;user_query&quot;</span><span class="fu">:</span> <span class="st">&quot;投标前要求本地机构是否存在风险？&quot;</span><span class="fu">,</span></span>
+<span id="cb406-4"><a href="#cb406-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;conversation_context&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb406-5"><a href="#cb406-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17&quot;</span><span class="fu">,</span></span>
+<span id="cb406-6"><a href="#cb406-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;user_metadata&quot;</span><span class="fu">:</span> <span class="fu">{}</span></span>
+<span id="cb406-7"><a href="#cb406-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>第二类：</p>
+<h1 id="processedquery">ProcessedQuery</h1>
+<div class="sourceCode" id="cb407"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb407-1"><a href="#cb407-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb407-2"><a href="#cb407-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_id&quot;</span><span class="fu">:</span> <span class="st">&quot;Q_20260917_0001&quot;</span><span class="fu">,</span></span>
+<span id="cb407-3"><a href="#cb407-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;original_query&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb407-4"><a href="#cb407-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;rewritten_queries&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;...&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb407-5"><a href="#cb407-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;subqueries&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb407-6"><a href="#cb407-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;extracted_metadata&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb407-7"><a href="#cb407-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;query_time&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-09-17&quot;</span><span class="fu">,</span></span>
+<span id="cb407-8"><a href="#cb407-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;jurisdiction&quot;</span><span class="fu">:</span> <span class="st">&quot;example&quot;</span><span class="fu">,</span></span>
+<span id="cb407-9"><a href="#cb407-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;procurement_stage&quot;</span><span class="fu">:</span> <span class="st">&quot;pre_bid&quot;</span></span>
+<span id="cb407-10"><a href="#cb407-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb407-11"><a href="#cb407-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;applied_filters&quot;</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb407-12"><a href="#cb407-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>第三类：</p>
+<h1 id="evidencecandidate">EvidenceCandidate</h1>
+<div class="sourceCode" id="cb408"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb408-1"><a href="#cb408-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb408-2"><a href="#cb408-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;chunk_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC_001_A12_C01&quot;</span><span class="fu">,</span></span>
+<span id="cb408-3"><a href="#cb408-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC_001&quot;</span><span class="fu">,</span></span>
+<span id="cb408-4"><a href="#cb408-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb408-5"><a href="#cb408-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;metadata&quot;</span><span class="fu">:</span> <span class="fu">{},</span></span>
+<span id="cb408-6"><a href="#cb408-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sparse_rank&quot;</span><span class="fu">:</span> <span class="dv">3</span><span class="fu">,</span></span>
+<span id="cb408-7"><a href="#cb408-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dense_rank&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb408-8"><a href="#cb408-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;fusion_score&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.041</span><span class="fu">,</span></span>
+<span id="cb408-9"><a href="#cb408-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;rerank_score&quot;</span><span class="fu">:</span> <span class="fl">8.7</span></span>
+<span id="cb408-10"><a href="#cb408-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>第四类：</p>
+<h1 id="contextevidence">ContextEvidence</h1>
+<div class="sourceCode" id="cb409"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb409-1"><a href="#cb409-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb409-2"><a href="#cb409-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;evidence_id&quot;</span><span class="fu">:</span> <span class="st">&quot;E1&quot;</span><span class="fu">,</span></span>
+<span id="cb409-3"><a href="#cb409-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;chunk_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC_001_A12_C01&quot;</span><span class="fu">,</span></span>
+<span id="cb409-4"><a href="#cb409-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb409-5"><a href="#cb409-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;article&quot;</span><span class="fu">:</span> <span class="st">&quot;第十二条&quot;</span><span class="fu">,</span></span>
+<span id="cb409-6"><a href="#cb409-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version_id&quot;</span><span class="fu">:</span> <span class="st">&quot;V3&quot;</span><span class="fu">,</span></span>
+<span id="cb409-7"><a href="#cb409-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;validity_status&quot;</span><span class="fu">:</span> <span class="st">&quot;current&quot;</span><span class="fu">,</span></span>
+<span id="cb409-8"><a href="#cb409-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span></span>
+<span id="cb409-9"><a href="#cb409-9" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>第五类：</p>
+<h1 id="ragresponse">RAGResponse</h1>
+<div class="sourceCode" id="cb410"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb410-1"><a href="#cb410-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb410-2"><a href="#cb410-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;query_id&quot;</span><span class="fu">:</span> <span class="st">&quot;Q_20260917_0001&quot;</span><span class="fu">,</span></span>
+<span id="cb410-3"><a href="#cb410-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;answer&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb410-4"><a href="#cb410-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;citations&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;E1&quot;</span><span class="ot">,</span> <span class="st">&quot;E3&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb410-5"><a href="#cb410-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb410-6"><a href="#cb410-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;trace_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TRACE_0001&quot;</span></span>
+<span id="cb410-7"><a href="#cb410-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>核心思想是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>每</mi><mi>个</mi><mi>模</mi><mi>块</mi><mi>既</mi><mi>传</mi><mi>内</mi><mi>容</mi><mi>也</mi><mi>传</mi><mi>身</mi><mi>份</mi><mi>、</mi><mi>版</mi><mi>本</mi><mi>和</mi><mi>来</mi><mi>源</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+每个模块
+既传内容
+也传身份、版本和来源
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四offline-build-和-online-query-必须独立版本化">四、Offline
+Build 和 Online Query 必须独立版本化</h1>
+<p>离线知识链可能一个月更新很多次。</p>
+<p>在线检索策略也可能频繁调参。</p>
+<p>所以最终系统不能只有：</p>
+<pre class="text"><code>version = 0.1</code></pre>
+<p>一个字段。</p>
+<p>至少要分别记录：</p>
+<pre class="text"><code>knowledge_base_version
+chunk_policy_version
+embedding_version
+sparse_index_version
+vector_index_version
+query_processing_version
+hybrid_retrieval_version
+reranker_version
+context_policy_version
+grounded_prompt_version
+model_version
+benchmark_version</code></pre>
+<p>最终 Release 再引用它们：</p>
+<div class="sourceCode" id="cb413"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb413-1"><a href="#cb413-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb413-2"><a href="#cb413-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;release&quot;</span><span class="fu">:</span> <span class="st">&quot;ProcurementRAG_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-3"><a href="#cb413-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;model&quot;</span><span class="fu">:</span> <span class="st">&quot;ProcurementLM_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-4"><a href="#cb413-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;knowledge_base&quot;</span><span class="fu">:</span> <span class="st">&quot;KB_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-5"><a href="#cb413-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;chunk_policy&quot;</span><span class="fu">:</span> <span class="st">&quot;Chunk_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-6"><a href="#cb413-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;embedding&quot;</span><span class="fu">:</span> <span class="st">&quot;Embed_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-7"><a href="#cb413-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;hybrid_retrieval&quot;</span><span class="fu">:</span> <span class="st">&quot;Hybrid_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-8"><a href="#cb413-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;reranker&quot;</span><span class="fu">:</span> <span class="st">&quot;Rerank_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-9"><a href="#cb413-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;context_policy&quot;</span><span class="fu">:</span> <span class="st">&quot;Context_V0.1&quot;</span><span class="fu">,</span></span>
+<span id="cb413-10"><a href="#cb413-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;benchmark&quot;</span><span class="fu">:</span> <span class="st">&quot;RAGBench_V0.1&quot;</span></span>
+<span id="cb413-11"><a href="#cb413-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这样以后答案变化时，</p>
+<p>我们能判断：</p>
+<blockquote>
+<p>是模型变了，还是知识库变了，还是 Retriever 变了。</p>
+</blockquote>
+<hr />
+<h1
+id="五先搭一个最小可运行版本而不是一次把所有优化全开">五、先搭一个最小可运行版本，而不是一次把所有优化全开</h1>
+<p>工程上最危险的做法是：</p>
+<pre class="text"><code>第一天
+同时打开：
+Query Rewrite
+Multi-query
+BM25
+Dense
+RRF
+Reranker
+Parent Expansion
+Compression
+复杂Threshold
+动态Routing</code></pre>
+<p>最后指标变了，</p>
+<p>却不知道：</p>
+<blockquote>
+<p>到底是谁造成的。</p>
+</blockquote>
+<p>所以第一版建议分层搭建：</p>
+<pre class="text"><code>V0
+Dense Retrieval
++
+简单Context
+
+V1
++ Metadata Filter
+
+V2
++ BM25 Hybrid
+
+V3
++ Reranker
+
+V4
++ Query Processing
+
+V5
++ Citation / Grounded Prompt
+
+V6
+= ProcurementRAG_V0.1 Candidate</code></pre>
+<p>每加一层：</p>
+<blockquote>
+<p>都跑同一套 Benchmark。</p>
+</blockquote>
+<p>这叫：</p>
+<h1 id="incremental-integration">Incremental Integration</h1>
+<h2 id="增量集成">增量集成</h2>
+<hr />
+<h1
+id="六一个最小端到端伪代码应该是什么样">六、一个最小端到端伪代码应该是什么样？</h1>
+<p>不绑定具体框架，</p>
+<p>核心流程可以写成：</p>
+<div class="sourceCode" id="cb416"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb416-1"><a href="#cb416-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> answer_with_rag(request):</span>
+<span id="cb416-2"><a href="#cb416-2" aria-hidden="true" tabindex="-1"></a>    processed <span class="op">=</span> query_processor.process(request)</span>
+<span id="cb416-3"><a href="#cb416-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-4"><a href="#cb416-4" aria-hidden="true" tabindex="-1"></a>    sparse_candidates <span class="op">=</span> sparse_retriever.search(</span>
+<span id="cb416-5"><a href="#cb416-5" aria-hidden="true" tabindex="-1"></a>        processed,</span>
+<span id="cb416-6"><a href="#cb416-6" aria-hidden="true" tabindex="-1"></a>        filters<span class="op">=</span>processed.applied_filters</span>
+<span id="cb416-7"><a href="#cb416-7" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb416-8"><a href="#cb416-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-9"><a href="#cb416-9" aria-hidden="true" tabindex="-1"></a>    dense_candidates <span class="op">=</span> dense_retriever.search(</span>
+<span id="cb416-10"><a href="#cb416-10" aria-hidden="true" tabindex="-1"></a>        processed,</span>
+<span id="cb416-11"><a href="#cb416-11" aria-hidden="true" tabindex="-1"></a>        filters<span class="op">=</span>processed.applied_filters</span>
+<span id="cb416-12"><a href="#cb416-12" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb416-13"><a href="#cb416-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-14"><a href="#cb416-14" aria-hidden="true" tabindex="-1"></a>    candidates <span class="op">=</span> fusion.merge(</span>
+<span id="cb416-15"><a href="#cb416-15" aria-hidden="true" tabindex="-1"></a>        sparse_candidates,</span>
+<span id="cb416-16"><a href="#cb416-16" aria-hidden="true" tabindex="-1"></a>        dense_candidates</span>
+<span id="cb416-17"><a href="#cb416-17" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb416-18"><a href="#cb416-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-19"><a href="#cb416-19" aria-hidden="true" tabindex="-1"></a>    candidates <span class="op">=</span> dedup(candidates)</span>
+<span id="cb416-20"><a href="#cb416-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-21"><a href="#cb416-21" aria-hidden="true" tabindex="-1"></a>    reranked <span class="op">=</span> reranker.rank(</span>
+<span id="cb416-22"><a href="#cb416-22" aria-hidden="true" tabindex="-1"></a>        processed.original_query,</span>
+<span id="cb416-23"><a href="#cb416-23" aria-hidden="true" tabindex="-1"></a>        candidates</span>
+<span id="cb416-24"><a href="#cb416-24" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb416-25"><a href="#cb416-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-26"><a href="#cb416-26" aria-hidden="true" tabindex="-1"></a>    context <span class="op">=</span> context_builder.build(</span>
+<span id="cb416-27"><a href="#cb416-27" aria-hidden="true" tabindex="-1"></a>        query<span class="op">=</span>processed,</span>
+<span id="cb416-28"><a href="#cb416-28" aria-hidden="true" tabindex="-1"></a>        candidates<span class="op">=</span>reranked</span>
+<span id="cb416-29"><a href="#cb416-29" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb416-30"><a href="#cb416-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-31"><a href="#cb416-31" aria-hidden="true" tabindex="-1"></a>    answer <span class="op">=</span> procurement_lm.generate(</span>
+<span id="cb416-32"><a href="#cb416-32" aria-hidden="true" tabindex="-1"></a>        query<span class="op">=</span>processed.original_query,</span>
+<span id="cb416-33"><a href="#cb416-33" aria-hidden="true" tabindex="-1"></a>        context<span class="op">=</span>context.prompt_context</span>
+<span id="cb416-34"><a href="#cb416-34" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb416-35"><a href="#cb416-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb416-36"><a href="#cb416-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> citation_layer.attach_and_validate(</span>
+<span id="cb416-37"><a href="#cb416-37" aria-hidden="true" tabindex="-1"></a>        answer<span class="op">=</span>answer,</span>
+<span id="cb416-38"><a href="#cb416-38" aria-hidden="true" tabindex="-1"></a>        citation_map<span class="op">=</span>context.citation_map</span>
+<span id="cb416-39"><a href="#cb416-39" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div>
+<p>这段代码最重要的不是语法。</p>
+<p>而是顺序：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mo>→</mo><mi>F</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mo>→</mo><mi>A</mi><mi>s</mi><mi>s</mi><mi>e</mi><mi>m</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>→</mo><mi>G</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>→</mo><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Process
+\rightarrow
+Retrieve
+\rightarrow
+Fuse
+\rightarrow
+Rerank
+\rightarrow
+Assemble
+\rightarrow
+Generate
+\rightarrow
+ValidateCitation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="七baseline-必须保留没有对照组就不知道-rag-到底有没有价值">七、Baseline
+必须保留：没有对照组，就不知道 RAG 到底有没有价值</h1>
+<p>第六课最终不能只展示：</p>
+<blockquote>
+<p>“这是 RAG 的输出。”</p>
+</blockquote>
+<p>必须保留：</p>
+<h1 id="baseline-1">Baseline</h1>
+<p>也就是：</p>
+<pre class="text"><code>User Query
+↓
+ProcurementLM_V0.1
+↓
+Answer</code></pre>
+<p>然后和：</p>
+<pre class="text"><code>User Query
+↓
+ProcurementRAG_V0.1
+↓
+Answer + Evidence</code></pre>
+<p>比较。</p>
+<p>两边应该尽量固定：</p>
+<pre class="text"><code>同一个ProcurementLM_V0.1
+同一个System Prompt主体
+同一个Generation Config
+同一个测试集
+同一个输出Schema</code></pre>
+<p>真正改变的是：</p>
+<blockquote>
+<p><strong>有没有 External Evidence System。</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>必</mi><mi>须</mi><mi>相</mi><mi>对</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>测</mi><mi>量</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGGain
+必须相对Baseline测量
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八端到端-benchmark-不能只测答案对不对">八、端到端 Benchmark
+不能只测“答案对不对”</h1>
+<p>RAG 系统至少有四层质量。</p>
+<p>第一层：</p>
+<h1 id="retrieval-quality">Retrieval Quality</h1>
+<pre class="text"><code>Hit@K
+Recall@K
+MRR
+Gold Rank
+Hard Negative Above Gold Rate</code></pre>
+<p>第二层：</p>
+<h1 id="context-quality">Context Quality</h1>
+<pre class="text"><code>Gold Evidence Inclusion Rate
+Context Precision
+Duplicate Rate
+Version Correctness
+Token Efficiency</code></pre>
+<p>第三层：</p>
+<h1 id="generation-quality">Generation Quality</h1>
+<pre class="text"><code>业务结论正确性
+理由质量
+Schema Compliance
+needs_review正确性
+Unsupported Claim Rate</code></pre>
+<p>第四层：</p>
+<h1 id="citation-quality">Citation Quality</h1>
+<pre class="text"><code>Citation Precision
+Citation Recall
+Citation Correctness
+Citation Entailment</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>A</mi><mi>G</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RAGQuality
+\neq
+AnswerAccuracyOnly
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九端到端测试集必须覆盖哪些-slice">九、端到端测试集必须覆盖哪些
+Slice？</h1>
+<p>第一版 <code>ProcurementRAGBench_V0.1</code> 至少要包含：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Slice</th>
+<th>主要测什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Normal</td>
+<td>常规可回答问题</td>
+</tr>
+<tr class="even">
+<td>Hard Positive</td>
+<td>需要多条证据才能回答</td>
+</tr>
+<tr class="odd">
+<td>Hard Negative</td>
+<td>高相似但关键条件不同</td>
+</tr>
+<tr class="even">
+<td>Temporal</td>
+<td>历史版本 / 生效时间</td>
+</tr>
+<tr class="odd">
+<td>Jurisdiction</td>
+<td>国家 / 省 / 市适用范围</td>
+</tr>
+<tr class="even">
+<td>Version-sensitive</td>
+<td>新旧规则差异</td>
+</tr>
+<tr class="odd">
+<td>Identifier-heavy</td>
+<td>文号、金额、条款号</td>
+</tr>
+<tr class="even">
+<td>Multi-intent</td>
+<td>一个问题多个子问题</td>
+</tr>
+<tr class="odd">
+<td>No-answer</td>
+<td>知识库没有充分证据</td>
+</tr>
+<tr class="even">
+<td>Conflict</td>
+<td>多来源或多版本冲突</td>
+</tr>
+<tr class="odd">
+<td>Citation</td>
+<td>结论能否准确回指证据</td>
+</tr>
+<tr class="even">
+<td>Injection</td>
+<td>检索文档里含恶意指令</td>
+</tr>
+</tbody>
+</table>
+<p>只有这样，</p>
+<p>系统才不是只会：</p>
+<blockquote>
+<p>“简单 Query + 单条法规”的演示。</p>
+</blockquote>
+<hr />
+<h1 id="十端到端错误必须沿-trace-反向定位">十、端到端错误必须沿 Trace
+反向定位</h1>
+<p>如果最终答案错了，</p>
+<p>不要直接说：</p>
+<blockquote>
+<p>“RAG 不行。”</p>
+</blockquote>
+<p>应该沿 Trace 检查：</p>
+<pre class="text"><code>1. Knowledge
+正确知识存在吗？
+
+2. Query Processing
+Query有没有被改坏？
+
+3. Metadata Filter
+Gold有没有被过滤掉？
+
+4. Retrieval
+Gold有没有进入Candidate Set？
+
+5. Fusion
+Gold有没有被融合策略压下去？
+
+6. Reranker
+Hard Negative有没有排到Gold前面？
+
+7. Context
+Gold有没有真正进入Prompt？
+
+8. Generation
+模型有没有正确使用Gold？
+
+9. Citation
+结论有没有引用正确Evidence？</code></pre>
+<p>因此最终日志必须允许：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>T</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Answer
+\rightarrow
+Trace
+\rightarrow
+EveryStage
+}
+</annotation></semantics></math></p>
+<p>这才是真正可调试的 RAG。</p>
+<hr />
+<h1 id="十一什么日志是必须保存的">十一、什么日志是必须保存的？</h1>
+<p>一条线上请求至少应该留下：</p>
+<pre class="text"><code>trace_id
+query_id
+
+original_query
+rewritten_queries
+subqueries
+
+extracted_metadata
+applied_filters
+
+sparse_candidates
+dense_candidates
+fusion_result
+
+reranker_input
+reranker_output
+
+selected_evidence
+dropped_evidence
+drop_reason
+
+context_token_count
+citation_map
+
+model_input_version
+model_output
+
+final_citations
+
+latency_by_stage
+error_flags</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>日志本身也可能包含敏感采购信息。</p>
+</blockquote>
+<p>所以真实部署时还需要：</p>
+<pre class="text"><code>权限控制
+脱敏
+保留周期
+审计
+访问日志</code></pre>
+<p>但就 RAG 可观测性而言，</p>
+<p>最核心的是：</p>
+<blockquote>
+<p><strong>每一步可重放。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十二latency-也必须拆成阶段而不是只看总耗时">十二、Latency
+也必须拆成阶段，而不是只看总耗时</h1>
+<p>最终用户只看到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>T</mi><mrow><mi>t</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi></mrow></msub><annotation encoding="application/x-tex">
+T_{total}
+</annotation></semantics></math></p>
+<p>但工程上应该拆成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mrow><mi>t</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi></mrow></msub><mo>=</mo><msub><mi>T</mi><mrow><mi>q</mi><mi>u</mi><mi>e</mi><mi>r</mi><mi>y</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>r</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>r</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>c</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>g</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+T_{total}
+=
+T_{query}
++
+T_{retrieval}
++
+T_{rerank}
++
+T_{context}
++
+T_{generation}
+</annotation></semantics></math></p>
+<p>概念上还可以继续细分：</p>
+<pre class="text"><code>Query Rewrite
+BM25 Search
+Dense Search
+Fusion
+Reranking
+Context Build
+LLM Prefill
+LLM Decode
+Citation Validation</code></pre>
+<p>如果总延迟高，</p>
+<p>必须知道：</p>
+<blockquote>
+<p>是 Reranker 慢，</p>
+</blockquote>
+<p>还是 LLM Decode 慢。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>n</mi><mi>d</mi><mi>T</mi><mi>o</mi><mi>E</mi><mi>n</mi><mi>d</mi><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>可</mi><mi>分</mi><mi>解</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EndToEndLatency
+必须可分解
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十三no-answer-与-abstention-是最终系统的正式能力">十三、No-answer 与
+Abstention 是最终系统的正式能力</h1>
+<p>最终 RAG 不应该被设计成：</p>
+<blockquote>
+<p>每个 Query 都必须输出一个确定法律判断。</p>
+</blockquote>
+<p>如果：</p>
+<pre class="text"><code>知识库没有Gold
+或
+版本状态不明
+或
+辖区不清楚
+或
+证据冲突未解决</code></pre>
+<p>正确结果可能是：</p>
+<pre class="text"><code>needs_review = true</code></pre>
+<p>并说明：</p>
+<blockquote>
+<p>当前缺少哪些关键信息。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>A</mi><mi>G</mi><mo>=</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>+</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>A</mi><mi>b</mi><mi>s</mi><mi>t</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableRAG
+=
+CanAnswer
++
+CanAbstain
+}
+</annotation></semantics></math></p>
+<p>这不是失败。</p>
+<p>这是系统边界能力。</p>
+<hr />
+<h1
+id="十四发布前必须做-ablation每个复杂模块到底贡献了什么">十四、发布前必须做
+Ablation：每个复杂模块到底贡献了什么？</h1>
+<p>我们最终用了：</p>
+<pre class="text"><code>BM25
+Dense
+RRF
+Reranker
+Rewrite
+Metadata Filter
+Parent Expansion
+Grounded Prompt</code></pre>
+<p>但哪一个真正有效？</p>
+<p>需要做：</p>
+<h1 id="ablation-study">Ablation Study</h1>
+<h2 id="消融实验">消融实验</h2>
+<p>例如：</p>
+<pre class="text"><code>Full System
+
+- BM25
+- Reranker
+- Query Rewrite
+- Metadata Filter
+- Parent Expansion</code></pre>
+<p>分别跑 Benchmark。</p>
+<p>观察：</p>
+<pre class="text"><code>Retrieval Recall变化
+MRR变化
+Groundedness变化
+Citation变化
+Latency变化</code></pre>
+<p>这样才能发现：</p>
+<blockquote>
+<p>某个模块也许增加 200ms 延迟，却几乎没有带来收益。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>n</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>s</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>t</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MoreComponents
+\neq
+BetterSystem
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十五procurementrag_v0.1-的-release-gate-应该是什么">十五、<code>ProcurementRAG_V0.1</code>
+的 Release Gate 应该是什么？</h1>
+<p>和第五课一样：</p>
+<blockquote>
+<p>训练完成不等于可以发布。</p>
+</blockquote>
+<p>RAG 也需要 Release Gate。</p>
+<p>第一版 Gate 可以至少包含：</p>
+<pre class="text"><code>Retrieval Gate
+关键Slice的Hit@K / Recall@K不能低于Baseline
+
+Ranking Gate
+Hard Negative Above Gold Rate达到目标
+
+Context Gate
+Gold Evidence Inclusion Rate达到目标
+
+Generation Gate
+业务判断指标不低于无RAG模型
+
+Citation Gate
+关键Claim必须有可验证Citation
+
+Groundedness Gate
+Unsupported Claim Rate低于上限
+
+No-answer Gate
+无证据问题不能高频强答
+
+Latency Gate
+p95端到端延迟在预算内
+
+Regression Gate
+通用能力和既有采购能力不能明显退化</code></pre>
+<p>具体阈值：</p>
+<blockquote>
+<p>应由真实 Benchmark 和业务风险共同确定，</p>
+</blockquote>
+<p>而不是在课堂里拍一个固定数字。</p>
+<hr />
+<h1 id="十六最终-release-bundle-必须包含什么">十六、最终 Release Bundle
+必须包含什么？</h1>
+<p>真正的：</p>
+<h1 id="procurementrag_v0.1-2"><code>ProcurementRAG_V0.1</code></h1>
+<p>至少应该包含：</p>
+<pre class="text"><code>1. ProcurementLM_V0.1
+   Adapter / Merged Candidate
+   Tokenizer
+   Chat Template
+   Generation Config
+
+2. Knowledge Base Manifest
+   Source List
+   Version
+   Validity Metadata
+
+3. Chunk Policy
+   ProcurementChunkingPolicy_V0.1
+
+4. Embedding Policy
+   ProcurementEmbeddingPolicy_V0.1
+
+5. Vector Index Policy
+   ProcurementVectorIndexPolicy_V0.1
+
+6. Retrieval Benchmark
+   ProcurementRetrievalBenchmark_V0.1
+
+7. Hybrid Retrieval Policy
+   ProcurementHybridRetrievalPolicy_V0.1
+
+8. Reranking Policy
+   ProcurementRerankingPolicy_V0.1
+
+9. Query Processing Policy
+   ProcurementQueryProcessingPolicy_V0.1
+
+10. Context Assembly Policy
+    ProcurementContextAssemblyPolicy_V0.1
+
+11. End-to-End Benchmark Report
+
+12. Known Limitations
+
+13. Release Manifest</code></pre>
+<p>这时我们发布的已经不是：</p>
+<blockquote>
+<p>“一个模型文件”。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>一个完整知识增强系统。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十七最终系统怎样回答一个真实-query">十七、最终系统怎样回答一个真实
+Query？</h1>
+<p>假设用户问：</p>
+<blockquote>
+<p>“按照当前有效规定，采购文件要求供应商投标前已经在本市设立三年以上分支机构，是否存在风险？请给出依据。”</p>
+</blockquote>
+<p>系统内部依次发生：</p>
+<pre class="text"><code>1.
+Query Processing
+抽取：
+当前时间
+本市
+投标前
+三年以上
+分支机构
+资格准入
+
+2.
+Metadata Filter
+限制有效版本和适用范围
+
+3.
+BM25
+抓取：
+“三年以上”
+“分支机构”
+精确表述
+
+4.
+Dense Retrieval
+抓取：
+本地机构准入限制
+经营年限限制
+同义表达
+
+5.
+Fusion
+合并候选
+
+6.
+Reranker
+把：
+投标前准入
+排在：
+中标后履约
+之前
+
+7.
+Context Builder
+选择：
+现行核心规则
+经营年限相关规则
+必要例外
+并分配Evidence ID
+
+8.
+ProcurementLM_V0.1
+基于Evidence判断
+
+9.
+Citation Layer
+把结论映射回具体证据</code></pre>
+<p>最终用户看到的不是：</p>
+<blockquote>
+<p>“模型觉得有风险。”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>判断 + 理由 + 证据 + 来源 + 必要的不确定性说明。</strong></p>
+</blockquote>
+<p>这就是第六课从第一阶段开始一直追求的目标。</p>
+<hr />
+<h1 id="十八把第六课-11-个阶段压成一张工程地图">十八、把第六课 11
+个阶段压成一张工程地图</h1>
+<pre class="text"><code>Stage 1
+RAG Boundary
+Fine-tuning改Weights
+RAG改Context
+
+Stage 2
+Knowledge Base
+知识先可信、可追溯、可版本化
+
+Stage 3
+Chunking
+定义Retrieval Unit
+
+Stage 4
+Embedding
+把语义映射到Vector Space
+
+Stage 5
+Vector Index
+让大规模近邻搜索可扩展
+
+Stage 6
+Retrieval Evaluation
+用Gold Evidence证明“找没找对”
+
+Stage 7
+BM25 + Dense
+让Lexical与Semantic互补
+
+Stage 8
+Reranker
+先高Recall召回，再高Precision精排
+
+Stage 9
+Query Processing
+先理解检索意图，再决定怎么搜
+
+Stage 10
+Context Assembly
+把Evidence变成可引用、可控制的Context
+
+Stage 11
+End-to-End RAG
+把所有模块接成ProcurementRAG_V0.1</code></pre>
+<p>这 11 个阶段真正构成了一条完整工程闭环。</p>
+<hr />
+<h1
+id="十九把整个第六课压成最精准的-7-句话">十九、把整个第六课压成最精准的
+7 句话</h1>
+<blockquote>
+<p><strong>第一，Fine-tuning 改变模型参数和稳定行为，RAG
+改变推理时模型能看到的外部证据；两者是互补关系。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，RAG
+的上限首先受知识库质量限制：来源、版本、时间、辖区和有效性如果错，后面的检索越强只会越快找到错误证据。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Chunking 定义检索单元，Embedding 定义语义空间，Vector
+Index 定义怎样快速找到候选；三者分别解决不同层的问题。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Retriever 的目标是高 Recall，Hybrid Retrieval 用 BM25
+和 Dense 互补，Reranker 再负责把真正 Gold Evidence
+压到前排。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，Query Processing
+负责恢复真实检索意图，但不能注入不存在的条件；Metadata Filter
+可以显著提升质量，但错误 Hard Filter 会直接杀掉 Gold
+Evidence。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第六，Context Assembly 决定哪些证据真正进入 Prompt，Citation
+必须形成从 Claim 到 Evidence、Chunk、Document、Source
+的可审计映射，证据不足时 Abstention 是正确行为。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第七，真正的 RAG 不是“LLM +
+向量库”四个字，而是一套可以分别评测
+Knowledge、Retrieval、Ranking、Context、Generation 和 Citation，并能沿
+Trace 定位错误的完整系统。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图-10">本阶段最核心的一张图</h1>
+<pre class="text"><code>                    ProcurementRAG_V0.1
+
+                           Query
+                             │
+                             ▼
+                    Query Processing
+                             │
+                             ▼
+                     Metadata Filter
+                             │
+               ┌─────────────┴─────────────┐
+               ▼                           ▼
+             BM25                    Dense Retrieval
+               │                           │
+               └─────────────┬─────────────┘
+                             ▼
+                       Fusion / Dedup
+                             │
+                             ▼
+                          Reranker
+                             │
+                             ▼
+                       Evidence Top-K
+                             │
+                             ▼
+                    Context Assembly
+                             │
+                     + Citation Map
+                             │
+                             ▼
+                   ProcurementLM_V0.1
+                             │
+                             ▼
+                    Grounded Generation
+                             │
+                             ▼
+                 Answer + Citation + Trace
+                             │
+                             ▼
+                      End-to-End Eval</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong><code>ProcurementRAG_V0.1</code>
+不是一个“会搜资料的模型”，而是一套能够把正确知识找到、排好、组织好、交给模型、让结论可追溯，并且能定位每一层错误的完整证据系统。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第六课-第-11-阶段掌握测试">第六课 · 第 11 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么
+<code>ProcurementRAG_V0.1</code> 不是一个新的模型权重文件；为什么 RAG
+Release 必须包含知识库、检索策略和评测资产；Offline Build 与 Online
+Query 为什么必须独立版本化；为什么模块之间需要 Data
+Contract；为什么第一版应该增量集成而不是一次打开全部高级功能；Baseline
+为什么必须保留；为什么 RAG Benchmark 不能只看最终答案正确率；为什么
+Retrieval、Context、Generation、Citation
+必须分别评测；为什么线上请求必须保留 Trace；为什么 Latency
+要分阶段统计；为什么 No-answer / Abstention
+是正式能力；为什么发布前应该做 Ablation；RAG Release Gate
+应该检查哪些层；以及为什么最终交付物必须是一个完整 Release
+Bundle，而不是一个向量库加一份 Prompt。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>六</mi><mi>课</mi><mi>第</mi><mn>11</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第六课第11阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="第六课最终交付">第六课最终交付</h1>
+<p>到这里，第六课正式完成。</p>
+<p>我们已经从：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow><annotation encoding="application/x-tex">
+ProcurementLM\_V0.1
+</annotation></semantics></math></p>
+<p>走到了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementRAG\_V0.1
+}
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>+</mo><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>a</mi><mi>l</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>k</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>A</mi><mi>s</mi><mi>s</mi><mi>e</mi><mi>m</mi><mi>b</mi><mi>l</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>i</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.1
++
+KnowledgeBase
++
+Retrieval
++
+Reranking
++
+ContextAssembly
++
+Citation
+}
+</annotation></semantics></math></p>
+<p>第五课解决的是：</p>
+<blockquote>
+<p><strong>模型怎样稳定地做政府采购任务。</strong></p>
+</blockquote>
+<p>第六课解决的是：</p>
+<blockquote>
+<p><strong>模型怎样拿着当前、可追溯、可更新的外部证据做政府采购任务。</strong></p>
+</blockquote>
+<p>所以到这里，我们已经拥有了课程中的第二个真正系统级里程碑：</p>
+<h1 id="procurementrag_v0.1-3"><code>ProcurementRAG_V0.1</code></h1>
+<p>第六课：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>11</mn><mi>/</mi><mn>11</mn><mspace width="0.222em"></mspace><mi>C</mi><mi>O</mi><mi>M</mi><mi>P</mi><mi>L</mi><mi>E</mi><mi>T</mi><mi>E</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+11/11
+\ COMPLETE
+}
+</annotation></semantics></math></p>
+<hr /><div class="nav"><a class="btn" href="stage10.html">← 第 10 阶段</a><a class="btn" href="../lesson07/stage01.html">第 7 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

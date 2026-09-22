@@ -1,0 +1,3179 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第5阶段：去重与近似去重</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第5阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>主要让模型偏科。</li><li>会让考试成绩造假。</li><li>Data Count ≠ Independent Information Count</li></ul></div><h1 id="第四课-第-5-阶段去重与近似去重">第四课 · 第 5
+阶段：去重与近似去重</h1>
+<h2
+id="为什么-100-万条干净数据可能实际上只有-30-万条独立信息为什么重复数据不仅浪费训练还会制造虚假的-benchmark">为什么
+100 万条“干净数据”可能实际上只有 30
+万条独立信息？为什么重复数据不仅浪费训练，还会制造虚假的
+Benchmark？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-4">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-4">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>主要让模型偏科。</strong></li>
+<li><strong>会让考试成绩造假。</strong></li>
+<li><strong>Data Count ≠ Independent Information Count</strong></li>
+<li><strong>去重 ≠ 删除所有相似文本</strong></li>
+<li><strong>Exact Duplicate 最容易， Near Duplicate
+才是真正困难的部分</strong></li>
+<li><strong>模板相同 ≠ 项目完全相同</strong></li>
+<li><strong>Duplicate Detection 应先“聚类和建立关系”，
+再决定是否删除</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-4">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>Raw Document</code></td>
+<td>原始文档：未经结构化处理的采购文件源材料</td>
+</tr>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>Dataset</code></td>
+<td>数据集：按统一 Schema、版本和质量标准组织的样本集合</td>
+</tr>
+<tr class="even">
+<td><code>Metadata</code></td>
+<td>元数据：项目、来源、时间、地区、版本等辅助信息</td>
+</tr>
+<tr class="odd">
+<td><code>Block</code></td>
+<td>版面块：文档解析后保留布局和位置的基本块</td>
+</tr>
+<tr class="even">
+<td><code>CPT</code></td>
+<td>CPT/继续预训练：在领域语料上继续执行预训练目标</td>
+</tr>
+<tr class="odd">
+<td><code>Embedding</code></td>
+<td>嵌入：把离散 Token 映射到连续高维向量</td>
+</tr>
+<tr class="even">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="odd">
+<td><code>Split</code></td>
+<td>数据切分：按项目/时间/地区划分训练、验证、测试数据</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-4">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第四阶段结束以后，我们已经拥有：</p>
+<pre class="text"><code>Raw Document
+      ↓
+ParsedDocument_V0.1
+      ↓
+ClauseUnit_V0.1
+      ↓
+CleanClause_V0.1</code></pre>
+<p>现在每一条 Clause 已经尽量做到：</p>
+<pre class="text"><code>文字可信
+结构可信
+来源可追
+格式稳定
+高风险字符受到保护</code></pre>
+<p>看起来，似乎已经可以直接：</p>
+<blockquote>
+<p>开始训练。</p>
+</blockquote>
+<p>但现在我们会碰到一个特别隐蔽的问题。</p>
+<p>假设你统计数据库：</p>
+<pre class="text"><code>CleanClause 总数 = 1,000,000</code></pre>
+<p>团队非常兴奋：</p>
+<blockquote>
+<p>“我们已经有 100 万条政府采购专业数据！”</p>
+</blockquote>
+<p>但当我们真正检查以后，可能发现：</p>
+<pre class="text"><code>20万条
+来自同一个采购模板
+
+10万条
+只是同一公告PDF和HTML各存了一份
+
+15万条
+来自网站镜像和重复下载
+
+18万条
+只有项目名、日期、金额不同
+
+7万条
+是更正前后高度相似的版本</code></pre>
+<p>最后真正独立的信息，可能远远不到：</p>
+<pre class="text"><code>100万</code></pre>
+<p>这就是第五阶段要处理的核心问题：</p>
+<h1 id="duplicate">Duplicate</h1>
+<p>重复。</p>
+<p>但今天很快会看到：</p>
+<blockquote>
+<p>去重绝对不是“相同文本删掉一条”这么简单。</p>
+</blockquote>
+<hr />
+<h1
+id="一本阶段真正要解决的一个核心问题-3">一、本阶段真正要解决的一个核心问题</h1>
+<p>今天只解决：</p>
+<blockquote>
+<p><strong>怎样识别政府采购数据里的完全重复、近似重复、模板重复和版本重复，并在不误删真实业务差异的前提下，控制重复信息对训练和评测造成的偏差？</strong></p>
+</blockquote>
+<p>最终我们要得到：</p>
+<h1 id="dedupedclauseset_v0.1-1"><code>DedupedClauseSet_V0.1</code></h1>
+<p>主线是：</p>
+<pre class="text"><code>CleanClause_V0.1
+        ↓
+Duplicate Detection
+        ↓
+Duplicate Clustering
+        ↓
+Canonical / Relation Decision
+        ↓
+DedupedClauseSet_V0.1</code></pre>
+<hr />
+<h1
+id="二先建立本阶段最重要的-6-个核心心智模型">二、先建立本阶段最重要的 6
+个核心心智模型</h1>
+<pre class="text"><code>① Data Count ≠ Independent Information Count
+
+② 去重 ≠ 删除所有相似文本
+
+③ Exact Duplicate 最容易，
+   Near Duplicate 才是真正困难的部分
+
+④ 模板相同 ≠ 项目完全相同
+
+⑤ Duplicate Detection 应先“聚类和建立关系”，
+   再决定是否删除
+
+⑥ Train / Test 之间的近重复
+   比训练集内部重复更危险</code></pre>
+<p>最后一句尤其重要。</p>
+<p>因为训练集里重复很多：</p>
+<blockquote>
+<p>主要让模型偏科。</p>
+</blockquote>
+<p>而 Train/Test 之间出现重复：</p>
+<blockquote>
+<p>会让考试成绩造假。</p>
+</blockquote>
+<hr />
+<h1 id="三先看最简单的重复">三、先看最简单的重复</h1>
+<p>假设硬盘里有两个文件：</p>
+<pre class="text"><code>A/
+某市智慧交通项目招标文件.pdf</code></pre>
+<p>和：</p>
+<pre class="text"><code>B/
+最终版-某市智慧交通项目招标文件.pdf</code></pre>
+<p>名字不同。</p>
+<p>但是两个文件：</p>
+<blockquote>
+<p>一个 Byte 都没变。</p>
+</blockquote>
+<hr />
+<h1 id="四这是最简单的一类">四、这是最简单的一类</h1>
+<h1 id="exact-file-duplicate">Exact File Duplicate</h1>
+<p>完全文件重复。</p>
+<p>这类非常容易发现。</p>
+<hr />
+<h1 id="五怎么发现">五、怎么发现？</h1>
+<p>第四课第二阶段已经埋好了一个字段：</p>
+<pre class="text"><code>file_hash</code></pre>
+<p>例如：</p>
+<h1 id="sha-256-1">SHA-256</h1>
+<p>如果：</p>
+<pre class="text"><code>SHA256(File A)
+=
+SHA256(File B)</code></pre>
+<p>那么在实际工程中，我们可以极高置信度认为：</p>
+<blockquote>
+<p>内容完全相同。</p>
+</blockquote>
+<hr />
+<h1 id="六注意">六、注意</h1>
+<p>文件名不同：</p>
+<pre class="text"><code>招标文件.pdf
+最终招标文件.pdf
+下载(1).pdf</code></pre>
+<p>完全不重要。</p>
+<p>Hash 看的是：</p>
+<blockquote>
+<p>文件内容。</p>
+</blockquote>
+<hr />
+<h1 id="七所以第一层-dedup-非常简单">七、所以第一层 Dedup 非常简单</h1>
+<pre class="text"><code>Raw File
+   │
+   ▼
+SHA-256
+   │
+   ▼
+Hash相同？
+   │
+   ├── 是 → Exact File Duplicate
+   └── 否 → 继续检查</code></pre>
+<hr />
+<h1 id="八但-hash-不同是不是说明内容不同">八、但 Hash
+不同，是不是说明内容不同？</h1>
+<p>不一定。</p>
+<p>这就是事情开始变麻烦的地方。</p>
+<hr />
+<h1 id="九假设有两个-pdf">九、假设有两个 PDF</h1>
+<p>文件 A：</p>
+<pre class="text"><code>某项目招标文件.pdf</code></pre>
+<p>文件 B：</p>
+<pre class="text"><code>某项目招标文件-官网下载.pdf</code></pre>
+<p>看起来内容完全一样。</p>
+<p>但 B 的 PDF Metadata 多了：</p>
+<pre class="text"><code>Creator
+CreationTime
+Producer</code></pre>
+<hr />
+<h1 id="十文件-byte-不一样">十、文件 Byte 不一样</h1>
+<p>所以：</p>
+<pre class="text"><code>SHA256(A)
+≠
+SHA256(B)</code></pre>
+<p>但用户看到的正文：</p>
+<blockquote>
+<p>完全一样。</p>
+</blockquote>
+<hr />
+<h1 id="十一这就是第二层">十一、这就是第二层</h1>
+<h1 id="content-duplicate">Content Duplicate</h1>
+<p>内容重复。</p>
+<hr />
+<h1
+id="十二所以我们已经有两个不同概念">十二、所以我们已经有两个不同概念</h1>
+<pre class="text"><code>File Duplicate</code></pre>
+<p>和：</p>
+<pre class="text"><code>Content Duplicate</code></pre>
+<p>千万不要混。</p>
+<hr />
+<h1 id="十三可以记">十三、可以记：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>H</mi><mi>a</mi><mi>s</mi><mi>h</mi><mi>不</mi><mi>同</mi><mo>⇏</mo><mi>D</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>不</mi><mi>同</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FileHash不同
+\not\Rightarrow
+DocumentContent不同
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十四同样的事情在-html-特别常见">十四、同样的事情在 HTML
+特别常见</h1>
+<p>两个网址：</p>
+<pre class="text"><code>site-a.gov.cn/notice/123</code></pre>
+<p>和：</p>
+<pre class="text"><code>mirror.gov.cn/archive/456</code></pre>
+<p>网页结构完全不同。</p>
+<p>一个有：</p>
+<pre class="text"><code>导航栏
+分享按钮
+版权信息</code></pre>
+<p>另一个没有。</p>
+<hr />
+<h1 id="十五但采购公告正文">十五、但采购公告正文：</h1>
+<blockquote>
+<p>一模一样。</p>
+</blockquote>
+<p>原 HTML Hash：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<p>正文：</p>
+<blockquote>
+<p>相同。</p>
+</blockquote>
+<hr />
+<h1
+id="十六所以第二层去重最好发生在">十六、所以第二层去重最好发生在：</h1>
+<h1 id="parsed-clean-content">Parsed / Clean Content</h1>
+<p>而不只是原文件。</p>
+<hr />
+<h1
+id="十七这就是为什么我们之前一直保留分层数据">十七、这就是为什么我们之前一直保留分层数据</h1>
+<p>现在终于看到收益：</p>
+<pre class="text"><code>Raw File Hash</code></pre>
+<p>可以找：</p>
+<blockquote>
+<p>文件级重复。</p>
+</blockquote>
+<pre class="text"><code>Normalized Document Text</code></pre>
+<p>可以找：</p>
+<blockquote>
+<p>正文级重复。</p>
+</blockquote>
+<pre class="text"><code>CleanClause</code></pre>
+<p>可以找：</p>
+<blockquote>
+<p>条款级重复。</p>
+</blockquote>
+<hr />
+<h1 id="十八所以-dedup-本身也是多层的">十八、所以 Dedup
+本身也是多层的</h1>
+<p>今天最重要的一张图之一：</p>
+<pre class="text"><code>Duplicate
+│
+├── File-level Duplicate
+│
+├── Document-level Duplicate
+│
+├── Section-level Duplicate
+│
+├── Clause-level Duplicate
+│
+├── Template-level Duplicate
+└── Semantic Near Duplicate</code></pre>
+<p>不是一个：</p>
+<blockquote>
+<p><code>drop_duplicates()</code>。</p>
+</blockquote>
+<hr />
+<h1 id="十九现在看-clause-level-exact-duplicate">十九、现在看
+Clause-level Exact Duplicate</h1>
+<p>假设两个不同项目都有：</p>
+<pre class="text"><code>供应商应具有独立承担民事责任的能力。</code></pre>
+<p>字符串完全一致。</p>
+<p>是不是应该：</p>
+<blockquote>
+<p>留一条，删除另一条？</p>
+</blockquote>
+<hr />
+<h1 id="二十答案">二十、答案：</h1>
+<h1 id="不一定">不一定。</h1>
+<p>这句话特别重要。</p>
+<hr />
+<h1 id="二十一为什么">二十一、为什么？</h1>
+<p>因为它们可能来自：</p>
+<pre class="text"><code>Project A</code></pre>
+<p>和：</p>
+<pre class="text"><code>Project B</code></pre>
+<p>两个真实、独立的采购项目。</p>
+<hr />
+<h1 id="二十二从文本内容来看">二十二、从“文本内容”来看</h1>
+<p>它们：</p>
+<blockquote>
+<p>完全重复。</p>
+</blockquote>
+<hr />
+<h1 id="二十三但从业务事件来看">二十三、但从“业务事件”来看</h1>
+<p>它们：</p>
+<blockquote>
+<p>发生了两次。</p>
+</blockquote>
+<hr />
+<h1
+id="二十四所以这里出现一个很重要的区别">二十四、所以这里出现一个很重要的区别：</h1>
+<h1 id="text-duplicate">Text Duplicate</h1>
+<p>和：</p>
+<h1 id="observation-duplicate">Observation Duplicate</h1>
+<p>不是一回事。</p>
+<hr />
+<h1 id="二十五举个生活例子">二十五、举个生活例子</h1>
+<p>调查 100 家商店。</p>
+<p>发现 80 家都写：</p>
+<blockquote>
+<p>“营业时间 9:00—21:00”。</p>
+</blockquote>
+<p>是不是应该说：</p>
+<blockquote>
+<p>“这句话一样，所以只算一家商店”？</p>
+</blockquote>
+<p>当然不是。</p>
+<hr />
+<h1 id="二十六因为你研究的是">二十六、因为你研究的是：</h1>
+<blockquote>
+<p>商店分布。</p>
+</blockquote>
+<p>重复本身：</p>
+<blockquote>
+<p>可能是真实统计信息。</p>
+</blockquote>
+<hr />
+<h1 id="二十七同样">二十七、同样，</h1>
+<p>如果你研究：</p>
+<blockquote>
+<p>政府采购文件中某类标准资格条件的真实出现频率，</p>
+</blockquote>
+<p>这些重复：</p>
+<blockquote>
+<p>本身就是数据。</p>
+</blockquote>
+<hr />
+<h1 id="二十八但如果你在训练-llm">二十八、但如果你在训练 LLM</h1>
+<p>同一句标准模板出现：</p>
+<pre class="text"><code>100,000次</code></pre>
+<p>另外一个重要边界条件只出现：</p>
+<pre class="text"><code>100次</code></pre>
+<p>模型会发生什么？</p>
+<hr />
+<h1 id="二十九它会非常强烈地学到">二十九、它会非常强烈地学到：</h1>
+<blockquote>
+<p>高频模板。</p>
+</blockquote>
+<p>而对真正稀有、困难的风险：</p>
+<blockquote>
+<p>学得很差。</p>
+</blockquote>
+<hr />
+<h1 id="三十所以-dedup-的目标不是问">三十、所以 Dedup
+的目标不是问：</h1>
+<blockquote>
+<p>“重复是不是坏？”</p>
+</blockquote>
+<p>而应该问：</p>
+<blockquote>
+<p><strong>“对于当前任务，这种重复会不会不合理地改变数据权重？”</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三十一这是第五阶段最重要的思想之一">三十一、这是第五阶段最重要的思想之一：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>p</mi><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>取</mi><mi>决</mi><mi>于</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>P</mi><mi>u</mi><mi>r</mi><mi>p</mi><mi>o</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DedupPolicy
+取决于
+DatasetPurpose
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三十二比如-cpt-语料">三十二、比如 CPT 语料</h1>
+<p>大量行业标准表达重复出现：</p>
+<blockquote>
+<p>未必完全是坏事。</p>
+</blockquote>
+<p>它反映：</p>
+<blockquote>
+<p>真实行业语言分布。</p>
+</blockquote>
+<hr />
+<h1
+id="三十三但如果某一个网站镜像了同一批公告-20-次">三十三、但如果某一个网站镜像了同一批公告
+20 次</h1>
+<p>那 20 倍频率：</p>
+<blockquote>
+<p>是数据采集过程制造的。</p>
+</blockquote>
+<p>不是行业真实分布。</p>
+<p>这就应该去掉。</p>
+<hr />
+<h1 id="三十四这两种重复必须区分">三十四、这两种重复必须区分</h1>
+<h3 id="natural-repetition">Natural Repetition</h3>
+<p>真实业务重复。</p>
+<h3 id="artificial-duplication">Artificial Duplication</h3>
+<p>采集流程制造的重复。</p>
+<hr />
+<h1 id="三十五我们真正最想消灭的是">三十五、我们真正最想消灭的是：</h1>
+<h1 id="artificial-duplication-1">Artificial Duplication</h1>
+<hr />
+<h1 id="三十六比如">三十六、比如：</h1>
+<pre class="text"><code>同一PDF重复下载
+同一网页不同URL镜像
+同一个附件被保存5份
+解析器重复输出同一个Block</code></pre>
+<p>这些：</p>
+<blockquote>
+<p>都不是新的业务观察。</p>
+</blockquote>
+<hr />
+<h1 id="三十七而不同项目都包含">三十七、而不同项目都包含：</h1>
+<pre class="text"><code>供应商应具有良好的商业信誉。</code></pre>
+<p>则可能是：</p>
+<blockquote>
+<p>真实自然重复。</p>
+</blockquote>
+<hr />
+<h1
+id="三十八所以去重数据库最好不要简单只有">三十八、所以去重数据库最好不要简单只有</h1>
+<pre class="text"><code>is_duplicate = true</code></pre>
+<p>而应该知道：</p>
+<h1 id="duplicate-relation">Duplicate Relation</h1>
+<p>到底是哪种关系。</p>
+<hr />
+<h1 id="三十九例如">三十九、例如：</h1>
+<pre class="text"><code>exact_copy</code></pre>
+<pre class="text"><code>mirror_copy</code></pre>
+<pre class="text"><code>same_document_different_format</code></pre>
+<pre class="text"><code>template_reuse</code></pre>
+<pre class="text"><code>revised_version</code></pre>
+<pre class="text"><code>semantic_near_duplicate</code></pre>
+<hr />
+<h1 id="四十这些关系">四十、这些关系：</h1>
+<blockquote>
+<p>处理方式不一样。</p>
+</blockquote>
+<hr />
+<h1 id="四十一现在看第三种典型情况">四十一、现在看第三种典型情况</h1>
+<h1 id="same-document-different-format">Same Document, Different
+Format</h1>
+<p>采购网站可能同时提供：</p>
+<pre class="text"><code>公告正文 HTML</code></pre>
+<p>和：</p>
+<pre class="text"><code>公告附件 PDF</code></pre>
+<p>正文有时：</p>
+<blockquote>
+<p>几乎完全相同。</p>
+</blockquote>
+<hr />
+<h1 id="四十二如果我们两边都收">四十二、如果我们两边都收</h1>
+<p>Dataset 里：</p>
+<blockquote>
+<p>同一内容变成两次。</p>
+</blockquote>
+<hr />
+<h1 id="四十三哪一个留">四十三、哪一个留？</h1>
+<p>可能要根据：</p>
+<pre class="text"><code>Source Authority
+Parse Quality
+Completeness
+Traceability</code></pre>
+<p>选择：</p>
+<h1 id="canonical-copy">Canonical Copy</h1>
+<p>权威代表版本。</p>
+<hr />
+<h1 id="四十四例如">四十四、例如：</h1>
+<pre class="text"><code>PDF:
+正式签章附件</code></pre>
+<p>和：</p>
+<pre class="text"><code>HTML:
+网站正文</code></pre>
+<p>不能机械说：</p>
+<blockquote>
+<p>HTML 更干净，所以删 PDF。</p>
+</blockquote>
+<hr />
+<h1 id="四十五因为-source-authority">四十五、因为 Source
+Authority：</h1>
+<blockquote>
+<p>也很重要。</p>
+</blockquote>
+<hr />
+<h1 id="四十六因此-duplicate-cluster-内最好有">四十六、因此 Duplicate
+Cluster 内最好有：</h1>
+<pre class="text"><code>canonical_document_id</code></pre>
+<p>指向：</p>
+<blockquote>
+<p>代表版本。</p>
+</blockquote>
+<p>其他版本：</p>
+<blockquote>
+<p>不一定物理删除。</p>
+</blockquote>
+<p>可以保留关系。</p>
+<hr />
+<h1
+id="四十七这就是今天另一个核心原则">四十七、这就是今天另一个核心原则：</h1>
+<h1 id="dedup-physical-delete">Dedup ≠ Physical Delete</h1>
+<hr />
+<h1 id="四十八更安全的架构是">四十八、更安全的架构是：</h1>
+<pre class="text"><code>Duplicate Cluster
+│
+├── Canonical Record
+├── Duplicate Record 1
+├── Duplicate Record 2
+└── Duplicate Record 3</code></pre>
+<hr />
+<h1 id="四十九训练-view">四十九、训练 View：</h1>
+<blockquote>
+<p>只取 Canonical。</p>
+</blockquote>
+<p>Master Data：</p>
+<blockquote>
+<p>全部保留。</p>
+</blockquote>
+<hr />
+<h1 id="五十这和第四阶段">五十、这和第四阶段：</h1>
+<pre class="text"><code>Raw
++
+Normalized</code></pre>
+<p>的哲学完全一致。</p>
+<hr />
+<h1 id="五十一永远尽量">五十一、永远尽量：</h1>
+<h1 id="non-destructive-data-engineering">Non-destructive Data
+Engineering</h1>
+<hr />
+<h1
+id="五十二现在进入真正困难的部分">五十二、现在进入真正困难的部分</h1>
+<h1 id="near-duplicate">Near Duplicate</h1>
+<p>近似重复。</p>
+<hr />
+<h1 id="五十三例如条款-a">五十三、例如条款 A：</h1>
+<blockquote>
+<p>供应商应在本市设有固定售后服务机构。</p>
+</blockquote>
+<p>条款 B：</p>
+<blockquote>
+<p>投标人须在项目所在地设立固定售后服务机构。</p>
+</blockquote>
+<hr />
+<h1 id="五十四字符串">五十四、字符串：</h1>
+<blockquote>
+<p>不一样。</p>
+</blockquote>
+<p>但是业务含义：</p>
+<blockquote>
+<p>非常接近。</p>
+</blockquote>
+<hr />
+<h1 id="五十五再例如">五十五、再例如：</h1>
+<p>A：</p>
+<blockquote>
+<p>供应商注册资本不得低于5000万元。</p>
+</blockquote>
+<p>B：</p>
+<blockquote>
+<p>投标人注册资本应达到人民币5000万元以上。</p>
+</blockquote>
+<hr />
+<h1 id="五十六表面字符不同">五十六、表面字符不同。</h1>
+<p>但核心条件：</p>
+<pre class="text"><code>注册资本
+&gt;=
+5000万元</code></pre>
+<p>基本一样。</p>
+<hr />
+<h1 id="五十七这就是">五十七、这就是：</h1>
+<h1 id="semantic-near-duplicate">Semantic Near Duplicate</h1>
+<p>语义近重复。</p>
+<hr />
+<h1 id="五十八如果只用">五十八、如果只用：</h1>
+<pre class="text"><code>text == other_text</code></pre>
+<p>完全发现不了。</p>
+<hr />
+<h1 id="五十九这就是为什么">五十九、这就是为什么：</h1>
+<blockquote>
+<p>SHA-256 只能解决最容易的一层。</p>
+</blockquote>
+<hr />
+<h1 id="六十那么近重复怎么检测">六十、那么近重复怎么检测？</h1>
+<p>我们先不要上复杂算法。</p>
+<p>先建立最直观的方法：</p>
+<h1 id="token-overlap">Token Overlap</h1>
+<hr />
+<h1 id="六十一假设">六十一、假设：</h1>
+<p>A：</p>
+<pre class="text"><code>供应商 须 在 本市 设立 售后 服务 机构</code></pre>
+<p>B：</p>
+<pre class="text"><code>供应商 应 在 本市 设立 固定 服务 机构</code></pre>
+<p>很多词：</p>
+<blockquote>
+<p>是一样的。</p>
+</blockquote>
+<hr />
+<h1 id="六十二于是可以问">六十二、于是可以问：</h1>
+<blockquote>
+<p>两条文本共享多少内容？</p>
+</blockquote>
+<p>这就是 Similarity。</p>
+<hr />
+<h1 id="六十三一个经典直觉指标">六十三、一个经典直觉指标：</h1>
+<h1 id="jaccard-similarity">Jaccard Similarity</h1>
+<p>公式非常简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>J</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mrow><mo stretchy="true" form="prefix">|</mo><mi>A</mi><mo>∩</mo><mi>B</mi><mo stretchy="true" form="postfix">|</mo></mrow><mrow><mo stretchy="true" form="prefix">|</mo><mi>A</mi><mo>∪</mo><mi>B</mi><mo stretchy="true" form="postfix">|</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+J(A,B)
+=
+\frac{|A\cap B|}
+{|A\cup B|}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六十四先不怕公式">六十四、先不怕公式。</h1>
+<p>它只是在说：</p>
+<blockquote>
+<p>两组元素里，共同出现的东西占全部不同元素的多少。</p>
+</blockquote>
+<hr />
+<h1 id="六十五例如-a-有">六十五、例如 A 有：</h1>
+<pre class="text"><code>{供应商, 本市, 服务, 机构}</code></pre>
+<p>B 有：</p>
+<pre class="text"><code>{供应商, 本市, 固定, 服务, 机构}</code></pre>
+<p>共同：</p>
+<pre class="text"><code>供应商
+本市
+服务
+机构</code></pre>
+<p>有 4 个。</p>
+<p>全部不同元素：</p>
+<pre class="text"><code>供应商
+本市
+固定
+服务
+机构</code></pre>
+<p>有 5 个。</p>
+<hr />
+<h1 id="六十六所以">六十六、所以：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>J</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mn>4</mn><mn>5</mn></mfrac><mo>=</mo><mn>0.8</mn></mrow><annotation encoding="application/x-tex">
+J(A,B)=\frac45=0.8
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>80% 相似。</p>
+</blockquote>
+<hr />
+<h1 id="六十七这比">六十七、这比：</h1>
+<pre class="text"><code>必须100%相同</code></pre>
+<p>聪明很多。</p>
+<hr />
+<h1
+id="六十八但是直接按词集合比较也有问题">六十八、但是直接按“词集合”比较也有问题</h1>
+<p>A：</p>
+<blockquote>
+<p>供应商不得在本市设立机构。</p>
+</blockquote>
+<p>B：</p>
+<blockquote>
+<p>供应商必须在本市设立机构。</p>
+</blockquote>
+<hr />
+<h1 id="六十九它们绝大多数词">六十九、它们绝大多数词：</h1>
+<blockquote>
+<p>一模一样。</p>
+</blockquote>
+<p>Jaccard：</p>
+<blockquote>
+<p>可能非常高。</p>
+</blockquote>
+<hr />
+<h1 id="七十但是">七十、但是：</h1>
+<pre class="text"><code>不得</code></pre>
+<p>和：</p>
+<pre class="text"><code>必须</code></pre>
+<p>让业务意义：</p>
+<blockquote>
+<p>几乎相反。</p>
+</blockquote>
+<hr />
+<h1
+id="七十一所以第五阶段再次碰到第四阶段那个老朋友">七十一、所以第五阶段再次碰到第四阶段那个老朋友：</h1>
+<h1 id="high-risk-tokens-1">High-risk Tokens</h1>
+<hr />
+<h1 id="七十二near-duplicate-detection-也必须保护">七十二、Near
+Duplicate Detection 也必须保护：</h1>
+<pre class="text"><code>否定词
+数字
+金额
+单位
+比较符
+日期
+品牌型号
+地域
+评分值</code></pre>
+<hr />
+<h1 id="七十三所以不能因为">七十三、所以不能因为：</h1>
+<pre class="text"><code>Similarity = 0.95</code></pre>
+<p>就直接删。</p>
+<hr />
+<h1 id="七十四similarity-只是">七十四、Similarity 只是：</h1>
+<h1 id="candidate-generator">Candidate Generator</h1>
+<p>候选生成器。</p>
+<p>不是：</p>
+<h1 id="final-truth">Final Truth</h1>
+<hr />
+<h1
+id="七十五这是今天非常重要的一句话">七十五、这是今天非常重要的一句话：</h1>
+<blockquote>
+<p><strong>相似度负责告诉你“值得比较”，而不是负责替你决定“它们完全一样”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七十六现在再看一个例子">七十六、现在再看一个例子</h1>
+<p>A：</p>
+<blockquote>
+<p>响应时间不得超过2小时。</p>
+</blockquote>
+<p>B：</p>
+<blockquote>
+<p>响应时间不得超过4小时。</p>
+</blockquote>
+<hr />
+<h1
+id="七十七两个句子只有一个字符不同">七十七、两个句子只有一个字符不同。</h1>
+<p>文本相似度：</p>
+<blockquote>
+<p>极高。</p>
+</blockquote>
+<hr />
+<h1 id="七十八但业务条件">七十八、但业务条件：</h1>
+<blockquote>
+<p>差了一倍。</p>
+</blockquote>
+<hr />
+<h1 id="七十九所以如果-dedup-把它们合并">七十九、所以如果 Dedup
+把它们合并，</h1>
+<p>你直接丢失：</p>
+<blockquote>
+<p>真实业务差异。</p>
+</blockquote>
+<hr />
+<h1 id="八十这说明-near-dedup-必须有">八十、这说明 Near Dedup
+必须有：</h1>
+<h1 id="difference-awareness">Difference Awareness</h1>
+<p>不仅看：</p>
+<blockquote>
+<p>像不像。</p>
+</blockquote>
+<p>还要看：</p>
+<blockquote>
+<p><strong>到底哪里不一样。</strong></p>
+</blockquote>
+<hr />
+<h1 id="八十一特别需要做">八十一、特别需要做：</h1>
+<pre class="text"><code>Numeric Diff
+Comparator Diff
+Negation Diff
+Entity Diff
+Unit Diff</code></pre>
+<hr />
+<h1 id="八十二例如">八十二、例如：</h1>
+<pre class="text"><code>A:
+不少于3年
+
+B:
+不少于5年</code></pre>
+<p>标记：</p>
+<pre class="text"><code>text_similarity = high
+numeric_difference = true</code></pre>
+<hr />
+<h1 id="八十三这种关系更适合叫">八十三、这种关系更适合叫：</h1>
+<pre class="text"><code>template_variant</code></pre>
+<p>而不是：</p>
+<pre class="text"><code>duplicate</code></pre>
+<hr />
+<h1
+id="八十四这就进入采购数据中特别重要的一类">八十四、这就进入采购数据中特别重要的一类：</h1>
+<h1 id="template-duplicate">Template Duplicate</h1>
+<p>模板重复。</p>
+<hr />
+<h1
+id="八十五政府采购文件大量使用模板">八十五、政府采购文件大量使用模板。</h1>
+<p>例如 100 个项目都写：</p>
+<pre class="text"><code>项目名称：XXX
+项目编号：XXX
+预算金额：XXX</code></pre>
+<hr />
+<h1 id="八十六甚至资格条件">八十六、甚至资格条件：</h1>
+<pre class="text"><code>供应商须具有独立承担民事责任的能力；
+具有良好的商业信誉；
+具有履行合同所必需的设备和专业技术能力；
+……</code></pre>
+<p>很多文件：</p>
+<blockquote>
+<p>大片完全相同。</p>
+</blockquote>
+<hr />
+<h1
+id="八十七还有招标机构自己的标准模板">八十七、还有招标机构自己的标准模板。</h1>
+<p>比如：</p>
+<pre class="text"><code>采购人名称不同
+项目名称不同
+预算不同
+日期不同</code></pre>
+<p>其余 90%：</p>
+<blockquote>
+<p>一样。</p>
+</blockquote>
+<hr />
+<h1 id="八十八如果按普通字符串比较">八十八、如果按普通字符串比较</h1>
+<p>这些文件：</p>
+<blockquote>
+<p>不是完全相同。</p>
+</blockquote>
+<hr />
+<h1 id="八十九如果按语义比较">八十九、如果按语义比较</h1>
+<p>它们：</p>
+<blockquote>
+<p>高度接近。</p>
+</blockquote>
+<hr />
+<h1 id="九十从训练角度看">九十、从训练角度看</h1>
+<p>如果把 10,000 份模板全喂进去，</p>
+<p>模型会不断看到：</p>
+<blockquote>
+<p>同一结构。</p>
+</blockquote>
+<hr />
+<h1 id="九十一这可能造成">九十一、这可能造成：</h1>
+<h1 id="template-overweighting">Template Overweighting</h1>
+<p>模板过权重。</p>
+<hr />
+<h1
+id="九十二尤其如果某一个地区的数据">九十二、尤其如果某一个地区的数据：</h1>
+<blockquote>
+<p>特别容易爬取。</p>
+</blockquote>
+<p>你可能无意中让模型学成：</p>
+<blockquote>
+<p>某地区采购模板专家。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>全国政府采购专家。</p>
+</blockquote>
+<hr />
+<h1 id="九十三所以-dedup-其实也在解决">九十三、所以 Dedup
+其实也在解决：</h1>
+<h1 id="sampling-bias">Sampling Bias</h1>
+<p>采样偏差。</p>
+<hr />
+<h1 id="九十四例如">九十四、例如：</h1>
+<pre class="text"><code>地区A
+采集到30万份
+
+地区B
+采集到2万份</code></pre>
+<p>如果 A 大量使用统一模板，</p>
+<p>模型看到的不是：</p>
+<blockquote>
+<p>15 倍新的知识。</p>
+</blockquote>
+<p>可能只是：</p>
+<blockquote>
+<p>同一模板重复 15 倍。</p>
+</blockquote>
+<hr />
+<h1 id="九十五这就是">九十五、这就是：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>m</mi><mi>e</mi><mo>≠</mo><mi>D</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Volume
+\neq
+Diversity
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九十六对领域模型来说">九十六、对领域模型来说，</h1>
+<p>数据多当然重要。</p>
+<p>但更重要的是：</p>
+<h1 id="information-diversity">Information Diversity</h1>
+<p>信息多样性。</p>
+<hr />
+<h1 id="九十七我们真正希望覆盖的是">九十七、我们真正希望覆盖的是：</h1>
+<pre class="text"><code>不同地区
+不同采购方式
+不同项目类型
+不同预算规模
+不同风险类型
+不同写法
+不同边界案例
+不同法规场景</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>同一个模板复制 100 万次。</p>
+</blockquote>
+<hr />
+<h1 id="九十八那么怎么发现-template-duplicate">九十八、那么怎么发现
+Template Duplicate？</h1>
+<p>一个方法是：</p>
+<h1 id="variable-masking">Variable Masking</h1>
+<hr />
+<h1 id="九十九例如">九十九、例如：</h1>
+<p>原文 A：</p>
+<pre class="text"><code>项目编号：ABC-2026-001
+预算金额：500万元
+投标截止日期：2026年9月30日</code></pre>
+<p>B：</p>
+<pre class="text"><code>项目编号：XYZ-2026-812
+预算金额：800万元
+投标截止日期：2026年10月8日</code></pre>
+<hr />
+<h1 id="一百我们可以产生一个">一百、我们可以产生一个：</h1>
+<h1 id="template-view">Template View</h1>
+<p>例如：</p>
+<pre class="text"><code>项目编号：&lt;PROJECT_ID&gt;
+预算金额：&lt;AMOUNT&gt;
+投标截止日期：&lt;DATE&gt;</code></pre>
+<hr />
+<h1 id="一百零一于是-a-和-b-的-template-view">一百零一、于是 A 和 B 的
+Template View：</h1>
+<blockquote>
+<p>完全一致。</p>
+</blockquote>
+<hr />
+<h1 id="一百零二这说明">一百零二、这说明：</h1>
+<blockquote>
+<p>它们高度可能来自同一模板。</p>
+</blockquote>
+<hr />
+<h1 id="一百零三但是注意">一百零三、但是注意！</h1>
+<p>不能把这个 Template View：</p>
+<blockquote>
+<p>替代原文。</p>
+</blockquote>
+<hr />
+<h1 id="一百零四因为">一百零四、因为：</h1>
+<pre class="text"><code>500万元</code></pre>
+<p>和：</p>
+<pre class="text"><code>800万元</code></pre>
+<p>业务意义仍然存在。</p>
+<hr />
+<h1 id="一百零五所以正确架构是">一百零五、所以正确架构是：</h1>
+<pre class="text"><code>raw_text
+normalized_text
+template_view</code></pre>
+<p>三个不同 View。</p>
+<hr />
+<h1 id="一百零六其中">一百零六、其中：</h1>
+<pre class="text"><code>template_view</code></pre>
+<p>只用于：</p>
+<blockquote>
+<p>检测结构重复。</p>
+</blockquote>
+<hr />
+<h1 id="一百零七这就是-multiple-views-思维再次出现">一百零七、这就是
+Multiple Views 思维再次出现。</h1>
+<hr />
+<h1 id="一百零八现在有一个问题">一百零八、现在有一个问题：</h1>
+<p>哪些东西可以 Mask？</p>
+<p>比如：</p>
+<pre class="text"><code>项目名称
+项目编号
+日期</code></pre>
+<p>相对容易。</p>
+<hr />
+<h1 id="一百零九那金额呢">一百零九、那金额呢？</h1>
+<p>就要谨慎。</p>
+<p>因为有些任务中：</p>
+<blockquote>
+<p>金额是业务核心。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十例如">一百一十、例如：</h1>
+<blockquote>
+<p>“注册资本不得低于5000万元。”</p>
+</blockquote>
+<p>这里的：</p>
+<pre class="text"><code>5000万元</code></pre>
+<p>不能简单 Mask 后就说：</p>
+<blockquote>
+<p>和 500 万元完全一样。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十一template-detection-可以说">一百一十一、Template
+Detection 可以说：</h1>
+<blockquote>
+<p>结构一样。</p>
+</blockquote>
+<p>但业务内容层：</p>
+<blockquote>
+<p>不是同一条样本。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十二因此最好同时保留两个判断">一百一十二、因此最好同时保留两个判断：</h1>
+<pre class="text"><code>template_similarity</code></pre>
+<p>和：</p>
+<pre class="text"><code>business_value_difference</code></pre>
+<hr />
+<h1 id="一百一十三例如">一百一十三、例如：</h1>
+<div class="sourceCode" id="cb1091"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1091-1"><a href="#cb1091-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1091-2"><a href="#cb1091-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;template_similarity&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.</span><span class="dv">99</span><span class="fu">,</span></span>
+<span id="cb1091-3"><a href="#cb1091-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;numeric_difference&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb1091-4"><a href="#cb1091-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_relation&quot;</span><span class="fu">:</span> <span class="st">&quot;template_variant&quot;</span></span>
+<span id="cb1091-5"><a href="#cb1091-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="一百一十四而不是">一百一十四、而不是：</h1>
+<div class="sourceCode" id="cb1092"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1092-1"><a href="#cb1092-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1092-2"><a href="#cb1092-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;duplicate&quot;</span><span class="fu">:</span> <span class="kw">true</span></span>
+<span id="cb1092-3"><a href="#cb1092-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>一句话解决。</p>
+<hr />
+<h1 id="一百一十五这就是专业-dedup">一百一十五、这就是专业 Dedup：</h1>
+<blockquote>
+<p><strong>不是只有相似度，而是有重复关系类型。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百一十六现在看-version-duplicate">一百一十六、现在看 Version
+Duplicate</h1>
+<p>政府采购中特别常见：</p>
+<pre class="text"><code>原招标文件</code></pre>
+<p>然后：</p>
+<pre class="text"><code>更正公告</code></pre>
+<p>然后：</p>
+<pre class="text"><code>更正后招标文件</code></pre>
+<hr />
+<h1 id="一百一十七两个版本可能有">一百一十七、两个版本可能有：</h1>
+<blockquote>
+<p>99.5% 内容一样。</p>
+</blockquote>
+<p>只改了一句话：</p>
+<pre class="text"><code>注册资本不得低于5000万元</code></pre>
+<p>变成：</p>
+<pre class="text"><code>删除注册资本要求</code></pre>
+<hr />
+<h1 id="一百一十八如果-near-dedup-系统看到">一百一十八、如果 Near Dedup
+系统看到：</h1>
+<pre class="text"><code>99.5%相似</code></pre>
+<p>直接删一个，</p>
+<p>会发生什么？</p>
+<hr />
+<h1 id="一百一十九你可能把整个">一百一十九、你可能把整个：</h1>
+<h1 id="correction-event">Correction Event</h1>
+<p>更正事件删掉。</p>
+<hr />
+<h1 id="一百二十而这种数据">一百二十、而这种数据：</h1>
+<blockquote>
+<p>恰恰极其有价值。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十一为什么">一百二十一、为什么？</h1>
+<p>因为：</p>
+<blockquote>
+<p>原条件被官方修改，</p>
+</blockquote>
+<p>本身可能说明：</p>
+<blockquote>
+<p>这类条款存在问题或者需要调整。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十二所以">一百二十二、所以：</h1>
+<h1 id="version-similarity-duplicate">Version Similarity ≠
+Duplicate</h1>
+<hr />
+<h1 id="一百二十三我们应该建立">一百二十三、我们应该建立：</h1>
+<pre class="text"><code>version_of</code></pre>
+<p>关系。</p>
+<hr />
+<h1 id="一百二十四例如">一百二十四、例如：</h1>
+<pre class="text"><code>DOC_V1
+   ↓ revised_by
+DOC_V2</code></pre>
+<hr />
+<h1 id="一百二十五然后保存">一百二十五、然后保存：</h1>
+<h1 id="diff">Diff</h1>
+<p>到底改了什么。</p>
+<hr />
+<h1 id="一百二十六比如">一百二十六、比如：</h1>
+<pre class="text"><code>删除：
+供应商注册资本不得低于5000万元。
+
+新增：
+供应商应具有履行合同所必需的能力。</code></pre>
+<p>这种信息：</p>
+<blockquote>
+<p>对未来专家模型非常值钱。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十七所以去重时一定要先问">一百二十七、所以去重时一定要先问：</h1>
+<blockquote>
+<p><strong>这是重复，还是版本演化？</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百二十八这两种如果混">一百二十八、这两种如果混：</h1>
+<blockquote>
+<p>会直接毁掉时间信息。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十九以后-rag-也一样">一百二十九、以后 RAG 也一样。</h1>
+<p>旧法规和新法规：</p>
+<blockquote>
+<p>可能 95% 相同。</p>
+</blockquote>
+<p>但你不能说：</p>
+<blockquote>
+<p>相似，所以删掉旧的。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十因为法律知识需要">一百三十、因为法律知识需要：</h1>
+<pre class="text"><code>effective_from
+effective_to</code></pre>
+<p>版本和时间：</p>
+<blockquote>
+<p>本身就是知识。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十一第五阶段虽然主要讲训练数据">一百三十一、第五阶段虽然主要讲训练数据，</h1>
+<p>但这个思维以后第六课：</p>
+<blockquote>
+<p>法规 RAG</p>
+</blockquote>
+<p>会非常重要。</p>
+<hr />
+<h1
+id="一百三十二现在进入一个经典文本方法">一百三十二、现在进入一个经典文本方法：</h1>
+<h1 id="shingling">Shingling</h1>
+<p>这个词第一次看会陌生。</p>
+<p>其实非常简单。</p>
+<hr />
+<h1 id="一百三十三假设一句话">一百三十三、假设一句话：</h1>
+<pre class="text"><code>供应商必须具备相关资质</code></pre>
+<p>我们可以连续取若干字符。</p>
+<p>比如 3 个字符一组：</p>
+<pre class="text"><code>供应商
+应商必
+商必须
+必须具
+须具备
+具备相
+备相关
+相关资
+关资质</code></pre>
+<hr />
+<h1 id="一百三十四这些连续小片段">一百三十四、这些连续小片段：</h1>
+<blockquote>
+<p>就可以叫 Shingles。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十五然后比较两条文本的-shingle-集合">一百三十五、然后比较两条文本的
+Shingle 集合：</h1>
+<blockquote>
+<p>有多少相同。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十六这样比单纯看词">一百三十六、这样比单纯看词：</h1>
+<blockquote>
+<p>对长文本局部重复非常好用。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十七例如两个招标文件">一百三十七、例如两个招标文件：</h1>
+<p>90% 内容一样，</p>
+<p>只改：</p>
+<blockquote>
+<p>项目名称和日期。</p>
+</blockquote>
+<p>它们的 Shingle：</p>
+<blockquote>
+<p>会大量重合。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十八于是可以用">一百三十八、于是可以用：</h1>
+<h1 id="jaccard-similarity-1">Jaccard Similarity</h1>
+<p>判断内容重合度。</p>
+<hr />
+<h1 id="一百三十九但如果我们有">一百三十九、但如果我们有：</h1>
+<pre class="text"><code>1,000,000 条 Clause</code></pre>
+<p>能不能每两条都比较？</p>
+<hr />
+<h1 id="一百四十不能">一百四十、不能。</h1>
+<p>两两比较规模会爆炸。</p>
+<p>直觉上：</p>
+<pre class="text"><code>100万 × 100万</code></pre>
+<p>太大。</p>
+<hr />
+<h1 id="一百四十一所以工程上需要">一百四十一、所以工程上需要：</h1>
+<h1 id="approximate-search">Approximate Search</h1>
+<p>近似候选检索。</p>
+<hr />
+<h1 id="一百四十二这就是-minhash-出现的地方">一百四十二、这就是 MinHash
+出现的地方。</h1>
+<p>不用现在学算法推导。</p>
+<p>只记一个心智模型：</p>
+<h1 id="minhash-给集合相似度做一个小指纹">MinHash =
+给集合相似度做一个小指纹</h1>
+<hr />
+<h1
+id="一百四十三原来每条文档可能有">一百四十三、原来每条文档可能有：</h1>
+<pre class="text"><code>数万个 Shingle</code></pre>
+<p>MinHash 把它压成：</p>
+<blockquote>
+<p>一个较短的 Signature。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十四相似文本">一百四十四、相似文本：</h1>
+<blockquote>
+<p>Signature 也更容易相似。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十五于是系统可以快速找到">一百四十五、于是系统可以快速找到：</h1>
+<blockquote>
+<p>值得做精确比较的候选。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十六所以">一百四十六、所以：</h1>
+<pre class="text"><code>Shingle
++
+MinHash
++
+LSH</code></pre>
+<p>经常用于：</p>
+<blockquote>
+<p>大规模文本近重复检测。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十七lsh-又是什么">一百四十七、LSH 又是什么？</h1>
+<p>先不用学数学。</p>
+<p>可以理解成：</p>
+<blockquote>
+<p><strong>把可能相似的东西尽量扔到同一个桶里。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百四十八于是">一百四十八、于是：</h1>
+<pre class="text"><code>100万条数据</code></pre>
+<p>不用：</p>
+<blockquote>
+<p>全部彼此比较。</p>
+</blockquote>
+<p>只比较：</p>
+<blockquote>
+<p>同桶候选。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十九这就像">一百四十九、这就像：</h1>
+<p>100 万个人找长得像的人。</p>
+<p>不是：</p>
+<blockquote>
+<p>每个人和另外 999,999 人握手比较。</p>
+</blockquote>
+<p>而是先按：</p>
+<pre class="text"><code>大概特征</code></pre>
+<p>分组。</p>
+<hr />
+<h1 id="一百五十再在组内">一百五十、再在组内：</h1>
+<blockquote>
+<p>精细比较。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十一所以一个工程流程可以是">一百五十一、所以一个工程流程可以是：</h1>
+<pre class="text"><code>Clean Text
+   ↓
+Shingle
+   ↓
+MinHash Signature
+   ↓
+LSH Candidate Search
+   ↓
+Exact Similarity
+   ↓
+Business Difference Check</code></pre>
+<hr />
+<h1 id="一百五十二最后那一步">一百五十二、最后那一步：</h1>
+<h1 id="business-difference-check">Business Difference Check</h1>
+<p>特别重要。</p>
+<p>因为算法只知道：</p>
+<blockquote>
+<p>字很像。</p>
+</blockquote>
+<p>它不知道：</p>
+<pre class="text"><code>2小时</code></pre>
+<p>和：</p>
+<pre class="text"><code>24小时</code></pre>
+<p>可能是本质差异。</p>
+<hr />
+<h1 id="一百五十三除了-minhash还有">一百五十三、除了
+MinHash，还有：</h1>
+<h1 id="simhash">SimHash</h1>
+<p>也是一种近重复指纹思路。</p>
+<hr />
+<h1 id="一百五十四非常粗略地理解">一百五十四、非常粗略地理解：</h1>
+<p>MinHash 更适合：</p>
+<blockquote>
+<p>集合重合。</p>
+</blockquote>
+<p>SimHash 更像：</p>
+<blockquote>
+<p>给文本整体特征生成一个二进制指纹。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十五相似文本的-simhash">一百五十五、相似文本的
+SimHash：</h1>
+<blockquote>
+<p>汉明距离通常较近。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十六现在不用比较">一百五十六、现在不用比较：</h1>
+<blockquote>
+<p>哪个算法“最好”。</p>
+</blockquote>
+<p>因为真实系统：</p>
+<blockquote>
+<p>经常多种策略并用。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十七例如">一百五十七、例如：</h1>
+<pre class="text"><code>File SHA-256
+→ 找完全文件重复
+
+Normalized Text Hash
+→ 找完全正文重复
+
+MinHash
+→ 找高文本重叠
+
+Embedding
+→ 找语义近似</code></pre>
+<hr />
+<h1 id="一百五十八这就是">一百五十八、这就是：</h1>
+<h1 id="multi-stage-dedup">Multi-stage Dedup</h1>
+<p>多阶段去重。</p>
+<hr />
+<h1 id="一百五十九现在说-embedding">一百五十九、现在说 Embedding。</h1>
+<p>第二课里我们已经学过：</p>
+<blockquote>
+<p>文本可以映射到向量空间。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十那么">一百六十、那么：</h1>
+<blockquote>
+<p>“供应商必须在本市设立服务机构”</p>
+</blockquote>
+<p>和：</p>
+<blockquote>
+<p>“投标人须于项目所在地设置固定售后机构”</p>
+</blockquote>
+<p>Embedding：</p>
+<blockquote>
+<p>可能非常接近。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十一这非常适合发现">一百六十一、这非常适合发现：</h1>
+<h1 id="paraphrase-duplicate">Paraphrase Duplicate</h1>
+<p>同义改写近重复。</p>
+<hr />
+<h1
+id="一百六十二但这里又有一个巨坑">一百六十二、但这里又有一个巨坑。</h1>
+<p>A：</p>
+<blockquote>
+<p>本项目接受联合体投标。</p>
+</blockquote>
+<p>B：</p>
+<blockquote>
+<p>本项目不接受联合体投标。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十三语义主题极其接近">一百六十三、语义主题极其接近。</h1>
+<p>Embedding：</p>
+<blockquote>
+<p>很可能也非常近。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十四但业务含义">一百六十四、但业务含义：</h1>
+<blockquote>
+<p>相反。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十五所以再强调一次">一百六十五、所以再强调一次：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>d</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>S</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>E</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EmbeddingSimilarity
+\neq
+BusinessEquivalence
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百六十六embedding-最适合">一百六十六、Embedding 最适合：</h1>
+<blockquote>
+<p>找候选。</p>
+</blockquote>
+<p>不适合单独承担：</p>
+<blockquote>
+<p>自动删除裁判。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十七特别是政府采购这种">一百六十七、特别是政府采购这种：</h1>
+<blockquote>
+<p>数字、否定、条件范围特别重要的领域。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十八一个更稳健的策略">一百六十八、一个更稳健的策略：</h1>
+<pre class="text"><code>Embedding高相似
+        ↓
+文本Diff
+        ↓
+关键字段Diff
+        ↓
+规则判断
+        ↓
+必要时人工复核</code></pre>
+<hr />
+<h1 id="一百六十九例如">一百六十九、例如：</h1>
+<pre class="text"><code>Similarity = 0.98</code></pre>
+<p>但是发现：</p>
+<pre class="text"><code>numeric_difference = true</code></pre>
+<p>那么不要合并。</p>
+<hr />
+<h1 id="一百七十又例如">一百七十、又例如：</h1>
+<pre class="text"><code>Similarity = 0.99</code></pre>
+<p>但是：</p>
+<pre class="text"><code>negation_difference = true</code></pre>
+<p>直接：</p>
+<blockquote>
+<p>高风险。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十一所以我们可以建立">一百七十一、所以我们可以建立：</h1>
+<h1 id="dedup-guardrails">Dedup Guardrails</h1>
+<hr />
+<h1 id="一百七十二保护项可以包括">一百七十二、保护项可以包括：</h1>
+<pre class="text"><code>数字
+单位
+比较符
+否定词
+日期
+分值
+项目地域
+品牌型号
+法规条号</code></pre>
+<hr />
+<h1
+id="一百七十三这和第四阶段的-semantic-guardrail">一百七十三、这和第四阶段的
+Semantic Guardrail：</h1>
+<blockquote>
+<p>直接复用。</p>
+</blockquote>
+<hr />
+<h1
+id="一百七十四好的数据工程是这样的">一百七十四、好的数据工程是这样的：</h1>
+<p>前面建立的能力，</p>
+<p>后面：</p>
+<blockquote>
+<p>一直复用。</p>
+</blockquote>
+<p>而不是每阶段重新发明一套。</p>
+<hr />
+<h1 id="一百七十五现在讲-canonical-record">一百七十五、现在讲 Canonical
+Record</h1>
+<p>假设发现三个完全重复文档：</p>
+<pre class="text"><code>D1
+官网PDF
+
+D2
+镜像网站PDF
+
+D3
+第三方转载PDF</code></pre>
+<p>应该留谁？</p>
+<hr />
+<h1 id="一百七十六优先考虑">一百七十六、优先考虑：</h1>
+<pre class="text"><code>Source Authority</code></pre>
+<hr />
+<h1 id="一百七十七然后">一百七十七、然后：</h1>
+<pre class="text"><code>Parse Quality</code></pre>
+<hr />
+<h1 id="一百七十八再考虑">一百七十八、再考虑：</h1>
+<pre class="text"><code>Completeness</code></pre>
+<hr />
+<h1 id="一百七十九再考虑">一百七十九、再考虑：</h1>
+<pre class="text"><code>Metadata Quality</code></pre>
+<hr />
+<h1 id="一百八十例如">一百八十、例如：</h1>
+<pre class="text"><code>D1
+官方来源
+解析质量0.98
+有发布日期</code></pre>
+<p>通常就比：</p>
+<pre class="text"><code>D3
+第三方转载
+无来源时间</code></pre>
+<p>更适合当：</p>
+<blockquote>
+<p>Canonical。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十一所以-canonical-selection">一百八十一、所以 Canonical
+Selection：</h1>
+<blockquote>
+<p>不是随机留第一条。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十二可以有一个优先级">一百八十二、可以有一个优先级：</h1>
+<pre class="text"><code>Official Source
+    &gt;
+Verified Mirror
+    &gt;
+Unknown Repost</code></pre>
+<p>再结合：</p>
+<blockquote>
+<p>解析质量。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十三但是其它-record">一百八十三、但是其它 Record：</h1>
+<blockquote>
+<p>不要一定删除。</p>
+</blockquote>
+<p>可以保存：</p>
+<pre class="text"><code>duplicate_of = D1</code></pre>
+<hr />
+<h1 id="一百八十四为什么">一百八十四、为什么？</h1>
+<p>因为未来我们可能需要：</p>
+<blockquote>
+<p>检查数据来源。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十五或者发现">一百八十五、或者发现：</h1>
+<blockquote>
+<p>D1 后来网页下线了。</p>
+</blockquote>
+<p>D2：</p>
+<blockquote>
+<p>仍然可以提供证据。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十六所以-master-data">一百八十六、所以 Master Data：</h1>
+<blockquote>
+<p>保留多来源关系。</p>
+</blockquote>
+<p>Training View：</p>
+<blockquote>
+<p>去重。</p>
+</blockquote>
+<p>这是很好的架构。</p>
+<hr />
+<h1 id="一百八十七现在进入-cluster-思维">一百八十七、现在进入 Cluster
+思维。</h1>
+<p>如果：</p>
+<pre class="text"><code>A重复B
+B重复C</code></pre>
+<p>那不能只保存：</p>
+<pre class="text"><code>A→B
+B→C</code></pre>
+<p>更好是形成：</p>
+<h1 id="duplicate-group">Duplicate Group</h1>
+<hr />
+<h1 id="一百八十八例如">一百八十八、例如：</h1>
+<pre class="text"><code>duplicate_group_id:
+DG-000137</code></pre>
+<p>里面：</p>
+<pre class="text"><code>A
+B
+C
+D</code></pre>
+<hr />
+<h1 id="一百八十九其中">一百八十九、其中：</h1>
+<pre class="text"><code>canonical_id = A</code></pre>
+<p>其它：</p>
+<pre class="text"><code>member_of = DG-000137</code></pre>
+<hr />
+<h1 id="一百九十这对后面数据切分">一百九十、这对后面数据切分：</h1>
+<blockquote>
+<p>极其重要。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十一为什么">一百九十一、为什么？</h1>
+<p>如果：</p>
+<pre class="text"><code>A → Train</code></pre>
+<p>而：</p>
+<pre class="text"><code>B → Test</code></pre>
+<p>模型考试时：</p>
+<blockquote>
+<p>几乎已经见过答案。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十二所以后面第-6-阶段切数据的时候">一百九十二、所以后面第
+6 阶段切数据的时候：</h1>
+<h1 id="duplicate-group-必须作为一个-split-group">Duplicate Group
+必须作为一个 Split Group</h1>
+<hr />
+<h1 id="一百九十三也就是">一百九十三、也就是：</h1>
+<pre class="text"><code>DG-000137</code></pre>
+<p>里面所有成员：</p>
+<blockquote>
+<p>必须一起去 Train，</p>
+</blockquote>
+<p>或者一起：</p>
+<blockquote>
+<p>去 Test。</p>
+</blockquote>
+<p>不能拆开。</p>
+<hr />
+<h1 id="一百九十四这一点非常关键">一百九十四、这一点非常关键。</h1>
+<p>即使 Training View 最后只取 Canonical，</p>
+<p>我们仍然应该保留：</p>
+<pre class="text"><code>duplicate_group_id</code></pre>
+<hr />
+<h1 id="一百九十五因为-near-duplicate">一百九十五、因为 Near
+Duplicate：</h1>
+<blockquote>
+<p>可能并没有真正被删除。</p>
+</blockquote>
+<p>但它们仍然：</p>
+<blockquote>
+<p>不应该跨 Split。</p>
+</blockquote>
+<hr />
+<h1
+id="一百九十六这就是今天和第-67-阶段的连接点">一百九十六、这就是今天和第
+6、7 阶段的连接点。</h1>
+<hr />
+<h1
+id="一百九十七现在看为什么随机切分特别危险">一百九十七、现在看为什么随机切分特别危险。</h1>
+<p>假设一个模板：</p>
+<blockquote>
+<p>被使用了 1000 次。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十八随机做">一百九十八、随机做：</h1>
+<pre class="text"><code>80% Train
+20% Test</code></pre>
+<p>那么大概：</p>
+<pre class="text"><code>800个模板变体
+→ Train
+
+200个模板变体
+→ Test</code></pre>
+<hr />
+<h1 id="一百九十九模型考试看到">一百九十九、模型考试看到：</h1>
+<blockquote>
+<p>几乎一模一样的结构。</p>
+</blockquote>
+<hr />
+<h1 id="二百最后-accuracy">二百、最后 Accuracy：</h1>
+<pre class="text"><code>97%</code></pre>
+<p>团队非常开心。</p>
+<hr />
+<h1
+id="二百零一但模型真正遇到新模板">二百零一、但模型真正遇到新模板：</h1>
+<blockquote>
+<p>可能只有 65%。</p>
+</blockquote>
+<hr />
+<h1 id="二百零二这叫">二百零二、这叫：</h1>
+<h1 id="template-leakage">Template Leakage</h1>
+<p>模板泄漏。</p>
+<hr />
+<h1
+id="二百零三它比完全相同文本泄漏">二百零三、它比完全相同文本泄漏：</h1>
+<blockquote>
+<p>更难发现。</p>
+</blockquote>
+<p>因为：</p>
+<pre class="text"><code>text1 != text2</code></pre>
+<hr />
+<h1 id="二百零四传统-drop_duplicates">二百零四、传统
+<code>drop_duplicates()</code>：</h1>
+<blockquote>
+<p>完全抓不到。</p>
+</blockquote>
+<hr />
+<h1 id="二百零五所以-procurement-benchmark">二百零五、所以 Procurement
+Benchmark：</h1>
+<blockquote>
+<p>必须考虑近重复和模板重复。</p>
+</blockquote>
+<hr />
+<h1
+id="二百零六这是第五阶段最重要的成果之一">二百零六、这是第五阶段最重要的成果之一。</h1>
+<hr />
+<h1 id="二百零七再看法律文本">二百零七、再看法律文本。</h1>
+<p>多个招标文件都引用：</p>
+<blockquote>
+<p>同一个法规原文。</p>
+</blockquote>
+<p>例如某一条法律规定：</p>
+<blockquote>
+<p>在 5000 份采购文件里被重复引用。</p>
+</blockquote>
+<hr />
+<h1 id="二百零八这些引用要不要">二百零八、这些引用要不要：</h1>
+<blockquote>
+<p>全部删成一份？</p>
+</blockquote>
+<p>取决于任务。</p>
+<hr />
+<h1 id="二百零九如果做">二百零九、如果做：</h1>
+<h1 id="regulation-corpus">Regulation Corpus</h1>
+<p>那同一法规正文：</p>
+<blockquote>
+<p>一份权威源即可。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十如果做">二百一十、如果做：</h1>
+<h1 id="procurement-document-understanding">Procurement Document
+Understanding</h1>
+<p>文档里有没有引用某法规：</p>
+<blockquote>
+<p>可能本身就是上下文。</p>
+</blockquote>
+<p>所以不能简单删。</p>
+<hr />
+<h1 id="二百一十一再次说明">二百一十一、再次说明：</h1>
+<h1 id="dedup-unit-matters">Dedup Unit Matters</h1>
+<p>你是在去重：</p>
+<pre class="text"><code>法规知识</code></pre>
+<p>还是：</p>
+<pre class="text"><code>采购项目观察</code></pre>
+<p>完全不一样。</p>
+<hr />
+<h1 id="二百一十二所以每个-dataset-view">二百一十二、所以每个 Dataset
+View：</h1>
+<blockquote>
+<p>可以有自己的 Dedup Policy。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十三例如">二百一十三、例如：</h1>
+<h3 id="rag-knowledge-corpus">RAG Knowledge Corpus</h3>
+<p>可以对相同法规条文：</p>
+<blockquote>
+<p>强去重。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十四-sft-dataset">二百一十四、### SFT Dataset</h1>
+<p>高度重复的标准答案：</p>
+<blockquote>
+<p>可以采样降权。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十五-evaluation-gold-set">二百一十五、### Evaluation Gold
+Set</h1>
+<p>需要：</p>
+<blockquote>
+<p>严格控制模板近重复。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十六-statistical-analysis">二百一十六、### Statistical
+Analysis</h1>
+<p>可能要保留：</p>
+<blockquote>
+<p>自然重复频率。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十七这就是为什么">二百一十七、这就是为什么：</h1>
+<blockquote>
+<p>“去重率越高越专业”</p>
+</blockquote>
+<p>是错的。</p>
+<hr />
+<h1 id="二百一十八有的团队喜欢说">二百一十八、有的团队喜欢说：</h1>
+<blockquote>
+<p>“我们把 70% 数据都去掉了，数据非常纯。”</p>
+</blockquote>
+<p>这句话：</p>
+<blockquote>
+<p>本身没有意义。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十九正确问题应该是">二百一十九、正确问题应该是：</h1>
+<blockquote>
+<p><strong>你删掉的 70% 到底是什么关系？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二百二十如果删掉的是">二百二十、如果删掉的是：</h1>
+<pre class="text"><code>镜像
+重复下载
+Parser Duplicate</code></pre>
+<p>很好。</p>
+<hr />
+<h1 id="二百二十一如果删掉的是">二百二十一、如果删掉的是：</h1>
+<blockquote>
+<p>真实发生于不同项目的 Hard Cases，</p>
+</blockquote>
+<p>那：</p>
+<blockquote>
+<p>可能反而毁了数据。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十二现在看重复和-label-的关系">二百二十二、现在看重复和
+Label 的关系。</h1>
+<p>假设：</p>
+<p>A：</p>
+<pre class="text"><code>供应商须在本市注册。</code></pre>
+<p>Label：</p>
+<pre class="text"><code>potential_risk</code></pre>
+<hr />
+<h1 id="二百二十三b-的文本完全一样">二百二十三、B 的文本完全一样：</h1>
+<pre class="text"><code>供应商须在本市注册。</code></pre>
+<p>但专家标成：</p>
+<pre class="text"><code>no_risk</code></pre>
+<hr />
+<h1 id="二百二十四这时候系统不能">二百二十四、这时候系统不能：</h1>
+<blockquote>
+<p>直接随机留一条。</p>
+</blockquote>
+<p>因为这暴露了：</p>
+<h1 id="label-conflict">Label Conflict</h1>
+<hr />
+<h1 id="二百二十五可能原因">二百二十五、可能原因：</h1>
+<pre class="text"><code>标注错误
+上下文不同
+Schema版本不同
+专家意见不同</code></pre>
+<hr />
+<h1
+id="二百二十六所以重复检测还能帮助">二百二十六、所以重复检测还能帮助：</h1>
+<h1 id="data-quality-audit">Data Quality Audit</h1>
+<hr />
+<h1 id="二百二十七如果相同-clause">二百二十七、如果相同 Clause：</h1>
+<blockquote>
+<p>Label 不一致，</p>
+</blockquote>
+<p>应该产生：</p>
+<pre class="text"><code>DUPLICATE_LABEL_CONFLICT</code></pre>
+<hr />
+<h1 id="二百二十八然后进入">二百二十八、然后进入：</h1>
+<blockquote>
+<p>人工复核。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十九这特别重要">二百二十九、这特别重要。</h1>
+<p>因为重复不仅是：</p>
+<blockquote>
+<p>要删的垃圾。</p>
+</blockquote>
+<p>它还可以暴露：</p>
+<blockquote>
+<p>标注问题。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十再例如">二百三十、再例如：</h1>
+<p>同一个条款：</p>
+<p>A 的上下文是：</p>
+<pre class="text"><code>资格条件</code></pre>
+<p>B 的上下文是：</p>
+<pre class="text"><code>合同履约</code></pre>
+<hr />
+<h1 id="二百三十一虽然-clause_text-一样">二百三十一、虽然
+<code>clause_text</code> 一样，</h1>
+<p>Label 不同：</p>
+<blockquote>
+<p>可能完全合理。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十二所以-dedup-不能只比较">二百三十二、所以 Dedup
+不能只比较：</h1>
+<pre class="text"><code>clause_text</code></pre>
+<p>还要保存：</p>
+<pre class="text"><code>section_type
+context
+project_context</code></pre>
+<hr />
+<h1 id="二百三十三这说明">二百三十三、这说明：</h1>
+<h1 id="text-equality-sample-equality">Text Equality ≠ Sample
+Equality</h1>
+<hr />
+<h1 id="二百三十四第一阶段我们定义-sample">二百三十四、第一阶段我们定义
+Sample：</h1>
+<pre class="text"><code>Clause
++
+Context
++
+Source
++
+Annotation</code></pre>
+<p>今天终于看到为什么：</p>
+<blockquote>
+<p>这些字段一个都不能随便扔。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十五现在再看-hard-negative">二百三十五、现在再看 Hard
+Negative。</h1>
+<p>假设：</p>
+<p>A：</p>
+<blockquote>
+<p>供应商必须在本市设立服务机构。</p>
+</blockquote>
+<p>Label：</p>
+<blockquote>
+<p>Potential Risk。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十六b">二百三十六、B：</h1>
+<blockquote>
+<p>供应商无须在本市设立服务机构，但应保证2小时内提供现场服务。</p>
+</blockquote>
+<p>Label：</p>
+<blockquote>
+<p>需要结合履约场景判断。</p>
+</blockquote>
+<hr />
+<h1
+id="二百三十七这两条词汇高度相似">二百三十七、这两条词汇高度相似。</h1>
+<p>一个差的 Near Dedup：</p>
+<blockquote>
+<p>可能删掉 B。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十八但-b-恰恰是">二百三十八、但 B 恰恰是：</h1>
+<h1 id="hard-negative-boundary-case">Hard Negative / Boundary Case</h1>
+<p>非常有价值。</p>
+<hr />
+<h1
+id="二百三十九所以近重复检测要特别保护">二百三十九、所以近重复检测要特别保护：</h1>
+<blockquote>
+<p><strong>标签边界附近的数据。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二百四十这也是为什么">二百四十、这也是为什么：</h1>
+<h1 id="rare-hard-cases-repeated-easy-cases">Rare Hard Cases &gt;
+Repeated Easy Cases</h1>
+<p>对于专业模型训练往往很重要。</p>
+<hr />
+<h1 id="二百四十一以后第-10-阶段">二百四十一、以后第 10 阶段：</h1>
+<blockquote>
+<p>Hard Negative</p>
+</blockquote>
+<p>会专门展开。</p>
+<p>今天先记住：</p>
+<blockquote>
+<p>不要因为文字相似，就把最宝贵的边界案例删掉。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十二现在建立第一版-dedup-pipeline">二百四十二、现在建立第一版
+Dedup Pipeline。</h1>
+<pre class="text"><code>CleanClauseSet
+       │
+       ▼
+Exact File Hash
+       │
+       ▼
+Exact Text Hash
+       │
+       ▼
+Normalized Text Hash
+       │
+       ▼
+Template Fingerprint
+       │
+       ▼
+MinHash / Similarity Candidate
+       │
+       ▼
+Embedding Candidate
+       │
+       ▼
+Critical Field Diff
+       │
+       ▼
+Duplicate Relation Classification
+       │
+       ▼
+Duplicate Cluster
+       │
+       ▼
+Canonical Selection
+       │
+       ▼
+DedupedClauseSet_V0.1</code></pre>
+<hr />
+<h1 id="二百四十三注意这个-pipeline-不是说">二百四十三、注意这个
+Pipeline 不是说：</h1>
+<blockquote>
+<p>所有项目一定要同时用所有算法。</p>
+</blockquote>
+<p>第一版：</p>
+<blockquote>
+<p>可以从简单开始。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十四第一版非常合理的路线可能是">二百四十四、第一版非常合理的路线可能是：</h1>
+<pre class="text"><code>1. File SHA-256
+2. Exact normalized_text hash
+3. High-overlap MinHash
+4. Critical-field difference
+5. Cluster</code></pre>
+<hr />
+<h1 id="二百四十五等数据量变大以后">二百四十五、等数据量变大以后：</h1>
+<p>再增加：</p>
+<pre class="text"><code>Embedding Near-Duplicate</code></pre>
+<hr />
+<h1
+id="二百四十六这是一个重要工程原则">二百四十六、这是一个重要工程原则：</h1>
+<h1 id="start-simple-measure-errors">Start Simple, Measure Errors</h1>
+<hr />
+<h1 id="二百四十七不要第一天就搞">二百四十七、不要第一天就搞：</h1>
+<blockquote>
+<p>17 种相似度算法 + 神经网络 Dedup。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十八先做一个">二百四十八、先做一个：</h1>
+<blockquote>
+<p>可解释、能 Benchmark 的 Baseline。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十九然后看">二百四十九、然后看：</h1>
+<pre class="text"><code>False Merge</code></pre>
+<p>和：</p>
+<pre class="text"><code>Missed Duplicate</code></pre>
+<hr />
+<h1 id="二百五十什么叫-false-merge">二百五十、什么叫 False Merge？</h1>
+<p>系统认为：</p>
+<blockquote>
+<p>两条重复。</p>
+</blockquote>
+<p>实际上：</p>
+<blockquote>
+<p>有重要差异。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十一例如">二百五十一、例如：</h1>
+<pre class="text"><code>不少于3年</code></pre>
+<p>和：</p>
+<pre class="text"><code>不少于5年</code></pre>
+<p>被合并。</p>
+<p>这是：</p>
+<blockquote>
+<p>非常危险的 False Merge。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十二什么叫-missed-duplicate">二百五十二、什么叫 Missed
+Duplicate？</h1>
+<p>实际上：</p>
+<blockquote>
+<p>同一份内容。</p>
+</blockquote>
+<p>系统没有发现。</p>
+<hr />
+<h1 id="二百五十三例如">二百五十三、例如：</h1>
+<pre class="text"><code>HTML正文</code></pre>
+<p>和：</p>
+<pre class="text"><code>PDF正文</code></pre>
+<p>只有空格和格式不同。</p>
+<p>系统没认出来。</p>
+<hr />
+<h1 id="二百五十四对于我们的项目">二百五十四、对于我们的项目：</h1>
+<p>两种错误：</p>
+<blockquote>
+<p>风险并不相同。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十五false-merge-往往更危险">二百五十五、False Merge
+往往更危险。</h1>
+<p>因为：</p>
+<blockquote>
+<p>它会永久丢掉真实差异。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十六missed-duplicate">二百五十六、Missed Duplicate：</h1>
+<blockquote>
+<p>更多是冗余和泄漏风险。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十七所以-dedup-阈值应该">二百五十七、所以 Dedup
+阈值应该：</h1>
+<blockquote>
+<p>偏保守。</p>
+</blockquote>
+<hr />
+<h1
+id="二百五十八特别是业务关键数据">二百五十八、特别是业务关键数据：</h1>
+<blockquote>
+<p>宁可先保留相似样本并标 Group，</p>
+</blockquote>
+<p>也不要过早删除。</p>
+<hr />
+<h1 id="二百五十九这就是">二百五十九、这就是：</h1>
+<h1 id="cluster-first-delete-later">Cluster First, Delete Later</h1>
+<p>特别推荐记住。</p>
+<hr />
+<h1 id="二百六十可以压成">二百六十、可以压成：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>L</mi><mi>i</mi><mi>n</mi><mi>k</mi><mo>→</mo><mi>C</mi><mi>l</mi><mi>u</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>d</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Detect
+\rightarrow
+Link
+\rightarrow
+Cluster
+\rightarrow
+Decide
+}
+</annotation></semantics></math></p>
+<p>不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mo>→</mo><mi>D</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Detect
+\rightarrow
+Delete
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二百六十一现在设计-duplicaterelation">二百六十一、现在设计
+<code>DuplicateRelation</code></h1>
+<p>可以概念上有：</p>
+<pre class="text"><code>exact_file_duplicate
+exact_text_duplicate
+format_variant
+mirror_copy
+template_variant
+near_duplicate
+revised_version
+possible_duplicate</code></pre>
+<hr />
+<h1 id="二百六十二还可以有">二百六十二、还可以有：</h1>
+<pre class="text"><code>not_duplicate</code></pre>
+<p>用于：</p>
+<blockquote>
+<p>人工确认后排除。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十三为什么保存">二百六十三、为什么保存：</h1>
+<pre class="text"><code>not_duplicate</code></pre>
+<p>也有价值？</p>
+<p>因为系统下一版运行时：</p>
+<blockquote>
+<p>不应该每次重新怀疑同一对样本。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十四这叫">二百六十四、这叫：</h1>
+<h1 id="adjudicated-pair">Adjudicated Pair</h1>
+<p>人工裁决过的 Pair。</p>
+<hr />
+<h1 id="二百六十五以后这些-pair">二百六十五、以后这些 Pair：</h1>
+<blockquote>
+<p>还能成为 Dedup 算法自己的 Gold Set。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十六例如人工标">二百六十六、例如人工标：</h1>
+<pre class="text"><code>Pair 1:
+duplicate
+
+Pair 2:
+template_variant
+
+Pair 3:
+not_duplicate</code></pre>
+<hr />
+<h1 id="二百六十七然后评测-dedup-algorithm">二百六十七、然后评测 Dedup
+Algorithm：</h1>
+<pre class="text"><code>Precision
+Recall</code></pre>
+<hr />
+<h1 id="二百六十八和第一课学的一样">二百六十八、和第一课学的一样。</h1>
+<hr />
+<h1 id="二百六十九如果系统说">二百六十九、如果系统说：</h1>
+<blockquote>
+<p>100 对是 Duplicate。</p>
+</blockquote>
+<p>其中：</p>
+<blockquote>
+<p>95 对真的重复。</p>
+</blockquote>
+<p>Dedup Precision：</p>
+<blockquote>
+<p>很高。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十如果真实共有">二百七十、如果真实共有：</h1>
+<blockquote>
+<p>200 对 Duplicate，</p>
+</blockquote>
+<p>系统只找到：</p>
+<blockquote>
+<p>100 对。</p>
+</blockquote>
+<p>Recall：</p>
+<blockquote>
+<p>就不高。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十一对删除型-dedup">二百七十一、对删除型 Dedup：</h1>
+<blockquote>
+<p>Precision 尤其重要。</p>
+</blockquote>
+<p>为什么？</p>
+<p>因为 False Positive：</p>
+<blockquote>
+<p>会误删数据。</p>
+</blockquote>
+<hr />
+<h1
+id="二百七十二所以我们通常不希望">二百七十二、所以我们通常不希望：</h1>
+<blockquote>
+<p>“宁可多删一点。”</p>
+</blockquote>
+<hr />
+<h1 id="二百七十三而更倾向">二百七十三、而更倾向：</h1>
+<blockquote>
+<p><strong>宁可把不确定的留作 Cluster Candidate。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二百七十四现在看一个-procurement-dedup-gold-set-应该覆盖什么">二百七十四、现在看一个
+Procurement Dedup Gold Set 应该覆盖什么？</h1>
+<p>至少包括：</p>
+<pre class="text"><code>完全重复文件
+不同格式同内容
+镜像网页
+空格/标点差异
+项目名称替换
+日期替换
+金额替换
+数字条件变化
+否定词变化
+更正版本
+模板复用
+同义改写
+Hard Negative</code></pre>
+<hr />
+<h1 id="二百七十五特别是">二百七十五、特别是：</h1>
+<pre class="text"><code>2小时
+vs
+4小时</code></pre>
+<hr />
+<h1 id="二百七十六">二百七十六、</h1>
+<pre class="text"><code>不得
+vs
+应当</code></pre>
+<hr />
+<h1 id="二百七十七">二百七十七、</h1>
+<pre class="text"><code>本市
+vs
+项目所在地</code></pre>
+<hr />
+<h1 id="二百七十八">二百七十八、</h1>
+<pre class="text"><code>500万元
+vs
+5000万元</code></pre>
+<p>这些必须：</p>
+<blockquote>
+<p>专门测试。</p>
+</blockquote>
+<hr />
+<h1
+id="二百七十九否则一个普通互联网文本-dedup-方法">二百七十九、否则一个普通互联网文本
+Dedup 方法：</h1>
+<blockquote>
+<p>在采购数据上可能非常危险。</p>
+</blockquote>
+<hr />
+<h1
+id="二百八十现在设计第一版-dedupedclauseset_v0.1">二百八十、现在设计第一版
+<code>DedupedClauseSet_V0.1</code>。</h1>
+<p>例如：</p>
+<div class="sourceCode" id="cb1177"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1177-1"><a href="#cb1177-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1177-2"><a href="#cb1177-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb1177-3"><a href="#cb1177-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-4"><a href="#cb1177-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;duplicate_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DG-000031&quot;</span><span class="fu">,</span></span>
+<span id="cb1177-5"><a href="#cb1177-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-6"><a href="#cb1177-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;canonical_clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb1177-7"><a href="#cb1177-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-8"><a href="#cb1177-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_relation&quot;</span><span class="fu">:</span> <span class="st">&quot;canonical&quot;</span><span class="fu">,</span></span>
+<span id="cb1177-9"><a href="#cb1177-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-10"><a href="#cb1177-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;template_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TG-000712&quot;</span><span class="fu">,</span></span>
+<span id="cb1177-11"><a href="#cb1177-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-12"><a href="#cb1177-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;exact_text_hash&quot;</span><span class="fu">:</span> <span class="st">&quot;sha256:...&quot;</span><span class="fu">,</span></span>
+<span id="cb1177-13"><a href="#cb1177-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-14"><a href="#cb1177-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;similarity&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1177-15"><a href="#cb1177-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;jaccard&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">,</span></span>
+<span id="cb1177-16"><a href="#cb1177-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;embedding&quot;</span><span class="fu">:</span> <span class="kw">null</span></span>
+<span id="cb1177-17"><a href="#cb1177-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1177-18"><a href="#cb1177-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-19"><a href="#cb1177-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;critical_differences&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb1177-20"><a href="#cb1177-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-21"><a href="#cb1177-21" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_status&quot;</span><span class="fu">:</span> <span class="st">&quot;verified&quot;</span><span class="fu">,</span></span>
+<span id="cb1177-22"><a href="#cb1177-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1177-23"><a href="#cb1177-23" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_version&quot;</span><span class="fu">:</span> <span class="st">&quot;dedup_v0.1&quot;</span></span>
+<span id="cb1177-24"><a href="#cb1177-24" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百八十一另一个成员">二百八十一、另一个成员：</h1>
+<div class="sourceCode" id="cb1178"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1178-1"><a href="#cb1178-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1178-2"><a href="#cb1178-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-08317&quot;</span><span class="fu">,</span></span>
+<span id="cb1178-3"><a href="#cb1178-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1178-4"><a href="#cb1178-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;duplicate_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DG-000031&quot;</span><span class="fu">,</span></span>
+<span id="cb1178-5"><a href="#cb1178-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1178-6"><a href="#cb1178-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;canonical_clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb1178-7"><a href="#cb1178-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1178-8"><a href="#cb1178-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_relation&quot;</span><span class="fu">:</span> <span class="st">&quot;exact_text_duplicate&quot;</span><span class="fu">,</span></span>
+<span id="cb1178-9"><a href="#cb1178-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1178-10"><a href="#cb1178-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_status&quot;</span><span class="fu">:</span> <span class="st">&quot;auto_verified&quot;</span></span>
+<span id="cb1178-11"><a href="#cb1178-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1
+id="二百八十二模板相同但金额不同">二百八十二、模板相同但金额不同：</h1>
+<div class="sourceCode" id="cb1179"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1179-1"><a href="#cb1179-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1179-2"><a href="#cb1179-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-10291&quot;</span><span class="fu">,</span></span>
+<span id="cb1179-3"><a href="#cb1179-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1179-4"><a href="#cb1179-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;duplicate_group_id&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">,</span></span>
+<span id="cb1179-5"><a href="#cb1179-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1179-6"><a href="#cb1179-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;template_group_id&quot;</span><span class="fu">:</span> <span class="st">&quot;TG-000712&quot;</span><span class="fu">,</span></span>
+<span id="cb1179-7"><a href="#cb1179-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1179-8"><a href="#cb1179-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dedup_relation&quot;</span><span class="fu">:</span> <span class="st">&quot;template_variant&quot;</span><span class="fu">,</span></span>
+<span id="cb1179-9"><a href="#cb1179-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1179-10"><a href="#cb1179-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;critical_differences&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1179-11"><a href="#cb1179-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;amount&quot;</span></span>
+<span id="cb1179-12"><a href="#cb1179-12" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb1179-13"><a href="#cb1179-13" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="二百八十三看到区别了吗">二百八十三、看到区别了吗？</h1>
+<p>它并没有：</p>
+<blockquote>
+<p>被删除。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十四只是知道">二百八十四、只是知道：</h1>
+<blockquote>
+<p>和谁同模板。</p>
+</blockquote>
+<p>这对 Stage 6：</p>
+<blockquote>
+<p>Split</p>
+</blockquote>
+<p>非常有价值。</p>
+<hr />
+<h1
+id="二百八十五后面我们甚至可以决定">二百八十五、后面我们甚至可以决定：</h1>
+<pre class="text"><code>同一个template_group
+尽量不要同时跨Train/Test</code></pre>
+<hr />
+<h1 id="二百八十六这会显著减少">二百八十六、这会显著减少：</h1>
+<h1 id="template-leakage-1">Template Leakage</h1>
+<hr />
+<h1 id="二百八十七现在谈-dedup-version">二百八十七、现在谈 Dedup
+Version。</h1>
+<p>和前面一样：</p>
+<pre class="text"><code>dedup_v0.1</code></pre>
+<p>以后可能升级：</p>
+<pre class="text"><code>dedup_v0.2</code></pre>
+<hr />
+<h1 id="二百八十八为什么">二百八十八、为什么？</h1>
+<p>因为阈值会变。</p>
+<p>算法会变。</p>
+<p>Template Mask 规则会变。</p>
+<hr />
+<h1 id="二百八十九同一个-pair">二百八十九、同一个 Pair：</h1>
+<p>v0.1 可能认为：</p>
+<pre class="text"><code>near_duplicate</code></pre>
+<p>v0.2 可能认为：</p>
+<pre class="text"><code>template_variant</code></pre>
+<hr />
+<h1 id="二百九十所以每条决定">二百九十、所以每条决定：</h1>
+<blockquote>
+<p>必须知道是哪一版 Dedup Pipeline 产生的。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十一现在-stage-15-已经有">二百九十一、现在 Stage 1～5
+已经有：</h1>
+<pre class="text"><code>schema_version
+parser_version
+structure_version
+normalizer_version
+dedup_version</code></pre>
+<hr />
+<h1 id="二百九十二到了第-11-阶段">二百九十二、到了第 11 阶段，</h1>
+<p>这些会被正式组织成：</p>
+<h1 id="dataset-lineage">Dataset Lineage</h1>
+<hr />
+<h1
+id="二百九十三现在说一个特别容易误解的地方">二百九十三、现在说一个特别容易误解的地方：</h1>
+<h1 id="去重不是为了让数据数量变小">去重不是为了让数据数量变小</h1>
+<p>数据变小只是：</p>
+<blockquote>
+<p>副作用。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十四真正目标是让">二百九十四、真正目标是让：</h1>
+<pre class="text"><code>样本权重更合理
+信息多样性更高
+评测更诚实
+训练更高效</code></pre>
+<hr />
+<h1 id="二百九十五如果最后">二百九十五、如果最后：</h1>
+<pre class="text"><code>100万
+↓
+92万</code></pre>
+<p>但 92 万信息质量很好：</p>
+<blockquote>
+<p>完全没问题。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十六如果">二百九十六、如果：</h1>
+<pre class="text"><code>100万
+↓
+20万</code></pre>
+<p>也不一定：</p>
+<blockquote>
+<p>就更高级。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十七核心不是">二百九十七、核心不是：</h1>
+<blockquote>
+<p>去掉多少。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>去掉了什么。</p>
+</blockquote>
+<hr />
+<h1
+id="二百九十八现在看训练层面的影响">二百九十八、现在看训练层面的影响。</h1>
+<p>假设有：</p>
+<pre class="text"><code>10万条普通标准条款</code></pre>
+<p>重复很多。</p>
+<p>而：</p>
+<pre class="text"><code>1000条技术参数倾向性Hard Case</code></pre>
+<p>非常少。</p>
+<hr />
+<h1 id="二百九十九不做-dedup-reweight">二百九十九、不做 Dedup /
+Reweight：</h1>
+<p>模型训练梯度大量来自：</p>
+<blockquote>
+<p>简单标准条款。</p>
+</blockquote>
+<hr />
+<h1 id="三百模型最后可能表现">三百、模型最后可能表现：</h1>
+<pre class="text"><code>普通资格条件：
+99%
+
+复杂技术参数：
+55%</code></pre>
+<hr />
+<h1 id="三百零一总体-accuracy">三百零一、总体 Accuracy：</h1>
+<blockquote>
+<p>看起来很高。</p>
+</blockquote>
+<hr />
+<h1 id="三百零二实际业务">三百零二、实际业务：</h1>
+<blockquote>
+<p>关键地方很差。</p>
+</blockquote>
+<hr />
+<h1 id="三百零三所以-dedup-和-rebalancing">三百零三、所以 Dedup 和
+Rebalancing：</h1>
+<blockquote>
+<p>会直接影响模型学什么。</p>
+</blockquote>
+<hr />
+<h1 id="三百零四但注意">三百零四、但注意：</h1>
+<h1 id="dedup-class-balancing">Dedup ≠ Class Balancing</h1>
+<p>这是两个问题。</p>
+<hr />
+<h1 id="三百零五dedup">三百零五、Dedup：</h1>
+<blockquote>
+<p>控制重复信息。</p>
+</blockquote>
+<hr />
+<h1 id="三百零六class-balancing">三百零六、Class Balancing：</h1>
+<blockquote>
+<p>控制不同 Label / Risk Type 的训练比例。</p>
+</blockquote>
+<hr />
+<h1 id="三百零七后面构造-dataset-时">三百零七、后面构造 Dataset
+时：</h1>
+<blockquote>
+<p>可能两者都要做。</p>
+</blockquote>
+<p>不要混。</p>
+<hr />
+<h1 id="三百零八现在看-rag">三百零八、现在看 RAG。</h1>
+<p>如果向量数据库里：</p>
+<blockquote>
+<p>同一法规条款存了 30 份。</p>
+</blockquote>
+<p>用户检索一次：</p>
+<p>Top 10 结果可能全是：</p>
+<blockquote>
+<p>同一句法规。</p>
+</blockquote>
+<hr />
+<h1 id="三百零九结果">三百零九、结果：</h1>
+<blockquote>
+<p>检索多样性极差。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十于是-dedup-也能改善">三百一十、于是 Dedup
+也能改善：</h1>
+<h1 id="retrieval-diversity">Retrieval Diversity</h1>
+<hr />
+<h1 id="三百一十一但如果-30-份来自">三百一十一、但如果 30 份来自：</h1>
+<blockquote>
+<p>30 个不同监管案例，</p>
+</blockquote>
+<p>每个案例虽然引用同一法规，</p>
+<p>案例上下文：</p>
+<blockquote>
+<p>仍然不同。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十二所以-rag-可能去重">三百一十二、所以 RAG
+可能去重：</h1>
+<blockquote>
+<p>法规原文。</p>
+</blockquote>
+<p>但保留：</p>
+<blockquote>
+<p>不同案例。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十三再次体现">三百一十三、再次体现：</h1>
+<h1 id="entity-aware-dedup">Entity-aware Dedup</h1>
+<p>按数据实体类型：</p>
+<blockquote>
+<p>定义不同策略。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十四未来我们的-master-data-可能有">三百一十四、未来我们的
+Master Data 可能有：</h1>
+<pre class="text"><code>Regulation
+Project
+Document
+Clause
+Case
+Annotation</code></pre>
+<p>每种 Entity：</p>
+<blockquote>
+<p>Dedup Policy 不一样。</p>
+</blockquote>
+<hr />
+<h1
+id="三百一十五现在做几个思维实验">三百一十五、现在做几个思维实验。</h1>
+<h3 id="思维实验-a">思维实验 A</h3>
+<p>两个 PDF 的 SHA-256 一样。</p>
+<p>它们是不是可以认为文件完全相同？</p>
+<blockquote>
+<p>是，工程上可以极高置信度认为是 Exact File Duplicate。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十六-思维实验-b">三百一十六、### 思维实验 B</h1>
+<p>两个文件 Hash 不同。</p>
+<p>正文是不是一定不同？</p>
+<blockquote>
+<p>不是。</p>
+</blockquote>
+<p>PDF Metadata、封装方式、HTML 模板都可能导致 Hash 不同。</p>
+<hr />
+<h1 id="三百一十七-思维实验-c">三百一十七、### 思维实验 C</h1>
+<p>两个 Clause 文字完全相同，</p>
+<p>但属于两个不同采购项目。</p>
+<p>是不是应该物理删除一个？</p>
+<blockquote>
+<p>不一定。</p>
+</blockquote>
+<p>先看数据用途和是否属于自然重复。</p>
+<hr />
+<h1 id="三百一十八-思维实验-d">三百一十八、### 思维实验 D</h1>
+<p>A：</p>
+<pre class="text"><code>不少于3年</code></pre>
+<p>B：</p>
+<pre class="text"><code>不少于5年</code></pre>
+<p>文本极其相似。</p>
+<p>是不是 Near Duplicate？</p>
+<blockquote>
+<p>可以是模板近重复。</p>
+</blockquote>
+<p>但绝不能当业务等价 Duplicate 删除。</p>
+<hr />
+<h1 id="三百一十九-思维实验-e">三百一十九、### 思维实验 E</h1>
+<p>两个招标文件 99.8% 相同，</p>
+<p>其中一个是更正后版本。</p>
+<p>删旧版本？</p>
+<blockquote>
+<p>不应简单当重复处理。</p>
+</blockquote>
+<p>应该建立 Version Relation。</p>
+<hr />
+<h1 id="三百二十-思维实验-f">三百二十、### 思维实验 F</h1>
+<p>Embedding Similarity = 0.99。</p>
+<p>是不是可以自动删除一条？</p>
+<blockquote>
+<p>不能。</p>
+</blockquote>
+<p>需要检查数字、否定词、单位、比较符等业务关键差异。</p>
+<hr />
+<h1 id="三百二十一-思维实验-g">三百二十一、### 思维实验 G</h1>
+<p>同一个模板在 1000 个项目中出现。</p>
+<p>能不能让 800 个进 Train、200 个进 Test？</p>
+<blockquote>
+<p>这可能造成严重 Template Leakage。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十二-思维实验-h">三百二十二、### 思维实验 H</h1>
+<p>同一法规在 5000 个采购文件里被引用。</p>
+<p>是不是全都只留一次？</p>
+<blockquote>
+<p>要看任务。</p>
+</blockquote>
+<p>法规知识库和项目分析数据的去重目标不同。</p>
+<hr />
+<h1 id="三百二十三-思维实验-i">三百二十三、### 思维实验 I</h1>
+<p>两条完全相同文本的 Label 不同。</p>
+<p>应该随机保留一个吗？</p>
+<blockquote>
+<p>不应该。</p>
+</blockquote>
+<p>这是 Label Conflict，需要调查 Context 和标注来源。</p>
+<hr />
+<h1 id="三百二十四-思维实验-j">三百二十四、### 思维实验 J</h1>
+<p>一条边界样本与常规样本 95% 相似。</p>
+<p>是不是优先删边界样本？</p>
+<blockquote>
+<p>恰恰相反。边界样本通常更有价值。</p>
+</blockquote>
+<hr />
+<h1
+id="三百二十五本阶段最容易犯的-12-个错误">三百二十五、本阶段最容易犯的
+12 个错误</h1>
+<p><strong>错误 1：</strong></p>
+<blockquote>
+<p><code>drop_duplicates()</code> 就完成去重。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 2：</strong></p>
+<blockquote>
+<p>SHA-256 能发现所有重复。</p>
+</blockquote>
+<p>错。</p>
+<p>它只能非常好地发现完全文件重复。</p>
+<hr />
+<p><strong>错误 3：</strong></p>
+<blockquote>
+<p>文本一样就一定是同一个业务观察。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 4：</strong></p>
+<blockquote>
+<p>相似度高就可以删除。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 5：</strong></p>
+<blockquote>
+<p>Embedding 很智能，所以最适合直接做删除决定。</p>
+</blockquote>
+<p>危险。</p>
+<hr />
+<p><strong>错误 6：</strong></p>
+<blockquote>
+<p>数字差异很小，可以忽略。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 7：</strong></p>
+<blockquote>
+<p>99% 相同的更正版本属于无用重复。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 8：</strong></p>
+<blockquote>
+<p>模板重复只影响训练速度。</p>
+</blockquote>
+<p>错。</p>
+<p>还会制造模型偏差和 Benchmark 泄漏。</p>
+<hr />
+<p><strong>错误 9：</strong></p>
+<blockquote>
+<p>去重率越高，数据越专业。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<p><strong>错误 10：</strong></p>
+<blockquote>
+<p>检测到重复就应该立刻物理删除。</p>
+</blockquote>
+<p>错。</p>
+<p>优先 Cluster / Link。</p>
+<hr />
+<p><strong>错误 11：</strong></p>
+<blockquote>
+<p>Dedup 只影响训练集。</p>
+</blockquote>
+<p>错。</p>
+<p>它对 Evaluation 和 RAG 一样重要。</p>
+<hr />
+<p><strong>错误 12：</strong></p>
+<blockquote>
+<p>完全相同文本的不同 Label，任选一个即可。</p>
+</blockquote>
+<p>错。</p>
+<p>这可能暴露标注冲突。</p>
+<hr />
+<h1 id="三百二十六本阶段最重要的-6-个">三百二十六、本阶段最重要的 6
+个“≠”</h1>
+<pre class="text"><code>File Difference
+≠
+Content Difference</code></pre>
+<pre class="text"><code>Text Duplicate
+≠
+Observation Duplicate</code></pre>
+<pre class="text"><code>Similarity
+≠
+Equivalence</code></pre>
+<pre class="text"><code>Template Similarity
+≠
+Business Equality</code></pre>
+<pre class="text"><code>Version Similarity
+≠
+Duplicate</code></pre>
+<pre class="text"><code>More Rows
+≠
+More Independent Information</code></pre>
+<hr />
+<h1
+id="三百二十七再记一个非常重要的">三百二十七、再记一个非常重要的“=”</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>o</mi><mi>o</mi><mi>d</mi><mi>D</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>p</mi><mo>=</mo><mi>D</mi><mi>u</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>D</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mi>h</mi><mi>i</mi><mi>p</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>t</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GoodDedup
+=
+DuplicateDetection
++
+RelationshipClassification
++
+CriticalDifferenceProtection
++
+ProvenancePreservation
+}
+</annotation></semantics></math></p>
+<p>翻译成人话：</p>
+<blockquote>
+<p><strong>好的去重不是“把相似文本删掉”，而是先判断哪些数据彼此相关、它们到底是什么重复关系、有没有关键业务差异，再决定哪些只在训练
+View 中降权或只保留代表样本，同时完整保留来源关系。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="三百二十八现在把第四课前五阶段连起来">三百二十八、现在把第四课前五阶段连起来</h1>
+<pre class="text"><code>Stage 1
+Task Schema
+“什么是一条样本？”
+       │
+       ▼
+Stage 2
+ParsedDocument
+“文件里到底有什么？”
+       │
+       ▼
+Stage 3
+ClauseUnit
+“文字属于哪一条业务要求？”
+       │
+       ▼
+Stage 4
+CleanClause
+“怎样安全规范表示？”
+       │
+       ▼
+Stage 5
+DedupedClauseSet
+“这些样本到底有多少独立信息？”</code></pre>
+<hr />
+<h1
+id="三百二十九现在我们已经解决了">三百二十九、现在我们已经解决了：</h1>
+<pre class="text"><code>数据是什么
+文本对不对
+结构对不对
+格式稳不稳
+重复多不多</code></pre>
+<p>但还没有解决一个极其致命的问题：</p>
+<h1 id="这些数据怎样切-train-validation-test">这些数据怎样切 Train /
+Validation / Test？</h1>
+<hr />
+<h1 id="三百三十很多人会直接">三百三十、很多人会直接：</h1>
+<div class="sourceCode" id="cb1203"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb1203-1"><a href="#cb1203-1" aria-hidden="true" tabindex="-1"></a>train_test_split(</span>
+<span id="cb1203-2"><a href="#cb1203-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
+<span id="cb1203-3"><a href="#cb1203-3" aria-hidden="true" tabindex="-1"></a>    test_size<span class="op">=</span><span class="fl">0.2</span>,</span>
+<span id="cb1203-4"><a href="#cb1203-4" aria-hidden="true" tabindex="-1"></a>    random_state<span class="op">=</span><span class="dv">42</span></span>
+<span id="cb1203-5"><a href="#cb1203-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>看起来非常标准。</p>
+<hr />
+<h1 id="三百三十一但对于-procurementai">三百三十一、但对于
+ProcurementAI，</h1>
+<p>如果按行随机切：</p>
+<blockquote>
+<p>很可能直接把整个 Benchmark 做假。</p>
+</blockquote>
+<hr />
+<h1
+id="三百三十二因为同一个项目可能有">三百三十二、因为同一个项目可能有：</h1>
+<pre class="text"><code>300个Clause</code></pre>
+<p>随机切以后：</p>
+<pre class="text"><code>240条进Train
+60条进Test</code></pre>
+<hr />
+<h1
+id="三百三十三模型考试的时候虽然没见过">三百三十三、模型考试的时候虽然没见过：</h1>
+<blockquote>
+<p>Test 的具体那句话。</p>
+</blockquote>
+<p>但是它已经见过：</p>
+<pre class="text"><code>项目名称
+项目背景
+模板风格
+相关条款
+大量相邻内容</code></pre>
+<hr />
+<h1 id="三百三十四更麻烦的是">三百三十四、更麻烦的是：</h1>
+<p>同一个 Template Group：</p>
+<blockquote>
+<p>也可能跨 Train/Test。</p>
+</blockquote>
+<hr />
+<h1
+id="三百三十五所以真正正确的数据切分必须考虑">三百三十五、所以真正正确的数据切分必须考虑：</h1>
+<pre class="text"><code>Project Group
+Document Group
+Duplicate Group
+Template Group
+Time</code></pre>
+<hr />
+<h1 id="三百三十六本阶段掌握测试">三百三十六、本阶段掌握测试</h1>
+<p>如果现在不看前文，你能完整解释下面这些问题，第 5
+阶段就真正掌握了：</p>
+<blockquote>
+<p>为什么数据行数不等于独立信息量？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Exact File Duplicate？</p>
+</blockquote>
+<blockquote>
+<p>SHA-256 能解决哪一层去重？</p>
+</blockquote>
+<blockquote>
+<p>为什么文件 Hash 不同不代表正文不同？</p>
+</blockquote>
+<blockquote>
+<p>File Duplicate 和 Content Duplicate 有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>为什么需要 Document-level 和 Clause-level Dedup？</p>
+</blockquote>
+<blockquote>
+<p>Text Duplicate 和 Observation Duplicate 为什么不同？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Natural Repetition？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Artificial Duplication？</p>
+</blockquote>
+<blockquote>
+<p>为什么真正优先去掉的是人工采集过程制造的重复？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Dedup Policy 必须根据 Dataset Purpose 决定？</p>
+</blockquote>
+<blockquote>
+<p>为什么检测到 Duplicate 不应该立即物理删除？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Canonical Record？</p>
+</blockquote>
+<blockquote>
+<p>为什么要建立 Duplicate Group？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Near Duplicate？</p>
+</blockquote>
+<blockquote>
+<p>Jaccard Similarity 的直觉是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么高 Jaccard 相似度不等于业务等价？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>不得</code> 和 <code>必须</code> 是 Dedup
+中必须保护的差异？</p>
+</blockquote>
+<blockquote>
+<p>为什么 <code>2小时</code> 和 <code>4小时</code>
+不能因为文本高度相似而合并？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Template Duplicate？</p>
+</blockquote>
+<blockquote>
+<p>为什么采购数据里模板重复特别常见？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Template View？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Template View 只能用于检测，不能替代原文？</p>
+</blockquote>
+<blockquote>
+<p>为什么数字 Mask 必须谨慎？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Version Duplicate / Version Relation？</p>
+</blockquote>
+<blockquote>
+<p>为什么更正前后文件不能简单去重？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Shingle？</p>
+</blockquote>
+<blockquote>
+<p>MinHash 的核心用途是什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么大规模数据不能全部两两比较？</p>
+</blockquote>
+<blockquote>
+<p>LSH 的直觉是什么？</p>
+</blockquote>
+<blockquote>
+<p>Embedding 可以在 Near Dedup 中做什么？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Embedding Similarity 不等于 Business Equivalence？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Critical Field Diff？</p>
+</blockquote>
+<blockquote>
+<p>为什么应该先 Cluster，再 Delete？</p>
+</blockquote>
+<blockquote>
+<p>Duplicate Group 为什么以后必须参与 Train/Test Split？</p>
+</blockquote>
+<blockquote>
+<p>什么是 Template Leakage？</p>
+</blockquote>
+<blockquote>
+<p>为什么同一个模板随机进入 Train 和 Test 会导致虚假高分？</p>
+</blockquote>
+<blockquote>
+<p>为什么不同数据实体需要不同 Dedup Policy？</p>
+</blockquote>
+<blockquote>
+<p>为什么相同文本、不同 Label 应该触发 Label Conflict Review？</p>
+</blockquote>
+<blockquote>
+<p>为什么边界案例不能因为和普通样本相似就删除？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 False Merge？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Missed Duplicate？</p>
+</blockquote>
+<blockquote>
+<p>对政府采购数据来说，为什么 False Merge 往往特别危险？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Dedup Algorithm 自己也需要 Gold Set 和 Benchmark？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Dedup 和 Class Balancing 不是一回事？</p>
+</blockquote>
+<p>如果这些你都能讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>5</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第5阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三百三十七本阶段最终只记一句话">三百三十七、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>政府采购数据去重的目标不是“把相似文本删掉”，而是识别同一文件、同一正文、同一模板、同一版本链和语义近重复之间的关系，保护数字、否定词、单位和条件等关键业务差异，并通过
+Duplicate Group 控制重复信息对训练权重和 Benchmark 的污染。</strong></p>
+</blockquote>
+<p>最后压成一张图：</p>
+<pre class="text"><code>                   CleanClauseSet
+                         │
+                         ▼
+                Exact File Duplicate
+                         │
+                         ▼
+                 Exact Text Duplicate
+                         │
+                         ▼
+                   Near Duplicate
+            ┌────────────┼─────────────┐
+            ▼            ▼             ▼
+         MinHash      Template       Embedding
+            │            │             │
+            └────────────┼─────────────┘
+                         ▼
+                 Critical Field Diff
+            ┌────────────┼─────────────┐
+            ▼            ▼             ▼
+          数字          否定词         单位/符号
+            │            │             │
+            └────────────┼─────────────┘
+                         ▼
+             Duplicate Relation Type
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+       Exact          Template        Version
+      Duplicate        Variant        Relation
+          │              │              │
+          └──────────────┼──────────────┘
+                         ▼
+                  Duplicate Cluster
+                         │
+                         ▼
+                 Canonical Selection
+                         │
+                         ▼
+                DedupedClauseSet_V0.1</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-6-阶段">下一阶段：第四课 · 第 6 阶段</h1>
+<h2
+id="train-validation-test-到底应该怎么切为什么对政府采购数据随机按行切-811可能从根本上就是错的">Train
+/ Validation / Test 到底应该怎么切？为什么对政府采购数据“随机按行切
+8:1:1”可能从根本上就是错的？</h2>
+<p>第 6 阶段我们会第一次真正建立：</p>
+<h1 id="data-split">Data Split</h1>
+<p>但不会只讲：</p>
+<pre class="text"><code>80%
+10%
+10%</code></pre>
+<p>真正重要的是：</p>
+<blockquote>
+<p><strong>什么东西绝对不能被拆到两个数据集里。</strong></p>
+</blockquote>
+<p>我们会把今天得到的：</p>
+<pre class="text"><code>duplicate_group_id
+template_group_id</code></pre>
+<p>和之前已经保存的：</p>
+<pre class="text"><code>project_id
+document_id</code></pre>
+<p>真正串起来。</p>
+<p>最终会建立：</p>
+<pre class="text"><code>Project-aware Split
++
+Duplicate-aware Split
++
+Template-aware Split
++
+Time-aware Split</code></pre>
+<p>并第一次回答这个最核心的问题：</p>
+<blockquote>
+<p><strong>测试集到底应该模拟“同一批项目里的陌生条款”，还是模拟“未来真正从未见过的新项目”？</strong></p>
+</blockquote>
+<p>第 6 阶段最终会产出：</p>
+<h1 id="datasetsplit_v0.1"><code>DatasetSplit_V0.1</code></h1>
+<p>也就是第一次把数据从“整理好的样本库”，推进成：</p>
+<blockquote>
+<p><strong>可以开始严肃训练和评测的 Train / Validation / Test
+数据结构。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage04.html">← 第 4 阶段</a><a class="btn" href="stage06.html">第 6 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

@@ -1,0 +1,710 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第10阶段：真正部署 `ProcurementAI`：性能压测、SLO、Release Gate 与生产闭环</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第10阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>GoodModel ≠ GoodProductionSystem。</li><li>Latency ≠ Throughput。</li><li>Quantization ≠ FreeCompression。</li></ul></div><h1 id="第十课-第-10-阶段">第十课 · 第 10 阶段</h1>
+<h1
+id="真正部署-procurementai性能压测slorelease-gate-与生产闭环-1">真正部署
+<code>ProcurementAI</code>：性能压测、SLO、Release Gate 与生产闭环</h1>
+<h2
+id="怎样把-quantizationkv-cachepaged-attentionbatching多-gpuservingobservabilitycanary-和-rollback-全部接成一套真正可上线的生产系统">怎样把
+Quantization、KV Cache、Paged Attention、Batching、多
+GPU、Serving、Observability、Canary 和 Rollback
+全部接成一套真正可上线的生产系统？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-9">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-9">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>GoodModel ≠ GoodProductionSystem。</strong></li>
+<li><strong>Latency ≠ Throughput。</strong></li>
+<li><strong>Quantization ≠ FreeCompression。</strong></li>
+<li><strong>ModelFitsInGPU ≠ ServingFitsInGPU。</strong></li>
+<li><strong>EfficientMemory ≠ EfficientScheduling。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-9">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Serving</code></td>
+<td>服务化：把模型包装成可扩展、可观测、可治理的在线服务</td>
+</tr>
+<tr class="even">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="odd">
+<td><code>Observability</code></td>
+<td>可观测性：通过指标、日志、追踪理解系统内部状态</td>
+</tr>
+<tr class="even">
+<td><code>Rollback</code></td>
+<td>回滚：出现问题时恢复上一稳定系统版本</td>
+</tr>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>Quantization</code></td>
+<td>量化：用更低位宽表示权重/激活以降低显存和计算成本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-9">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前 9 个阶段已经分别解决：</p>
+<pre class="text"><code>性能指标
+量化
+KV Cache
+Paged Attention
+Batching
+多GPU
+Serving Architecture
+Observability
+灰度与回滚</code></pre>
+<p>第 10 阶段不再增加孤立技巧。</p>
+<p>它要把全部机制接成：</p>
+<h1 id="procurementai-1"><code>ProcurementAI</code></h1>
+<p>本阶段第一条总边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DeploymentSuccess
+\neq
+ProductionReadiness
+}
+</annotation></semantics></math></p>
+<p>服务能启动：</p>
+<blockquote>
+<p>只是 Deployment Success。</p>
+</blockquote>
+<p>真正 Production Ready：</p>
+<blockquote>
+<p>还需要质量、容量、可靠性、监控、成本和回滚全部闭环。</p>
+</blockquote>
+<hr />
+<h1 id="一procurementai-到底是什么">一、<code>ProcurementAI</code>
+到底是什么？</h1>
+<p>它不是单个模型。</p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>I</mi><mo>=</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>R</mi><mi>A</mi><mi>G</mi><mo>+</mo><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mo>+</mo><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mi>G</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementAI
+=
+Model
++
+RAG
++
+Agent
++
+Serving
++
+Observability
++
+ReleaseControl
++
+BenchmarkGovernance
+}
+</annotation></semantics></math></p>
+<p>更具体：</p>
+<pre class="text"><code>ProcurementLM_V0.2
++
+ProcurementRAG_V0.1
++
+ProcurementAgent_V0.1
++
+ProcurementBench_V1
++
+Production Serving Stack</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>I</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mo>≠</mo><mi>L</mi><mi>L</mi><mi>M</mi><mi>F</mi><mi>i</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AIProduct
+\neq
+LLMFile
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二核心心智模型-①-3">二、核心心智模型 ①</h1>
+<h1 id="production-readiness-是系统状态不是部署动作">Production
+Readiness 是“系统状态”，不是“部署动作”</h1>
+<p>至少同时看：</p>
+<pre class="text"><code>Quality
+Performance
+Capacity
+Reliability
+Security
+Observability
+Rollback
+Cost</code></pre>
+<hr />
+<h1 id="三serving-plane-与-control-plane">三、Serving Plane 与 Control
+Plane</h1>
+<h1 id="serving-plane">Serving Plane</h1>
+<h2 id="服务平面">服务平面</h2>
+<pre class="text"><code>Client
+↓
+Gateway
+↓
+RAG / Agent
+↓
+Inference Cluster
+↓
+Tools / State
+↓
+Response</code></pre>
+<h1 id="control-plane">Control Plane</h1>
+<h2 id="控制平面">控制平面</h2>
+<pre class="text"><code>Benchmark
+Release
+Version
+Canary
+Rollback
+Policy</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mo>=</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>e</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi><mi>P</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProductionSystem
+=
+ServingPlane
++
+ControlPlane
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四核心心智模型-②-1">四、核心心智模型 ②</h1>
+<h1 id="只会-serving不会治理只会-benchmark又不能生产运行">只会
+Serving，不会治理；只会 Benchmark，又不能生产运行</h1>
+<p>成熟系统需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>L</mi><mi>i</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>y</mi><mi>c</mi><mi>l</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RuntimeExecution
++
+LifecycleControl
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五load-test-要测真实-workload-matrix">五、Load Test 要测真实
+Workload Matrix</h1>
+<p>不是只压：</p>
+<pre class="text"><code>最大QPS</code></pre>
+<p>而是：</p>
+<pre class="text"><code>短问答 × 低并发
+短问答 × 高并发
+长RAG × 中并发
+长文档 × 高输出
+Agent多Tool × 外部延迟
+真实混合Traffic</code></pre>
+<p>记录：</p>
+<pre class="text"><code>TTFT
+TPOT
+P95/P99
+Throughput
+Queue
+OOM
+Error
+Cost</code></pre>
+<hr />
+<h1 id="六capacity-planning">六、Capacity Planning</h1>
+<p>不能直接拿峰值压测结果当生产容量。</p>
+<p>还要留：</p>
+<h1 id="headroom">Headroom</h1>
+<h2 id="容量余量">容量余量</h2>
+<p>用于：</p>
+<pre class="text"><code>突发流量
+节点故障
+双版本发布
+依赖变慢
+未来增长</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>&lt;</mo><mi>T</mi><mi>h</mi><mi>e</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>M</mi><mi>a</mi><mi>x</mi><mi>i</mi><mi>m</mi><mi>u</mi><mi>m</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProductionCapacity
+&lt;
+TheoreticalMaximum
+}
+</annotation></semantics></math></p>
+<p>这是有意保守。</p>
+<hr />
+<h1 id="七核心心智模型-③">七、核心心智模型 ③</h1>
+<h1
+id="peakbenchmark-capacityplan"><code>PeakBenchmark ≠ CapacityPlan</code></h1>
+<p>容量规划需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi><mo>+</mo><mi>S</mi><mi>L</mi><mi>O</mi><mo>+</mo><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>M</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Workload
++
+SLO
++
+FailureMargin
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="八autoscaling">八、Autoscaling</h1>
+<p>可以依据：</p>
+<pre class="text"><code>Queue Depth
+Request Rate
+KV Utilization
+GPU Utilization
+TTFT</code></pre>
+<p>扩缩容。</p>
+<p>但大模型加载和 Warm-up：</p>
+<blockquote>
+<p>需要时间。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>S</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>可</mi><mi>能</mi><mi>太</mi><mi>晚</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReactiveScaling
+可能太晚
+}
+</annotation></semantics></math></p>
+<p>高峰前预热、预扩容可能更重要。</p>
+<hr />
+<h1 id="九failure-injection">九、Failure Injection</h1>
+<p>上线前要主动模拟：</p>
+<pre class="text"><code>GPU进程退出
+Retriever超时
+Tool 500
+数据库变慢
+节点丢失
+网络抖动
+RAG Index不可用</code></pre>
+<p>看系统能否：</p>
+<pre class="text"><code>降级
+熔断
+重试
+转人工
+回滚
+恢复</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>S</mi><mi>y</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>m</mi><mi>必</mi><mi>须</mi><mi>被</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>证</mi><mi>明</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReliableSystem
+必须被
+FailureTest
+证明
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十graceful-degradation">十、Graceful Degradation</h1>
+<p>组件故障时可以：</p>
+<pre class="text"><code>RAG失败
+→ 明确提示无法获得可靠证据
+
+Tool失败
+→ 转人工
+
+高负载
+→ 降低输出上限
+
+主模型失败
+→ 切备用模型</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>e</mi><mi>f</mi><mi>u</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>优</mi><mi>于</mi><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>F</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GracefulDegradation
+优于
+TotalFailure
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一最终-serving-build-必须重新跑质量-benchmark">十一、最终
+Serving Build 必须重新跑质量 Benchmark</h1>
+<p>最终生产配置已经改变：</p>
+<pre class="text"><code>Quantization
+Engine
+Batching
+Parallelism
+Prompt
+RAG
+Agent</code></pre>
+<p>所以必须再次通过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><msub><mi>h</mi><mi>V</mi></msub><mn>1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementBench_V1
+}
+</annotation></semantics></math></p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>h</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>p</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi><mi>P</mi><mi>a</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>B</mi><mi>u</mi><mi>i</mi><mi>l</mi><mi>d</mi><mi>P</mi><mi>a</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TrainingCheckpointPass
+\neq
+ServingBuildPass
+}
+</annotation></semantics></math></p>
+<p>用户真正使用的是：</p>
+<blockquote>
+<p>Serving Build。</p>
+</blockquote>
+<hr />
+<h1 id="十二最终-release-gate">十二、最终 Release Gate</h1>
+<p>可以概念化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>G</mi><mi>a</mi><mi>t</mi><mi>e</mi><mo>=</mo><msub><mi>G</mi><mrow><mi>q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>t</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>c</mi><mi>a</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>r</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>o</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>r</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>s</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></msub><mo>∧</mo><msub><mi>G</mi><mrow><mi>c</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">
+ReleaseGate
+=
+G_{quality}
+\land
+G_{latency}
+\land
+G_{throughput}
+\land
+G_{capacity}
+\land
+G_{reliability}
+\land
+G_{observability}
+\land
+G_{rollback}
+\land
+G_{security}
+\land
+G_{cost}
+</annotation></semantics></math></p>
+<p>全部通过：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mo>=</mo><mi>T</mi><mi>r</mi><mi>u</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProductionReady=True
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三核心心智模型-④">十三、核心心智模型 ④</h1>
+<h1 id="release-gate-必须是多维-and而不是平均分">Release Gate 必须是多维
+AND，而不是平均分</h1>
+<p>不能：</p>
+<pre class="text"><code>质量100
+安全30
+延迟90</code></pre>
+<p>平均后说：</p>
+<blockquote>
+<p>可以上线。</p>
+</blockquote>
+<p>关键失败必须直接 Block。</p>
+<hr />
+<h1 id="十四runbook">十四、Runbook</h1>
+<h1 id="runbook">Runbook</h1>
+<h2 id="运行手册">运行手册</h2>
+<p>必须提前写：</p>
+<pre class="text"><code>OOM怎么办
+P99暴涨怎么办
+RAG不可用怎么办
+Agent重复提交怎么办
+Critical Error怎么办
+怎样回滚
+怎样扩容
+谁负责</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>K</mi><mi>n</mi><mi>o</mi><mi>w</mi><mi>l</mi><mi>e</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>也</mi><mi>必</mi><mi>须</mi><mi>资</mi><mi>产</mi><mi>化</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OperationalKnowledge
+也必须资产化
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五production-feedback-loop">十五、Production Feedback
+Loop</h1>
+<p>上线后持续收集：</p>
+<pre class="text"><code>失败样本
+人工纠错
+低置信样本
+OOD
+Critical Incident
+Latency Outlier
+RAG Miss
+Tool Failure</code></pre>
+<p>再进入：</p>
+<pre class="text"><code>Benchmark Candidate Pool
+Data Pipeline
+Model Improvement</code></pre>
+<p>形成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>→</mo><mi>E</mi><mi>v</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>→</mo><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>m</mi><mi>a</mi><mi>r</mi><mi>k</mi><mo>→</mo><mi>I</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>→</mo><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Production
+\rightarrow
+Evidence
+\rightarrow
+Benchmark
+\rightarrow
+Improvement
+\rightarrow
+Release
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六核心心智模型-⑤-1">十六、核心心智模型 ⑤</h1>
+<h1
+id="生产不是终点而是下一轮学习的真实证据源">生产不是终点，而是下一轮学习的真实证据源</h1>
+<p>真实用户会暴露：</p>
+<blockquote>
+<p>Benchmark 没覆盖的新失败模式。</p>
+</blockquote>
+<p>所以生产反馈必须回流。</p>
+<hr />
+<h1 id="十七完整-procurementai-artifact-tree">十七、完整
+<code>ProcurementAI</code> Artifact Tree</h1>
+<pre class="text"><code>ProcurementAI/
+
+├── model/
+│   ├── model_version
+│   ├── tokenizer
+│   └── quantization
+│
+├── serving/
+│   ├── engine
+│   ├── batching
+│   ├── kv_policy
+│   └── parallelism
+│
+├── rag/
+│   ├── retriever
+│   ├── reranker
+│   └── index
+│
+├── agent/
+│   ├── policy
+│   ├── tools
+│   └── state_schema
+│
+├── observability/
+│   ├── metrics
+│   ├── logs
+│   ├── traces
+│   └── alerts
+│
+├── benchmark/
+│   └── ProcurementBench_V1
+│
+├── release/
+│   ├── canary
+│   ├── rollback
+│   └── release_manifest
+│
+└── runbook/
+    ├── incidents
+    ├── capacity
+    └── recovery</code></pre>
+<hr />
+<h1 id="十八本课-10-个阶段工程产物怎样接起来">十八、本课 10
+个阶段工程产物怎样接起来？</h1>
+<pre class="text"><code>Stage 1
+ProcurementInferenceSLOPolicy_V0.1
+→ 定义“快”的统一口径
+
+Stage 2
+ProcurementQuantizationPolicy_V0.1
+→ 精度 / 显存 / Kernel权衡
+
+Stage 3
+ProcurementKVCachePolicy_V0.1
+→ 动态显存与长上下文容量
+
+Stage 4
+ProcurementPagedServingPolicy_V0.1
+→ Paged KV与Serving Engine
+
+Stage 5
+ProcurementBatchingPolicy_V0.1
+→ 吞吐 / 延迟工作点
+
+Stage 6
+ProcurementParallelServingPolicy_V0.1
+→ 多GPU拓扑与副本
+
+Stage 7
+ProcurementServingArchitecture_V0.1
+→ Model + RAG + Agent真实服务
+
+Stage 8
+ProcurementObservabilityPolicy_V0.1
+→ Metrics / Logs / Traces / Alert
+
+Stage 9
+ProcurementReleaseRolloutPolicy_V0.1
+→ Shadow / Canary / A-B / Rollback
+
+Stage 10
+ProcurementAI
+→ 生产闭环</code></pre>
+<hr />
+<h1 id="十九第十课最终-10-条核心心智模型">十九、第十课最终 10
+条核心心智模型</h1>
+<blockquote>
+<p><strong>①
+<code>GoodModel ≠ GoodProductionSystem</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>② <code>Latency ≠ Throughput</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③ <code>Quantization ≠ FreeCompression</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④
+<code>ModelFitsInGPU ≠ ServingFitsInGPU</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤
+<code>EfficientMemory ≠ EfficientScheduling</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥ <code>MoreGPUs ≠ LinearSpeedup</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦ <code>Deployment ≠ ModelLoading</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧ <code>Monitoring ≠ GPUUtilizationOnly</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑨ <code>ReleaseReady ⇒ RollbackReady</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑩
+<code>DeploymentSuccess ≠ ProductionReadiness</code>。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十整门第十课最终工程图">二十、整门第十课最终工程图</h1>
+<pre class="text"><code>                 ProcurementBench_V1 Pass
+                          │
+                          ▼
+                    Inference SLO
+                          │
+                          ▼
+                    Quantization
+                          │
+                          ▼
+                      KV Cache
+                          │
+                          ▼
+                    Paged Serving
+                          │
+                          ▼
+                       Batching
+                          │
+                          ▼
+                    Multi-GPU Plan
+                          │
+                          ▼
+                Serving Architecture
+                          │
+                          ▼
+                    Observability
+                          │
+                          ▼
+               Shadow / Canary / A-B
+                          │
+                          ▼
+                 Production Load Test
+                          │
+                          ▼
+                     Release Gate
+               ┌──────────┴──────────┐
+               ▼                     ▼
+             Reject                 Pass
+                                      │
+                                      ▼
+                               ProcurementAI
+                                      │
+                                      ▼
+                            Production Feedback
+                                      │
+                                      └──→ Benchmark / Improvement</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>真正的 AI
+部署，不是把模型启动起来，而是把模型、RAG、Agent、推理引擎、显存管理、Batch、多
+GPU、网关、状态、监控、灰度、回滚和 Benchmark
+接成一条可测量、可扩容、可故障恢复、可持续发布的生产链，最终形成可运营的
+<code>ProcurementAI</code>。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第十课-第-10-阶段掌握测试">第十课 · 第 10 阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够解释：为什么 Deployment Success 不等于
+Production Readiness；ProcurementAI 为什么不是一个模型文件；Serving
+Plane 和 Control Plane 有什么区别；真实 Workload Matrix
+应该怎样设计；为什么 Capacity Plan 不能直接等于峰值压测；Headroom
+为什么重要；为什么大模型 Autoscaling 要考虑冷启动和预热；Failure
+Injection 为什么必须在上线前做；Graceful Degradation
+怎样限制故障影响；为什么最终质量评测必须针对 Serving Build；Release Gate
+为什么必须是多维 AND；Runbook 为什么属于系统资产；以及 Production
+Feedback 怎样重新进入 Benchmark、数据和下一轮迭代。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>十</mi><mi>课</mi><mi>第</mi><mn>10</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第十课第10阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="第十课正式完成">第十课正式完成</h1>
+<p>到这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>十</mi><mi>课</mi><mo>=</mo><mn>10</mn><mi>/</mi><mn>10</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第十课=10/10
+}
+</annotation></semantics></math></p>
+<p>最终工程交付：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>I</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementAI
+}
+</annotation></semantics></math></p>
+<p>课程系统演化到：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>R</mi><mi>A</mi><mi>G</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>g</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>_</mi><mi>V</mi><mn>0.1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.2</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>B</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>h</mi><mi>_</mi><mi>V</mi><mn>1</mn><mo>→</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>I</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementDataset\_V0.1
+\rightarrow
+ProcurementLM\_V0.1
+\rightarrow
+ProcurementRAG\_V0.1
+\rightarrow
+ProcurementAgent\_V0.1
+\rightarrow
+ProcurementLM\_V0.2
+\rightarrow
+ProcurementBench\_V1
+\rightarrow
+ProcurementAI
+}
+</annotation></semantics></math></p>
+<p>下一课正式进入：</p>
+<h1 id="第十一课procurementlm-v1.0-全流程实战">第十一课：ProcurementLM
+V1.0 全流程实战</h1>
+<h2
+id="怎样把需求定义数据模型ragsftrulesbenchmarkagent部署与反馈闭环全部从零接一遍最终交付-procurementlm_v1.0">怎样把需求定义、数据、模型、RAG、SFT、Rules、Benchmark、Agent、部署与反馈闭环全部从零接一遍，最终交付
+<code>ProcurementLM_V1.0</code>？</h2>
+<p>第十课解决的是：</p>
+<blockquote>
+<p><strong>怎样把已经证明有效的 AI 系统真正运行在生产环境。</strong></p>
+</blockquote>
+<p>第十一课开始解决：</p>
+<blockquote>
+<p><strong>怎样把前十课全部压缩成一个完整、可交付、可审计、可运营的端到端项目。</strong></p>
+</blockquote><div class="nav"><a class="btn" href="stage09.html">← 第 9 阶段</a><a class="btn" href="../lesson11/stage01.html">第 11 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

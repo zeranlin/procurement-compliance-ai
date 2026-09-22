@@ -1,0 +1,470 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第9阶段：Model Versioning、Canary、Shadow、A/B 与 Rollback</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>NewVersionReady ≠ 100% Traffic Ready。</li><li>ProductionVersion = ArtifactBundle。</li><li>Canary = LimitBlastRadius。</li></ul></div><h1 id="第十课-第-9-阶段">第十课 · 第 9 阶段</h1>
+<h1 id="model-versioningcanaryshadowab-与-rollback-1">Model
+Versioning、Canary、Shadow、A/B 与 Rollback</h1>
+<h2
+id="新模型为什么不能直接全量替换怎样用-canaryshadowabfeature-flag-和-rollback-把发布风险限制在可控范围">新模型为什么不能直接全量替换？怎样用
+Canary、Shadow、A/B、Feature Flag 和 Rollback
+把发布风险限制在可控范围？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>NewVersionReady ≠ 100% Traffic Ready。</strong></li>
+<li><strong>ProductionVersion = ArtifactBundle。</strong></li>
+<li><strong>Canary = LimitBlastRadius。</strong></li>
+<li><strong>Shadow 用真实流量观察，但必须阻断真实副作用。</strong></li>
+<li><strong>A/B 测真实用户因果效果，Shadow
+更适合先测技术风险。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Rollback</code></td>
+<td>回滚：出现问题时恢复上一稳定系统版本</td>
+</tr>
+<tr class="even">
+<td><code>Canary</code></td>
+<td>灰度发布：让有限真实流量先使用新版本</td>
+</tr>
+<tr class="odd">
+<td><code>Agent</code></td>
+<td>Agent/智能体：基于状态、工具和策略循环执行多步任务的系统</td>
+</tr>
+<tr class="even">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>一个版本通过：</p>
+<pre class="text"><code>ProcurementBench_V1</code></pre>
+<p>仍然不代表：</p>
+<blockquote>
+<p>可以直接接 100% 真实流量。</p>
+</blockquote>
+<p>因为生产还有：</p>
+<pre class="text"><code>真实流量
+真实并发
+真实工具
+真实依赖
+真实故障</code></pre>
+<p>所以本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>e</mi><mi>w</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mo>≠</mo><mi>N</mi><mi>e</mi><mi>w</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>l</mi><mi>d</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>i</mi><mi>v</mi><mi>e</mi><mn>100</mn><mi>P</mi><mi>e</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NewVersionReady
+\neq
+NewVersionShouldReceive100PercentTraffic
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementreleaserolloutpolicy_v0.1-1"><code>ProcurementReleaseRolloutPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一production-version-是-artifact-bundle">一、Production Version
+是 Artifact Bundle</h1>
+<p>至少包含：</p>
+<pre class="text"><code>Model
+Tokenizer
+Quantization
+Prompt
+RAG Index
+Retriever
+Reranker
+Agent Policy
+Tool Registry
+Thresholds
+Serving Engine
+Runtime Config</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi><mi>B</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProductionVersion
+=
+ArtifactBundle
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<blockquote>
+<p>一个模型文件。</p>
+</blockquote>
+<hr />
+<h1 id="二核心心智模型-①-2">二、核心心智模型 ①</h1>
+<h1
+id="modelversion-只是-systemversion-的一个节点"><code>ModelVersion</code>
+只是 <code>SystemVersion</code> 的一个节点</h1>
+<p>Prompt、RAG Index、Threshold：</p>
+<blockquote>
+<p>任一个变化都可能改变系统行为。</p>
+</blockquote>
+<p>所以所有生产变更都要进入：</p>
+<blockquote>
+<p>Release Trace。</p>
+</blockquote>
+<hr />
+<h1 id="三canary">三、Canary</h1>
+<h1 id="canary-release">Canary Release</h1>
+<h2 id="金丝雀发布">金丝雀发布</h2>
+<p>先让新版本接：</p>
+<pre class="text"><code>1%
+5%
+10%</code></pre>
+<p>小流量，</p>
+<p>观察：</p>
+<pre class="text"><code>SLO
+错误率
+质量代理指标
+成本
+Tool失败</code></pre>
+<p>稳定后再扩大。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mi>a</mi><mi>r</mi><mi>y</mi><mo>=</mo><mi>L</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>t</mi><mi>B</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>R</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>u</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Canary
+=
+LimitBlastRadius
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四核心心智模型-②">四、核心心智模型 ②</h1>
+<h1 id="canary-的核心不是慢慢上线而是限制故障爆炸半径">Canary
+的核心不是“慢慢上线”，而是限制故障爆炸半径</h1>
+<p>如果新版本有隐藏问题：</p>
+<blockquote>
+<p>只影响少量用户。</p>
+</blockquote>
+<hr />
+<h1 id="五shadow-traffic">五、Shadow Traffic</h1>
+<p>真实请求同时复制给：</p>
+<pre class="text"><code>Champion
+Challenger</code></pre>
+<p>但用户只看到 Champion。</p>
+<p>Challenger 结果：</p>
+<blockquote>
+<p>只用于评估。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>h</mi><mi>a</mi><mi>d</mi><mi>o</mi><mi>w</mi><mo>=</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi><mi>W</mi><mi>i</mi><mi>t</mi><mi>h</mi><mi>o</mi><mi>u</mi><mi>t</mi><mi>U</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Shadow
+=
+ProductionWorkload
+WithoutUserImpact
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六shadow-的副作用安全">六、Shadow 的副作用安全</h1>
+<p>如果 Agent 会：</p>
+<pre class="text"><code>提交
+写数据库
+发送
+审批</code></pre>
+<p>不能直接 Shadow 执行真实副作用。</p>
+<p>需要：</p>
+<pre class="text"><code>Dry Run
+Mock
+Sandbox</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>h</mi><mi>a</mi><mi>d</mi><mi>o</mi><mi>w</mi><mi>S</mi><mi>a</mi><mi>f</mi><mi>e</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>感</mi><mi>知</mi><mi>S</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>E</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ShadowSafety
+必须感知
+SideEffects
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="七ab-test">七、A/B Test</h1>
+<p>随机把真实用户分到：</p>
+<pre class="text"><code>A = Champion
+B = Challenger</code></pre>
+<p>比较：</p>
+<pre class="text"><code>成功率
+完成率
+延迟
+转人工
+成本</code></pre>
+<p>所以 A/B 更适合：</p>
+<blockquote>
+<p>测真实用户因果效果。</p>
+</blockquote>
+<p>Shadow 更适合：</p>
+<blockquote>
+<p>先测技术风险。</p>
+</blockquote>
+<hr />
+<h1 id="八核心心智模型-③-1">八、核心心智模型 ③</h1>
+<h1 id="风险可以逐步增加">风险可以逐步增加</h1>
+<p>一种典型路线：</p>
+<pre class="text"><code>Offline Benchmark
+↓
+Shadow
+↓
+Canary
+↓
+A/B
+↓
+Full Rollout</code></pre>
+<p>不是唯一固定顺序，</p>
+<p>但体现：</p>
+<blockquote>
+<p>从低风险证据到高风险真实流量。</p>
+</blockquote>
+<hr />
+<h1 id="九feature-flag">九、Feature Flag</h1>
+<p>可以运行时控制：</p>
+<pre class="text"><code>新模型
+新RAG
+新Agent工具
+新Prompt</code></pre>
+<p>是否启用。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>e</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>F</mi><mi>l</mi><mi>a</mi><mi>g</mi><mo>=</mo><mi>R</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>o</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FeatureFlag
+=
+RuntimeReleaseControl
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十rollback">十、Rollback</h1>
+<p>必须提前定义：</p>
+<pre class="text"><code>previous_stable_version
+compatibility_matrix
+rollback_trigger
+rollback_action
+rollback_validation</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>l</mi><mi>e</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi><mo>⇒</mo><mi>R</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ReleaseReady
+\Rightarrow
+RollbackReady
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一核心心智模型-④">十一、核心心智模型 ④</h1>
+<h1 id="rollback-不等于只换回旧-weight">Rollback 不等于只换回旧
+Weight</h1>
+<p>如果新版本还改了：</p>
+<pre class="text"><code>Tokenizer
+Prompt Schema
+RAG Index
+Agent State
+Tool API</code></pre>
+<p>只换模型：</p>
+<blockquote>
+<p>可能不兼容。</p>
+</blockquote>
+<p>所以必须有：</p>
+<h1 id="compatibility-matrix">Compatibility Matrix</h1>
+<h2 id="兼容矩阵">兼容矩阵</h2>
+<hr />
+<h1 id="十二state-schema-migration">十二、State / Schema Migration</h1>
+<p>新 Agent 如果写入了新状态格式，</p>
+<p>旧版本可能无法读取。</p>
+<p>因此要区分：</p>
+<pre class="text"><code>Backward Compatible
+Forward Compatible
+Breaking Change</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>必</mi><mi>须</mi><mi>在</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>设</mi><mi>计</mi><mi>阶</mi><mi>段</mi><mi>考</mi><mi>虑</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rollbackability
+必须在
+Schema设计阶段考虑
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三rollback-trigger">十三、Rollback Trigger</h1>
+<p>可以来自：</p>
+<pre class="text"><code>P99超阈值
+OOM
+Critical Error
+Tool Side Effect
+错误率
+质量代理指标异常
+成本异常</code></pre>
+<p>这些触发条件应该：</p>
+<blockquote>
+<p>预先定义。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>o</mi><mi>l</mi><mi>l</mi><mi>b</mi><mi>a</mi><mi>c</mi><mi>k</mi><mo>=</mo><mi>P</mi><mi>o</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>y</mi><mi>D</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Rollback
+=
+PolicyDriven
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十四automatic-rollback">十四、Automatic Rollback</h1>
+<p>基础设施信号：</p>
+<pre class="text"><code>OOM
+错误率
+延迟</code></pre>
+<p>更适合自动化。</p>
+<p>复杂质量问题：</p>
+<blockquote>
+<p>可能需要人工确认。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>u</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>l</mi><mi>取</mi><mi>决</mi><mi>于</mi><mi>S</mi><mi>i</mi><mi>g</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>R</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>b</mi><mi>i</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AutomationLevel
+取决于
+SignalReliability
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五核心心智模型-⑤">十五、核心心智模型 ⑤</h1>
+<h1
+id="fastrollback-比-perfectdetection-更现实"><code>FastRollback</code>
+比 <code>PerfectDetection</code> 更现实</h1>
+<p>生产不可能提前发现所有问题。</p>
+<p>所以成熟系统必须：</p>
+<blockquote>
+<p>能快速限制影响。</p>
+</blockquote>
+<hr />
+<h1 id="十六release-manifest">十六、Release Manifest</h1>
+<p>每次发布至少记录：</p>
+<pre class="text"><code>release_id
+system_version
+model_version
+quantization_version
+prompt_version
+rag_index_version
+agent_policy_version
+serving_engine_version
+feature_flags
+traffic_percentage
+benchmark_result
+slo_result
+rollback_target</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>h</mi><mi>a</mi><mi>t</mi><mi>I</mi><mi>s</mi><mi>R</mi><mi>u</mi><mi>n</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>N</mi><mi>o</mi><mi>w</mi><mi>必</mi><mi>须</mi><mi>机</mi><mi>器</mi><mi>可</mi><mi>回</mi><mi>答</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+WhatIsRunningNow
+必须机器可回答
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十七本阶段正式工程产物">十七、本阶段正式工程产物</h1>
+<h1
+id="procurementreleaserolloutpolicy_v0.1-2"><code>ProcurementReleaseRolloutPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>rollout_policy_version
+release_manifest_schema
+champion_version
+challenger_version
+shadow_policy
+canary_stages
+traffic_split
+ab_test_policy
+feature_flags
+side_effect_shadow_policy
+compatibility_matrix
+rollback_target
+rollback_trigger
+automatic_rollback
+manual_approval
+rollback_validation
+database_migration_policy
+state_compatibility
+slo_guardrail
+quality_guardrail
+cost_guardrail
+release_audit</code></pre>
+<hr />
+<h1 id="十八本阶段最重要的-9-个核心心智模型">十八、本阶段最重要的 9
+个核心心智模型</h1>
+<blockquote>
+<p><strong>①
+<code>NewVersionReady ≠ 100% Traffic Ready</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>②
+<code>ProductionVersion = ArtifactBundle</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③ <code>Canary = LimitBlastRadius</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④ Shadow 用真实流量观察，但必须阻断真实副作用。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤ A/B 测真实用户因果效果，Shadow
+更适合先测技术风险。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥ <code>ReleaseReady ⇒ RollbackReady</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦ Rollback 是兼容性问题，不只是旧 Weight
+重部署。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧ <code>FastRollback</code> 是生产安全核心能力。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑨ <code>WhatIsRunningNow</code> 必须机器可查询。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第十课-第-10-阶段">下一阶段：第十课 · 第 10 阶段</h1>
+<h1
+id="真正部署-procurementai性能压测slorelease-gate-与生产闭环">真正部署
+<code>ProcurementAI</code>：性能压测、SLO、Release Gate 与生产闭环</h1>
+<p>最关键的总边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>e</mi><mi>p</mi><mi>l</mi><mi>o</mi><mi>y</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>u</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mo>≠</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>d</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>R</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DeploymentSuccess
+\neq
+ProductionReadiness
+}
+</annotation></semantics></math></p>
+<p>最终交付：</p>
+<h1 id="procurementai"><code>ProcurementAI</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

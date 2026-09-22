@@ -1,0 +1,2622 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课 · 第7阶段：第一次建立完整“显存账本”</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第3课 · 第7阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 CUDA/PyTorch 环境、显存不足、模型加载、Tokenizer 和生成参数问题。<ul><li>Serving VRAM ≠ Weight VRAM。完整显存账本至少包括 Weights + KV Cache + Activations/Workspace + Runtime Overhead。</li><li>Context Length 增长会显著扩大 KV Cache；“模型刚加载成功”不代表长上下文时仍不会 OOM。</li><li>Batch / Concurrency 会让多个请求同时占用 KV Cache，因此单请求显存不能直接代表服务显存。</li></ul></div><h1 id="第三课-第-7-阶段第一次建立完整显存账本">第三课 · 第 7
+阶段：第一次建立完整“显存账本”</h1>
+<h2
+id="一张-gpu-到底能不能装下一个模型为什么-weight-明明放得下context-一长还是会-cuda-oom">一张
+GPU 到底能不能装下一个模型？为什么 Weight 明明放得下，Context 一长还是会
+CUDA OOM？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-6">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-6">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Serving VRAM ≠ Weight VRAM。完整显存账本至少包括 Weights +
+KV Cache + Activations/Workspace + Runtime Overhead。</strong></li>
+<li><strong>Context Length 增长会显著扩大 KV
+Cache；“模型刚加载成功”不代表长上下文时仍不会 OOM。</strong></li>
+<li><strong>Batch / Concurrency 会让多个请求同时占用 KV
+Cache，因此单请求显存不能直接代表服务显存。</strong></li>
+<li><strong>OOM
+可能发生在生成过程中而不是加载阶段，所以显存预算必须覆盖真实 Workload
+Shape。</strong></li>
+<li><strong>专业显存预算必须留
+Headroom，不能把理论可用显存全部吃满。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-6">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>GPU</code></td>
+<td>GPU：擅长大规模并行矩阵计算的大模型核心硬件</td>
+</tr>
+<tr class="even">
+<td><code>CUDA</code></td>
+<td>CUDA：NVIDIA GPU 通用并行计算平台与软件生态</td>
+</tr>
+<tr class="odd">
+<td><code>KV Cache</code></td>
+<td>KV 缓存：生成时缓存历史 Key/Value 以减少重复计算</td>
+</tr>
+<tr class="even">
+<td><code>Token</code></td>
+<td>Token：模型实际处理的离散文本单元</td>
+</tr>
+<tr class="odd">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="even">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="odd">
+<td><code>VRAM</code></td>
+<td>显存：GPU 上存放权重、激活和 KV Cache 等的高速内存</td>
+</tr>
+<tr class="even">
+<td><code>BF16</code></td>
+<td>BF16：保留较大指数范围的 16 位浮点，常用于大模型</td>
+</tr>
+<tr class="odd">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="even">
+<td><code>Prompt</code></td>
+<td>提示输入：给模型的任务说明与条件</td>
+</tr>
+<tr class="odd">
+<td><code>Query</code></td>
+<td>Query/Q：当前 Token 表示“我要找什么”的向量</td>
+</tr>
+<tr class="even">
+<td><code>Transformer</code></td>
+<td>Transformer：以注意力和前馈网络为核心的序列架构</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-6">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 6 阶段我们已经学会了第一笔账：</p>
+<pre class="text"><code>参数量
+×
+每个参数占多少 Bytes
+≈
+模型 Weight 大小</code></pre>
+<p>例如：</p>
+<pre class="text"><code>7B BF16
+≈ 14GB Weight</code></pre>
+<p>很多人学到这里，就开始产生一个错误直觉：</p>
+<blockquote>
+<p>“我有 24GB 显存，14GB 模型当然随便跑。”</p>
+</blockquote>
+<p>问题就在这里。</p>
+<p>因为 GPU 显存不是只租给：</p>
+<blockquote>
+<p><strong>Model Weight。</strong></p>
+</blockquote>
+<p>它还要住很多别的东西。</p>
+<p>今天我们真正要建立的是一张完整账本：</p>
+<pre class="text"><code>                    24GB VRAM
+                         │
+       ┌─────────────────┼─────────────────┐
+       │                 │                 │
+       ▼                 ▼                 ▼
+   Model Weight       KV Cache        Activations
+       │                 │                 │
+       └─────────────────┼─────────────────┘
+                         ▼
+                 Runtime / Buffers</code></pre>
+<p>这一阶段真正需要带走 <strong>5 个核心心智模型</strong>：</p>
+<pre class="text"><code>① VRAM 是一个共享预算，不是“模型专用仓库”
+
+② Weight 是固定房租
+   KV Cache 是按 Context 和用户数增长的住宿费
+
+③ Context 越长，KV Cache 越大
+
+④ Batch / 并发越高，KV Cache 基本也跟着放大
+
+⑤ “刚好装下”不是好的部署方案
+   必须给运行时留下安全余量</code></pre>
+<p>这一阶段公式会有，但只保留<strong>真正能帮你判断显存的两个公式</strong>。</p>
+<p>先从直觉开始。</p>
+<hr />
+<h1 id="一把显存想成一家酒店">一、把显存想成一家酒店</h1>
+<p>假设你买了一张：</p>
+<h1 id="gb-vram">24GB VRAM</h1>
+<p>的 GPU。</p>
+<p>就像你有一家：</p>
+<blockquote>
+<p><strong>24GB 容量的酒店。</strong></p>
+</blockquote>
+<p>现在有四类客人要入住。</p>
+<hr />
+<h2 id="第一类客人model-weights">1. 第一类客人：Model Weights</h2>
+<p>这是模型本体。</p>
+<p>比如：</p>
+<pre class="text"><code>7B BF16
+≈ 14GB</code></pre>
+<p>它们一旦模型加载好：</p>
+<blockquote>
+<p>基本长期住在酒店里。</p>
+</blockquote>
+<hr />
+<h2 id="第二类客人kv-cache">2. 第二类客人：KV Cache</h2>
+<p>这是模型针对：</p>
+<blockquote>
+<p><strong>当前正在处理的 Context</strong></p>
+</blockquote>
+<p>保存的注意力历史。</p>
+<p>用户输入越长：</p>
+<blockquote>
+<p>它越大。</p>
+</blockquote>
+<p>模型生成越长：</p>
+<blockquote>
+<p>它继续变大。</p>
+</blockquote>
+<hr />
+<h2 id="第三类客人activations">3. 第三类客人：Activations</h2>
+<p>Transformer 正在计算时：</p>
+<blockquote>
+<p>会产生各种中间结果。</p>
+</blockquote>
+<p>这些结果不能凭空消失。</p>
+<p>计算到某些阶段：</p>
+<blockquote>
+<p>需要暂时存在显存里。</p>
+</blockquote>
+<hr />
+<h2 id="第四类客人runtime-temporary-buffers">4. 第四类客人：Runtime /
+Temporary Buffers</h2>
+<p>GPU Kernel、推理框架、矩阵乘法等：</p>
+<blockquote>
+<p>还可能需要临时工作区。</p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>24GB</code></pre>
+<p>绝对不能简单理解成：</p>
+<pre class="text"><code>可以装24GB Weight</code></pre>
+<hr />
+<h1
+id="二第一个核心心智模型显存是一张预算表">二、第一个核心心智模型：显存是一张预算表</h1>
+<p>以后看到一张 GPU，脑子里不要再只有：</p>
+<pre class="text"><code>VRAM
+=
+Weights</code></pre>
+<p>而是：</p>
+<pre class="text"><code>VRAM
+=
+┌─────────────────────────┐
+│ ① Weights               │
+├─────────────────────────┤
+│ ② KV Cache              │
+├─────────────────────────┤
+│ ③ Activations           │
+├─────────────────────────┤
+│ ④ Runtime / Workspace   │
+└─────────────────────────┘</code></pre>
+<p>这四个账户：</p>
+<blockquote>
+<p><strong>抢的是同一块显存。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三先把最容易算的-weight-算清楚">三、先把最容易算的 Weight
+算清楚</h1>
+<p>这个第 6 阶段已经学过。</p>
+<p>我们今天直接做一张表。</p>
+<table>
+<thead>
+<tr class="header">
+<th>模型参数量</th>
+<th style="text-align: right;">BF16/FP16 Weight</th>
+<th style="text-align: right;">INT8 粗估</th>
+<th style="text-align: right;">4-bit Weight 理论粗估</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>7B</td>
+<td style="text-align: right;">约 14GB</td>
+<td style="text-align: right;">约 7GB</td>
+<td style="text-align: right;">约 3.5GB</td>
+</tr>
+<tr class="even">
+<td>14B</td>
+<td style="text-align: right;">约 28GB</td>
+<td style="text-align: right;">约 14GB</td>
+<td style="text-align: right;">约 7GB</td>
+</tr>
+<tr class="odd">
+<td>32B</td>
+<td style="text-align: right;">约 64GB</td>
+<td style="text-align: right;">约 32GB</td>
+<td style="text-align: right;">约 16GB</td>
+</tr>
+</tbody>
+</table>
+<p>先再次强调：</p>
+<blockquote>
+<p>这是 <strong>Weight 数量级</strong>。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>最终运行显存。</p>
+</blockquote>
+<hr />
+<h1 id="四现在拿一张-24gb-gpu-做第一次判断">四、现在拿一张 24GB GPU
+做第一次判断</h1>
+<h2 id="b-bf16">5. 7B BF16</h2>
+<p>Weight：</p>
+<pre class="text"><code>约14GB</code></pre>
+<p>24GB 减去 14GB：</p>
+<pre class="text"><code>还剩约10GB</code></pre>
+<p>这些空间可以继续给：</p>
+<ul>
+<li>KV Cache；</li>
+<li>Activations；</li>
+<li>Runtime。</li>
+</ul>
+<p>所以：</p>
+<blockquote>
+<p><strong>中等 Context、较小 Batch
+下，通常是一个比较合理的单卡推理候选。</strong></p>
+</blockquote>
+<hr />
+<h1 id="五14b-bf16-呢">五、14B BF16 呢？</h1>
+<p>Weight：</p>
+<pre class="text"><code>约28GB</code></pre>
+<p>你的 GPU：</p>
+<pre class="text"><code>24GB</code></pre>
+<p>甚至还没开始处理 Prompt：</p>
+<blockquote>
+<p>Weight 自己就放不下。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>14B BF16
+→ 单24GB GPU
+→ 单看Weight就不成立</code></pre>
+<p>这个判断甚至：</p>
+<blockquote>
+<p>不需要跑代码。</p>
+</blockquote>
+<hr />
+<h1 id="六如果-14b-改成-int8-呢">六、如果 14B 改成 INT8 呢？</h1>
+<p>Weight：</p>
+<pre class="text"><code>约14GB</code></pre>
+<p>这时候突然：</p>
+<blockquote>
+<p>又有机会了。</p>
+</blockquote>
+<p>剩下大约：</p>
+<pre class="text"><code>10GB级别空间</code></pre>
+<p>给其它账户。</p>
+<hr />
+<h1 id="七如果-14b-改成-4-bit-呢">七、如果 14B 改成 4-bit 呢？</h1>
+<p>Weight 理论粗估：</p>
+<pre class="text"><code>约7GB</code></pre>
+<p>显存空间明显更宽松。</p>
+<p>但是千万别马上说：</p>
+<blockquote>
+<p>“那一定可以跑 128K Context。”</p>
+</blockquote>
+<p>因为：</p>
+<blockquote>
+<p><strong>KV Cache 还没算。</strong></p>
+</blockquote>
+<hr />
+<h1 id="八这就是第二个核心心智模型">八、这就是第二个核心心智模型</h1>
+<p>可以把 Weight 看成：</p>
+<h1 id="固定房租">固定房租</h1>
+<p>模型一旦选定：</p>
+<pre class="text"><code>7B
+14B
+32B</code></pre>
+<p>再选定 Weight Precision：</p>
+<pre class="text"><code>BF16
+INT8
+INT4</code></pre>
+<p>Weight 占用：</p>
+<blockquote>
+<p>大致就定下来了。</p>
+</blockquote>
+<hr />
+<h2 id="kv-cache-则完全不同">8. KV Cache 则完全不同</h2>
+<p>它像：</p>
+<h1 id="按入住人数和住宿天数收费">按入住人数和住宿天数收费</h1>
+<p>Context 越长：</p>
+<blockquote>
+<p>越大。</p>
+</blockquote>
+<p>同时服务用户越多：</p>
+<blockquote>
+<p>越大。</p>
+</blockquote>
+<p>这两个变量特别重要。</p>
+<hr />
+<h1 id="九重新认识-kv-cache">九、重新认识 KV Cache</h1>
+<p>第五阶段我们已经知道：</p>
+<p>生成过程分成：</p>
+<pre class="text"><code>Prefill
+↓
+建立过去Token的K/V
+↓
+Decode
+↓
+复用过去K/V</code></pre>
+<p>如果不保存 K/V：</p>
+<blockquote>
+<p>每生成一个新 Token，都得把过去大量 Attention 信息重新计算。</p>
+</blockquote>
+<p>所以：</p>
+<h1 id="kv-cache-是用显存换速度">KV Cache 是用显存换速度</h1>
+<hr />
+<h1 id="十一个-procurementai-场景">十、一个 ProcurementAI 场景</h1>
+<p>用户上传一份采购文件。</p>
+<h3 id="用户-a">用户 A</h3>
+<p>文件很短：</p>
+<pre class="text"><code>2,000 Token</code></pre>
+<hr />
+<h3 id="用户-b">用户 B</h3>
+<p>文件很长：</p>
+<pre class="text"><code>32,000 Token</code></pre>
+<hr />
+<h3 id="用户-c">用户 C</h3>
+<p>一次塞入：</p>
+<pre class="text"><code>128,000 Token</code></pre>
+<p>虽然使用的：</p>
+<blockquote>
+<p>是同一个模型，</p>
+</blockquote>
+<p>模型 Weight：</p>
+<blockquote>
+<p>一模一样，</p>
+</blockquote>
+<p>但三个人的 KV Cache：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="十一用会议秘书继续理解">十一、用会议秘书继续理解</h1>
+<p>假设一个专家团队有：</p>
+<blockquote>
+<p>32 层 Transformer。</p>
+</blockquote>
+<p>每一层：</p>
+<blockquote>
+<p>都有自己的 Attention。</p>
+</blockquote>
+<p>秘书读一个 Token：</p>
+<blockquote>
+<p>每一层都要留下部分 K/V 记录。</p>
+</blockquote>
+<p>所以一份文档从：</p>
+<pre class="text"><code>1,000 Token</code></pre>
+<p>增长到：</p>
+<pre class="text"><code>32,000 Token</code></pre>
+<p>不是只多存：</p>
+<blockquote>
+<p>一份笔记。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>每一层都在增加自己的 K/V 历史。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十二kv-cache-受哪些东西影响">十二、KV Cache
+受哪些东西影响？</h1>
+<p>先不要看公式。</p>
+<p>只看这张图：</p>
+<pre class="text"><code>KV Cache
+│
+├── 模型有多少层
+│
+├── Context有多少Token
+│
+├── 有多少KV Heads
+│
+├── 每个Head多宽
+│
+├── 每个数占多少Bytes
+│
+└── 同时有多少条Sequence</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>KV Cache 不是只由模型 B 数决定。</p>
+</blockquote>
+<hr />
+<h1 id="十三为什么-gqa-又回来了">十三、为什么 GQA 又回来了？</h1>
+<p>第二课 Self-Attention 学过：</p>
+<pre class="text"><code>MHA
+Query Heads很多
+Key Heads很多
+Value Heads很多</code></pre>
+<p>而：</p>
+<pre class="text"><code>GQA
+Query Heads很多
+但多个Query Head共享较少的K/V Heads</code></pre>
+<hr />
+<h2 id="当时可能觉得">9. 当时可能觉得</h2>
+<blockquote>
+<p>“这只是 Attention 架构细节。”</p>
+</blockquote>
+<p>现在终于看到工程意义：</p>
+<blockquote>
+<p><strong>K/V Head 越少，需要缓存的 K/V 就越少。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十四一个特别直观的例子">十四、一个特别直观的例子</h1>
+<p>假设：</p>
+<pre class="text"><code>Query Heads = 32</code></pre>
+<h3 id="普通-mha">普通 MHA</h3>
+<pre class="text"><code>KV Heads = 32</code></pre>
+<hr />
+<h3 id="gqa">GQA</h3>
+<pre class="text"><code>KV Heads = 8</code></pre>
+<p>那么 KV Cache 中的 Head 数：</p>
+<blockquote>
+<p>直接少到四分之一。</p>
+</blockquote>
+<p>这就是为什么：</p>
+<blockquote>
+<p>GQA 对长 Context 和推理部署特别有价值。</p>
+</blockquote>
+<hr />
+<h1
+id="十五现在才看第一个真正有用的公式">十五、现在才看第一个真正有用的公式</h1>
+<p>KV Cache 的粗略容量可以理解为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>K</mi><mi>V</mi><mo>≈</mo><mn>2</mn><mo>×</mo><mi>L</mi><mo>×</mo><mi>S</mi><mo>×</mo><msub><mi>H</mi><mrow><mi>K</mi><mi>V</mi></mrow></msub><mo>×</mo><msub><mi>d</mi><mi>h</mi></msub><mo>×</mo><mi>B</mi><mo>×</mo><mi>B</mi><mi>y</mi><mi>t</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+KV
+\approx
+2
+\times
+L
+\times
+S
+\times
+H_{KV}
+\times
+d_h
+\times
+B
+\times
+Bytes
+}
+</annotation></semantics></math></p>
+<p>别背。</p>
+<p>我们逐个翻译。</p>
+<hr />
+<h1 id="十六公式里的-2-是谁">十六、公式里的 <code>2</code> 是谁？</h1>
+<p>因为缓存两样东西：</p>
+<pre class="text"><code>K
++
+V</code></pre>
+<p>所以：</p>
+<pre class="text"><code>2</code></pre>
+<hr />
+<h1 id="十七l-是什么">十七、<code>L</code> 是什么？</h1>
+<pre class="text"><code>L
+=
+Transformer Layers</code></pre>
+<p>例如：</p>
+<pre class="text"><code>32层</code></pre>
+<p>每一层：</p>
+<blockquote>
+<p>都需要自己的 KV Cache。</p>
+</blockquote>
+<hr />
+<h1 id="十八s-是什么">十八、<code>S</code> 是什么？</h1>
+<pre class="text"><code>S
+=
+Sequence Length</code></pre>
+<p>也就是当前 Context 中：</p>
+<blockquote>
+<p>大约多少 Token。</p>
+</blockquote>
+<hr />
+<h1 id="十九h_kv-是什么">十九、<code>H_KV</code> 是什么？</h1>
+<pre class="text"><code>KV Head数量</code></pre>
+<p>比如：</p>
+<pre class="text"><code>8</code></pre>
+<hr />
+<h1 id="二十d_h-呢">二十、<code>d_h</code> 呢？</h1>
+<p>每一个 Attention Head：</p>
+<blockquote>
+<p>有多少维。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>128</code></pre>
+<hr />
+<h1 id="二十一bytes-是什么">二十一、<code>Bytes</code> 是什么？</h1>
+<p>如果 K/V 使用：</p>
+<pre class="text"><code>BF16</code></pre>
+<p>每个数字：</p>
+<pre class="text"><code>2 Bytes</code></pre>
+<hr />
+<h1 id="二十二最后的-b">二十二、最后的 <code>B</code></h1>
+<p>这是：</p>
+<h1 id="batch-同时活跃的-sequence-数">Batch / 同时活跃的 Sequence
+数</h1>
+<p>先简单理解：</p>
+<blockquote>
+<p>一次同时在为多少条序列保存 KV。</p>
+</blockquote>
+<hr />
+<h1
+id="二十三现在不要算大模型先算一个特别整齐的教学模型">二十三、现在不要算大模型，先算一个特别整齐的教学模型</h1>
+<p>假设：</p>
+<pre class="text"><code>Layers       = 32
+KV Heads     = 8
+Head Dim     = 128
+KV dtype     = BF16 = 2 Bytes
+Batch        = 1</code></pre>
+<p>只改变：</p>
+<blockquote>
+<p>Context Length。</p>
+</blockquote>
+<hr />
+<h1 id="二十四context-8k">二十四、Context = 8K</h1>
+<p>大约：</p>
+<pre class="text"><code>8192 Token</code></pre>
+<p>代入后：</p>
+<blockquote>
+<p>KV Cache 大约 <strong>1 GiB</strong>。</p>
+</blockquote>
+<p>先别管计算过程。</p>
+<p>只记：</p>
+<pre class="text"><code>8K Context
+→ 约1GB KV Cache</code></pre>
+<p>对于这个教学架构。</p>
+<hr />
+<h1 id="二十五如果-context-变成-32k-呢">二十五、如果 Context 变成 32K
+呢？</h1>
+<p>32K：</p>
+<blockquote>
+<p>是 8K 的 4 倍。</p>
+</blockquote>
+<p>于是 KV Cache：</p>
+<pre class="text"><code>约4GB</code></pre>
+<hr />
+<h1 id="二十六如果-context-128k">二十六、如果 Context = 128K？</h1>
+<p>128K：</p>
+<blockquote>
+<p>是 8K 的 16 倍。</p>
+</blockquote>
+<p>KV：</p>
+<pre class="text"><code>约16GB</code></pre>
+<hr />
+<h1 id="二十七停一下看这张表">二十七、停一下，看这张表</h1>
+<p>仍然是：</p>
+<blockquote>
+<p><strong>完全同一个模型。</strong></p>
+</blockquote>
+<table>
+<thead>
+<tr class="header">
+<th>Context</th>
+<th style="text-align: right;">KV Cache 粗估</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>8K</td>
+<td style="text-align: right;">约 1 GiB</td>
+</tr>
+<tr class="even">
+<td>32K</td>
+<td style="text-align: right;">约 4 GiB</td>
+</tr>
+<tr class="odd">
+<td>128K</td>
+<td style="text-align: right;">约 16 GiB</td>
+</tr>
+</tbody>
+</table>
+<p>这就是为什么：</p>
+<blockquote>
+<p><strong>Context Length 本身就是显存变量。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十八现在用-24gb-gpu-重做-7b-bf16-案例">二十八、现在用 24GB GPU
+重做 7B BF16 案例</h1>
+<p>假设：</p>
+<pre class="text"><code>Weights
+≈ 14GB</code></pre>
+<p>GPU：</p>
+<pre class="text"><code>24GB</code></pre>
+<hr />
+<h2 id="k-context">10. 8K Context</h2>
+<p>粗略：</p>
+<pre class="text"><code>Weights       14GB
+KV Cache       1GB
+------------------
+≈15GB</code></pre>
+<p>还没算：</p>
+<ul>
+<li>Activations；</li>
+<li>Runtime；</li>
+<li>Buffer。</li>
+</ul>
+<p>但总体：</p>
+<blockquote>
+<p>有较明显余量。</p>
+</blockquote>
+<hr />
+<h1 id="二十九换成-32k-context">二十九、换成 32K Context</h1>
+<pre class="text"><code>Weights       14GB
+KV Cache       4GB
+------------------
+≈18GB</code></pre>
+<p>剩余空间：</p>
+<blockquote>
+<p>明显变少。</p>
+</blockquote>
+<hr />
+<h1 id="三十换成-128k-context">三十、换成 128K Context</h1>
+<pre class="text"><code>Weights       14GB
+KV Cache      16GB
+------------------
+≈30GB</code></pre>
+<p>已经超过：</p>
+<pre class="text"><code>24GB</code></pre>
+<p>还没算其它东西。</p>
+<p>于是：</p>
+<h1 id="cuda-oom">CUDA OOM</h1>
+<p>完全不奇怪。</p>
+<hr />
+<h1
+id="三十一所以第三个核心心智模型">三十一、所以第三个核心心智模型</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>越</mi><mi>长</mi><mo>⇒</mo><mi>K</mi><mi>V</mi><mi>C</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>越</mi><mi>大</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Context越长
+\Rightarrow
+KVCache越大
+}
+</annotation></semantics></math></p>
+<p>而且在其它条件固定时：</p>
+<blockquote>
+<p>大体是线性增长。</p>
+</blockquote>
+<hr />
+<h1
+id="三十二这解释了一个以前很奇怪的现象">三十二、这解释了一个以前很奇怪的现象</h1>
+<p>用户说：</p>
+<blockquote>
+<p>“模型昨天明明能跑，今天怎么 OOM 了？”</p>
+</blockquote>
+<p>可能模型：</p>
+<blockquote>
+<p>完全没变。</p>
+</blockquote>
+<p>只是昨天输入：</p>
+<pre class="text"><code>3页采购条款</code></pre>
+<p>今天输入：</p>
+<pre class="text"><code>400页采购文件</code></pre>
+<hr />
+<h1 id="三十三所以排查-oom-时必须问">三十三、所以排查 OOM 时必须问</h1>
+<p>不要只问：</p>
+<blockquote>
+<p>“模型多大？”</p>
+</blockquote>
+<p>还要问：</p>
+<pre class="text"><code>Context多长？</code></pre>
+<p>这是非常重要的诊断习惯。</p>
+<hr />
+<h1
+id="三十四第四个核心心智模型并发也要吃-kv">三十四、第四个核心心智模型：并发也要吃
+KV</h1>
+<p>刚才全部是：</p>
+<pre class="text"><code>Batch = 1</code></pre>
+<p>也就是：</p>
+<blockquote>
+<p>只有一条 Sequence。</p>
+</blockquote>
+<hr />
+<h2 id="如果同时-4-个请求呢">11. 如果同时 4 个请求呢？</h2>
+<p>还是刚才：</p>
+<pre class="text"><code>8K Context</code></pre>
+<p>单条大约：</p>
+<pre class="text"><code>1GB KV</code></pre>
+<p>四条类似请求：</p>
+<blockquote>
+<p>KV 总需求可能接近约 4GB 量级。</p>
+</blockquote>
+<hr />
+<h1 id="三十五32k-context-4-条呢">三十五、32K Context × 4 条呢？</h1>
+<p>一条：</p>
+<pre class="text"><code>约4GB</code></pre>
+<p>四条：</p>
+<pre class="text"><code>约16GB</code></pre>
+<hr />
+<h1
+id="三十六这就是为什么单用户能跑完全不等于能生产部署">三十六、这就是为什么“单用户能跑”完全不等于“能生产部署”</h1>
+<p>本地测试：</p>
+<pre class="text"><code>1个用户</code></pre>
+<p>感觉：</p>
+<blockquote>
+<p>非常顺。</p>
+</blockquote>
+<p>上线以后：</p>
+<pre class="text"><code>10个用户
+50个用户
+100个用户</code></pre>
+<p>突然：</p>
+<blockquote>
+<p>显存完全是另一回事。</p>
+</blockquote>
+<hr />
+<h1
+id="三十七政府采购系统特别容易遇到这个问题">三十七、政府采购系统特别容易遇到这个问题</h1>
+<p>因为用户输入不是普通一句聊天。</p>
+<p>可能是：</p>
+<pre class="text"><code>采购需求
++
+招标文件
++
+评分办法
++
+供应商材料
++
+RAG法规证据</code></pre>
+<p>单请求本来：</p>
+<blockquote>
+<p>就很长。</p>
+</blockquote>
+<p>再加并发：</p>
+<blockquote>
+<p>KV Cache 压力会非常明显。</p>
+</blockquote>
+<hr />
+<h1 id="三十八把生产推理想成酒店">三十八、把生产推理想成酒店</h1>
+<p>Weight：</p>
+<blockquote>
+<p>酒店建筑本身。</p>
+</blockquote>
+<p>只有一份。</p>
+<hr />
+<h2 id="每个用户进来">12. 每个用户进来</h2>
+<p>都会拿一个房间：</p>
+<blockquote>
+<p>放自己的 KV Cache。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>更多用户
+=
+更多KV房间</code></pre>
+<hr />
+<h1 id="三十九weight-不会因为用户翻倍而简单翻倍">三十九、Weight
+不会因为用户翻倍而简单翻倍</h1>
+<p>如果同一个模型服务 10 个用户：</p>
+<blockquote>
+<p>不需要复制 10 份 Weight。</p>
+</blockquote>
+<p>模型 Weight：</p>
+<blockquote>
+<p>可以共享。</p>
+</blockquote>
+<hr />
+<h1 id="四十但是-kv-cache-是请求私有的">四十、但是 KV Cache
+是请求私有的</h1>
+<p>用户 A：</p>
+<blockquote>
+<p>有自己的对话历史。</p>
+</blockquote>
+<p>用户 B：</p>
+<blockquote>
+<p>有自己的采购文件。</p>
+</blockquote>
+<p>用户 C：</p>
+<blockquote>
+<p>有自己的 Token Sequence。</p>
+</blockquote>
+<p>这些不能：</p>
+<blockquote>
+<p>全部混成同一个 KV Cache。</p>
+</blockquote>
+<hr />
+<h1
+id="四十一所以生产系统显存结构更像这样">四十一、所以生产系统显存结构更像这样</h1>
+<pre class="text"><code>                     GPU VRAM
+                         │
+       ┌─────────────────┴────────────────┐
+       │                                  │
+       ▼                                  ▼
+  Shared Model Weight               Per-request KV
+                                      │
+                         ┌────────────┼────────────┐
+                         ▼            ▼            ▼
+                       User A       User B       User C</code></pre>
+<p>这张图非常重要。</p>
+<hr />
+<h1 id="四十二为什么-vllm-以后会重要">四十二、为什么 vLLM
+以后会重要？</h1>
+<p>现在先不展开技术细节。</p>
+<p>传统 KV Cache 管理可能：</p>
+<blockquote>
+<p>出现大量内存碎片、预留浪费。</p>
+</blockquote>
+<p>vLLM 等推理框架会想办法：</p>
+<blockquote>
+<p>更高效地管理 KV Cache。</p>
+</blockquote>
+<p>后面第 9 阶段会进一步讲：</p>
+<h1 id="pagedattention">PagedAttention</h1>
+<hr />
+<h1
+id="四十三现在进入第三个账户activations">四十三、现在进入第三个账户：Activations</h1>
+<p>Activation 是什么？</p>
+<p>第二课已经学过。</p>
+<p>例如：</p>
+<pre class="text"><code>Token Embedding
+↓
+Attention输出
+↓
+MLP中间结果
+↓
+下一层Hidden State</code></pre>
+<p>这些：</p>
+<blockquote>
+<p>都是中间计算结果。</p>
+</blockquote>
+<hr />
+<h1 id="四十四用办公室类比">四十四、用办公室类比</h1>
+<p>Weights：</p>
+<blockquote>
+<p>员工长期知识。</p>
+</blockquote>
+<p>KV Cache：</p>
+<blockquote>
+<p>当前项目的会议笔记。</p>
+</blockquote>
+<p>Activations：</p>
+<blockquote>
+<p><strong>员工现在桌面上正在计算的草稿纸。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十五推理时-activation-为什么不像训练那么夸张">四十五、推理时
+Activation 为什么不像训练那么夸张？</h1>
+<p>因为推理：</p>
+<blockquote>
+<p>不需要为 Backprop 保存所有中间结果。</p>
+</blockquote>
+<p>算完一部分：</p>
+<blockquote>
+<p>很多临时 Activation 可以被释放或复用。</p>
+</blockquote>
+<hr />
+<h1 id="四十六训练就完全不同">四十六、训练就完全不同</h1>
+<p>训练还要：</p>
+<pre class="text"><code>Forward
+↓
+保存很多中间结果
+↓
+Backward
+↓
+计算Gradient</code></pre>
+<p>为了 Backward：</p>
+<blockquote>
+<p>必须保留更多 Activation。</p>
+</blockquote>
+<p>这就是训练显存远大于纯推理的重要原因之一。</p>
+<hr />
+<h1 id="四十七所以我们先明确">四十七、所以我们先明确</h1>
+<p>今天这张显存账本：</p>
+<blockquote>
+<p>主要先用于 <strong>Inference</strong>。</p>
+</blockquote>
+<p>训练显存：</p>
+<blockquote>
+<p>要额外再加很多账户。</p>
+</blockquote>
+<hr />
+<h1 id="四十八activation-受什么影响">四十八、Activation
+受什么影响？</h1>
+<p>一个很实用的直觉：</p>
+<pre class="text"><code>Batch越大
+↓
+同时算的数据越多
+↓
+Activation通常越大</code></pre>
+<p>Context 越长：</p>
+<blockquote>
+<p>也会增加中间 Tensor。</p>
+</blockquote>
+<hr />
+<h1 id="四十九所以-batch-size-是双重压力">四十九、所以 Batch Size
+是双重压力</h1>
+<p>它可能同时让：</p>
+<pre class="text"><code>KV Cache ↑</code></pre>
+<p>和：</p>
+<pre class="text"><code>Activations ↑</code></pre>
+<hr />
+<h1
+id="五十第四个账户runtime-temporary-buffers">五十、第四个账户：Runtime /
+Temporary Buffers</h1>
+<p>这类最容易被初学者忽略。</p>
+<p>你可能粗算：</p>
+<pre class="text"><code>Weights = 14GB
+KV      = 4GB
+合计     = 18GB</code></pre>
+<p>然后说：</p>
+<blockquote>
+<p>“24GB 肯定够，还有 6GB。”</p>
+</blockquote>
+<hr />
+<h2 id="但-gpu-运行矩阵-kernel">13. 但 GPU 运行矩阵 Kernel</h2>
+<p>可能还需要：</p>
+<ul>
+<li>Workspace；</li>
+<li>CUDA Context；</li>
+<li>Kernel 临时 Buffer；</li>
+<li>Framework 内存；</li>
+<li>内存对齐；</li>
+<li>已缓存未立即归还的分配。</li>
+</ul>
+<p>所以：</p>
+<blockquote>
+<p>实际 <code>nvidia-smi</code> 看到的显存可能更高。</p>
+</blockquote>
+<hr />
+<h1
+id="五十一这就是第五个核心心智模型">五十一、这就是第五个核心心智模型</h1>
+<h2 id="不要把-gpu-用到-100-才叫充分利用">不要把 GPU 用到 100%
+才叫“充分利用”</h2>
+<p>生产环境真正希望的是：</p>
+<blockquote>
+<p>有余量。</p>
+</blockquote>
+<p>因为：</p>
+<ul>
+<li>Prompt 长度会波动；</li>
+<li>并发会波动；</li>
+<li>Kernel 有临时峰值；</li>
+<li>某些请求输出更长。</li>
+</ul>
+<hr />
+<h1 id="五十二一个停车场类比">五十二、一个停车场类比</h1>
+<p>你有：</p>
+<pre class="text"><code>100个停车位</code></pre>
+<p>如果日常运营计划就是：</p>
+<pre class="text"><code>100辆车</code></pre>
+<p>看起来：</p>
+<blockquote>
+<p>利用率 100%。</p>
+</blockquote>
+<p>但第 101 辆临时车来了：</p>
+<blockquote>
+<p>整个系统没有任何余地。</p>
+</blockquote>
+<hr />
+<h2 id="更健康的方案">14. 更健康的方案</h2>
+<p>应该给：</p>
+<ul>
+<li>临时车辆；</li>
+<li>救援车辆；</li>
+<li>施工车辆；</li>
+</ul>
+<p>留下空间。</p>
+<p>显存也是一样。</p>
+<hr />
+<h1 id="五十三所以工程上不要问">五十三、所以工程上不要问</h1>
+<blockquote>
+<p>“理论上能不能塞进 24GB？”</p>
+</blockquote>
+<p>而应该问：</p>
+<blockquote>
+<p><strong>“在我的
+Context、Batch、并发和生成长度下，是否能稳定运行？”</strong></p>
+</blockquote>
+<p>这句话比：</p>
+<blockquote>
+<p>“能跑”</p>
+</blockquote>
+<p>专业很多。</p>
+<hr />
+<h1 id="五十四现在建立正式显存账本">五十四、现在建立正式“显存账本”</h1>
+<p>以后看到一个推理任务，先写：</p>
+<pre class="text"><code>┌───────────────────────────────────┐
+│       Inference VRAM Ledger       │
+├───────────────────────────────────┤
+│ Model Weights                     │
+│ + Quantization Metadata           │
+├───────────────────────────────────┤
+│ KV Cache                          │
+├───────────────────────────────────┤
+│ Activations                       │
+├───────────────────────────────────┤
+│ Runtime / Kernel Workspace        │
+├───────────────────────────────────┤
+│ Safety Headroom                   │
+└───────────────────────────────────┘</code></pre>
+<p>这就是本阶段的核心工具。</p>
+<hr />
+<h1 id="五十五procurementlm-案例一7b-bf16-24gb">五十五、ProcurementLM
+案例一：7B BF16 + 24GB</h1>
+<p>假设：</p>
+<pre class="text"><code>Model      = 7B
+Weight     = BF16
+GPU        = 24GB
+Context    = 8K
+Batch      = 1</code></pre>
+<hr />
+<h2 id="weight">15. Weight</h2>
+<p>粗略：</p>
+<pre class="text"><code>14GB</code></pre>
+<hr />
+<h2 id="kv">16. KV</h2>
+<p>假设模型架构接近我们刚才教学例子：</p>
+<pre class="text"><code>约1GB</code></pre>
+<hr />
+<h2 id="于是基础账面">17. 于是基础账面</h2>
+<pre class="text"><code>14GB
++1GB
+≈15GB</code></pre>
+<p>还剩：</p>
+<blockquote>
+<p>一些明显空间。</p>
+</blockquote>
+<p>所以这是：</p>
+<blockquote>
+<p>一个看起来比较健康的起点。</p>
+</blockquote>
+<hr />
+<h1 id="五十六如果同一个模型-context-改成-32k">五十六、如果同一个模型
+Context 改成 32K？</h1>
+<p>KV：</p>
+<pre class="text"><code>约4GB</code></pre>
+<p>变成：</p>
+<pre class="text"><code>14GB Weights
++
+4GB KV
+=
+约18GB</code></pre>
+<hr />
+<h2 id="还能不能跑">18. 还能不能跑？</h2>
+<p>有可能。</p>
+<p>但相比 8K：</p>
+<blockquote>
+<p>安全余量明显减少。</p>
+</blockquote>
+<p>此时需要真实测：</p>
+<ul>
+<li>Runtime；</li>
+<li>Actual KV dtype；</li>
+<li>Framework；</li>
+<li>Output Length。</li>
+</ul>
+<hr />
+<h1 id="五十七如果变成-128k">五十七、如果变成 128K？</h1>
+<p>刚才的教学架构：</p>
+<pre class="text"><code>KV约16GB</code></pre>
+<p>Weight：</p>
+<pre class="text"><code>14GB</code></pre>
+<p>合计：</p>
+<pre class="text"><code>约30GB</code></pre>
+<p>于是单 24GB：</p>
+<blockquote>
+<p>从账本上就已经宣告失败。</p>
+</blockquote>
+<p>不需要等程序 OOM 才知道。</p>
+<hr />
+<h1 id="五十八procurementlm-案例二14b-bf16-24gb">五十八、ProcurementLM
+案例二：14B BF16 + 24GB</h1>
+<p>只看：</p>
+<pre class="text"><code>Weights ≈ 28GB</code></pre>
+<p>所以：</p>
+<blockquote>
+<p>直接淘汰单卡 BF16 方案。</p>
+</blockquote>
+<hr />
+<h1 id="五十九改成-14b-int8">五十九、改成 14B INT8</h1>
+<p>Weight：</p>
+<pre class="text"><code>约14GB</code></pre>
+<p>这时：</p>
+<blockquote>
+<p>重新有空间给 KV Cache。</p>
+</blockquote>
+<p>对于适中 Context：</p>
+<blockquote>
+<p>可能进入候选区。</p>
+</blockquote>
+<hr />
+<h1 id="六十改成-14b-4-bit">六十、改成 14B 4-bit</h1>
+<p>Weight 粗略：</p>
+<pre class="text"><code>约7GB+</code></pre>
+<p>显存压力大幅下降。</p>
+<p>这时：</p>
+<blockquote>
+<p>Context 和 KV Cache 的预算地位开始明显上升。</p>
+</blockquote>
+<hr />
+<h1 id="六十一这个现象非常重要">六十一、这个现象非常重要</h1>
+<p>高精度大模型时：</p>
+<pre class="text"><code>Weight</code></pre>
+<p>往往是最大块。</p>
+<p>量化以后：</p>
+<pre class="text"><code>Weight ↓↓↓</code></pre>
+<p>于是其它账户：</p>
+<pre class="text"><code>KV Cache
+Activations
+Buffers</code></pre>
+<p>占比：</p>
+<blockquote>
+<p>开始越来越显眼。</p>
+</blockquote>
+<hr />
+<h1 id="六十二所以量化会移动瓶颈">六十二、所以量化会“移动瓶颈”</h1>
+<p>这句话非常专业，也非常重要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>消</mi><mi>灭</mi><mi>显</mi><mi>存</mi><mi>瓶</mi><mi>颈</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Quantization
+\neq
+消灭显存瓶颈
+}
+</annotation></semantics></math></p>
+<p>它经常只是：</p>
+<blockquote>
+<p><strong>把瓶颈从 Weight 推向 KV Cache / Runtime。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六十三procurementlm-案例三32b-4-bit-24gb">六十三、ProcurementLM
+案例三：32B 4-bit + 24GB</h1>
+<p>Weight 理论粗估：</p>
+<pre class="text"><code>约16GB</code></pre>
+<p>加上量化 Metadata：</p>
+<blockquote>
+<p>会再多一些。</p>
+</blockquote>
+<hr />
+<h2 id="于是很多人会说">19. 于是很多人会说</h2>
+<blockquote>
+<p>“24GB 能跑 32B 4-bit！”</p>
+</blockquote>
+<p>更准确的说法应该是：</p>
+<blockquote>
+<p><strong>在某些量化格式、推理框架、较小
+Context、较低并发和合适配置下，可能有机会。</strong></p>
+</blockquote>
+<hr />
+<h1 id="六十四为什么要说得这么谨慎">六十四、为什么要说得这么谨慎？</h1>
+<p>因为剩下的：</p>
+<pre class="text"><code>约8GB级别</code></pre>
+<p>不是全给你随便用。</p>
+<p>还要分：</p>
+<pre class="text"><code>KV
++
+Activation
++
+Runtime</code></pre>
+<hr />
+<h1 id="六十五如果再塞-32k-或更长-context">六十五、如果再塞 32K 或更长
+Context</h1>
+<p>显存：</p>
+<blockquote>
+<p>很可能迅速吃紧。</p>
+</blockquote>
+<hr />
+<h1
+id="六十六所以某张卡能跑某模型这句话缺了很多参数">六十六、所以“某张卡能跑某模型”这句话缺了很多参数</h1>
+<p>完整问题应该是：</p>
+<pre class="text"><code>什么模型？
+什么量化？
+什么Context？
+什么Batch？
+多少并发？
+什么推理框架？
+生成多长？</code></pre>
+<p>如果这些都没说：</p>
+<blockquote>
+<p>“能跑”</p>
+</blockquote>
+<p>的信息量其实很低。</p>
+<hr />
+<h1
+id="六十七现在比较三个模型在-24gb-上的直觉">六十七、现在比较三个模型在
+24GB 上的直觉</h1>
+<h3 id="b-bf16-1">7B BF16</h3>
+<pre class="text"><code>Weight约14GB</code></pre>
+<p>优势：</p>
+<blockquote>
+<p>高精度 Weight，空间尚可。</p>
+</blockquote>
+<hr />
+<h3 id="b-4-bit">14B 4-bit</h3>
+<pre class="text"><code>Weight约7GB+</code></pre>
+<p>优势：</p>
+<blockquote>
+<p>模型参数更多，但经过量化。</p>
+</blockquote>
+<hr />
+<h3 id="b-4-bit-1">32B 4-bit</h3>
+<pre class="text"><code>Weight约16GB+</code></pre>
+<p>优势：</p>
+<blockquote>
+<p>模型更大。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>Context 和 Runtime 余量更紧。</p>
+</blockquote>
+<hr />
+<h1 id="六十八哪个一定最好">六十八、哪个一定最好？</h1>
+<p>没有答案。</p>
+<p>因为：</p>
+<pre class="text"><code>Model Size
+≠
+Business Quality</code></pre>
+<p>而：</p>
+<pre class="text"><code>Lower Quantization
+≠
+Free Lunch</code></pre>
+<p>所以最后还是要：</p>
+<h1 id="benchmark-1">Benchmark</h1>
+<hr />
+<h1
+id="六十九政府采购业务不能只看能装最大的模型">六十九、政府采购业务不能只看“能装最大的模型”</h1>
+<p>假设方案 A：</p>
+<pre class="text"><code>32B 4-bit
+Context只能勉强8K</code></pre>
+<p>方案 B：</p>
+<pre class="text"><code>14B 4-bit
+Context可以舒服32K</code></pre>
+<p>如果你的任务是：</p>
+<blockquote>
+<p>审查 200 页招标文件，</p>
+</blockquote>
+<p>方案 B：</p>
+<blockquote>
+<p>可能反而更有业务价值。</p>
+</blockquote>
+<hr />
+<h1 id="七十这就是系统设计思维">七十、这就是系统设计思维</h1>
+<p>不是：</p>
+<pre class="text"><code>最大模型
+=
+最好系统</code></pre>
+<p>而是：</p>
+<pre class="text"><code>模型能力
+×
+Context能力
+×
+速度
+×
+并发
+×
+稳定性
+×
+业务准确率</code></pre>
+<p>一起看。</p>
+<hr />
+<h1
+id="七十一一个特别容易忽略的问题output-token-也占-context">七十一、一个特别容易忽略的问题：Output
+Token 也占 Context</h1>
+<p>假设 Prompt：</p>
+<pre class="text"><code>30K Token</code></pre>
+<p>模型最大窗口：</p>
+<pre class="text"><code>32K</code></pre>
+<p>你觉得：</p>
+<blockquote>
+<p>“还有 2K。”</p>
+</blockquote>
+<p>没错。</p>
+<p>但如果希望生成：</p>
+<pre class="text"><code>4K Output</code></pre>
+<p>那就：</p>
+<blockquote>
+<p>不够。</p>
+</blockquote>
+<hr />
+<h1
+id="七十二而且生成中的-output-也会增加-kv-cache">七十二、而且生成中的
+Output 也会增加 KV Cache</h1>
+<p>模型每生成：</p>
+<blockquote>
+<p>一个新 Token，</p>
+</blockquote>
+<p>也需要：</p>
+<blockquote>
+<p>把这个 Token 的 K/V 加入 Cache。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>KV Cache</code></pre>
+<p>不仅由输入长度决定。</p>
+<p>更准确：</p>
+<pre class="text"><code>当前Context
+=
+Input Tokens
++
+Generated Tokens</code></pre>
+<hr />
+<h1 id="七十三一个采购报告案例">七十三、一个采购报告案例</h1>
+<p>输入：</p>
+<pre class="text"><code>20K Token招标文件</code></pre>
+<p>RAG：</p>
+<pre class="text"><code>5K Token法规证据</code></pre>
+<p>System + Prompt：</p>
+<pre class="text"><code>1K</code></pre>
+<p>希望输出：</p>
+<pre class="text"><code>4K Token风险报告</code></pre>
+<p>总 Context：</p>
+<pre class="text"><code>约30K</code></pre>
+<p>这才是：</p>
+<blockquote>
+<p>实际预算。</p>
+</blockquote>
+<hr />
+<h1
+id="七十四所以-context-budget-和-vram-budget-是连在一起的">七十四、所以
+Context Budget 和 VRAM Budget 是连在一起的</h1>
+<pre class="text"><code>更多RAG证据
+      ↓
+更多Token
+      ↓
+更大KV Cache
+      ↓
+更大VRAM需求</code></pre>
+<hr />
+<h1
+id="七十五这解释了为什么-rag-不是文档塞越多越好">七十五、这解释了为什么
+RAG 不是“文档塞越多越好”</h1>
+<p>检索 50 段法规全塞进去：</p>
+<blockquote>
+<p>不仅可能干扰模型，</p>
+</blockquote>
+<p>还会：</p>
+<blockquote>
+<p>直接消耗 Context 和 KV Cache。</p>
+</blockquote>
+<hr />
+<h1 id="七十六以后-procurementrag-的目标会是">七十六、以后
+ProcurementRAG 的目标会是</h1>
+<pre class="text"><code>更相关的证据
+而不是
+更多的证据</code></pre>
+<p>这就是：</p>
+<h1 id="retrieval-quality">Retrieval Quality</h1>
+<p>为什么重要。</p>
+<hr />
+<h1 id="七十七现在说-batch">七十七、现在说 Batch</h1>
+<p>假设模型每次只处理：</p>
+<pre class="text"><code>1条采购条款</code></pre>
+<p>Batch：</p>
+<pre class="text"><code>1</code></pre>
+<hr />
+<h2 id="如果一次处理-8-条">20. 如果一次处理 8 条</h2>
+<pre class="text"><code>Batch = 8</code></pre>
+<p>GPU 可以：</p>
+<blockquote>
+<p>更并行。</p>
+</blockquote>
+<p>吞吐可能：</p>
+<blockquote>
+<p>更高。</p>
+</blockquote>
+<hr />
+<h2 id="但是代价">21. 但是代价</h2>
+<p>同时存在更多：</p>
+<ul>
+<li>Input；</li>
+<li>Activation；</li>
+<li>KV Cache。</li>
+</ul>
+<p>所以显存：</p>
+<blockquote>
+<p>上升。</p>
+</blockquote>
+<hr />
+<h1 id="七十八所以-batch-是典型的速度换显存">七十八、所以 Batch
+是典型的“速度换显存”</h1>
+<p>较大的 Batch：</p>
+<blockquote>
+<p>可能提高 GPU 利用率。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>吃更多显存。</p>
+</blockquote>
+<hr />
+<h1 id="七十九这和并发有什么关系">七十九、这和并发有什么关系？</h1>
+<p>概念上很接近，但生产推理里：</p>
+<blockquote>
+<p>并发请求和传统固定 Batch 并不完全是同一件事。</p>
+</blockquote>
+<p>推理引擎可能：</p>
+<blockquote>
+<p>动态把多个请求组织成 Batch。</p>
+</blockquote>
+<hr />
+<h1 id="八十先用简单心智模型">八十、先用简单心智模型</h1>
+<p>对我们现在而言可以先记：</p>
+<pre class="text"><code>同时活跃Sequence越多
+↓
+KV总量越大
+↓
+显存压力越高</code></pre>
+<p>已经足够。</p>
+<hr />
+<h1
+id="八十一为什么生成长度不可忽略">八十一、为什么生成长度不可忽略？</h1>
+<p>假设两个用户都输入：</p>
+<pre class="text"><code>4K Prompt</code></pre>
+<hr />
+<h3 id="用户-a-1">用户 A</h3>
+<p>要求：</p>
+<pre class="text"><code>一句话回答</code></pre>
+<p>输出：</p>
+<pre class="text"><code>50 Token</code></pre>
+<hr />
+<h3 id="用户-b-1">用户 B</h3>
+<p>要求：</p>
+<pre class="text"><code>生成完整采购风险审查报告</code></pre>
+<p>输出：</p>
+<pre class="text"><code>4000 Token</code></pre>
+<hr />
+<h2 id="b-的-session">22. B 的 Session</h2>
+<p>活得更久。</p>
+<p>Context：</p>
+<blockquote>
+<p>越来越长。</p>
+</blockquote>
+<p>KV Cache：</p>
+<blockquote>
+<p>也不断增长。</p>
+</blockquote>
+<hr />
+<h1
+id="八十二所以生产容量不能只测短回答">八十二、所以生产容量不能只测短回答</h1>
+<p>如果真实业务：</p>
+<blockquote>
+<p>输出长报告，</p>
+</blockquote>
+<p>Benchmark 却只生成：</p>
+<pre class="text"><code>20 Token</code></pre>
+<p>得到的显存和 TPS：</p>
+<blockquote>
+<p>没太大业务代表性。</p>
+</blockquote>
+<hr />
+<h1
+id="八十三这就是为什么-benchmark-必须模拟真实工作负载">八十三、这就是为什么
+Benchmark 必须模拟真实工作负载</h1>
+<p>例如 ProcurementAI 测试至少应该有：</p>
+<pre class="text"><code>短条款审查
+中型采购文件
+长招标文件
+法规RAG输入
+长报告输出
+多人并发</code></pre>
+<hr />
+<h1 id="八十四显存碎片是什么直觉">八十四、显存碎片是什么直觉？</h1>
+<p>假设显存里：</p>
+<pre class="text"><code>有很多空位</code></pre>
+<p>但它们：</p>
+<blockquote>
+<p>东一块、西一块。</p>
+</blockquote>
+<p>某个 Kernel 需要：</p>
+<blockquote>
+<p>一大块连续空间。</p>
+</blockquote>
+<p>却找不到。</p>
+<hr />
+<h2 id="像停车场">23. 像停车场</h2>
+<p>空了：</p>
+<pre class="text"><code>10个车位</code></pre>
+<p>但全是：</p>
+<blockquote>
+<p>零散的单个小位。</p>
+</blockquote>
+<p>现在一辆超长卡车：</p>
+<blockquote>
+<p>需要连续 4 个位。</p>
+</blockquote>
+<p>总空位够：</p>
+<blockquote>
+<p>但仍然停不进去。</p>
+</blockquote>
+<hr />
+<h1 id="八十五这就是为什么-oom-有时让人觉得奇怪">八十五、这就是为什么
+OOM 有时让人觉得奇怪</h1>
+<p>你看到：</p>
+<pre class="text"><code>理论上还有显存</code></pre>
+<p>但某次大型分配：</p>
+<blockquote>
+<p>仍然失败。</p>
+</blockquote>
+<p>实际内存分配：</p>
+<blockquote>
+<p>比简单加减法复杂。</p>
+</blockquote>
+<hr />
+<h1
+id="八十六所以账本是容量规划不是逐字节保证">八十六、所以账本是“容量规划”，不是逐字节保证</h1>
+<p>我们今天算：</p>
+<pre class="text"><code>14GB + 4GB</code></pre>
+<p>是为了：</p>
+<blockquote>
+<p>判断方案方向。</p>
+</blockquote>
+<p>最终是否稳定：</p>
+<blockquote>
+<p>必须真实运行测峰值。</p>
+</blockquote>
+<hr />
+<h1 id="八十七什么叫-peak-vram">八十七、什么叫 Peak VRAM？</h1>
+<p>不是：</p>
+<blockquote>
+<p>模型空闲时占多少。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>整个实际请求过程中显存最高到多少。</p>
+</blockquote>
+<hr />
+<h1 id="八十八为什么它更重要">八十八、为什么它更重要？</h1>
+<p>假设平时：</p>
+<pre class="text"><code>18GB</code></pre>
+<p>某个 Attention Kernel 峰值：</p>
+<pre class="text"><code>24.5GB</code></pre>
+<p>你的 GPU：</p>
+<pre class="text"><code>24GB</code></pre>
+<p>结果：</p>
+<blockquote>
+<p>仍然 OOM。</p>
+</blockquote>
+<p>所以部署容量要看：</p>
+<h1 id="peak">Peak</h1>
+<hr />
+<h1
+id="八十九怎样做一个简单的容量实验">八十九、怎样做一个简单的容量实验？</h1>
+<p>以后真正跑模型时，我们可以设计：</p>
+<pre class="text"><code>固定Model
+固定Precision
+固定Batch</code></pre>
+<p>然后改变：</p>
+<pre class="text"><code>Context
+2K
+4K
+8K
+16K
+32K</code></pre>
+<p>记录：</p>
+<pre class="text"><code>Peak VRAM
+TTFT
+TPS</code></pre>
+<hr />
+<h1 id="九十得到一张表">九十、得到一张表</h1>
+<p>例如教学意义上的：</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: right;">Context</th>
+<th style="text-align: right;">Peak VRAM</th>
+<th style="text-align: right;">TTFT</th>
+<th style="text-align: right;">TPS</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">2K</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8K</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">16K</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">32K</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+</tbody>
+</table>
+<p>这比：</p>
+<blockquote>
+<p>“这个模型支持 32K”</p>
+</blockquote>
+<p>有用得多。</p>
+<hr />
+<h1
+id="九十一支持32k到底是什么意思">九十一、“支持32K”到底是什么意思？</h1>
+<p>它更多是在说：</p>
+<blockquote>
+<p>模型架构/位置编码允许在某个范围使用。</p>
+</blockquote>
+<p>但它不保证：</p>
+<blockquote>
+<p>你的 GPU 能以任何 Batch、任何并发舒服跑 32K。</p>
+</blockquote>
+<hr />
+<h1 id="九十二所以要区分">九十二、所以要区分</h1>
+<pre class="text"><code>Model Context Capability</code></pre>
+<p>和：</p>
+<pre class="text"><code>Hardware Context Capacity</code></pre>
+<p>前者：</p>
+<blockquote>
+<p>模型理论/训练支持。</p>
+</blockquote>
+<p>后者：</p>
+<blockquote>
+<p>你机器实际装不装得下。</p>
+</blockquote>
+<hr />
+<h1 id="九十三这两个必须同时满足">九十三、这两个必须同时满足</h1>
+<pre class="text"><code>模型支持128K
++
+GPU只够16K</code></pre>
+<p>实际系统：</p>
+<blockquote>
+<p>仍然跑不了 128K。</p>
+</blockquote>
+<hr />
+<h1 id="九十四再来看-mha-vs-gqa-的-kv-差距">九十四、再来看 MHA vs GQA 的
+KV 差距</h1>
+<p>刚才教学模型：</p>
+<pre class="text"><code>32 Layers
+Head Dim 128
+BF16</code></pre>
+<hr />
+<h2 id="gqa-1">24. GQA</h2>
+<pre class="text"><code>KV Heads = 8</code></pre>
+<p>8K：</p>
+<pre class="text"><code>约1GiB</code></pre>
+<p>32K：</p>
+<pre class="text"><code>约4GiB</code></pre>
+<p>128K：</p>
+<pre class="text"><code>约16GiB</code></pre>
+<hr />
+<h2 id="如果是-mha">25. 如果是 MHA</h2>
+<pre class="text"><code>KV Heads = 32</code></pre>
+<p>是四倍。</p>
+<p>同样条件：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Context</th>
+<th style="text-align: right;">GQA：8 KV Heads</th>
+<th style="text-align: right;">MHA：32 KV Heads</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>8K</td>
+<td style="text-align: right;">约 1GiB</td>
+<td style="text-align: right;">约 4GiB</td>
+</tr>
+<tr class="even">
+<td>32K</td>
+<td style="text-align: right;">约 4GiB</td>
+<td style="text-align: right;">约 16GiB</td>
+</tr>
+<tr class="odd">
+<td>128K</td>
+<td style="text-align: right;">约 16GiB</td>
+<td style="text-align: right;">约 64GiB</td>
+</tr>
+</tbody>
+</table>
+<p>现在应该能非常直观地感受到：</p>
+<blockquote>
+<p>为什么现代推理架构那么在意 GQA/MQA。</p>
+</blockquote>
+<hr />
+<h1
+id="九十五第二课一个抽象概念到这里变成钱了">九十五、第二课一个抽象概念，到这里变成钱了</h1>
+<p>第二课里：</p>
+<pre class="text"><code>GQA</code></pre>
+<p>可能只是：</p>
+<blockquote>
+<p>“多个 Query Head 共享 K/V。”</p>
+</blockquote>
+<p>今天它变成：</p>
+<pre class="text"><code>更少KV Heads
+↓
+更小KV Cache
+↓
+更长Context
+↓
+更多并发
+↓
+更低部署成本</code></pre>
+<p>这就是为什么底层架构最终会影响：</p>
+<blockquote>
+<p>商业成本。</p>
+</blockquote>
+<hr />
+<h1
+id="九十六企业选模型为什么不能只看-benchmark-分数">九十六、企业选模型为什么不能只看
+Benchmark 分数？</h1>
+<p>假设：</p>
+<h3 id="模型-a">模型 A</h3>
+<p>效果：</p>
+<pre class="text"><code>95分</code></pre>
+<p>但：</p>
+<pre class="text"><code>KV特别大
+需要4张GPU</code></pre>
+<hr />
+<h3 id="模型-b-1">模型 B</h3>
+<p>效果：</p>
+<pre class="text"><code>94.5分</code></pre>
+<p>但：</p>
+<pre class="text"><code>一张GPU就能部署</code></pre>
+<hr />
+<h2 id="哪个更好">26. 哪个更好？</h2>
+<p>要看业务。</p>
+<p>如果 B：</p>
+<blockquote>
+<p>已经达到质量门槛，</p>
+</blockquote>
+<p>部署成本又低很多，</p>
+<p>B：</p>
+<blockquote>
+<p>可能更合理。</p>
+</blockquote>
+<hr />
+<h1 id="九十七这就是工程中的-pareto-frontier">九十七、这就是工程中的
+Pareto Frontier</h1>
+<p>这个词先认识即可。</p>
+<p>意思是：</p>
+<blockquote>
+<p>在质量、成本、速度等多个目标之间，寻找没有明显被全面碾压的方案。</p>
+</blockquote>
+<hr />
+<h1
+id="九十八procurementlm-最终不会只优化一个数字">九十八、ProcurementLM
+最终不会只优化一个数字</h1>
+<p>至少会考虑：</p>
+<pre class="text"><code>Accuracy / Recall
++
+Citation Quality
++
+VRAM
++
+Latency
++
+Throughput
++
+Cost</code></pre>
+<hr />
+<h1
+id="九十九现在讲训练显存只建立地图">九十九、现在讲训练显存，只建立地图</h1>
+<p>如果以后从推理进入训练：</p>
+<p>显存账本会变成：</p>
+<pre class="text"><code>Training VRAM
+│
+├── Weights
+├── Gradients
+├── Optimizer States
+├── Activations
+├── Temporary Buffers
+└── Distributed Training Overhead</code></pre>
+<p>注意：</p>
+<blockquote>
+<p>KV Cache 通常不是训练显存的核心故事。</p>
+</blockquote>
+<hr />
+<h1 id="一百为什么-gradient-很大">一百、为什么 Gradient 很大？</h1>
+<p>如果 Full Fine-tuning：</p>
+<blockquote>
+<p>每个可训练 Weight 都需要 Gradient。</p>
+</blockquote>
+<p>模型：</p>
+<pre class="text"><code>7B Parameter</code></pre>
+<p>就意味着：</p>
+<blockquote>
+<p>数十亿个 Gradient。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一optimizer-state-更可怕">一百零一、Optimizer State
+更可怕</h1>
+<p>例如 Adam 类优化器：</p>
+<blockquote>
+<p>通常还要维护额外状态。</p>
+</blockquote>
+<p>所以 Full Fine-tuning：</p>
+<blockquote>
+<p>显存需求远大于只放 Weight。</p>
+</blockquote>
+<hr />
+<h1 id="一百零二这就是-lora-的另一个价值">一百零二、这就是 LoRA
+的另一个价值</h1>
+<p>LoRA：</p>
+<blockquote>
+<p>不让全部几十亿参数都产生可训练状态。</p>
+</blockquote>
+<p>只训练：</p>
+<blockquote>
+<p>少量 Adapter 参数。</p>
+</blockquote>
+<p>于是：</p>
+<pre class="text"><code>Gradient ↓
+Optimizer States ↓</code></pre>
+<p>显存：</p>
+<blockquote>
+<p>大幅下降。</p>
+</blockquote>
+<hr />
+<h1 id="一百零三qlora-再进一步">一百零三、QLoRA 再进一步</h1>
+<pre class="text"><code>Base Weight
+→ 4-bit
+
+Base Weight
+→ Frozen
+
+LoRA
+→ Trainable</code></pre>
+<p>于是：</p>
+<blockquote>
+<p>Weight 账户和训练状态账户同时得到缓解。</p>
+</blockquote>
+<p>第五课会彻底算一次。</p>
+<hr />
+<h1
+id="一百零四现在把推理和训练放一起看">一百零四、现在把推理和训练放一起看</h1>
+<pre class="text"><code>INFERENCE
+────────────
+Weights
+KV Cache
+Activations
+Runtime
+
+
+TRAINING
+────────────
+Weights
+Gradients
+Optimizer
+Activations
+Runtime</code></pre>
+<p>两边：</p>
+<blockquote>
+<p>都吃显存。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>吃法完全不同。</p>
+</blockquote>
+<hr />
+<h1 id="一百零五所以买-gpu-前第一问仍然是">一百零五、所以买 GPU
+前第一问仍然是</h1>
+<blockquote>
+<p><strong>你究竟要干什么？</strong></p>
+</blockquote>
+<p>只是：</p>
+<pre class="text"><code>Inference</code></pre>
+<p>还是：</p>
+<pre class="text"><code>QLoRA</code></pre>
+<p>还是：</p>
+<pre class="text"><code>Full Fine-tuning</code></pre>
+<p>还是：</p>
+<pre class="text"><code>CPT</code></pre>
+<p>答案不同：</p>
+<blockquote>
+<p>硬件预算会差非常多。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零六我们现在可以回答24gb-gpu-怎么选模型">一百零六、我们现在可以回答：24GB
+GPU 怎么选模型？</h1>
+<p>先不要把它理解成一个固定型号推荐。</p>
+<p>我们做的是：</p>
+<h1 id="决策框架">决策框架</h1>
+<pre class="text"><code>24GB VRAM
+   │
+   ▼
+先预留Runtime / Safety Margin
+   │
+   ▼
+剩余预算
+   │
+   ├─ Weight
+   │
+   └─ KV Cache</code></pre>
+<hr />
+<h1
+id="一百零七如果目标是舒服学习和实验">一百零七、如果目标是舒服学习和实验</h1>
+<p>更优先：</p>
+<blockquote>
+<p>留余量。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>7B BF16</code></pre>
+<p>或者：</p>
+<pre class="text"><code>更大模型的合适量化版本</code></pre>
+<p>通常比：</p>
+<blockquote>
+<p>强行把最大模型塞到 23.9GB</p>
+</blockquote>
+<p>更有学习价值。</p>
+<hr />
+<h1 id="一百零八为什么">一百零八、为什么？</h1>
+<p>因为你后面还要测试：</p>
+<pre class="text"><code>Context变化
+
+Batch变化
+
+不同Prompt
+
+不同Sampling
+
+RAG证据</code></pre>
+<p>如果一开始显存：</p>
+<blockquote>
+<p>已经顶死，</p>
+</blockquote>
+<p>任何实验：</p>
+<blockquote>
+<p>都容易 OOM。</p>
+</blockquote>
+<hr />
+<h1
+id="一百零九如果目标是极限单卡模型能力">一百零九、如果目标是极限单卡模型能力</h1>
+<p>那策略可能变成：</p>
+<pre class="text"><code>更大的模型
++
+更激进的Quantization
++
+较小Batch
++
+限制Context</code></pre>
+<hr />
+<h1
+id="一百一十如果目标是长文档采购审查">一百一十、如果目标是长文档采购审查</h1>
+<p>策略可能反过来：</p>
+<pre class="text"><code>不要把Weight塞到极限
+↓
+给KV Cache留空间
+↓
+保证更长Context</code></pre>
+<hr />
+<h1
+id="一百一十一如果目标是多人生产服务">一百一十一、如果目标是多人生产服务</h1>
+<p>还要：</p>
+<pre class="text"><code>给并发KV留空间</code></pre>
+<p>所以可能宁愿：</p>
+<blockquote>
+<p>用稍小模型。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十二这就是同一张-gpu-的三种完全不同用法">一百一十二、这就是同一张
+GPU 的三种完全不同用法</h1>
+<pre class="text"><code>同一张24GB GPU
+      │
+      ├── 最大模型优先
+      │
+      ├── 长Context优先
+      │
+      └── 高并发优先</code></pre>
+<p>没有一种配置：</p>
+<blockquote>
+<p>同时全部最大。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十三这是一个资源三角形">一百一十三、这是一个“资源三角形”</h1>
+<pre class="text"><code>                 更大模型
+                    ▲
+                   / \
+                  /   \
+                 /     \
+                /       \
+               /         \
+      长Context ───────── 高并发</code></pre>
+<p>在同一块显存预算里：</p>
+<blockquote>
+<p>三个方向通常互相争空间。</p>
+</blockquote>
+<p>这张图建议牢牢记住。</p>
+<hr />
+<h1
+id="一百一十四政府采购系统最可能偏向哪里">一百一十四、政府采购系统最可能偏向哪里？</h1>
+<p>我们的任务特点：</p>
+<blockquote>
+<p>经常需要处理较长文档。</p>
+</blockquote>
+<p>所以未来 ProcurementAI 很可能不能只追求：</p>
+<blockquote>
+<p>最大 Parameter Count。</p>
+</blockquote>
+<p>还需要非常重视：</p>
+<pre class="text"><code>Long Context
++
+RAG Context
++
+Evidence</code></pre>
+<hr />
+<h1 id="一百一十五但长-context-也不是无限塞文件">一百一十五、但长
+Context 也不是无限塞文件</h1>
+<p>因为长 Context 会带来：</p>
+<ul>
+<li>更高 KV Cache；</li>
+<li>更长 Prefill；</li>
+<li>更高 TTFT；</li>
+<li>Lost-in-the-middle 等模型质量问题。</li>
+</ul>
+<p>所以未来真正架构：</p>
+<blockquote>
+<p>仍然会大量依靠 RAG 和文档分解。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十六这解释了-procurementai-的整体结构为什么不是">一百一十六、这解释了
+ProcurementAI 的整体结构为什么不是</h1>
+<pre class="text"><code>把1000页文件
+全部塞给一个超长Context模型</code></pre>
+<p>而更可能是：</p>
+<pre class="text"><code>文件解析
+↓
+结构化切分
+↓
+检索 / 定位
+↓
+选最相关内容
+↓
+送给LLM
+↓
+综合判断</code></pre>
+<hr />
+<h1
+id="一百一十七显存优化其实和数据工程有关">一百一十七、显存优化其实和数据工程有关</h1>
+<p>这点很有意思。</p>
+<p>如果你能从 300 页文件里准确找到：</p>
+<blockquote>
+<p>真正相关的 20 页，</p>
+</blockquote>
+<p>不仅：</p>
+<blockquote>
+<p>检索质量更好，</p>
+</blockquote>
+<p>还会：</p>
+<blockquote>
+<p>Token 更少、KV 更小、TTFT 更低。</p>
+</blockquote>
+<hr />
+<h1
+id="一百一十八所以-rag-也可以理解成一种计算资源优化">一百一十八、所以
+RAG 也可以理解成一种计算资源优化</h1>
+<p>好的 Retrieval：</p>
+<pre class="text"><code>无关Context ↓</code></pre>
+<p>于是：</p>
+<pre class="text"><code>KV Cache ↓
+TTFT ↓
+噪声 ↓</code></pre>
+<p>这是未来很重要的一条线。</p>
+<hr />
+<h1
+id="一百一十九显存不足时的决策顺序">一百一十九、显存不足时的决策顺序</h1>
+<p>以后真 OOM，不要乱改。</p>
+<p>可以按这个顺序想：</p>
+<pre class="text"><code>OOM
+ │
+ ├─ Weight太大？
+ │     ↓
+ │   Quantization / 小模型 / 多GPU
+ │
+ ├─ Context太长？
+ │     ↓
+ │   缩Context / RAG / KV优化
+ │
+ ├─ Batch太大？
+ │     ↓
+ │   降Batch
+ │
+ ├─ 并发太高？
+ │     ↓
+ │   限并发 / 调度
+ │
+ └─ Runtime峰值？
+       ↓
+     优化框架 / Buffer / Kernel</code></pre>
+<p>这是非常实用的一张故障树。</p>
+<hr />
+<h1 id="一百二十不要第一反应就量化">一百二十、不要第一反应就量化</h1>
+<p>如果 OOM 原因是：</p>
+<pre class="text"><code>128K Context造成巨大KV</code></pre>
+<p>你继续把 Weight：</p>
+<pre class="text"><code>8-bit → 4-bit</code></pre>
+<p>可能有帮助。</p>
+<p>但如果 KV 已经占大头：</p>
+<blockquote>
+<p>效果可能没有想象中那么大。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十一也不要第一反应就换更大-gpu">一百二十一、也不要第一反应就换更大
+GPU</h1>
+<p>如果输入里：</p>
+<blockquote>
+<p>80% 都是不相关文档，</p>
+</blockquote>
+<p>更聪明的办法可能是：</p>
+<blockquote>
+<p>做更好的 Retrieval。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>砸钱买显存。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十二这就是find-the-dominant-term">一百二十二、这就是“Find
+the dominant term”</h1>
+<p>虽然这是数学味的词，但意思极简单：</p>
+<blockquote>
+<p><strong>到底是谁占得最多？</strong></p>
+</blockquote>
+<hr />
+<h2 id="如果最大的是-weight">27. 如果最大的是 Weight</h2>
+<p>优化：</p>
+<blockquote>
+<p>Weight。</p>
+</blockquote>
+<hr />
+<h2 id="如果最大的是-kv">28. 如果最大的是 KV</h2>
+<p>优化：</p>
+<blockquote>
+<p>Context / KV。</p>
+</blockquote>
+<hr />
+<h2 id="如果最大的是-activation">29. 如果最大的是 Activation</h2>
+<p>优化：</p>
+<blockquote>
+<p>Batch / Runtime / Training Strategy。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十三这是专家真正的显存思维">一百二十三、这是专家真正的显存思维</h1>
+<p>不是背：</p>
+<blockquote>
+<p>“7B需要多少显存。”</p>
+</blockquote>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>先</mi><mi>找</mi><mi>显</mi><mi>存</mi><mi>主</mi><mi>要</mi><mi>花</mi><mi>在</mi><mi>哪</mi><mi>里</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+先找显存主要花在哪里
+}
+</annotation></semantics></math></p>
+<p>再优化。</p>
+<hr />
+<h1 id="一百二十四本阶段-5-个核心心智模型总结">一百二十四、本阶段 5
+个核心心智模型总结</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>核心心智模型</th>
+<th>真正含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>① VRAM = 共享预算</strong></td>
+<td>Weight、KV、Activation、Runtime 都抢同一块空间</td>
+</tr>
+<tr class="even">
+<td><strong>② Weight = 固定房租</strong></td>
+<td>模型和 dtype 定了以后，Weight 基本确定</td>
+</tr>
+<tr class="odd">
+<td><strong>③ KV = 随 Context 增长的费用</strong></td>
+<td>输入越长、输出越长，KV 越大</td>
+</tr>
+<tr class="even">
+<td><strong>④ 并发 = 多份请求状态</strong></td>
+<td>Weight 可以共享，但每个请求需要自己的 KV</td>
+</tr>
+<tr class="odd">
+<td><strong>⑤ 刚好装下 ≠ 可稳定部署</strong></td>
+<td>必须考虑 Peak VRAM 和安全余量</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="一百二十五再加三个辅助模型">一百二十五、再加三个辅助模型</h1>
+<h3 id="辅助模型-a资源三角形">辅助模型 A：资源三角形</h3>
+<pre class="text"><code>更大模型
+   ↕
+更长Context
+   ↕
+更高并发</code></pre>
+<p>在固定显存里：</p>
+<blockquote>
+<p>三者争预算。</p>
+</blockquote>
+<hr />
+<h3 id="辅助模型-b量化移动瓶颈">辅助模型 B：量化移动瓶颈</h3>
+<pre class="text"><code>Weight ↓
+↓
+KV占比 ↑</code></pre>
+<hr />
+<h3 id="辅助模型-c先找大头">辅助模型 C：先找大头</h3>
+<pre class="text"><code>Who is dominating VRAM?</code></pre>
+<p>找到以后：</p>
+<blockquote>
+<p>再优化。</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十六procurementlm-快速判断练习-a">一百二十六、ProcurementLM
+快速判断练习 A</h1>
+<p>GPU：</p>
+<pre class="text"><code>24GB</code></pre>
+<p>模型：</p>
+<pre class="text"><code>14B BF16</code></pre>
+<p>只看 Weight：</p>
+<pre class="text"><code>约28GB</code></pre>
+<p>结论：</p>
+<blockquote>
+<p><strong>单卡直接不成立。</strong></p>
+</blockquote>
+<hr />
+<h1 id="一百二十七练习-b">一百二十七、练习 B</h1>
+<p>同一模型：</p>
+<pre class="text"><code>14B INT8</code></pre>
+<p>Weight：</p>
+<pre class="text"><code>约14GB</code></pre>
+<p>现在：</p>
+<blockquote>
+<p>有进入候选方案的可能。</p>
+</blockquote>
+<p>但仍要问：</p>
+<blockquote>
+<p>Context 和 Batch。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十八练习-c">一百二十八、练习 C</h1>
+<pre class="text"><code>32B 4-bit</code></pre>
+<p>Weight 粗略：</p>
+<pre class="text"><code>约16GB+</code></pre>
+<p>24GB 卡：</p>
+<blockquote>
+<p>有些配置下可能可以跑。</p>
+</blockquote>
+<p>是不是可以直接承诺：</p>
+<blockquote>
+<p>“128K 文档也没问题”？</p>
+</blockquote>
+<p><strong>绝对不能。</strong></p>
+<hr />
+<h1 id="一百二十九练习-d">一百二十九、练习 D</h1>
+<p>7B BF16：</p>
+<pre class="text"><code>14GB Weight</code></pre>
+<p>为什么 128K Context 可能比：</p>
+<pre class="text"><code>14B 4-bit + 8K Context</code></pre>
+<p>还更吃显存？</p>
+<p>因为：</p>
+<blockquote>
+<p>第一个方案的 KV Cache 可能非常大。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十练习-e">一百三十、练习 E</h1>
+<p>模型从 7B 变 14B。</p>
+<p>KV Cache 一定刚好翻倍吗？</p>
+<p><strong>不一定。</strong></p>
+<p>因为 KV Cache 更直接取决于：</p>
+<ul>
+<li>Layer Count；</li>
+<li>KV Head Count；</li>
+<li>Head Dim；</li>
+<li>Context；</li>
+<li>dtype。</li>
+</ul>
+<p>不同架构：</p>
+<blockquote>
+<p>参数量相近也可能 KV 成本不同。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十一这个问题很关键">一百三十一、这个问题很关键</h1>
+<p>所以不能简单认为：</p>
+<pre class="text"><code>模型大2倍
+→
+KV一定大2倍</code></pre>
+<p>Architecture：</p>
+<blockquote>
+<p>很重要。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十二练习-f">一百三十二、练习 F</h1>
+<p>同一个模型：</p>
+<pre class="text"><code>Batch 1
+→
+Batch 8</code></pre>
+<p>Weight：</p>
+<blockquote>
+<p>基本没有乘 8。</p>
+</blockquote>
+<p>但 KV 和 Activation：</p>
+<blockquote>
+<p>可能大幅增加。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十三练习-g">一百三十三、练习 G</h1>
+<p>一个模型“支持128K”。</p>
+<p>是不是意味着：</p>
+<blockquote>
+<p>8GB GPU 也一定能跑 128K？</p>
+</blockquote>
+<p>不是。</p>
+<p>支持：</p>
+<blockquote>
+<p>是模型能力范围。</p>
+</blockquote>
+<p>能不能运行：</p>
+<blockquote>
+<p>是硬件容量问题。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十四本阶段最容易犯的八个错误">一百三十四、本阶段最容易犯的八个错误</h1>
+<h3 id="错误-1-2">错误 1</h3>
+<blockquote>
+<p>显存 = Weight。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<h3 id="错误-2-2">错误 2</h3>
+<blockquote>
+<p>Weight 放得下，就一定能推理。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<h3 id="错误-3-2">错误 3</h3>
+<blockquote>
+<p>Context 只影响速度，不影响显存。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<h3 id="错误-4-2">错误 4</h3>
+<blockquote>
+<p>Weight 已经 4-bit，长 Context 就不再 OOM。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<h3 id="错误-5-2">错误 5</h3>
+<blockquote>
+<p>10 个用户要复制 10 份 Model Weight。</p>
+</blockquote>
+<p>通常不是这么理解。</p>
+<hr />
+<h3 id="错误-6-2">错误 6</h3>
+<blockquote>
+<p>模型官方支持 128K，我的 GPU 就支持 128K。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<h3 id="错误-7-1">错误 7</h3>
+<blockquote>
+<p>两张卡总显存加起来够，就一定像一张大卡一样简单。</p>
+</blockquote>
+<p>错。</p>
+<hr />
+<h3 id="错误-8">错误 8</h3>
+<blockquote>
+<p>把显存跑到 99.9% 是最专业的部署。</p>
+</blockquote>
+<p>通常不是。</p>
+<p>稳定生产：</p>
+<blockquote>
+<p>需要余量。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十五把第三课第-17-阶段串起来">一百三十五、把第三课第 1～7
+阶段串起来</h1>
+<pre class="text"><code>Stage 1
+GPU / VRAM是什么？
+       ↓
+Stage 2
+软件怎么调用GPU？
+       ↓
+Stage 3
+模型文件是什么？
+       ↓
+Stage 4
+模型怎么加载进GPU？
+       ↓
+Stage 5
+模型怎么真正生成文字？
+       ↓
+Stage 6
+每个Weight占多大？
+       ↓
+Stage 7
+所有东西加起来到底占多少显存？</code></pre>
+<p>现在我们终于真正回答了：</p>
+<blockquote>
+<p><strong>“能不能跑这个模型？”</strong></p>
+</blockquote>
+<p>而不再只是凭感觉。</p>
+<hr />
+<h1 id="一百三十六第-7-阶段掌握标准">一百三十六、第 7 阶段掌握标准</h1>
+<p>如果现在不看前文，你能够自己解释下面这些问题，这一阶段就算真正掌握：</p>
+<blockquote>
+<p>为什么 24GB GPU 不能简单装一个 24GB Weight 模型？</p>
+</blockquote>
+<blockquote>
+<p>推理时显存至少有哪些主要账户？</p>
+</blockquote>
+<blockquote>
+<p>Weight 为什么可以理解成固定成本？</p>
+</blockquote>
+<blockquote>
+<p>KV Cache 为什么与 Context Length 有关？</p>
+</blockquote>
+<blockquote>
+<p>为什么模型生成的 Token 也会继续增加 KV Cache？</p>
+</blockquote>
+<blockquote>
+<p>为什么 GQA 可以显著降低 KV Cache？</p>
+</blockquote>
+<blockquote>
+<p>KV Cache 的大小大致受哪些变量控制？</p>
+</blockquote>
+<blockquote>
+<p>为什么 8K → 32K Context，KV 大致会增长约 4 倍？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Batch / 并发会显著增加显存？</p>
+</blockquote>
+<blockquote>
+<p>为什么多个请求可以共享 Weight，却不能共享同一份请求 KV？</p>
+</blockquote>
+<blockquote>
+<p>Activation 在推理和训练中的显存意义为什么不同？</p>
+</blockquote>
+<blockquote>
+<p>Runtime Buffer 为什么使简单算术低估实际 VRAM？</p>
+</blockquote>
+<blockquote>
+<p>Peak VRAM 为什么比空闲显存更重要？</p>
+</blockquote>
+<blockquote>
+<p>为什么 7B BF16 能跑，不代表 128K Context 也能跑？</p>
+</blockquote>
+<blockquote>
+<p>为什么量化之后显存瓶颈可能转向 KV Cache？</p>
+</blockquote>
+<blockquote>
+<p>为什么 32B 4-bit 在 24GB
+上“可能跑”与“稳定生产部署”完全不是一回事？</p>
+</blockquote>
+<blockquote>
+<p>为什么支持 128K Context 和硬件能跑 128K 是两个问题？</p>
+</blockquote>
+<blockquote>
+<p>为什么长文档政府采购系统需要 RAG，而不能只靠无限 Context？</p>
+</blockquote>
+<blockquote>
+<p>OOM 时为什么应该先判断到底是 Weight、KV、Activation 还是 Runtime
+在占大头？</p>
+</blockquote>
+<p>如果这些都能自己讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>三</mi><mi>课</mi><mi>第</mi><mn>7</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第三课第7阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="一百三十七本阶段最终只记一句话">一百三十七、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>GPU 显存不是只用来装模型 Weight
+的仓库，而是一张共享预算：Weight 是固定房租，KV Cache 随 Context
+和并发增长，Activation 与 Runtime
+还需要额外工作空间；真正的模型部署问题不是“模型文件多大”，而是“在真实工作负载下，显存峰值到底是多少”。</strong></p>
+</blockquote>
+<p>最后把它压成一张图：</p>
+<pre class="text"><code>                  GPU VRAM
+                     │
+      ┌──────────────┼───────────────┐
+      │              │               │
+      ▼              ▼               ▼
+   Weights         KV Cache      Activations
+  固定成本         动态增长        计算草稿
+      │              │               │
+      └──────────────┼───────────────┘
+                     ▼
+              Runtime / Buffers
+                     │
+                     ▼
+               Safety Headroom
+
+
+KV Cache 主要随着：
+
+Context ↑
+Batch / Concurrency ↑
+Layers ↑
+KV Heads ↑
+
+而增长</code></pre>
+<hr />
+<h1 id="下一阶段第三课-第-8-阶段">下一阶段：第三课 · 第 8 阶段</h1>
+<h2
+id="temperaturetop-ktop-p-到底在控制什么为什么同一个模型同一个问题两次回答会不一样">Temperature、Top-k、Top-p
+到底在控制什么？为什么同一个模型，同一个问题，两次回答会不一样？</h2>
+<p>前面第 5 阶段我们留下了一个问题：</p>
+<pre class="text"><code>Transformer
+↓
+Logits
+↓
+？？？
+↓
+Next Token</code></pre>
+<p>第 8 阶段就专门拆中间的：</p>
+<pre class="text"><code>？？？</code></pre>
+<p>我们会继续坚持“先案例、后必要公式”。</p>
+<p>比如模型面对下一 Token 时给出：</p>
+<pre class="text"><code>A：40%
+B：30%
+C：15%
+D：10%
+其它：5%</code></pre>
+<p>然后分别看：</p>
+<pre class="text"><code>Greedy
+Temperature
+Top-k
+Top-p</code></pre>
+<p>究竟是在改变什么。</p>
+<p>最后会回答一个对 ProcurementAI 特别重要的问题：</p>
+<blockquote>
+<p><strong>为什么创意写作可以接受更高随机性，而法规依据、资格条件审查、风险分类等任务往往应该更强调稳定、可复现和证据约束？</strong></p>
+</blockquote>
+<p>也就是说，第 8 阶段我们会第一次把：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo>“</mo><mi>模</mi><mi>型</mi><mi>知</mi><mi>道</mi><mi>什</mi><mi>么</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+“模型知道什么”
+}
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mo>“</mo><mi>模</mi><mi>型</mi><mi>这</mi><mi>次</mi><mi>决</mi><mi>定</mi><mi>说</mi><mi>什</mi><mi>么</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+“模型这次决定说什么”
+}
+</annotation></semantics></math></p>
+<p>彻底分开。</p>
+<hr /><div class="nav"><a class="btn" href="stage06.html">← 第 6 阶段</a><a class="btn" href="stage08.html">第 8 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

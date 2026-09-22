@@ -1,0 +1,418 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第4阶段：Paged Attention 与 vLLM：怎样提高显存利用率？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>ContiguousKVAllocation ≠ EfficientDynamicServing。</li><li>LogicalContinuity ≠ PhysicalContinuity。</li><li>Allocation Granularity 越细通常越省预留浪费，但管理开销更高。</li></ul></div><h1 id="第十课-第-4-阶段">第十课 · 第 4 阶段</h1>
+<h1 id="paged-attention-与-vllm怎样提高显存利用率-1">Paged Attention 与
+vLLM：怎样提高显存利用率？</h1>
+<h2
+id="为什么传统-kv-cache-容易产生碎片和预留浪费paged-attention-怎样把连续大块内存问题变成分页式动态分配问题">为什么传统
+KV Cache 容易产生碎片和预留浪费？Paged Attention
+怎样把“连续大块内存”问题变成“分页式动态分配”问题？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>ContiguousKVAllocation ≠
+EfficientDynamicServing。</strong></li>
+<li><strong>LogicalContinuity ≠ PhysicalContinuity。</strong></li>
+<li><strong>Allocation Granularity
+越细通常越省预留浪费，但管理开销更高。</strong></li>
+<li><strong>Model ≠ Engine。</strong></li>
+<li><strong>PagedKV + PrefixCache 可以联合优化，但收益取决于真实
+Workload。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+<tr class="even">
+<td><code>KV Cache</code></td>
+<td>KV 缓存：生成时缓存历史 Key/Value 以减少重复计算</td>
+</tr>
+<tr class="odd">
+<td><code>Serving</code></td>
+<td>服务化：把模型包装成可扩展、可观测、可治理的在线服务</td>
+</tr>
+<tr class="even">
+<td><code>Block</code></td>
+<td>版面块：文档解析后保留布局和位置的基本块</td>
+</tr>
+<tr class="odd">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+<tr class="even">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 3 阶段已经知道：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>n</mi><mi>g</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>×</mo><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>=</mo><mi>K</mi><mi>V</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>u</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LongContext\times HighConcurrency=KVPressure
+}
+</annotation></semantics></math></p>
+<p>真实请求还有：</p>
+<pre class="text"><code>长度不同
+到达时间不同
+结束时间不同
+输出长度不可提前准确知道</code></pre>
+<p>如果每个请求都必须提前拿一大块连续 KV 空间，就容易出现：</p>
+<pre class="text"><code>预留过多
+碎片
+并发受限</code></pre>
+<p>因此本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>g</mi><mi>u</mi><mi>o</mi><mi>u</mi><mi>s</mi><mi>K</mi><mi>V</mi><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>D</mi><mi>y</mi><mi>n</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>c</mi><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ContiguousKVAllocation
+\neq
+EfficientDynamicServing
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementpagedservingpolicy_v0.1-1"><code>ProcurementPagedServingPolicy_V0.1</code></h1>
+<hr />
+<h1
+id="一为什么连续大块预留容易浪费">一、为什么连续大块预留容易浪费？</h1>
+<p>假设请求最大输出：</p>
+<pre class="text"><code>4096 tokens</code></pre>
+<p>如果一开始就预留 4096，</p>
+<p>但实际只生成：</p>
+<pre class="text"><code>500</code></pre>
+<p>剩余就是：</p>
+<blockquote>
+<p>预留浪费。</p>
+</blockquote>
+<p>再加上不同请求不断结束和释放，就会形成：</p>
+<h1 id="fragmentation-1">Fragmentation</h1>
+<h2 id="显存碎片">显存碎片</h2>
+<hr />
+<h1 id="二paged-attention-的核心思想">二、Paged Attention
+的核心思想</h1>
+<p>把 KV Cache 切成固定大小：</p>
+<h1 id="blocks-pages">Blocks / Pages</h1>
+<h2 id="块-页">块 / 页</h2>
+<p>逻辑序列：</p>
+<pre class="text"><code>Token1 ... TokenN</code></pre>
+<p>不要求在物理显存中完全连续。</p>
+<p>通过：</p>
+<h1 id="block-table">Block Table</h1>
+<h2 id="块映射表">块映射表</h2>
+<p>记录逻辑位置到物理 Block 的映射。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>o</mi><mi>g</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>P</mi><mi>h</mi><mi>y</mi><mi>s</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>u</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LogicalContinuity
+\neq
+PhysicalContinuity
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三核心心智模型-①">三、核心心智模型 ①</h1>
+<h1 id="paged-attention-的本质是解耦逻辑序列与物理显存布局">Paged
+Attention 的本质是解耦逻辑序列与物理显存布局</h1>
+<p>这样可以：</p>
+<pre class="text"><code>按需申请Block
+动态增长
+快速回收
+降低连续内存要求
+减少碎片</code></pre>
+<p>更适合动态 Serving。</p>
+<hr />
+<h1
+id="四为什么显存利用率通常会提高">四、为什么显存利用率通常会提高？</h1>
+<p>因为不再要求：</p>
+<blockquote>
+<p>每个请求提前拿最大空间。</p>
+</blockquote>
+<p>而是：</p>
+<pre class="text"><code>需要多少
+分配多少Block</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>r</mi><mi>A</mi><mi>l</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mi>通</mi><mi>常</mi><mi>降</mi><mi>低</mi><mi>R</mi><mi>e</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>W</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SmallerAllocationUnit
+通常降低
+ReservationWaste
+}
+</annotation></semantics></math></p>
+<p>但 Block 太小也会增加管理开销。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi>S</mi><mi>i</mi><mi>z</mi><mi>e</mi><mo>=</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>e</mi><mi>o</mi><mi>f</mi><mi>f</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BlockSize
+=
+GranularityTradeoff
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五vllm-在这里是什么">五、vLLM 在这里是什么？</h1>
+<p>vLLM 可以理解为：</p>
+<h1 id="serving-engine">Serving Engine</h1>
+<h2 id="大模型推理服务引擎">大模型推理服务引擎</h2>
+<p>它的重要职责包括：</p>
+<pre class="text"><code>KV管理
+请求调度
+Continuous Batching
+Prefix Cache
+Kernel执行</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>E</mi><mi>n</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>=</mo><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>+</mo><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>M</mi><mi>a</mi><mi>n</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>K</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>e</mi><mi>l</mi><mi>E</mi><mi>x</mi><mi>e</mi><mi>c</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ServingEngine
+=
+Scheduling
++
+MemoryManagement
++
+KernelExecution
+}
+</annotation></semantics></math></p>
+<p>不要把它理解成：</p>
+<blockquote>
+<p>“换一个库就自动变快。”</p>
+</blockquote>
+<hr />
+<h1 id="六核心心智模型-②">六、核心心智模型 ②</h1>
+<h1 id="model-serving-engine"><code>Model ≠ Serving Engine</code></h1>
+<p>同一个：</p>
+<pre class="text"><code>ProcurementLM_V0.2</code></pre>
+<p>换不同 Serving Engine，</p>
+<p>可能得到完全不同：</p>
+<pre class="text"><code>TTFT
+TPOT
+Throughput
+VRAM
+MaxConcurrency</code></pre>
+<p>因此性能由：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>E</mi><mi>n</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>e</mi><mo>+</mo><mi>H</mi><mi>a</mi><mi>r</mi><mi>d</mi><mi>w</mi><mi>a</mi><mi>r</mi><mi>e</mi><mo>+</mo><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>l</mi><mi>o</mi><mi>a</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Model
++
+Engine
++
+Hardware
++
+Workload
+}
+</annotation></semantics></math></p>
+<p>共同决定。</p>
+<hr />
+<h1 id="七paged-kv-与-prefix-cache">七、Paged KV 与 Prefix Cache</h1>
+<p>如果多个请求共享相同前缀，</p>
+<p>可以复用物理 KV Block。</p>
+<p>这与：</p>
+<h1 id="copy-on-write">Copy-on-Write</h1>
+<h2 id="写时复制">写时复制</h2>
+<p>思想相似：</p>
+<blockquote>
+<p>共享直到分歧，再为新增部分分配新的 Block。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>d</mi><mi>K</mi><mi>V</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>i</mi><mi>x</mi><mi>C</mi><mi>a</mi><mi>c</mi><mi>h</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PagedKV
++
+PrefixCache
+}
+</annotation></semantics></math></p>
+<p>可以联合减少：</p>
+<pre class="text"><code>碎片
+重复Prefill
+重复KV存储</code></pre>
+<p>但前提仍然是：</p>
+<blockquote>
+<p>真实业务确实存在高前缀复用。</p>
+</blockquote>
+<hr />
+<h1 id="八memory-optimization-不等于-quality-improvement">八、Memory
+Optimization 不等于 Quality Improvement</h1>
+<p>Paged Attention 主要优化：</p>
+<pre class="text"><code>显存管理
+并发
+吞吐</code></pre>
+<p>它不训练模型新知识。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>I</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MemoryOptimization
+\neq
+ModelQualityImprovement
+}
+</annotation></semantics></math></p>
+<p>但 Serving Engine 发生变化，仍需跑：</p>
+<pre class="text"><code>ProcurementBench_V1</code></pre>
+<p>确认没有实现层回归。</p>
+<hr />
+<h1 id="九scheduler-同样重要">九、Scheduler 同样重要</h1>
+<p>Block 管得好，</p>
+<p>但 Scheduler 如果：</p>
+<pre class="text"><code>让长Prefill独占GPU
+让短请求一直排队
+过度接收请求</code></pre>
+<p>用户体验仍然会差。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>E</mi><mi>f</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EfficientMemory
+\neq
+EfficientScheduling
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十怎样-benchmark-paged-serving">十、怎样 Benchmark Paged
+Serving？</h1>
+<p>固定：</p>
+<pre class="text"><code>模型
+量化
+硬件
+Workload</code></pre>
+<p>比较不同 Engine / Config：</p>
+<pre class="text"><code>Peak VRAM
+KV Utilization
+Max Concurrency
+TTFT P50/P95/P99
+TPOT
+Output Tokens/s
+OOM Rate
+Queue Time</code></pre>
+<p>不能只用：</p>
+<pre class="text"><code>最大并发</code></pre>
+<p>一个数字判断优劣。</p>
+<hr />
+<h1 id="十一engine-配置必须版本化">十一、Engine 配置必须版本化</h1>
+<p>至少：</p>
+<pre class="text"><code>engine_version
+attention_backend
+kv_block_size
+scheduler_config
+prefix_cache_config
+memory_fraction
+max_batched_tokens
+max_sequences
+quantization_kernel</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>E</mi><mi>n</mi><mi>g</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>g</mi><mo>∈</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>A</mi><mi>r</mi><mi>t</mi><mi>i</mi><mi>f</mi><mi>a</mi><mi>c</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+EngineConfig
+\in
+ServingArtifact
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二本阶段正式工程产物">十二、本阶段正式工程产物</h1>
+<h1
+id="procurementpagedservingpolicy_v0.1-2"><code>ProcurementPagedServingPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>paged_serving_policy_version
+model_version
+engine_name
+engine_version
+attention_backend
+kv_block_size
+block_allocator
+prefix_cache_enabled
+shared_prefix_policy
+scheduler_policy
+memory_utilization_target
+max_sequences
+max_batched_tokens
+admission_control
+kv_fragmentation_metric
+kv_utilization
+max_concurrency
+ttft
+tpot
+throughput
+p95_p99
+oom_rate
+quality_regression
+release_gate</code></pre>
+<hr />
+<h1 id="十三本阶段最重要的-8-个核心心智模型">十三、本阶段最重要的 8
+个核心心智模型</h1>
+<blockquote>
+<p><strong>①
+<code>ContiguousKVAllocation ≠ EfficientDynamicServing</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>②
+<code>LogicalContinuity ≠ PhysicalContinuity</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③ Allocation Granularity
+越细通常越省预留浪费，但管理开销更高。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④ <code>Model ≠ Engine</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤ <code>PagedKV + PrefixCache</code>
+可以联合优化，但收益取决于真实 Workload。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥
+<code>MemoryOptimization ≠ QualityImprovement</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦
+<code>EfficientMemory ≠ EfficientScheduling</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧ Engine 优化最终仍要回到 SLO 和
+<code>ProcurementBench_V1</code>。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第十课-第-5-阶段">下一阶段：第十课 · 第 5 阶段</h1>
+<h1
+id="batchingstaticdynamiccontinuous-batching">Batching：Static、Dynamic、Continuous
+Batching</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>x</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mo>≠</mo><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MaxBatch
+\neq
+BestBatch
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementbatchingpolicy_v0.1"><code>ProcurementBatchingPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

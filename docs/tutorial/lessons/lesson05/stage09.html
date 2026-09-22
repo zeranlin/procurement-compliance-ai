@@ -1,0 +1,1037 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第9阶段：QLoRA 与 4-bit / NF4</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第9阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>Base Model 的存储方式。</li><li>Base Model BF16 / FP16 等 Frozen + LoRA Adapter Trainable</li><li>Base Model 4-bit Quantized Frozen + LoRA Adapter Trainable</li></ul></div><h1 id="第五课-第-9-阶段">第五课 · 第 9 阶段</h1>
+<h1 id="qlora-与-4-bit-nf4-1">QLoRA 与 4-bit / NF4</h1>
+<h2
+id="为什么一个几十亿参数的-base-model-可以用-4-bit-保存却仍然能训练出有效的-lora-adapter">为什么一个几十亿参数的
+Base Model 可以用 4-bit 保存，却仍然能训练出有效的 LoRA Adapter？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-8">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-8">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Base Model 的存储方式。</strong></li>
+<li><strong>Base Model BF16 / FP16 等 Frozen + LoRA Adapter
+Trainable</strong></li>
+<li><strong>Base Model 4-bit Quantized Frozen + LoRA Adapter
+Trainable</strong></li>
+<li><strong>Input Attention MLP Loss Gradient</strong></li>
+<li><strong>全部都只有4-bit</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-8">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="even">
+<td><code>QLoRA</code></td>
+<td>QLoRA：量化基座模型并训练 LoRA，以降低显存成本</td>
+</tr>
+<tr class="odd">
+<td><code>NF4</code></td>
+<td>NF4：适合近似正态权重的 4 位量化格式</td>
+</tr>
+<tr class="even">
+<td><code>Adapter</code></td>
+<td>适配器：附加在基座模型上的轻量可训练参数模块</td>
+</tr>
+<tr class="odd">
+<td><code>Quantization</code></td>
+<td>量化：用更低位宽表示权重/激活以降低显存和计算成本</td>
+</tr>
+<tr class="even">
+<td><code>BF16</code></td>
+<td>BF16：保留较大指数范围的 16 位浮点，常用于大模型</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-8">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>前面我们已经把 LoRA 拆得非常清楚了：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mi>′</mi><mo>=</mo><mi>W</mi><mo>+</mo><mi>Δ</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">
+W&#39; = W + \Delta W
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi></mrow><annotation encoding="application/x-tex">
+\Delta W = BA
+</annotation></semantics></math></p>
+<p>并且：</p>
+<pre class="text"><code>Base Weight W
+=
+Frozen
+
+LoRA A / B
+=
+Trainable</code></pre>
+<p>到这里，还有一个巨大的工程问题没有解决。</p>
+<p>即使：</p>
+<blockquote>
+<p>Base Model 不训练，</p>
+</blockquote>
+<p>它仍然要：</p>
+<blockquote>
+<p><strong>驻留在显存里。</strong></p>
+</blockquote>
+<p>假设 Base Model 有 7B 参数。</p>
+<p>BF16 大致需要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn><mo>×</mo><msup><mn>10</mn><mn>9</mn></msup><mo>×</mo><mn>2</mn><mo>≈</mo><mn>14</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+7\times10^9\times2
+\approx14GB
+</annotation></semantics></math></p>
+<p>仅仅模型权重就已经非常大。</p>
+<p>于是 QLoRA 出现了。</p>
+<p>今天要彻底搞懂的不是某个配置参数，而是这条链：</p>
+<pre class="text"><code>Frozen Base Model
+        ↓
+4-bit Quantization
+低位宽保存
+        ↓
+Forward 时按需恢复到计算精度
+        ↓
+Base Path 继续参与计算
+        +
+LoRA A/B 保持可训练
+        ↓
+Loss
+        ↓
+Backward
+        ↓
+只更新 LoRA</code></pre>
+<p>最终形成：</p>
+<h1 id="qloramemorymodel_v0.1"><code>QLoRAMemoryModel_V0.1</code></h1>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-7">一、本阶段只解决一个核心问题</h1>
+<blockquote>
+<p><strong>QLoRA 到底量化了谁？4-bit 存在哪里？Forward 真的是用 4-bit
+做所有计算吗？LoRA 参数又是什么精度？</strong></p>
+</blockquote>
+<p>先把最重要的一句话放在这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mo>≠</mo><mi>E</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>y</mi><mi>t</mi><mi>h</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>R</mi><mi>u</mi><mi>n</mi><mi>s</mi><mi>I</mi><mi>n</mi><mn>4</mn><mi>B</mi><mi>i</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QLoRA
+\neq
+EverythingRunsIn4Bit
+}
+</annotation></semantics></math></p>
+<p>QLoRA 更准确的理解是：</p>
+<blockquote>
+<p><strong>把冻结的 Base Model
+权重以低位宽量化形式保存，从而显著减少权重显存；计算时按需要恢复到合适的计算精度，同时继续训练正常的
+LoRA Adapter。</strong></p>
+</blockquote>
+<p>这句话掌握，本阶段已经通了一半。</p>
+<hr />
+<h1 id="二先锁死-5-个核心心智模型-5">二、先锁死 5 个核心心智模型</h1>
+<h2 id="心智模型-1qlora-quantized-base-trainable-lora">心智模型 1：QLoRA
+= Quantized Base + Trainable LoRA</h2>
+<p>普通 LoRA：</p>
+<pre class="text"><code>Base Model
+BF16 / FP16 等
+Frozen
+      +
+LoRA Adapter
+Trainable</code></pre>
+<p>QLoRA：</p>
+<pre class="text"><code>Base Model
+4-bit Quantized
+Frozen
+      +
+LoRA Adapter
+Trainable</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mo>=</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>r</mi><mi>o</mi><mi>z</mi><mi>e</mi><mi>n</mi><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QLoRA
+=
+QuantizedFrozenBase
++
+LoRA
+}
+</annotation></semantics></math></p>
+<p>关键变化发生在：</p>
+<blockquote>
+<p><strong>Base Model 的存储方式。</strong></p>
+</blockquote>
+<p>LoRA 的低秩学习思想本身：</p>
+<blockquote>
+<p>没有变。</p>
+</blockquote>
+<hr />
+<h2
+id="心智模型-24-bit-主要是权重存储精度不是整个训练过程只有-4-bit">心智模型
+2：4-bit 主要是“权重存储精度”，不是“整个训练过程只有 4-bit”</h2>
+<p>这是最容易犯的错误。</p>
+<p>不要想象：</p>
+<pre class="text"><code>Input
+↓
+Attention
+↓
+MLP
+↓
+Loss
+↓
+Gradient
+
+全部都只有4-bit</code></pre>
+<p>这不是 QLoRA 的正确心智模型。</p>
+<p>实际更接近：</p>
+<pre class="text"><code>GPU显存里
+Base Weight
+以4-bit形式保存
+        ↓
+需要做矩阵计算时
+        ↓
+按块反量化 / Dequantize
+        ↓
+BF16 / FP16 等计算精度
+        ↓
+Matrix Multiply</code></pre>
+<p>所以必须区分：</p>
+<h1 id="storage-dtype">Storage Dtype</h1>
+<p>存储精度</p>
+<p>和：</p>
+<h1 id="compute-dtype">Compute Dtype</h1>
+<p>计算精度</p>
+<p>两者：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>可</mi><mi>以</mi><mi>不</mi><mi>同</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+可以不同
+}
+</annotation></semantics></math></p>
+<hr />
+<h2 id="心智模型-3nf4-是一种-4-bit-量化表示不是保留四位小数">心智模型
+3：NF4 是一种 4-bit 量化表示，不是“保留四位小数”</h2>
+<p>NF4：</p>
+<h1 id="normalfloat-4-bit">NormalFloat 4-bit</h1>
+<p>它不是：</p>
+<blockquote>
+<p>“一个浮点数只留 4 位小数。”</p>
+</blockquote>
+<p>4-bit 真正意味着：</p>
+<blockquote>
+<p>每个量化值只用大约 4 个二进制位来表示其离散编码。</p>
+</blockquote>
+<p>4 bit 能表示：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>2</mn><mn>4</mn></msup><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">
+2^4=16
+</annotation></semantics></math></p>
+<p>种离散状态。</p>
+<p>NF4 的设计思路是：</p>
+<blockquote>
+<p>针对神经网络权重常见的近似正态分布特性，设计更合适的 16
+个表示级别。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>N</mi><mi>F</mi><mn>4</mn><mo>=</mo><mn>4</mn><mi>b</mi><mi>i</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+NF4
+=
+4bit Quantization Format
+}
+</annotation></semantics></math></p>
+<p>而不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> decimal places</mtext></mrow></mrow><annotation encoding="application/x-tex">
+4\text{ decimal places}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="心智模型-4量化一定引入近似误差qlora-的问题不是有没有误差而是误差是否值得换显存">心智模型
+4：量化一定引入近似误差，QLoRA
+的问题不是“有没有误差”，而是“误差是否值得换显存”</h2>
+<p>原始 Base Weight：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>量化以后：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>W</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+Q(W)
+</annotation></semantics></math></p>
+<p>再反量化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>W</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">
+\hat W
+</annotation></semantics></math></p>
+<p>一般不会满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>W</mi><mo accent="true">̂</mo></mover><mo>=</mo><mi>W</mi></mrow><annotation encoding="application/x-tex">
+\hat W=W
+</annotation></semantics></math></p>
+<p>而更像：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>W</mi><mo accent="true">̂</mo></mover><mo>=</mo><mi>W</mi><mo>+</mo><msub><mi>ϵ</mi><mi>q</mi></msub></mrow><annotation encoding="application/x-tex">
+\hat W
+=
+W+\epsilon_q
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>ϵ</mi><mi>q</mi></msub><annotation encoding="application/x-tex">
+\epsilon_q
+</annotation></semantics></math></p>
+<p>就是：</p>
+<blockquote>
+<p>Quantization Error，量化误差。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>x</mi><mi>i</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Quantization
+=
+Compression
++
+Approximation
+}
+</annotation></semantics></math></p>
+<p>真正工程问题是：</p>
+<blockquote>
+<p><strong>这点近似误差带来的能力损失，是否远小于我们得到的显存收益？</strong></p>
+</blockquote>
+<p>答案只能由 Benchmark 判断。</p>
+<hr />
+<h2
+id="心智模型-5qlora-大幅减少-base-weight-显存但不会把所有训练显存都消灭">心智模型
+5：QLoRA 大幅减少 Base Weight 显存，但不会把所有训练显存都消灭</h2>
+<p>训练显存我们已经拆过：</p>
+<pre class="text"><code>Model Weights
++
+Gradients
++
+Optimizer States
++
+Activations
++
+Temporary Buffers</code></pre>
+<p>QLoRA 非常擅长压缩：</p>
+<blockquote>
+<p>Frozen Base Model Weights。</p>
+</blockquote>
+<p>LoRA 又大幅减少：</p>
+<blockquote>
+<p>Trainable Gradient / Optimizer State 对应的参数规模。</p>
+</blockquote>
+<p>但是：</p>
+<h1 id="activations">Activations</h1>
+<p>仍然存在。</p>
+<p>Sequence Length 越长：</p>
+<blockquote>
+<p>Activation 仍可能很贵。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mo>≠</mo><mi>U</mi><mi>n</mi><mi>l</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>t</mi><mi>e</mi><mi>d</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QLoRA
+\neq
+UnlimitedContextForFree
+}
+</annotation></semantics></math></p>
+<p>这会直接接到下一阶段：</p>
+<blockquote>
+<p><strong>训练显存到底花在哪里。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三先精准区分-lora-和-qlora">三、先精准区分 LoRA 和 QLoRA</h1>
+<table>
+<thead>
+<tr class="header">
+<th>对象</th>
+<th>LoRA</th>
+<th>QLoRA</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base Model</td>
+<td>Frozen</td>
+<td>Frozen</td>
+</tr>
+<tr class="even">
+<td>Base Weight 存储</td>
+<td>常见 BF16 / FP16 等</td>
+<td>常见 4-bit</td>
+</tr>
+<tr class="odd">
+<td>LoRA A/B</td>
+<td>Trainable</td>
+<td>Trainable</td>
+</tr>
+<tr class="even">
+<td>LoRA 是否低秩</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr class="odd">
+<td>Base Weight 是否更新</td>
+<td>否</td>
+<td>否</td>
+</tr>
+<tr class="even">
+<td>主要额外目标</td>
+<td>减少可训练参数</td>
+<td>再进一步减少 Base Weight 显存</td>
+</tr>
+<tr class="odd">
+<td>Activation</td>
+<td>仍存在</td>
+<td>仍存在</td>
+</tr>
+</tbody>
+</table>
+<p>所以一句话：</p>
+<blockquote>
+<p><strong>LoRA 解决“不要训练整个 Base Model”，QLoRA 进一步解决“既然
+Base Model 冻结了，能不能连它的显存也省下来”。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四为什么-4-bit-可以省这么多">四、为什么 4-bit
+可以省这么多？</h1>
+<p>假设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">
+N
+</annotation></semantics></math></p>
+<p>个参数。</p>
+<p>BF16：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>16</mn><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> bits</mtext></mrow><mo>=</mo><mn>2</mn><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> bytes</mtext></mrow></mrow><annotation encoding="application/x-tex">
+16\text{ bits}
+=
+2\text{ bytes}
+</annotation></semantics></math></p>
+<p>理论权重存储：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><msub><mi>y</mi><mrow><mi>B</mi><mi>F</mi><mn>16</mn></mrow></msub><mo>≈</mo><mn>2</mn><mi>N</mi></mrow><annotation encoding="application/x-tex">
+Memory_{BF16}
+\approx
+2N
+</annotation></semantics></math></p>
+<p>bytes。</p>
+<p>4-bit：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> bits</mtext></mrow><mo>=</mo><mn>0.5</mn><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> bytes</mtext></mrow></mrow><annotation encoding="application/x-tex">
+4\text{ bits}
+=
+0.5\text{ bytes}
+</annotation></semantics></math></p>
+<p>理论权重存储：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><msub><mi>y</mi><mrow><mn>4</mn><mi>b</mi><mi>i</mi><mi>t</mi></mrow></msub><mo>≈</mo><mn>0.5</mn><mi>N</mi></mrow><annotation encoding="application/x-tex">
+Memory_{4bit}
+\approx
+0.5N
+</annotation></semantics></math></p>
+<p>所以理想裸权重比例：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mn>4</mn><mn>16</mn></mfrac><mo>=</mo><mfrac><mn>1</mn><mn>4</mn></mfrac></mrow><annotation encoding="application/x-tex">
+\frac{4}{16}
+=
+\frac14
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>4-bit 原始权重编码理论上约为 BF16 的四分之一。</p>
+</blockquote>
+<p>例如 7B：</p>
+<p>BF16：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn><mi>B</mi><mo>×</mo><mn>2</mn><mo>≈</mo><mn>14</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+7B\times2
+\approx14GB
+</annotation></semantics></math></p>
+<p>4-bit 裸编码理论值：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn><mi>B</mi><mo>×</mo><mn>0.5</mn><mo>≈</mo><mn>3.5</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+7B\times0.5
+\approx3.5GB
+</annotation></semantics></math></p>
+<p>但是这里一定要加一句：</p>
+<blockquote>
+<p><strong>真实显存不会精确等于 3.5GB。</strong></p>
+</blockquote>
+<p>因为量化还需要：</p>
+<pre class="text"><code>Scale
+Zero / Quantization Metadata
+Block Information
+Temporary Buffers
+Framework Overhead
+其他未量化参数</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>4</mn><mi>b</mi><mi>i</mi><mi>t</mi><mi>理</mi><mi>论</mi><mi>裸</mi><mi>权</mi><mi>重</mi><mi>大</mi><mi>小</mi><mo>≠</mo><mi>实</mi><mi>际</mi><mi>G</mi><mi>P</mi><mi>U</mi><mi>显</mi><mi>存</mi><mi>占</mi><mi>用</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+4bit理论裸权重大小
+\neq
+实际GPU显存占用
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五量化究竟怎么发生">五、量化究竟怎么发生？</h1>
+<p>不要把量化想成：</p>
+<blockquote>
+<p>整个 70 亿参数只找一个最大值，然后压成 16 档。</p>
+</blockquote>
+<p>实际通常会：</p>
+<h1 id="block-wise-quantization">Block-wise Quantization</h1>
+<h2 id="分块量化">分块量化</h2>
+<p>也就是把权重分成很多小块。</p>
+<p>例如概念上：</p>
+<pre class="text"><code>Block 1
+[w1 w2 w3 ...]
+      ↓
+找到这个Block自己的缩放信息
+      ↓
+映射到16个NF4状态
+
+Block 2
+[w...]
+      ↓
+自己的scale
+      ↓
+映射到16个状态</code></pre>
+<p>这样相比整个大矩阵只用一个统一尺度：</p>
+<blockquote>
+<p>能更好地保留局部数值结构。</p>
+</blockquote>
+<p>所以一个量化权重实际上不仅有：</p>
+<pre class="text"><code>4-bit codes</code></pre>
+<p>还需要：</p>
+<pre class="text"><code>quantization scales / metadata</code></pre>
+<p>来恢复近似权重。</p>
+<hr />
+<h1 id="六forward-时最精准的流程是什么">六、Forward
+时最精准的流程是什么？</h1>
+<p>这一段非常关键。</p>
+<p>假设原始 Base Weight：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">
+W
+</annotation></semantics></math></p>
+<p>加载成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>W</mi><mi>q</mi></msub><annotation encoding="application/x-tex">
+W_q
+</annotation></semantics></math></p>
+<p>即 4-bit 量化存储。</p>
+<p>Forward 不是简单：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>W</mi><mi>q</mi></msub><mi>x</mi></mrow><annotation encoding="application/x-tex">
+W_qx
+</annotation></semantics></math></p>
+<p>然后整个矩阵乘法都按普通整数 4-bit 思维理解。</p>
+<p>概念上更接近：</p>
+<pre class="text"><code>4-bit Quantized Weight
+W_q
+      ↓
+Dequantization
+反量化
+      ↓
+Compute Dtype
+例如 BF16
+      ↓
+Matrix Multiply
+      ↓
+Base Output
+      +
+LoRA Output</code></pre>
+<p>公式上可以粗略写：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>D</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mi>q</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mi>x</mi><mo>+</mo><mfrac><mi>α</mi><mi>r</mi></mfrac><mi>B</mi><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">
+y
+=
+Dequant(W_q)x
++
+\frac{\alpha}{r}BAx
+</annotation></semantics></math></p>
+<p>其中：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>W</mi><mi>q</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>≈</mo><mi>W</mi></mrow><annotation encoding="application/x-tex">
+Dequant(W_q)
+\approx
+W
+</annotation></semantics></math></p>
+<p>这就是 QLoRA 最核心的一张公式。</p>
+<hr />
+<h1
+id="七为什么反量化以后还省显存">七、为什么“反量化”以后还省显存？</h1>
+<p>你可能马上发现一个问题：</p>
+<blockquote>
+<p>既然最后要恢复成 BF16，为什么不一开始直接保存 BF16？</p>
+</blockquote>
+<p>关键在于：</p>
+<blockquote>
+<p><strong>不需要把整个 Base Model 永久以 BF16
+完整副本驻留在显存中。</strong></p>
+</blockquote>
+<p>权重主要保持：</p>
+<pre class="text"><code>4-bit compressed storage</code></pre>
+<p>计算某一层时：</p>
+<blockquote>
+<p>按实际 kernel /
+实现需要，把相关量化权重转换到计算表示完成矩阵运算。</p>
+</blockquote>
+<p>所以要区分：</p>
+<pre class="text"><code>长期驻留的模型权重表示</code></pre>
+<p>和：</p>
+<pre class="text"><code>计算瞬间使用的数值表示</code></pre>
+<p>这就是为什么：</p>
+<blockquote>
+<p>Storage Dtype 与 Compute Dtype 的区别如此重要。</p>
+</blockquote>
+<hr />
+<h1 id="八lora-adapter-本身会不会也变成-4-bit">八、LoRA Adapter
+本身会不会也变成 4-bit？</h1>
+<p>第一版心智模型：</p>
+<blockquote>
+<p><strong>不要这样理解。</strong></p>
+</blockquote>
+<p>QLoRA 中被低位宽量化的核心对象是：</p>
+<h1 id="frozen-base-model">Frozen Base Model</h1>
+<p>而 LoRA：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>,</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">
+A,B
+</annotation></semantics></math></p>
+<p>是真正需要梯度更新的训练参数。</p>
+<p>它们通常保持：</p>
+<blockquote>
+<p>更适合训练的浮点精度。</p>
+</blockquote>
+<p>例如常见会使用：</p>
+<pre class="text"><code>BF16
+FP16
+或框架适合的训练dtype</code></pre>
+<p>所以：</p>
+<pre class="text"><code>4-bit
+=
+Frozen Base Storage
+
+BF16 / FP16 等
+=
+主要计算与可训练Adapter相关精度</code></pre>
+<p>这个边界一定要牢牢记住。</p>
+<hr />
+<h1 id="九nf4-为什么不是普通-int4">九、NF4 为什么不是普通 INT4？</h1>
+<p>这里不需要深入信息论，但必须建立准确直觉。</p>
+<p>普通均匀 INT4 可以想象：</p>
+<blockquote>
+<p>把一个数值区间相对均匀地划成有限档位。</p>
+</blockquote>
+<p>NF4 的设计思想则更加针对：</p>
+<blockquote>
+<p>神经网络权重的统计分布。</p>
+</blockquote>
+<p>它试图让有限的 16 个编码：</p>
+<blockquote>
+<p>更有效地覆盖常见权重值所在的区域。</p>
+</blockquote>
+<p>因此在 QLoRA 语境里：</p>
+<pre class="text"><code>4-bit</code></pre>
+<p>只说明：</p>
+<blockquote>
+<p>位宽。</p>
+</blockquote>
+<p>而：</p>
+<pre class="text"><code>NF4</code></pre>
+<p>说明：</p>
+<blockquote>
+<p><strong>这 4 个 bit 怎样解释。</strong></p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>i</mi><mi>t</mi><mi>W</mi><mi>i</mi><mi>d</mi><mi>t</mi><mi>h</mi><mo>≠</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BitWidth
+\neq
+QuantizationFormat
+}
+</annotation></semantics></math></p>
+<p>4-bit 可以有不同量化格式。</p>
+<p>NF4 是其中一种。</p>
+<hr />
+<h1 id="十什么是-double-quantization">十、什么是 Double
+Quantization？</h1>
+<p>这是 QLoRA 里另一个值得认识、但不用过度钻数学的技术。</p>
+<p>第一次量化：</p>
+<blockquote>
+<p>把 Base Weight 压成 4-bit。</p>
+</blockquote>
+<p>但前面说过：</p>
+<blockquote>
+<p>每个量化 Block 还需要 Scale 等量化常数。</p>
+</blockquote>
+<p>这些常数本身：</p>
+<blockquote>
+<p>也占空间。</p>
+</blockquote>
+<p>于是 Double Quantization 的思路是：</p>
+<blockquote>
+<p><strong>连这些量化常数本身也再做进一步量化。</strong></p>
+</blockquote>
+<p>流程：</p>
+<pre class="text"><code>Base Weights
+      ↓
+第一次Quantization
+      ↓
+4-bit weight codes
++
+quantization constants
+      ↓
+再压缩这些constants
+      ↓
+进一步节省显存</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>o</mi><mi>u</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>是</mi><mi>把</mi><mi>权</mi><mi>重</mi><mo>“</mo><mi>量</mi><mi>化</mi><mi>两</mi><mi>遍</mi><mo>”</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DoubleQuantization
+不是把权重“量化两遍”
+}
+</annotation></semantics></math></p>
+<p>更准确地说：</p>
+<blockquote>
+<p>第二层主要进一步压缩第一层量化产生的量化参数。</p>
+</blockquote>
+<hr />
+<h1 id="十一把-loraqloranf4-一次性放对位置">十一、把 LoRA、QLoRA、NF4
+一次性放对位置</h1>
+<p>整个结构应该这样看：</p>
+<pre class="text"><code>                Base Model Weight W
+                         │
+                         ▼
+                 4-bit Quantization
+                         │
+                         ▼
+                        NF4
+              低位宽保存Frozen Base
+                         │
+                  Forward时按需
+                   Dequantize
+                         │
+                         ▼
+                      Base Path
+                         │
+                         ├──────────────┐
+                         │              │
+输入 x ─────────────────┤              ▼
+                         │            相加
+                         │              │
+                         ▼              ▼
+                    LoRA A → B       Output
+                    Trainable
+                         │
+                         ▼
+                       Loss
+                         │
+                         ▼
+                     Backward
+                         │
+                         ▼
+                    更新 LoRA
+                    Base不更新</code></pre>
+<p>这就是 QLoRA。</p>
+<p>不是：</p>
+<blockquote>
+<p>“把整个 LoRA 也压成 4-bit 然后训练。”</p>
+</blockquote>
+<hr />
+<h1
+id="十二政府采购项目为什么特别适合把-qlora-作为-baseline-候选">十二、政府采购项目为什么特别适合把
+QLoRA 作为 Baseline 候选？</h1>
+<p>因为我们的第一版目标是：</p>
+<pre class="text"><code>强 Base Model
++
+高质量政府采购 SFT 数据
++
+有限训练资源
++
+频繁实验
++
+多个 Adapter Version</code></pre>
+<p>我们真正想训练的：</p>
+<blockquote>
+<p>是领域行为增量。</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>整套 Base Model。</p>
+</blockquote>
+<p>于是 QLoRA 可以让：</p>
+<pre class="text"><code>大模型能力</code></pre>
+<p>与：</p>
+<pre class="text"><code>较低训练显存门槛</code></pre>
+<p>同时存在。</p>
+<p>但这里必须防止另一个极端：</p>
+<blockquote>
+<p><strong>QLoRA 不是因为省显存，所以永远应该优先于 LoRA。</strong></p>
+</blockquote>
+<p>如果 GPU 足够，</p>
+<p>普通 BF16 LoRA：</p>
+<blockquote>
+<p>结构更简单。</p>
+</blockquote>
+<p>有时调试也更直接。</p>
+<p>所以最终比较仍然是：</p>
+<pre class="text"><code>BF16 LoRA
+vs
+QLoRA</code></pre>
+<p>在相同 Dataset、Benchmark 和 Target Modules 下：</p>
+<blockquote>
+<p>看显存、速度、稳定性和业务指标。</p>
+</blockquote>
+<hr />
+<h1 id="十三qlora-最容易产生的-7-个错误理解">十三、QLoRA 最容易产生的 7
+个错误理解</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>错误理解</th>
+<th>正确理解</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>“QLoRA 就是 4-bit LoRA”</td>
+<td>核心是 4-bit Frozen Base + Trainable LoRA</td>
+</tr>
+<tr class="even">
+<td>“所有训练计算都是 4-bit”</td>
+<td>4-bit 主要用于 Base Weight 存储，计算通常使用更高精度</td>
+</tr>
+<tr class="odd">
+<td>“NF4 是保留四位小数”</td>
+<td>NF4 是 4-bit 量化编码格式</td>
+</tr>
+<tr class="even">
+<td>“4-bit 没有误差”</td>
+<td>量化一定是近似表示</td>
+</tr>
+<tr class="odd">
+<td>“LoRA A/B 也必须是 4-bit”</td>
+<td>可训练 Adapter 通常保持适合训练的浮点精度</td>
+</tr>
+<tr class="even">
+<td>“7B 4-bit 一定只占 3.5GB”</td>
+<td>3.5GB 只是裸权重理论值，实际还有元数据和运行开销</td>
+</tr>
+<tr class="odd">
+<td>“QLoRA 解决所有 OOM”</td>
+<td>Activation、Sequence Length、Batch 等仍可能导致 OOM</td>
+</tr>
+</tbody>
+</table>
+<p>这张表建议真正记住。</p>
+<hr />
+<h1
+id="十四本阶段工程产物qloramemorymodel_v0.1">十四、本阶段工程产物：<code>QLoRAMemoryModel_V0.1</code></h1>
+<p>第一版配置记录不要只写：</p>
+<pre class="text"><code>load_in_4bit = true</code></pre>
+<p>至少应该把这些信息放在一起：</p>
+<pre class="text"><code>base_model_revision
+
+quantization_enabled
+=
+true
+
+base_weight_bit_width
+=
+4
+
+quantization_format
+=
+NF4
+
+double_quantization
+=
+enabled / disabled
+
+compute_dtype
+=
+BF16 / FP16 / actual setting
+
+base_weights
+=
+frozen
+
+adapter_method
+=
+LoRA
+
+adapter_train_dtype
+=
+actual framework setting
+
+rank
+alpha
+dropout
+target_modules
+
+measured_peak_vram
+
+benchmark_version</code></pre>
+<p>为什么最后两个特别重要？</p>
+<p>因为理论上：</p>
+<blockquote>
+<p>“应该省很多显存。”</p>
+</blockquote>
+<p>不等于：</p>
+<blockquote>
+<p>你的真实训练配置真的省了多少。</p>
+</blockquote>
+<p>最终必须测：</p>
+<h1 id="peak-vram">Peak VRAM</h1>
+<p>同时测：</p>
+<h1 id="business-quality">Business Quality</h1>
+<hr />
+<h1 id="十五把本阶段压缩成最精准的-5-句话">十五、把本阶段压缩成最精准的
+5 句话</h1>
+<p>如果一周以后只剩五句话，我希望是：</p>
+<blockquote>
+<p><strong>第一，QLoRA 不是把整个训练变成 4-bit，而是主要把冻结 Base
+Model 的权重低位宽保存，再继续训练 LoRA Adapter。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，必须区分 Storage Dtype 与 Compute Dtype：权重可以 4-bit
+存储，但矩阵计算通常会在 BF16、FP16
+等更合适的计算精度下完成。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，NF4 是针对神经网络权重设计的 4-bit 量化表示；4-bit
+表示位宽，NF4 表示这些 4 个 bit 如何编码数值。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，量化一定产生近似误差，QLoRA
+的价值是用可接受的量化误差换取巨大的 Base Weight
+显存节省，最终是否值得必须由 Benchmark 验证。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，QLoRA 主要解决 Base Weight Memory，不会让
+Activation、Context Length、Batch Size
+和训练临时内存问题自动消失。</strong></p>
+</blockquote>
+<p>这五句话真正掌握：</p>
+<blockquote>
+<p>QLoRA 就不会再变成“神秘省显存开关”。</p>
+</blockquote>
+<hr />
+<h1 id="本阶段最核心的一张图">本阶段最核心的一张图</h1>
+<pre class="text"><code>Original Base Model
+BF16 / FP16 Weights
+        │
+        ▼
+4-bit Quantization
+        │
+        ▼
+NF4 Frozen Base
+低显存驻留
+        │
+        │ Forward
+        ▼
+On-the-fly Dequantization
+        │
+        ▼
+Compute Dtype
+BF16 / FP16 等
+        │
+        ▼
+       Wx
+        │
+        ├────────────────┐
+        │                │
+        │           LoRA Branch
+        │             A → B
+        │           Trainable
+        │                │
+        └───────┬────────┘
+                ▼
+              Output
+                │
+                ▼
+               Loss
+                │
+                ▼
+             Backward
+                │
+                ▼
+         LoRA A/B Updated
+                │
+         Quantized Base
+             Frozen</code></pre>
+<p>脑中只记一句：</p>
+<blockquote>
+<p><strong>Base 低位宽存，计算高精度做，LoRA 正常训练。</strong></p>
+</blockquote>
+<hr />
+<h1 id="本阶段掌握测试">本阶段掌握测试</h1>
+<p>现在不回看正文，你应该能够自己解释：QLoRA 和普通 LoRA
+的真正区别是什么；QLoRA 到底量化了谁；为什么 Frozen Base
+仍然值得量化；为什么 4-bit 不意味着所有 Forward、Backward 都只有
+4-bit；Storage Dtype 和 Compute Dtype 有什么区别；为什么 4-bit
+理论上相对 BF16
+能把裸权重存储缩到约四分之一；为什么实际显存不会严格等于理论值；什么是
+Block-wise Quantization；NF4 的 4-bit
+与“四位小数”为什么完全不是一回事；为什么 NF4 和 INT4
+不是同一个概念；什么是 Quantization Error；为什么
+<code>Dequant(W_q)</code> 只能近似原始
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>W</mi><annotation encoding="application/x-tex">W</annotation></semantics></math>；为什么
+LoRA A/B 通常不跟着 Base 一起量化成训练用 4-bit；Double Quantization
+进一步压缩的是什么；以及为什么 QLoRA 之后仍然可能因为长
+Context、Activation 或 Batch Size 而 OOM。</p>
+<p>如果这些能够完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>9</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第9阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-8">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>QLoRA 的本质，是把“不需要更新但必须驻留”的巨大 Base Model
+权重以 NF4 等 4-bit 形式压缩保存，在 Forward
+时按需要恢复到合适的计算精度参与完整模型计算，同时保持 LoRA Adapter
+为真正可训练参数；它省掉的是 Base Weight
+的大头显存，而不是把整个训练系统魔法般变成 4-bit。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-10-阶段">下一阶段：第五课 · 第 10 阶段</h1>
+<h1 id="训练显存到底花在哪里">训练显存到底花在哪里？</h1>
+<h2
+id="为什么明明-7b-4-bit-base-model-只有几-gb训练时还是可能-oom">为什么明明
+7B 4-bit Base Model 只有几 GB，训练时还是可能 OOM？</h2>
+<p>第 9 阶段解决了：</p>
+<blockquote>
+<p><strong>Base Weight 怎样从 BF16 的大体积压到 4-bit。</strong></p>
+</blockquote>
+<p>第 10 阶段要正式把训练显存账本摊开：</p>
+<pre class="text"><code>Model Weights
++
+LoRA Parameters
++
+Gradients
++
+Optimizer States
++
+Activations
++
+Attention / Temporary Buffers
++
+CUDA / Framework Overhead</code></pre>
+<p>然后真正回答：</p>
+<blockquote>
+<p><strong>哪个东西跟模型参数量走，哪个东西跟 Sequence Length
+走，哪个东西跟 Batch Size 走，以及 OOM 时到底应该先改什么。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage08.html">← 第 8 阶段</a><a class="btn" href="stage10.html">第 10 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

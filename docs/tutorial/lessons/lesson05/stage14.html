@@ -1,0 +1,1109 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第14阶段：Baseline vs Fine-tuned Model 正式对比</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第14阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>微调的价值不是“模型参数变了”，而是它在独立、固定、可复现的业务测试上，证明自己改变了正确的行为，同时没有付出不可接受的回归代价。</li><li>模型更会预测训练目标。</li><li>真正高风险条款，</li></ul></div><h1 id="第五课-第-14-阶段">第五课 · 第 14 阶段</h1>
+<h1 id="baseline-vs-fine-tuned-model-正式对比-2">Baseline vs Fine-tuned
+Model 正式对比</h1>
+<h2
+id="我们花了一整课训练模型究竟有没有真的把它变得更好">我们花了一整课训练模型，究竟有没有真的把它变得更好？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-13">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-13">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>微调的价值不是“模型参数变了”，而是它在独立、固定、可复现的业务测试上，证明自己改变了正确的行为，同时没有付出不可接受的回归代价。</strong></li>
+<li><strong>模型更会预测训练目标。</strong></li>
+<li><strong>真正高风险条款，</strong></li>
+<li><strong>漏报了什么，误报了什么。</strong></li>
+<li><strong>关键词 Shortcut。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-13">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Test</code></td>
+<td>测试集：模型选择完成后独立估计泛化能力</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="odd">
+<td><code>Regression</code></td>
+<td>回归测试：更新后验证旧能力和关键切片没有退化</td>
+</tr>
+<tr class="even">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="odd">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="even">
+<td><code>Hard Negative</code></td>
+<td>高难负例：表面像风险但正确结论不应判风险</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-13">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>这是第五课最后一个阶段。</p>
+<p>前 13 个阶段，我们完成了：</p>
+<pre class="text"><code>ProcurementDataset_V0.1
+        ↓
+SFT Formatting Contract
+        ↓
+Loss Mask
+        ↓
+Length / Packing
+        ↓
+LoRA / QLoRA
+        ↓
+Training
+        ↓
+Checkpoint Selection
+        ↓
+Merge / Release Candidate</code></pre>
+<p>现在终于到了最重要的一步：</p>
+<blockquote>
+<p><strong>不要再问“Loss
+降了没有”，而要正式证明模型行为到底发生了什么变化。</strong></p>
+</blockquote>
+<p>今天最终要形成两个交付物：</p>
+<h1
+id="procurementbenchmark_v0.1"><code>ProcurementBenchmark_V0.1</code></h1>
+<p>以及第五课最终成果：</p>
+<h1 id="procurementlm_v0.1-4"><code>ProcurementLM_V0.1</code></h1>
+<hr />
+<h2 id="一本阶段先锁死-5-个核心心智模型">一、本阶段先锁死 5
+个核心心智模型</h2>
+<p><strong>心智模型
+1：训练完成不等于模型变好，只有固定测试集上的可重复提升才算证据。</strong></p>
+<p>训练 Loss：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>↓</mo><annotation encoding="application/x-tex">
+\downarrow
+</annotation></semantics></math></p>
+<p>只能说明：</p>
+<blockquote>
+<p>模型更会预测训练目标。</p>
+</blockquote>
+<p>真正验收必须看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>T</mi><mi>u</mi><mi>n</mi><mi>e</mi><mi>d</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>−</mo><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FineTunedPerformance
+-
+BasePerformance
+}
+</annotation></semantics></math></p>
+<p>在<strong>未参与训练和调参的数据</strong>上到底是多少。</p>
+<hr />
+<p><strong>心智模型
+2：公平对比必须只改变“模型参数”，其他推理条件全部锁死。</strong></p>
+<p>Base Model 和 Fine-tuned Model 必须尽量使用相同的：</p>
+<pre class="text"><code>Base Revision
+Tokenizer
+Chat Template
+System Prompt
+Prompt
+Context
+Generation Config
+max_new_tokens
+停止规则
+推理代码</code></pre>
+<p>否则：</p>
+<pre class="text"><code>Model A
+temperature = 0
+
+Model B
+temperature = 0.8</code></pre>
+<p>最后得到不同输出，</p>
+<p>你根本不知道差异来自：</p>
+<blockquote>
+<p>微调，</p>
+</blockquote>
+<p>还是：</p>
+<blockquote>
+<p>解码随机性。</p>
+</blockquote>
+<p>所以正式实验要满足：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>n</mi><mi>l</mi><mi>y</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>h</mi><mi>a</mi><mi>n</mi><mi>g</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OnlyModelConditionChanges
+}
+</annotation></semantics></math></p>
+<hr />
+<p><strong>心智模型 3：不能只看一个总
+Accuracy，必须看错误类型。</strong></p>
+<p>政府采购风险识别尤其如此。</p>
+<p>假设模型：</p>
+<pre class="text"><code>100 条
+预测对了 90 条</code></pre>
+<p>看起来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mo>=</mo><mn>90</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+Accuracy=90\%
+</annotation></semantics></math></p>
+<p>但如果漏掉的 10 条全部是：</p>
+<blockquote>
+<p>真正高风险条款，</p>
+</blockquote>
+<p>这个模型并不好用。</p>
+<p>所以必须拆：</p>
+<pre class="text"><code>True Positive
+False Positive
+True Negative
+False Negative</code></pre>
+<p>尤其关注：</p>
+<blockquote>
+<p><strong>漏报了什么，误报了什么。</strong></p>
+</blockquote>
+<hr />
+<p><strong>心智模型 4：Benchmark 必须按 Slice
+看，不然平均分会掩盖真正的问题。</strong></p>
+<p>我们第四课专门构造了：</p>
+<pre class="text"><code>Normal
+Hard Positive
+Hard Negative
+Boundary Case
+Unknown / needs_review</code></pre>
+<p>今天这些终于发挥作用。</p>
+<p>一个总分可能很好，</p>
+<p>但如果：</p>
+<pre class="text"><code>Hard Negative
+大量误报</code></pre>
+<p>那说明模型仍然在走：</p>
+<blockquote>
+<p>关键词 Shortcut。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mo>+</mo><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OverallMetric
++
+SliceMetric
+}
+</annotation></semantics></math></p>
+<p>必须同时存在。</p>
+<hr />
+<p><strong>心智模型 5：最终验收不是“Fine-tuned
+所有指标都必须更高”，而是收益和代价必须透明。</strong></p>
+<p>微调可能带来：</p>
+<pre class="text"><code>采购判断 ↑
+结构稳定性 ↑
+专业表达 ↑</code></pre>
+<p>同时也可能带来：</p>
+<pre class="text"><code>通用回答能力 ↓
+输出变得过于模板化
+Latency ↑
+Adapter / Model管理成本 ↑</code></pre>
+<p>所以最终问题应该是：</p>
+<blockquote>
+<p><strong>模型获得了什么能力，又付出了什么代价？</strong></p>
+</blockquote>
+<hr />
+<h1 id="二先把三个数据集彻底分开">二、先把三个数据集彻底分开</h1>
+<p>这一阶段必须再次强调：</p>
+<pre class="text"><code>Train
+Validation
+Test</code></pre>
+<p>三者职责不同。</p>
+<h3 id="train-set">Train Set</h3>
+<p>用于：</p>
+<blockquote>
+<p>参数更新。</p>
+</blockquote>
+<hr />
+<h3 id="validation-set">Validation Set</h3>
+<p>用于：</p>
+<pre class="text"><code>选Checkpoint
+调Rank
+调Learning Rate
+调Epoch
+调Target Modules
+Early Stopping</code></pre>
+<p>也就是说：</p>
+<blockquote>
+<p>我们已经反复看过 Validation。</p>
+</blockquote>
+<p>因此它已经参与了开发决策。</p>
+<hr />
+<h3 id="test-set">Test Set</h3>
+<p>最终测试集必须做到：</p>
+<blockquote>
+<p><strong>训练时没看过，调参时也没看过。</strong></p>
+</blockquote>
+<p>它只在模型已经被冻结为 Release Candidate 后正式运行。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>V</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>d</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>F</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Validation
+\neq
+FinalTest
+}
+</annotation></semantics></math></p>
+<p>如果你拿 Test Set 调了三轮参数，</p>
+<p>它就已经不再是：</p>
+<blockquote>
+<p>真正的 Final Test。</p>
+</blockquote>
+<hr />
+<h1 id="三建立-procurementbenchmark_v0.1">三、建立
+<code>ProcurementBenchmark_V0.1</code></h1>
+<p>第一版正式 Benchmark 不需要巨大。</p>
+<p>但必须结构完整。</p>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Slice</th>
+<th>要测试什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Normal</td>
+<td>普通采购条款是否正确判断</td>
+</tr>
+<tr class="even">
+<td>Hard Positive</td>
+<td>隐蔽风险能否识别</td>
+</tr>
+<tr class="odd">
+<td>Hard Negative</td>
+<td>看似危险但实际合理的条款是否避免误报</td>
+</tr>
+<tr class="even">
+<td>Boundary Case</td>
+<td>相邻规则、复杂条件能否区分</td>
+</tr>
+<tr class="odd">
+<td>Unknown / needs_review</td>
+<td>信息不足时是否知道“不确定”</td>
+</tr>
+<tr class="even">
+<td>Format Compliance</td>
+<td>输出 Schema 是否稳定</td>
+</tr>
+<tr class="odd">
+<td>General Regression</td>
+<td>微调是否破坏基础通用能力</td>
+</tr>
+</tbody>
+</table>
+<p>核心不是：</p>
+<blockquote>
+<p>一共 500 条还是 5000 条。</p>
+</blockquote>
+<p>第一优先级是：</p>
+<blockquote>
+<p><strong>覆盖模型真正容易失败的边界。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四先定义核心分类指标">四、先定义核心分类指标</h1>
+<p>假设任务中：</p>
+<pre class="text"><code>Positive
+=
+存在风险</code></pre>
+<p>那么：</p>
+<h3 id="precision">Precision</h3>
+<h2 id="精确率">精确率</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mfrac><mrow><mi>T</mi><mi>P</mi></mrow><mrow><mi>T</mi><mi>P</mi><mo>+</mo><mi>F</mi><mi>P</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Precision
+=
+\frac{TP}{TP+FP}
+</annotation></semantics></math></p>
+<p>回答：</p>
+<blockquote>
+<p><strong>模型报警的案例中，有多少是真的风险？</strong></p>
+</blockquote>
+<p>如果 Precision 很低：</p>
+<blockquote>
+<p>模型会大量误报。</p>
+</blockquote>
+<hr />
+<h3 id="recall">Recall</h3>
+<h2 id="召回率">召回率</h2>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>=</mo><mfrac><mrow><mi>T</mi><mi>P</mi></mrow><mrow><mi>T</mi><mi>P</mi><mo>+</mo><mi>F</mi><mi>N</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Recall
+=
+\frac{TP}{TP+FN}
+</annotation></semantics></math></p>
+<p>回答：</p>
+<blockquote>
+<p><strong>真正的风险案例中，有多少被模型抓到了？</strong></p>
+</blockquote>
+<p>如果 Recall 很低：</p>
+<blockquote>
+<p>模型会大量漏报。</p>
+</blockquote>
+<hr />
+<h3 id="f1">F1</h3>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mn>1</mn><mo>=</mo><mn>2</mn><mo>⋅</mo><mfrac><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>⋅</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+F1
+=
+2
+\cdot
+\frac{Precision\cdot Recall}
+{Precision+Recall}
+</annotation></semantics></math></p>
+<p>它用于：</p>
+<blockquote>
+<p>综合平衡 Precision 与 Recall。</p>
+</blockquote>
+<p>但不要把 F1 当成唯一真理。</p>
+<p>政府采购场景里：</p>
+<blockquote>
+<p>False Positive 和 False Negative 的业务成本可能并不对称。</p>
+</blockquote>
+<p>最终必须分别看。</p>
+<hr />
+<h1 id="五真正值得看的是-confusion-matrix">五、真正值得看的，是
+Confusion Matrix</h1>
+<p>假设有：</p>
+<pre class="text"><code>TP
+真正风险 → 模型判风险
+
+FP
+实际合理 → 模型误判风险
+
+TN
+实际合理 → 模型判合理
+
+FN
+真正风险 → 模型漏报</code></pre>
+<p>这四个数字比一个 Accuracy 更有解释力。</p>
+<p>例如：</p>
+<table>
+<thead>
+<tr class="header">
+<th>模型</th>
+<th style="text-align: right;">TP</th>
+<th style="text-align: right;">FP</th>
+<th style="text-align: right;">TN</th>
+<th style="text-align: right;">FN</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base</td>
+<td style="text-align: right;">61</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">39</td>
+</tr>
+<tr class="even">
+<td>Fine-tuned</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">15</td>
+<td style="text-align: right;">85</td>
+<td style="text-align: right;">18</td>
+</tr>
+</tbody>
+</table>
+<p>这时候你才能清楚看到：</p>
+<pre class="text"><code>漏报 FN
+39 → 18
+
+误报 FP
+32 → 15</code></pre>
+<p>而不是只说：</p>
+<blockquote>
+<p>“准确率提高了。”</p>
+</blockquote>
+<p>注意：</p>
+<p>上面的数字只是教学示例，不是我们的实际模型成绩。</p>
+<hr />
+<h1 id="六hard-negative-是这次验收的核心中的核心">六、Hard Negative
+是这次验收的核心中的核心</h1>
+<p>我们一直用这个例子：</p>
+<h3 id="hard-positive">Hard Positive</h3>
+<blockquote>
+<p>投标人在投标截止日前须已在本市设立固定服务机构。</p>
+</blockquote>
+<p>这里：</p>
+<pre class="text"><code>投标前
++
+已存在
++
+准入要求</code></pre>
+<p>可能构成明显风险。</p>
+<hr />
+<h3 id="hard-negative">Hard Negative</h3>
+<blockquote>
+<p>中标后供应商应保证 2
+小时现场服务响应，但可自行确定服务资源组织方式。</p>
+</blockquote>
+<p>这里虽然也出现：</p>
+<pre class="text"><code>现场
+服务
+地域</code></pre>
+<p>但它更接近：</p>
+<blockquote>
+<p>履约能力要求，</p>
+</blockquote>
+<p>而不是：</p>
+<blockquote>
+<p>投标准入地域限制。</p>
+</blockquote>
+<p>如果 Fine-tuned Model 真学到了：</p>
+<blockquote>
+<p>决策边界，</p>
+</blockquote>
+<p>我们希望看到：</p>
+<pre class="text"><code>Hard Positive Recall ↑
+
+同时
+
+Hard Negative False Positive ↓</code></pre>
+<p>这比：</p>
+<blockquote>
+<p>普通案例 Accuracy 提高几个百分点，</p>
+</blockquote>
+<p>有价值得多。</p>
+<p>因为它能证明：</p>
+<blockquote>
+<p>模型没有只学会看到“本地”就报警。</p>
+</blockquote>
+<hr />
+<h1 id="七needs_review-必须单独评测">七、<code>needs_review</code>
+必须单独评测</h1>
+<p>真实采购审查不会永远只有：</p>
+<pre class="text"><code>risk
+no_risk</code></pre>
+<p>还有：</p>
+<h1 id="needs_review"><code>needs_review</code></h1>
+<p>也就是：</p>
+<blockquote>
+<p>当前证据不足，不能可靠下结论。</p>
+</blockquote>
+<p>例如输入只给：</p>
+<blockquote>
+<p>“供应商须满足当地要求。”</p>
+</blockquote>
+<p>但没有：</p>
+<pre class="text"><code>什么当地要求？
+发生在投标前还是履约后？
+是否限制供应商所在地？
+是否允许等效方式？</code></pre>
+<p>一个成熟模型不应该强行输出：</p>
+<blockquote>
+<p>有风险。</p>
+</blockquote>
+<p>也不应该强行输出：</p>
+<blockquote>
+<p>无风险。</p>
+</blockquote>
+<p>所以 Benchmark 还要测：</p>
+<h1 id="abstention-behavior">Abstention Behavior</h1>
+<h2 id="拒绝武断判断-不确定性处理">拒绝武断判断 / 不确定性处理</h2>
+<p>这里真正想看到的是：</p>
+<blockquote>
+<p>该不确定的时候敢不确定，该判断的时候不要全部逃到
+<code>needs_review</code>。</p>
+</blockquote>
+<hr />
+<h1
+id="八结构化输出必须成为独立指标">八、结构化输出必须成为独立指标</h1>
+<p>假设我们的目标 Schema 是：</p>
+<div class="sourceCode" id="cb1035"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1035-1"><a href="#cb1035-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1035-2"><a href="#cb1035-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb1035-3"><a href="#cb1035-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;risk_type&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商资格条件&quot;</span><span class="fu">,</span></span>
+<span id="cb1035-4"><a href="#cb1035-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;...&quot;</span><span class="fu">,</span></span>
+<span id="cb1035-5"><a href="#cb1035-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;needs_review&quot;</span><span class="fu">:</span> <span class="kw">false</span></span>
+<span id="cb1035-6"><a href="#cb1035-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>那么至少应该统计：</p>
+<h1 id="format-compliance-rate">Format Compliance Rate</h1>
+<p>例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>i</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>=</mo><mfrac><mtext mathvariant="normal">合法Schema输出数量</mtext><mtext mathvariant="normal">总输出数量</mtext></mfrac></mrow><annotation encoding="application/x-tex">
+SchemaCompliance
+=
+\frac{\text{合法Schema输出数量}}
+{\text{总输出数量}}
+</annotation></semantics></math></p>
+<p>需要检查：</p>
+<pre class="text"><code>JSON 能否解析
+
+必填字段是否存在
+
+字段类型是否正确
+
+枚举值是否有效
+
+有没有额外废话
+
+有没有答案被截断</code></pre>
+<p>因为一个业务模型：</p>
+<blockquote>
+<p>判断是对的，但接口每天随机坏格式，</p>
+</blockquote>
+<p>照样不能稳定接入系统。</p>
+<hr />
+<h1
+id="九理由质量不能简单用和-gold-文本像不像判断">九、理由质量不能简单用“和
+Gold 文本像不像”判断</h1>
+<p>这是一个很重要的点。</p>
+<p>专家答案可能写：</p>
+<blockquote>
+<p>“该要求将投标前已具备本地机构作为准入条件，具有地域限制风险。”</p>
+</blockquote>
+<p>模型也可能写：</p>
+<blockquote>
+<p>“供应商必须在投标截止前已经拥有本地机构，该条件限制了外地供应商参与资格。”</p>
+</blockquote>
+<p>两者：</p>
+<blockquote>
+<p>文字不同。</p>
+</blockquote>
+<p>但业务逻辑：</p>
+<blockquote>
+<p>基本相同。</p>
+</blockquote>
+<p>所以单纯使用：</p>
+<pre class="text"><code>BLEU
+ROUGE
+字符串相似度</code></pre>
+<p>往往不能很好代表：</p>
+<blockquote>
+<p>理由是否正确。</p>
+</blockquote>
+<p>更合理的 Reason Evaluation 应该看：</p>
+<pre class="text"><code>是否引用正确事实
+
+是否抓住正确触发条件
+
+是否遗漏关键条件
+
+是否引入输入中不存在的事实
+
+结论和理由是否一致</code></pre>
+<p>第一版可以用：</p>
+<blockquote>
+<p>人工 Rubric + 抽样盲审。</p>
+</blockquote>
+<hr />
+<h1 id="十正式做一次成对比较">十、正式做一次“成对比较”</h1>
+<p>这一阶段一个特别重要的方法叫：</p>
+<h1 id="paired-evaluation">Paired Evaluation</h1>
+<h2 id="成对评测">成对评测</h2>
+<p>同一条 Test Case：</p>
+<pre class="text"><code>Case 001</code></pre>
+<p>同时给：</p>
+<pre class="text"><code>Base Model</code></pre>
+<p>和：</p>
+<pre class="text"><code>Fine-tuned Model</code></pre>
+<p>于是每个案例都得到：</p>
+<pre class="text"><code>Gold
+Base Output
+Fine-tuned Output</code></pre>
+<p>这样你能直接分类：</p>
+<pre class="text"><code>Base错 → Fine-tuned对
+真正改善
+
+Base对 → Fine-tuned错
+回归
+
+两者都对
+无变化
+
+两者都错
+仍未解决</code></pre>
+<p>这比只比较两个总分强得多。</p>
+<p>因为它告诉你：</p>
+<blockquote>
+<p><strong>微调到底改变了哪些具体行为。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十一真正重要的是净变化矩阵">十一、真正重要的是“净变化矩阵”</h1>
+<p>可以建立：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Base</th>
+<th>Fine-tuned</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>错</td>
+<td>对</td>
+<td><strong>Gain：微调修复的案例</strong></td>
+</tr>
+<tr class="even">
+<td>对</td>
+<td>错</td>
+<td><strong>Regression：微调破坏的案例</strong></td>
+</tr>
+<tr class="odd">
+<td>对</td>
+<td>对</td>
+<td>Stable Correct</td>
+</tr>
+<tr class="even">
+<td>错</td>
+<td>错</td>
+<td>Remaining Failure</td>
+</tr>
+</tbody>
+</table>
+<p>然后重点人工检查：</p>
+<h1 id="gain-set">Gain Set</h1>
+<p>到底修复了什么？</p>
+<p>例如：</p>
+<pre class="text"><code>地域准入边界
+资格条件
+隐性歧视
+理由结构</code></pre>
+<p>以及：</p>
+<h1 id="regression-set">Regression Set</h1>
+<p>又破坏了什么？</p>
+<p>例如：</p>
+<pre class="text"><code>正常履约条件被误报
+未知情况过度自信
+理由开始模板化</code></pre>
+<p>这两组案例是后续模型迭代最宝贵的数据。</p>
+<hr />
+<h1 id="十二不要忘记-general-capability-regression">十二、不要忘记
+General Capability Regression</h1>
+<p>LoRA 虽然只训练少量参数，</p>
+<p>也不代表：</p>
+<blockquote>
+<p>原模型其他能力绝对不受影响。</p>
+</blockquote>
+<p>所以还应该留一小组：</p>
+<h1 id="regression-suite">Regression Suite</h1>
+<p>例如：</p>
+<pre class="text"><code>普通中文问答
+文本摘要
+指令遵循
+简单逻辑
+基础信息抽取</code></pre>
+<p>不是为了证明模型：</p>
+<blockquote>
+<p>什么都会。</p>
+</blockquote>
+<p>而是检查：</p>
+<blockquote>
+<p>微调有没有明显破坏原来应该保留的基础能力。</p>
+</blockquote>
+<p>因此最终不是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">
+ProcurementGain
+</annotation></semantics></math></p>
+<p>单独决定是否发布。</p>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>G</mi><mi>a</mi><mi>i</mi><mi>n</mi><mo>−</mo><mi>U</mi><mi>n</mi><mi>a</mi><mi>c</mi><mi>c</mi><mi>e</mi><mi>p</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>R</mi><mi>e</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementGain
+-
+UnacceptableRegression
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十三正式验收不要只做一个综合总分">十三、正式验收不要只做一个“综合总分”</h1>
+<p>工程上我更建议：</p>
+<h1 id="release-gates">Release Gates</h1>
+<h2 id="发布门槛">发布门槛</h2>
+<p>而不是随便设计：</p>
+<pre class="text"><code>总分 = 0.37 × F1
+     + 0.19 × 格式
+     + 0.44 × 理由</code></pre>
+<p>最后变成一个：</p>
+<blockquote>
+<p>82.73 分。</p>
+</blockquote>
+<p>这种数字很漂亮，</p>
+<p>但经常缺乏业务解释。</p>
+<p>更清楚的方法是提前定义门槛，例如：</p>
+<pre class="text"><code>风险Recall
+必须达到预先规定目标
+
+Hard Negative误报率
+不得超过规定上限
+
+Schema Compliance
+必须达到规定水平
+
+needs_review
+不得出现明显塌缩
+
+General Regression
+不得超过允许范围</code></pre>
+<p>具体阈值：</p>
+<blockquote>
+<p>应在看 Final Test 结果以前，根据业务需求确定。</p>
+</blockquote>
+<p>否则看到成绩以后再改标准：</p>
+<blockquote>
+<p>就失去评测意义了。</p>
+</blockquote>
+<hr />
+<h1 id="十四最后一次正式评测流程">十四、最后一次正式评测流程</h1>
+<p>现在把整个验收流程压成一条线：</p>
+<pre class="text"><code>冻结 Fine-tuned Candidate
+        ↓
+冻结 Base Revision
+        ↓
+冻结 Tokenizer / Template
+        ↓
+冻结 Generation Config
+        ↓
+冻结 ProcurementBenchmark_V0.1
+        ↓
+Base 跑完整 Test Set
+        ↓
+Fine-tuned 跑同一 Test Set
+        ↓
+自动计算
+Precision / Recall / F1
+Schema Compliance
+Slice Metrics
+        ↓
+生成 Paired Difference
+        ↓
+人工盲审
+Gain / Regression / Reason Quality
+        ↓
+General Regression Suite
+        ↓
+成本检查
+Latency / VRAM / Artifact Size
+        ↓
+对照 Release Gates
+        ↓
+Release / Continue Iteration</code></pre>
+<p>这里有一个特别重要的原则：</p>
+<blockquote>
+<p><strong>Final Test
+跑完以后，如果你根据错误案例继续改模型，就应该进入新的模型版本和新的评测周期。</strong></p>
+</blockquote>
+<p>不要：</p>
+<pre class="text"><code>看Test
+↓
+改模型
+↓
+再看同一个Test
+↓
+再改</code></pre>
+<p>无限循环。</p>
+<p>否则：</p>
+<blockquote>
+<p>Test Set 会逐渐变成新的 Validation Set。</p>
+</blockquote>
+<hr />
+<h1 id="十五最终报告应该长什么样">十五、最终报告应该长什么样？</h1>
+<p>第一版可以直接建立：</p>
+<h1
+id="procurementmodelcomparisonreport_v0.1"><code>ProcurementModelComparisonReport_V0.1</code></h1>
+<p>核心表格类似：</p>
+<table>
+<thead>
+<tr class="header">
+<th>指标</th>
+<th style="text-align: right;">Base Model</th>
+<th style="text-align: right;">ProcurementLM</th>
+<th style="text-align: right;">Delta</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Risk Precision</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="even">
+<td>Risk Recall</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="odd">
+<td>Risk F1</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="even">
+<td>Hard Positive Recall</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="odd">
+<td>Hard Negative FP Rate</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="even">
+<td>Boundary Accuracy</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="odd">
+<td>needs_review 质量</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="even">
+<td>Schema Compliance</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="odd">
+<td>General Regression</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="even">
+<td>Latency</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+<tr class="odd">
+<td>Peak VRAM</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+</tr>
+</tbody>
+</table>
+<p>再附：</p>
+<pre class="text"><code>Top Gains
+Top Regressions
+Remaining Failure Modes</code></pre>
+<p>这样我们得到的不是：</p>
+<blockquote>
+<p>“Fine-tuned 好像好一点。”</p>
+</blockquote>
+<p>而是一份：</p>
+<blockquote>
+<p><strong>可以审计的行为变化报告。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="十六第五课最终工程产物procurementlm_v0.1">十六、第五课最终工程产物：<code>ProcurementLM_V0.1</code></h1>
+<p>只有到现在，我们才有资格把模型正式叫：</p>
+<h1 id="procurementlm_v0.1-5"><code>ProcurementLM_V0.1</code></h1>
+<p>它不是一个孤零零的模型文件。</p>
+<p>完整版本应该包含：</p>
+<pre class="text"><code>ProcurementLM_V0.1/
+│
+├── adapter/
+│   └── Best LoRA Adapter
+│
+├── merged/
+│   └── Merged Model（如果采用）
+│
+├── tokenizer/
+│
+├── generation_config/
+│
+├── benchmark/
+│   ├── ProcurementBenchmark_V0.1
+│   └── ComparisonReport_V0.1
+│
+├── manifests/
+│   ├── training_run.json
+│   └── release_manifest.json
+│
+└── documentation/
+    └── known_limitations.md</code></pre>
+<p>这里最后一个文件非常重要：</p>
+<h1 id="known_limitations.md"><code>known_limitations.md</code></h1>
+<p>它应该明确记录：</p>
+<pre class="text"><code>模型擅长什么
+
+模型仍然容易错什么
+
+哪些案例必须needs_review
+
+哪些输入超出训练分布
+
+当前Benchmark覆盖了什么
+
+没有覆盖什么</code></pre>
+<p>成熟模型产品：</p>
+<blockquote>
+<p>不只是说明能力，</p>
+</blockquote>
+<p>还必须说明边界。</p>
+<hr />
+<h1
+id="十七把整个第五课压成一条完整链">十七、把整个第五课压成一条完整链</h1>
+<p>现在回头看 14 个阶段：</p>
+<pre class="text"><code>1  Chat Template / Loss Mask
+           ↓
+2  SFT到底训练什么
+           ↓
+3  Length / Truncation / Padding
+           ↓
+4  Packing
+           ↓
+5  Full FT vs PEFT
+           ↓
+6  LoRA核心原理
+           ↓
+7  Rank / Alpha / Dropout
+           ↓
+8  Target Modules
+           ↓
+9  QLoRA / NF4
+           ↓
+10 Training Memory
+           ↓
+11 真正训练
+           ↓
+12 Logging / Checkpoint
+           ↓
+13 Merge / Save / Inference
+           ↓
+14 Base vs Fine-tuned Benchmark
+           ↓
+     ProcurementLM_V0.1</code></pre>
+<p>这才是一次完整的：</p>
+<h1 id="model-adaptation-lifecycle">Model Adaptation Lifecycle</h1>
+<h2 id="模型领域适配生命周期">模型领域适配生命周期</h2>
+<p>不是：</p>
+<pre class="text"><code>准备数据
+↓
+train()
+↓
+结束</code></pre>
+<hr />
+<h1 id="十八本阶段只需要最终记住-5-句话">十八、本阶段只需要最终记住 5
+句话</h1>
+<blockquote>
+<p><strong>第一，判断微调是否成功，不能看 Training
+Loss，而要在完全独立的 Test Benchmark 上，将 Base 和 Fine-tuned Model
+在相同推理协议下进行公平对比。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，政府采购评测不能只看总
+Accuracy；Precision、Recall、False Positive、False Negative、Hard
+Positive、Hard Negative、Boundary Case 和 needs_review
+都必须拆开看。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，真正有解释力的是 Paired Evaluation：逐条检查 Base
+错→Fine-tuned 对的 Gain，以及 Base 对→Fine-tuned 错的
+Regression。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，模型是否可以发布，不应由一个漂亮的综合分数临时决定，而应由事先定义好的业务
+Release Gates、通用能力回归和系统成本共同决定。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，<code>ProcurementLM_V0.1</code>
+不是一份权重，而是模型权重、Adapter、Tokenizer、Chat
+Template、Generation Config、Benchmark、训练记录、Release Manifest
+和已知能力边界共同构成的可复现产品。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第五课最终核心心智模型">第五课最终核心心智模型</h1>
+<p>如果整堂课最后只能留下这一张图：</p>
+<pre class="text"><code>                   高质量领域数据
+                         │
+                         ▼
+                  SFT Training Signal
+                         │
+                         ▼
+               LoRA / QLoRA Adaptation
+                         │
+                         ▼
+                  Candidate Model
+                         │
+                         ▼
+            ┌─────────────────────────┐
+            │                         │
+            ▼                         ▼
+        Base Model               Fine-tuned Model
+            │                         │
+            └────────────┬────────────┘
+                         ▼
+                 SAME TEST PROTOCOL
+                         │
+                         ▼
+            ProcurementBenchmark_V0.1
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+      Gains          Regressions     Cost / Stability
+          │              │              │
+          └──────────────┼──────────────┘
+                         ▼
+                   Release Gates
+                         │
+                         ▼
+                 ProcurementLM_V0.1</code></pre>
+<p>脑中最后只留一句：</p>
+<blockquote>
+<p><strong>微调的价值不是“模型参数变了”，而是它在独立、固定、可复现的业务测试上，证明自己改变了正确的行为，同时没有付出不可接受的回归代价。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第五课完成">第五课完成</h1>
+<p>到这里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>：</mi><mi>S</mi><mi>F</mi><mi>T</mi><mo>+</mo><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mi>/</mi><mi>Q</mi><mi>L</mi><mi>o</mi><mi>R</mi><mi>A</mi><mi>微</mi><mi>调</mi><mo>=</mo><mn>14</mn><mi>/</mi><mn>14</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课：SFT + LoRA / QLoRA 微调
+=
+14/14
+}
+</annotation></semantics></math></p>
+<p>最终交付物：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>o</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>L</mi><mi>M</mi><mi>_</mi><mi>V</mi><mn>0.1</mn></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ProcurementLM\_V0.1
+}
+</annotation></semantics></math></p>
+<p>我们已经从：</p>
+<blockquote>
+<p><strong>“模型到底怎样被训练？”</strong></p>
+</blockquote>
+<p>一路走到了：</p>
+<blockquote>
+<p><strong>“怎样真正改变一个开源大模型的行为，并证明这种改变值得发布？”</strong></p>
+</blockquote>
+<p>第五课到这里正式闭环。</p>
+<hr /><div class="nav"><a class="btn" href="stage13.html">← 第 13 阶段</a><a class="btn" href="../lesson06/stage01.html">第 6 课第 1 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

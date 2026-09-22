@@ -1,0 +1,847 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课 · 第4阶段：Classification Metrics：Precision、Recall、F1、PR-AUC 与业务代价</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第9课 · 第4阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计 Gold Benchmark、切片、红队、回归、置信区间和可靠性门槛。<ul><li>Accuracy ≠ RiskQuality。类别不平衡时，高 Accuracy 可能掩盖风险类完全失效。</li><li>Precision 对应误报负担，Recall 对应漏报风险，两者必须绑定业务代价。</li><li>SameModel + DifferentThreshold = DifferentOperatingPoint。Threshold 是部署行为的一部分。</li></ul></div><h1 id="第九课-第-4-阶段">第九课 · 第 4 阶段</h1>
+<h1
+id="classification-metricsprecisionrecallf1pr-auc-与业务代价-1">Classification
+Metrics：Precision、Recall、F1、PR-AUC 与业务代价</h1>
+<h2
+id="为什么采购风险识别不能只看-accuracyfalse-negative-和-false-positive-在业务上到底谁更贵-1">为什么采购风险识别不能只看
+Accuracy？False Negative 和 False Positive 在业务上到底谁更贵？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-3">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-3">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Accuracy ≠ RiskQuality。类别不平衡时，高 Accuracy
+可能掩盖风险类完全失效。</strong></li>
+<li><strong>Precision 对应误报负担，Recall
+对应漏报风险，两者必须绑定业务代价。</strong></li>
+<li><strong>SameModel + DifferentThreshold =
+DifferentOperatingPoint。Threshold 是部署行为的一部分。</strong></li>
+<li><strong>PRCurve =
+OperatingTradeoffMap。不要只看单个阈值，要看整条误报—漏报权衡。</strong></li>
+<li><strong>AggregateMetric 必须配合
+PerClassMetric，否则稀有关键类会被平均掉。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-3">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Recall</code></td>
+<td>召回率：真实风险中被系统成功找出的比例</td>
+</tr>
+<tr class="even">
+<td><code>Precision</code></td>
+<td>精确率：系统报出的风险中真正成立的比例</td>
+</tr>
+<tr class="odd">
+<td><code>Accuracy</code></td>
+<td>准确率：全部样本中判断正确的比例</td>
+</tr>
+<tr class="even">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="odd">
+<td><code>Threshold</code></td>
+<td>阈值：把连续分数转成业务动作的决策门槛</td>
+</tr>
+<tr class="even">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-3">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 3 阶段我们已经把评测 Schema 拆开。</p>
+<p>现在进入第一个真正的 Metric 系统：</p>
+<h1 id="classification-evaluation">Classification Evaluation</h1>
+<h2 id="分类评测">分类评测</h2>
+<p>政府采购里大量任务都是分类：</p>
+<pre class="text"><code>是否存在风险？
+属于哪类风险？
+是否需要人工复核？
+是否应拒答？
+文档是否属于目标类型？</code></pre>
+<p>但分类评测最常见的误区就是：</p>
+<blockquote>
+<p>“Accuracy 够高就行。”</p>
+</blockquote>
+<p>本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Accuracy
+\neq
+RiskQuality
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementclassificationmetricpolicy_v0.1-1"><code>ProcurementClassificationMetricPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一先从-confusion-matrix-开始">一、先从 Confusion Matrix
+开始</h1>
+<p>二分类最基本的四种结果：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Gold</th>
+<th>Prediction</th>
+<th>名称</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Positive</td>
+<td>Positive</td>
+<td>TP</td>
+</tr>
+<tr class="even">
+<td>Negative</td>
+<td>Positive</td>
+<td>FP</td>
+</tr>
+<tr class="odd">
+<td>Negative</td>
+<td>Negative</td>
+<td>TN</td>
+</tr>
+<tr class="even">
+<td>Positive</td>
+<td>Negative</td>
+<td>FN</td>
+</tr>
+</tbody>
+</table>
+<p>中文：</p>
+<h3 id="true-positive">True Positive</h3>
+<p>真正例</p>
+<blockquote>
+<p>真有风险，模型也识别出风险。</p>
+</blockquote>
+<h3 id="false-positive">False Positive</h3>
+<p>假正例</p>
+<blockquote>
+<p>实际没风险，模型误报风险。</p>
+</blockquote>
+<h3 id="true-negative">True Negative</h3>
+<p>真负例</p>
+<blockquote>
+<p>实际没风险，模型判断无风险。</p>
+</blockquote>
+<h3 id="false-negative">False Negative</h3>
+<p>假负例</p>
+<blockquote>
+<p>实际有风险，模型却漏掉了。</p>
+</blockquote>
+<p>真正业务里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>P</mi><mi>和</mi><mi>F</mi><mi>N</mi><mi>通</mi><mi>常</mi><mi>不</mi><mi>是</mi><mi>同</mi><mi>样</mi><mi>贵</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FP
+和
+FN
+通常不是同样贵
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二核心心智模型-①-2">二、核心心智模型 ①</h1>
+<h1 id="metric-必须和-errorcost-绑定"><code>Metric</code> 必须和
+<code>ErrorCost</code> 绑定</h1>
+<p>如果 False Positive 的代价是：</p>
+<blockquote>
+<p>多一次人工复核。</p>
+</blockquote>
+<p>而 False Negative 的代价是：</p>
+<blockquote>
+<p>高风险条款被系统漏过。</p>
+</blockquote>
+<p>那两类错误显然不能等价。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>s</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>+</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClassificationQuality
+=
+StatisticalPerformance
++
+BusinessCost
+}
+</annotation></semantics></math></p>
+<p>Metric 不是抽象数学游戏。</p>
+<p>它最终要服务业务决策。</p>
+<hr />
+<h1 id="三accuracy-为什么可能骗人">三、Accuracy 为什么可能骗人？</h1>
+<p>Accuracy：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mo>=</mo><mfrac><mrow><mi>T</mi><mi>P</mi><mo>+</mo><mi>T</mi><mi>N</mi></mrow><mrow><mi>T</mi><mi>P</mi><mo>+</mo><mi>T</mi><mi>N</mi><mo>+</mo><mi>F</mi><mi>P</mi><mo>+</mo><mi>F</mi><mi>N</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Accuracy
+=
+\frac{TP+TN}
+{TP+TN+FP+FN}
+</annotation></semantics></math></p>
+<p>假设 1000 条样本里：</p>
+<pre class="text"><code>950条无风险
+50条有风险</code></pre>
+<p>一个模型永远预测：</p>
+<pre class="text"><code>无风险</code></pre>
+<p>那么：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mo>=</mo><mn>95</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">
+Accuracy=95\%
+</annotation></semantics></math></p>
+<p>看起来很高。</p>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><msub><mi>l</mi><mrow><mi>r</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></msub><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">
+Recall_{risk}=0
+</annotation></semantics></math></p>
+<p>也就是：</p>
+<blockquote>
+<p>一个风险都没抓到。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>m</mi><mi>b</mi><mi>a</mi><mi>l</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>d</mi><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>下</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi><mi>可</mi><mi>能</mi><mi>严</mi><mi>重</mi><mi>误</mi><mi>导</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ImbalancedData
+下
+Accuracy
+可能严重误导
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="四precision报出来的风险里有多少是真的">四、Precision：报出来的风险里，有多少是真的？</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mfrac><mrow><mi>T</mi><mi>P</mi></mrow><mrow><mi>T</mi><mi>P</mi><mo>+</mo><mi>F</mi><mi>P</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Precision
+=
+\frac{TP}{TP+FP}
+</annotation></semantics></math></p>
+<p>中文：</p>
+<blockquote>
+<p>模型说“有风险”的案例里，真正有风险的比例。</p>
+</blockquote>
+<p>如果 Precision 很低：</p>
+<pre class="text"><code>系统一天报100条
+只有20条真风险</code></pre>
+<p>那么人工团队会：</p>
+<blockquote>
+<p>被大量误报淹没。</p>
+</blockquote>
+<p>所以 Precision 更接近：</p>
+<h1 id="alert-quality">Alert Quality</h1>
+<h2 id="告警质量">告警质量</h2>
+<hr />
+<h1
+id="五recall真实风险里抓到了多少">五、Recall：真实风险里，抓到了多少？</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>=</mo><mfrac><mrow><mi>T</mi><mi>P</mi></mrow><mrow><mi>T</mi><mi>P</mi><mo>+</mo><mi>F</mi><mi>N</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Recall
+=
+\frac{TP}{TP+FN}
+</annotation></semantics></math></p>
+<p>中文：</p>
+<blockquote>
+<p>所有真实风险里，模型成功识别了多少。</p>
+</blockquote>
+<p>如果 Recall 低：</p>
+<blockquote>
+<p>风险漏检严重。</p>
+</blockquote>
+<p>所以在高风险识别里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>常</mi><mi>常</mi><mi>直</mi><mi>接</mi><mi>关</mi><mi>系</mi><mi>M</mi><mi>i</mi><mi>s</mi><mi>s</mi><mi>e</mi><mi>d</mi><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Recall
+常常直接关系
+MissedRisk
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六核心心智模型-②">六、核心心智模型 ②</h1>
+<h1
+id="precision-和-recall-代表两种完全不同的业务痛点"><code>Precision</code>
+和 <code>Recall</code> 代表两种完全不同的业务痛点</h1>
+<p>Precision 低：</p>
+<blockquote>
+<p>误报多。</p>
+</blockquote>
+<p>Recall 低：</p>
+<blockquote>
+<p>漏报多。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Precision
+\neq
+Recall
+}
+</annotation></semantics></math></p>
+<p>不存在脱离业务目标的：</p>
+<blockquote>
+<p>“哪个指标永远更重要”。</p>
+</blockquote>
+<p>必须结合：</p>
+<pre class="text"><code>人工复核成本
+风险漏检代价
+场景风险等级
+用户容忍度</code></pre>
+<p>共同决定。</p>
+<hr />
+<h1
+id="七f1为什么要同时平衡-precision-和-recall">七、F1：为什么要同时平衡
+Precision 和 Recall？</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mn>1</mn><mo>=</mo><mn>2</mn><mo>⋅</mo><mfrac><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>⋅</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow><mrow><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+F1
+=
+2
+\cdot
+\frac{Precision\cdot Recall}
+{Precision+Recall}
+</annotation></semantics></math></p>
+<p>它是调和平均。</p>
+<p>特点：</p>
+<blockquote>
+<p>如果 Precision 或 Recall 某一个很低，F1 会被明显拉低。</p>
+</blockquote>
+<p>所以 F1 适合：</p>
+<blockquote>
+<p>希望同时兼顾误报和漏报的场景。</p>
+</blockquote>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mn>1</mn><mi>仍</mi><mi>然</mi><mi>没</mi><mi>有</mi><mi>表</mi><mi>达</mi><mi>真</mi><mi>实</mi><mi>业</mi><mi>务</mi><mi>成</mi><mi>本</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+F1
+仍然没有表达
+真实业务成本
+}
+</annotation></semantics></math></p>
+<p>如果 FN 代价远高于 FP，</p>
+<p>F1 仍可能不够。</p>
+<hr />
+<h1 id="八f-beta当-recall-比-precision-更重要">八、F-beta：当 Recall 比
+Precision 更重要</h1>
+<p>可以使用：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>F</mi><mi>β</mi></msub><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>+</mo><msup><mi>β</mi><mn>2</mn></msup><mo stretchy="true" form="postfix">)</mo></mrow><mfrac><mrow><mi>P</mi><mi>R</mi></mrow><mrow><msup><mi>β</mi><mn>2</mn></msup><mi>P</mi><mo>+</mo><mi>R</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+F_\beta
+=
+(1+\beta^2)
+\frac{PR}
+{\beta^2P+R}
+</annotation></semantics></math></p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\beta&gt;1
+</annotation></semantics></math></p>
+<p>Recall 权重更高。</p>
+<p>当：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>&lt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+\beta&lt;1
+</annotation></semantics></math></p>
+<p>Precision 权重更高。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>F</mi><mi>β</mi></msub><mo>=</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>E</mi><mi>n</mi><mi>c</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>d</mi><mi>F</mi><mi>S</mi><mi>c</mi><mi>o</mi><mi>r</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+F_\beta
+=
+PreferenceEncodedFScore
+}
+</annotation></semantics></math></p>
+<p>它把业务偏好显式写进 Metric。</p>
+<hr />
+<h1 id="九核心心智模型-③">九、核心心智模型 ③</h1>
+<h1 id="threshold-也是模型行为的一部分"><code>Threshold</code>
+也是模型行为的一部分</h1>
+<p>很多分类模型输出：</p>
+<pre class="text"><code>risk_score = 0.73</code></pre>
+<p>最后是否判为风险取决于：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow><annotation encoding="application/x-tex">
+threshold
+</annotation></semantics></math></p>
+<p>例如：</p>
+<pre class="text"><code>threshold = 0.5</code></pre>
+<p>如果把 Threshold 从 0.5 降到 0.3：</p>
+<p>通常：</p>
+<pre class="text"><code>Recall ↑
+Precision ↓</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>+</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mo>=</mo><mi>D</mi><mi>i</mi><mi>f</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>P</mi><mi>o</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SameModel
++
+DifferentThreshold
+=
+DifferentOperatingPoint
+}
+</annotation></semantics></math></p>
+<p>因此：</p>
+<blockquote>
+<p>Benchmark 比较模型时，Threshold Policy 必须固定或显式说明。</p>
+</blockquote>
+<hr />
+<h1 id="十pr-curve为什么不能只看一个-threshold">十、PR
+Curve：为什么不能只看一个 Threshold？</h1>
+<h1 id="precision-recall-curve">Precision-Recall Curve</h1>
+<h2 id="精确率-召回率曲线">精确率-召回率曲线</h2>
+<p>通过不断改变 Threshold，</p>
+<p>得到一组：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mo>,</mo><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">
+(Recall, Precision)
+</annotation></semantics></math></p>
+<p>点。</p>
+<p>它告诉我们：</p>
+<blockquote>
+<p>模型在不同误报 / 漏报权衡下能达到什么表现。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>R</mi><mi>C</mi><mi>u</mi><mi>r</mi><mi>v</mi><mi>e</mi><mo>=</mo><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>e</mi><mi>o</mi><mi>f</mi><mi>f</mi><mi>M</mi><mi>a</mi><mi>p</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PRCurve
+=
+OperatingTradeoffMap
+}
+</annotation></semantics></math></p>
+<p>不是只看一个固定阈值。</p>
+<hr />
+<h1 id="十一pr-auc-为什么适合稀有风险类">十一、PR-AUC
+为什么适合稀有风险类？</h1>
+<h1 id="pr-auc">PR-AUC</h1>
+<h2 id="precision-recall-曲线下面积">Precision-Recall 曲线下面积</h2>
+<p>当 Positive 很稀有时，</p>
+<p>PR Curve 通常比 ROC 更直接反映：</p>
+<blockquote>
+<p>正类识别质量。</p>
+</blockquote>
+<p>因为它重点关注：</p>
+<pre class="text"><code>Precision
+Recall</code></pre>
+<p>而不是大量 TN。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>a</mi><mi>r</mi><mi>e</mi><mi>P</mi><mi>o</mi><mi>s</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>T</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>通</mi><mi>常</mi><mi>更</mi><mi>关</mi><mi>注</mi><mi>P</mi><mi>R</mi><mo>−</mo><mi>A</mi><mi>U</mi><mi>C</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+RarePositiveTask
+通常更关注
+PR-AUC
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十二roc-auc-能不能用">十二、ROC-AUC 能不能用？</h1>
+<p>当然可以。</p>
+<h1 id="roc">ROC</h1>
+<h2 id="receiver-operating-characteristic">Receiver Operating
+Characteristic</h2>
+<p>看：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mi>P</mi><mi>R</mi></mrow><annotation encoding="application/x-tex">
+TPR
+</annotation></semantics></math></p>
+<p>和：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>P</mi><mi>R</mi></mrow><annotation encoding="application/x-tex">
+FPR
+</annotation></semantics></math></p>
+<p>不同 Threshold 下的关系。</p>
+<p>ROC-AUC 适合看：</p>
+<blockquote>
+<p>模型整体排序能力。</p>
+</blockquote>
+<p>但在极度不平衡场景：</p>
+<blockquote>
+<p>ROC-AUC 可能看起来不错，但实际 Precision 很差。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>R</mi><mi>O</mi><mi>C</mi><mi>A</mi><mi>U</mi><mi>C</mi><mo>≠</mo><mi>O</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>a</mi><mi>l</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ROCAUC
+\neq
+OperationalPrecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十三specificity负类识别也要看">十三、Specificity：负类识别也要看</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>=</mo><mfrac><mrow><mi>T</mi><mi>N</mi></mrow><mrow><mi>T</mi><mi>N</mi><mo>+</mo><mi>F</mi><mi>P</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+Specificity
+=
+\frac{TN}{TN+FP}
+</annotation></semantics></math></p>
+<p>它表示：</p>
+<blockquote>
+<p>真实无风险样本中，有多少被正确判断为无风险。</p>
+</blockquote>
+<p>如果 Specificity 太低：</p>
+<blockquote>
+<p>大量正常采购条款被误报。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>H</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>R</mi><mi>e</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>也</mi><mi>不</mi><mi>能</mi><mi>无</mi><mi>限</mi><mi>牺</mi><mi>牲</mi><mi>S</mi><mi>p</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>f</mi><mi>i</mi><mi>c</mi><mi>i</mi><mi>t</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+HighRecall
+也不能无限牺牲
+Specificity
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十四macro-micro-weighted-f1-有什么区别">十四、Macro / Micro /
+Weighted F1 有什么区别？</h1>
+<p>多分类时非常重要。</p>
+<h3 id="macro-f1">Macro F1</h3>
+<p>宏平均</p>
+<blockquote>
+<p>每个类别先算 F1，再平均。</p>
+</blockquote>
+<p>特点：</p>
+<blockquote>
+<p>小类别和大类别权重相同。</p>
+</blockquote>
+<p>适合：</p>
+<blockquote>
+<p>关注稀有风险类别。</p>
+</blockquote>
+<h3 id="micro-f1">Micro F1</h3>
+<p>微平均</p>
+<blockquote>
+<p>汇总所有 TP / FP / FN 后再算。</p>
+</blockquote>
+<p>特点：</p>
+<blockquote>
+<p>大类别影响更大。</p>
+</blockquote>
+<h3 id="weighted-f1">Weighted F1</h3>
+<p>加权平均</p>
+<blockquote>
+<p>按类别样本数加权。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>a</mi><mi>c</mi><mi>r</mi><mi>o</mi><mi>更</mi><mi>关</mi><mi>心</mi><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>e</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Macro
+更关心
+SmallClasses
+}
+</annotation></semantics></math></p>
+<p>而：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>i</mi><mi>c</mi><mi>r</mi><mi>o</mi><mi>更</mi><mi>接</mi><mi>近</mi><mi>O</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>V</mi><mi>o</mi><mi>l</mi><mi>u</mi><mi>m</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Micro
+更接近
+OverallVolume
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十五核心心智模型-④">十五、核心心智模型 ④</h1>
+<h1 id="overall-f1-可能掩盖稀有关键类别"><code>Overall F1</code>
+可能掩盖稀有关键类别</h1>
+<p>假设：</p>
+<pre class="text"><code>常见风险类别 F1 = 0.95
+关键稀有风险 F1 = 0.40</code></pre>
+<p>如果大类别样本很多，</p>
+<p>Micro F1 仍可能很漂亮。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>g</mi><mi>g</mi><mi>r</mi><mi>e</mi><mi>g</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>必</mi><mi>须</mi><mi>配</mi><mi>合</mi><mi>P</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AggregateMetric
+必须配合
+PerClassMetric
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十六multi-label-任务怎么评">十六、Multi-label 任务怎么评？</h1>
+<p>如果一个条款可同时属于：</p>
+<pre class="text"><code>地域限制
+资格条件
+履约要求</code></pre>
+<p>就是：</p>
+<h1 id="multi-label-classification">Multi-label Classification</h1>
+<h2 id="多标签分类">多标签分类</h2>
+<p>这时不能只用单标签 Accuracy。</p>
+<p>可以关注：</p>
+<pre class="text"><code>Per-label Precision / Recall / F1
+Micro F1
+Macro F1
+Hamming Loss
+Exact Match Ratio</code></pre>
+<p>其中：</p>
+<h1 id="exact-match-ratio">Exact Match Ratio</h1>
+<p>要求整组标签完全一致。</p>
+<p>很严格。</p>
+<h1 id="hamming-loss">Hamming Loss</h1>
+<p>关注每个标签位有多少错。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>u</mi><mi>l</mi><mi>t</mi><mi>i</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>有</mi><mi>多</mi><mi>个</mi><mi>粒</mi><mi>度</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MultiLabelCorrectness
+有多个粒度
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="十七cost-sensitive-evaluation业务代价怎么进入评测">十七、Cost-sensitive
+Evaluation：业务代价怎么进入评测？</h1>
+<p>可以定义成本矩阵。</p>
+<p>例如：</p>
+<pre class="text"><code>FP cost = 1
+FN cost = 10</code></pre>
+<p>总成本概念上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi><mo>=</mo><msub><mi>c</mi><mrow><mi>F</mi><mi>P</mi></mrow></msub><mo>⋅</mo><mi>F</mi><mi>P</mi><mo>+</mo><msub><mi>c</mi><mrow><mi>F</mi><mi>N</mi></mrow></msub><mo>⋅</mo><mi>F</mi><mi>N</mi></mrow><annotation encoding="application/x-tex">
+Cost
+=
+c_{FP}\cdot FP
++
+c_{FN}\cdot FN
+</annotation></semantics></math></p>
+<p>这里不是说实际业务一定用 1 和 10。</p>
+<p>而是：</p>
+<blockquote>
+<p>把错误代价显式建模。</p>
+</blockquote>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>不</mi><mi>一</mi><mi>定</mi><mi>是</mi><mi>B</mi><mi>e</mi><mi>s</mi><mi>t</mi><mi>F</mi><mn>1</mn><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BestThreshold
+不一定是
+BestF1Threshold
+}
+</annotation></semantics></math></p>
+<p>而可能是：</p>
+<blockquote>
+<p>最小业务风险成本的 Threshold。</p>
+</blockquote>
+<hr />
+<h1 id="十八核心心智模型-⑤">十八、核心心智模型 ⑤</h1>
+<h1
+id="metricoptimal-不一定等于-businessoptimal"><code>MetricOptimal</code>
+不一定等于 <code>BusinessOptimal</code></h1>
+<p>某个 Threshold：</p>
+<pre class="text"><code>F1最高</code></pre>
+<p>不代表：</p>
+<blockquote>
+<p>业务总风险最低。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+MetricOptimization
+\neq
+DecisionOptimization
+}
+</annotation></semantics></math></p>
+<p>最终 Threshold 应由：</p>
+<pre class="text"><code>业务成本
+风险偏好
+人工容量
+安全边界</code></pre>
+<p>共同决定。</p>
+<hr />
+<h1 id="十九top-k-ranking-形式的分类怎么办">十九、Top-K / Ranking
+形式的分类怎么办？</h1>
+<p>有些系统会输出：</p>
+<pre class="text"><code>Top1 风险类型
+Top2 候选风险
+Top3 候选风险</code></pre>
+<p>这时可以看：</p>
+<pre class="text"><code>Top-1 Accuracy
+Top-K Recall</code></pre>
+<p>如果人工专家后续会从候选里选择，</p>
+<p>Top-K Recall 可能更重要。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>要</mi><mi>匹</mi><mi>配</mi><mi>H</mi><mi>u</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>W</mi><mi>o</mi><mi>r</mi><mi>k</mi><mi>f</mi><mi>l</mi><mi>o</mi><mi>w</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Metric
+要匹配
+HumanWorkflow
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十threshold-不能在-test-上调">二十、Threshold 不能在 Test
+上调</h1>
+<p>这一条和第 1 阶段完全衔接。</p>
+<p>应该：</p>
+<pre class="text"><code>Validation Set
+↓
+选Threshold
+↓
+Freeze
+↓
+Test / Gold Benchmark</code></pre>
+<p>不能：</p>
+<pre class="text"><code>Test跑一遍
+↓
+看结果
+↓
+调Threshold
+↓
+再跑Test</code></pre>
+<p>否则：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>h</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>h</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>T</mi><mi>u</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>O</mi><mi>n</mi><mi>T</mi><mi>e</mi><mi>s</mi><mi>t</mi><mo>=</mo><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>L</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>a</mi><mi>g</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ThresholdTuningOnTest
+=
+DecisionLeakage
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二十一本阶段正式工程产物">二十一、本阶段正式工程产物</h1>
+<h1
+id="procurementclassificationmetricpolicy_v0.1-2"><code>ProcurementClassificationMetricPolicy_V0.1</code></h1>
+<p>第一版至少锁定：</p>
+<pre class="text"><code>classification_metric_policy_version
+
+task_type
+
+positive_class_definition
+
+negative_class_definition
+
+class_distribution
+
+confusion_matrix_required
+
+precision_required
+
+recall_required
+
+f1_required
+
+fbeta_policy
+
+specificity_required
+
+pr_auc_required
+
+roc_auc_policy
+
+macro_micro_weighted_policy
+
+per_class_metrics_required
+
+multi_label_policy
+
+threshold_selection_set
+
+threshold_value
+
+threshold_version
+
+cost_matrix
+
+critical_false_negative_policy
+
+critical_false_positive_policy
+
+release_gate_thresholds</code></pre>
+<p>每次 Classification Run 至少记录：</p>
+<pre class="text"><code>model_version
+
+benchmark_version
+
+threshold
+
+TP
+FP
+TN
+FN
+
+precision
+recall
+f1
+fbeta
+specificity
+pr_auc
+roc_auc
+
+per_class_metrics
+
+business_cost
+
+release_status</code></pre>
+<hr />
+<h1 id="二十二本阶段最重要的-9-个核心心智模型">二十二、本阶段最重要的 9
+个核心心智模型</h1>
+<blockquote>
+<p><strong>心智模型
+①：<code>Accuracy ≠ RiskQuality</code>。类别不平衡时，高 Accuracy
+可能掩盖风险类完全失效。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ②：<code>Precision</code>
+对应误报负担，<code>Recall</code>
+对应漏报风险，两者必须绑定业务代价。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+③：<code>SameModel + DifferentThreshold = DifferentOperatingPoint</code>。Threshold
+是部署行为的一部分。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+④：<code>PRCurve = OperatingTradeoffMap</code>。不要只看单个阈值，要看整条误报—漏报权衡。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑤：<code>AggregateMetric</code> 必须配合
+<code>PerClassMetric</code>，否则稀有关键类会被平均掉。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑥：<code>Macro</code>
+更重视小类别，<code>Micro</code> 更受大类别影响。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑦：<code>MetricOptimal ≠ BusinessOptimal</code>。最优 F1
+阈值不一定是最低业务风险阈值。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型 ⑧：<code>Metric</code> 必须匹配
+<code>HumanWorkflow</code>。机器只是给候选时，Top-K Recall 可能比 Top-1
+更有价值。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>心智模型
+⑨：<code>ThresholdTuningOnTest = DecisionLeakage</code>。阈值必须在
+Validation 上选择，再到 Test / Gold 上冻结评估。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十三下一阶段第九课-第-5-阶段">二十三、下一阶段：第九课 · 第 5
+阶段</h1>
+<h1
+id="generation-evaluation理由引用事实性幻觉与-groundedness">Generation
+Evaluation：理由、引用、事实性、幻觉与 Groundedness</h1>
+<p>最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>l</mi><mi>u</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>r</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>A</mi><mi>n</mi><mi>s</mi><mi>w</mi><mi>e</mi><mi>r</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FluentAnswer
+\neq
+CorrectAnswer
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementgenerationevalpolicy_v0.1"><code>ProcurementGenerationEvalPolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage03.html">← 第 3 阶段</a><a class="btn" href="stage05.html">第 5 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

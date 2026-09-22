@@ -1,0 +1,3696 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课 · 第3阶段：文档结构恢复与 Clause Segmentation</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第4课 · 第3阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理 PDF/Word/OCR、Schema、标注、切分、泄漏和 Dataset 质量问题。<ul><li>Clause Segmentation ≠ Sentence Splitting 一条采购条款可能有很多句</li><li>标题不是靠“字体大”一个特征判断， 而是多个结构信号共同决定</li><li>文档结构恢复的核心不是切得越细， 而是恢复“谁属于谁”</li></ul></div><h1 id="第四课-第-3-阶段文档结构恢复与-clause-segmentation">第四课 · 第
+3 阶段：文档结构恢复与 Clause Segmentation</h1>
+<h2
+id="机器已经拿到了正确文字为什么它仍然不知道哪里是一章哪里是一条资格条件以及一条采购条款到底从哪里开始在哪里结束">机器已经拿到了“正确文字”，为什么它仍然不知道哪里是一章、哪里是一条资格条件，以及“一条采购条款”到底从哪里开始、在哪里结束？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-2">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：HEAVY。</strong>
+审计原因：详细展开点过多，主干容易被细节淹没；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-2">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Clause Segmentation ≠ Sentence Splitting
+一条采购条款可能有很多句</strong></li>
+<li><strong>标题不是靠“字体大”一个特征判断，
+而是多个结构信号共同决定</strong></li>
+<li><strong>文档结构恢复的核心不是切得越细，
+而是恢复“谁属于谁”</strong></li>
+<li><strong>Target Clause 可以很小， 但它必须保留 Parent Section 和必要
+Context</strong></li>
+<li><strong>表格中的一行、一个评分项， 也可能是一条真正的业务
+Clause</strong></li>
+<li><strong>结构恢复错误会直接污染：
+风险类型、Train/Test切分、RAG、SFT和最终审查结果</strong></li>
+<li><strong>Clause Segmentation ≠ Sentence Splitting</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-2">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Clause Segmentation</code></td>
+<td>条款切分：把连续文档恢复成可审查业务条款</td>
+</tr>
+<tr class="even">
+<td><code>Block</code></td>
+<td>版面块：文档解析后保留布局和位置的基本块</td>
+</tr>
+<tr class="odd">
+<td><code>RAG</code></td>
+<td>RAG/检索增强生成：推理时先检索外部证据再生成</td>
+</tr>
+<tr class="even">
+<td><code>Parser</code></td>
+<td>解析器：把 PDF/Word/HTML 转换为结构化可处理内容</td>
+</tr>
+<tr class="odd">
+<td><code>Recovery</code></td>
+<td>恢复：工具失败或中断后安全重试、降级和继续</td>
+</tr>
+<tr class="even">
+<td><code>SFT</code></td>
+<td>监督微调：用监督样本继续更新模型参数</td>
+</tr>
+<tr class="odd">
+<td><code>Label</code></td>
+<td>标签：专家或规则给出的监督目标/Gold 结论</td>
+</tr>
+<tr class="even">
+<td><code>CPU</code></td>
+<td>CPU：负责通用控制、数据准备和部分算子</td>
+</tr>
+<tr class="odd">
+<td><code>Loss</code></td>
+<td>损失函数：把预测错误压缩成可优化的数值信号</td>
+</tr>
+<tr class="even">
+<td><code>Layout</code></td>
+<td>版面结构：文字块、表格、列、坐标和阅读顺序信息</td>
+</tr>
+<tr class="odd">
+<td><code>Schema</code></td>
+<td>Schema/结构契约：规定一个数据对象有哪些字段及其含义</td>
+</tr>
+<tr class="even">
+<td><code>Representation</code></td>
+<td>表示：模型内部承载语义或特征的向量结构</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-2">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 2 阶段结束以后，我们手里已经不再只是：</p>
+<pre class="text"><code>一个PDF文件</code></pre>
+<p>而开始拥有类似这样的东西：</p>
+<pre class="text"><code>ParsedDocument
+│
+├── Page 1
+│   ├── Block 1
+│   ├── Block 2
+│   └── Block 3
+│
+├── Page 2
+│   ├── Block 4
+│   ├── Block 5
+│   └── Table 1
+│
+└── ...</code></pre>
+<p>而且我们已经尽量保证：</p>
+<blockquote>
+<p>文字基本正确。</p>
+</blockquote>
+<blockquote>
+<p>阅读顺序基本正确。</p>
+</blockquote>
+<blockquote>
+<p>页码、位置、表格和来源信息都还保留着。</p>
+</blockquote>
+<p>这听起来似乎已经很接近训练数据了。</p>
+<p>但实际上，中间还缺了极其关键的一层。</p>
+<p>假设 Parser 给我们：</p>
+<pre class="text"><code>第三章 采购需求
+3.1 供应商资格条件
+1. 供应商应具有独立承担民事责任的能力。
+2. 供应商须在本市注册成立5年以上。
+3.2 技术要求
+1. 服务器CPU核心数不得少于……
+2. 存储容量不得低于……</code></pre>
+<p>对于人类来说：</p>
+<blockquote>
+<p>结构一眼就看出来了。</p>
+</blockquote>
+<p>但机器如果只拿到几个 Text Block，它未必知道：</p>
+<pre class="text"><code>“第三章 采购需求”
+=
+章标题
+
+“3.1 供应商资格条件”
+=
+第三章下面的子章节
+
+“2. 供应商须在本市注册成立5年以上。”
+=
+一条真正需要审查的资格条件
+
+“3.2 技术要求”
+=
+上一节结束、新的一节开始</code></pre>
+<p>所以今天要解决的问题是：</p>
+<blockquote>
+<p><strong>怎样把一堆正确的文字块，恢复成一个有层级、有归属、能切出真实采购条款的业务结构？</strong></p>
+</blockquote>
+<p>最终我们第一次要产出：</p>
+<h1 id="clauseunit_v0.1-1"><code>ClauseUnit_V0.1</code></h1>
+<hr />
+<h1
+id="一本阶段真正要解决的一个核心问题-1">一、本阶段真正要解决的一个核心问题</h1>
+<p>可以把问题压缩成一句话：</p>
+<blockquote>
+<p><strong>文档里的文字，怎样从“平面字符串”恢复成“Project → Document →
+Section → Clause”的层级结构？</strong></p>
+</blockquote>
+<p>第 2 阶段解决的是：</p>
+<pre class="text"><code>文字对不对？</code></pre>
+<p>第 3 阶段开始解决：</p>
+<pre class="text"><code>这些文字到底属于哪里？</code></pre>
+<p>这是两个完全不同的问题。</p>
+<hr />
+<h1 id="二本阶段先建立-6-个核心心智模型">二、本阶段先建立 6
+个核心心智模型</h1>
+<p>先记住这六句话：</p>
+<pre class="text"><code>① Clause Segmentation ≠ Sentence Splitting
+   一条采购条款可能有很多句
+
+② 标题不是靠“字体大”一个特征判断，
+   而是多个结构信号共同决定
+
+③ 文档结构恢复的核心不是切得越细，
+   而是恢复“谁属于谁”
+
+④ Target Clause 可以很小，
+   但它必须保留 Parent Section 和必要 Context
+
+⑤ 表格中的一行、一个评分项，
+   也可能是一条真正的业务 Clause
+
+⑥ 结构恢复错误会直接污染：
+   风险类型、Train/Test切分、RAG、SFT和最终审查结果</code></pre>
+<p>今天绝大部分内容，都在展开这六句话。</p>
+<hr />
+<h1 id="三先看一个最简单的文档">三、先看一个最简单的文档</h1>
+<p>假设原文是：</p>
+<pre class="text"><code>第三章 采购需求
+
+3.1 供应商资格条件
+
+1. 供应商应具有独立承担民事责任的能力。
+
+2. 供应商须在本市注册成立5年以上。
+
+3.2 技术要求
+
+1. 系统应支持不少于1000个并发用户。
+
+2. 数据库服务器内存不得低于256GB。</code></pre>
+<p>人类会自动构建：</p>
+<pre class="text"><code>第三章 采购需求
+│
+├── 3.1 供应商资格条件
+│     ├── 条款1
+│     └── 条款2
+│
+└── 3.2 技术要求
+      ├── 条款1
+      └── 条款2</code></pre>
+<p>机器真正需要恢复的，就是这棵树。</p>
+<hr />
+<h1 id="四所以结构恢复不是切文本">四、所以结构恢复不是“切文本”</h1>
+<p>更准确地说，是：</p>
+<h1 id="tree-reconstruction">Tree Reconstruction</h1>
+<p>也就是：</p>
+<blockquote>
+<p><strong>重新构建文档树。</strong></p>
+</blockquote>
+<p>你可以把原始 Parser 输出看成：</p>
+<pre class="text"><code>一排积木</code></pre>
+<p>Structure Recovery 的任务是：</p>
+<blockquote>
+<p>把它们重新搭回原来的楼。</p>
+</blockquote>
+<hr />
+<h1 id="五为什么谁属于谁这么重要">五、为什么“谁属于谁”这么重要？</h1>
+<p>假设机器拿到这句话：</p>
+<pre class="text"><code>不得低于500万元。</code></pre>
+<p>单独看：</p>
+<blockquote>
+<p>意义不完整。</p>
+</blockquote>
+<p>但如果 Parent Section 是：</p>
+<pre class="text"><code>第三章
+供应商资格条件</code></pre>
+<p>含义可能是：</p>
+<blockquote>
+<p>注册资本或者类似资格门槛。</p>
+</blockquote>
+<hr />
+<h1 id="六如果它的-parent-section-是">六、如果它的 Parent Section
+是</h1>
+<pre class="text"><code>项目预算</code></pre>
+<p>那：</p>
+<pre class="text"><code>不得低于500万元</code></pre>
+<p>可能完全不是供应商资格。</p>
+<hr />
+<h1
+id="七所以一个很重要的公式式直觉">七、所以一个很重要的公式式直觉</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>M</mi><mi>e</mi><mi>a</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>=</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>T</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClauseMeaning
+=
+ClauseText
++
+StructuralContext
+}
+</annotation></semantics></math></p>
+<p>这里的 Structural Context 就包括：</p>
+<pre class="text"><code>它在哪一章？
+在哪一节？
+属于什么表格？
+前面的标题是什么？</code></pre>
+<hr />
+<h1
+id="八第一件要恢复的东西heading">八、第一件要恢复的东西：Heading</h1>
+<p>Heading：</p>
+<blockquote>
+<p>标题。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>第一章 招标公告
+
+第二章 投标人须知
+
+第三章 采购需求
+
+第四章 评标办法</code></pre>
+<p>这些显然是高级标题。</p>
+<hr />
+<h1 id="九但现实不会永远这么整齐">九、但现实不会永远这么整齐</h1>
+<p>有的文件写：</p>
+<pre class="text"><code>第三章 采购需求</code></pre>
+<p>有的写：</p>
+<pre class="text"><code>第三部分 采购需求</code></pre>
+<p>有的写：</p>
+<pre class="text"><code>三、采购需求</code></pre>
+<p>有的甚至只是：</p>
+<pre class="text"><code>采购需求</code></pre>
+<p>然后字体：</p>
+<blockquote>
+<p>加粗、居中、字号大。</p>
+</blockquote>
+<hr />
+<h1 id="十所以-heading-detection-不能只靠一个规则">十、所以 Heading
+Detection 不能只靠一个规则</h1>
+<p>例如：</p>
+<pre class="text"><code>字号 &gt; 16
+→ 标题</code></pre>
+<p>会非常危险。</p>
+<hr />
+<h1 id="十一因为正文里也可能有大字">十一、因为正文里也可能有大字</h1>
+<p>比如：</p>
+<blockquote>
+<p>“特别提示：”</p>
+</blockquote>
+<p>可能被加粗、放大。</p>
+<p>但它并不一定是：</p>
+<blockquote>
+<p>章级 Heading。</p>
+</blockquote>
+<hr />
+<h1
+id="十二所以标题判断通常要组合多个信号">十二、所以标题判断通常要组合多个信号</h1>
+<p>例如：</p>
+<pre class="text"><code>文本内容
++
+编号模式
++
+字号
++
+加粗
++
+缩进
++
+居中
++
+上下间距
++
+页面位置
++
+上下文</code></pre>
+<p>这些一起看。</p>
+<hr />
+<h1 id="十三编号模式是非常强的信号">十三、编号模式是非常强的信号</h1>
+<p>政府采购文件特别喜欢编号。</p>
+<p>例如：</p>
+<pre class="text"><code>第一章
+第二章
+第三章</code></pre>
+<hr />
+<h1 id="十四下一层可能是">十四、下一层可能是</h1>
+<pre class="text"><code>一、
+二、
+三、</code></pre>
+<hr />
+<h1 id="十五还可能是">十五、还可能是</h1>
+<pre class="text"><code>1.
+2.
+3.</code></pre>
+<hr />
+<h1 id="十六下一层又可能是">十六、下一层又可能是</h1>
+<pre class="text"><code>1.1
+1.2
+1.3</code></pre>
+<hr />
+<h1 id="十七甚至">十七、甚至</h1>
+<pre class="text"><code>3.2.1
+3.2.2
+3.2.3</code></pre>
+<hr />
+<h1
+id="十八中文法律和政府文件里还常见">十八、中文法律和政府文件里还常见</h1>
+<pre class="text"><code>（一）
+（二）
+（三）</code></pre>
+<p>再下一层：</p>
+<pre class="text"><code>1）
+2）
+3）</code></pre>
+<p>甚至：</p>
+<pre class="text"><code>①
+②
+③</code></pre>
+<hr />
+<h1 id="十九所以我们需要一个-numbering-grammar">十九、所以我们需要一个
+Numbering Grammar</h1>
+<p>不用把它想成复杂语言学。</p>
+<p>就是：</p>
+<blockquote>
+<p><strong>建立对编号体系的识别规则。</strong></p>
+</blockquote>
+<p>比如机器看见：</p>
+<pre class="text"><code>第三章</code></pre>
+<p>很可能判断：</p>
+<pre class="text"><code>level = 1</code></pre>
+<p>看到：</p>
+<pre class="text"><code>3.2</code></pre>
+<p>可能：</p>
+<pre class="text"><code>level = 2</code></pre>
+<p>看到：</p>
+<pre class="text"><code>3.2.1</code></pre>
+<p>可能：</p>
+<pre class="text"><code>level = 3</code></pre>
+<hr />
+<h1 id="二十但编号也不能盲信">二十、但编号也不能盲信</h1>
+<p>例如：</p>
+<pre class="text"><code>1. 供应商应……</code></pre>
+<p>这可能是：</p>
+<blockquote>
+<p>条款编号。</p>
+</blockquote>
+<p>不一定是：</p>
+<blockquote>
+<p>Section Heading。</p>
+</blockquote>
+<hr />
+<h1 id="二十一所以机器需要区分">二十一、所以机器需要区分</h1>
+<pre class="text"><code>Section Number</code></pre>
+<p>和：</p>
+<pre class="text"><code>Clause Number</code></pre>
+<p>这不是同一个东西。</p>
+<hr />
+<h1 id="二十二怎么区分">二十二、怎么区分？</h1>
+<p>看上下文。</p>
+<p>比如：</p>
+<pre class="text"><code>3.2 售后服务要求</code></pre>
+<p>很像标题。</p>
+<p>因为：</p>
+<ul>
+<li>内容短；</li>
+<li>没有完整句末；</li>
+<li>后面跟很多子项。</li>
+</ul>
+<hr />
+<h1 id="二十三而">二十三、而</h1>
+<pre class="text"><code>1. 供应商应具有……</code></pre>
+<p>很像 Clause。</p>
+<p>因为：</p>
+<blockquote>
+<p>已经是完整业务要求。</p>
+</blockquote>
+<hr />
+<h1
+id="二十四这就是一个很重要的思想">二十四、这就是一个很重要的思想</h1>
+<h1 id="structure-is-contextual">Structure is contextual</h1>
+<p>结构不是单个 Block 自己决定的。</p>
+<p>还要看：</p>
+<blockquote>
+<p>前后 Block。</p>
+</blockquote>
+<hr />
+<h1 id="二十五比如连续文本">二十五、比如连续文本：</h1>
+<pre class="text"><code>3.2 售后服务
+
+1. 提供7×24小时服务热线。
+
+2. 故障发生后2小时内到达现场。
+
+3. 提供不少于3年的维护服务。</code></pre>
+<p>机器应该推断：</p>
+<pre class="text"><code>3.2 售后服务
+=
+Parent Section</code></pre>
+<p>而下面三个编号项：</p>
+<blockquote>
+<p>都属于它。</p>
+</blockquote>
+<hr />
+<h1 id="二十六这叫-parent-child-relation">二十六、这叫 Parent-Child
+Relation</h1>
+<p>也就是：</p>
+<pre class="text"><code>父节点
+↓
+子节点</code></pre>
+<hr />
+<h1
+id="二十七文档结构恢复真正核心的不是">二十七、文档结构恢复真正核心的不是</h1>
+<blockquote>
+<p>“这是标题吗？”</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p><strong>“如果是标题，它是谁的父节点？”</strong></p>
+</blockquote>
+<p>这一步特别重要。</p>
+<hr />
+<h1 id="二十八最终-section-tree-可能长这样">二十八、最终 Section Tree
+可能长这样</h1>
+<pre class="text"><code>第三章 采购需求
+│
+├── 3.1 项目概况
+│
+├── 3.2 售后服务
+│     ├── Clause 1
+│     ├── Clause 2
+│     └── Clause 3
+│
+└── 3.3 技术参数
+      ├── Clause 4
+      └── Clause 5</code></pre>
+<hr />
+<h1 id="二十九这时-section_path-就可以自动产生">二十九、这时
+<code>section_path</code> 就可以自动产生</h1>
+<p>比如 Clause 2：</p>
+<pre class="text"><code>第三章 采购需求
+/
+3.2 售后服务</code></pre>
+<p>也就是：</p>
+<pre class="text"><code>section_path</code></pre>
+<hr />
+<h1
+id="三十上一阶段我们已经知道这个字段非常值钱">三十、上一阶段我们已经知道这个字段非常值钱</h1>
+<p>因为它可以帮助：</p>
+<ul>
+<li>模型理解；</li>
+<li>条款分类；</li>
+<li>产品定位；</li>
+<li>错误追踪；</li>
+<li>RAG；</li>
+<li>数据切片。</li>
+</ul>
+<hr />
+<h1
+id="三十一现在进入今天第二个核心概念">三十一、现在进入今天第二个核心概念</h1>
+<h1 id="clause-segmentation-1">Clause Segmentation</h1>
+<p>什么叫 Clause？</p>
+<p>可以先理解为：</p>
+<blockquote>
+<p><strong>一个能够被独立审查、标注或执行的业务要求单元。</strong></p>
+</blockquote>
+<p>注意这里没有说：</p>
+<blockquote>
+<p>“一句话”。</p>
+</blockquote>
+<hr />
+<h1 id="三十二这是非常重要的区别">三十二、这是非常重要的区别</h1>
+<h1 id="clause-sentence">Clause ≠ Sentence</h1>
+<p>例如：</p>
+<blockquote>
+<p>“供应商应提供7×24小时服务热线，并应在收到故障通知后30分钟内响应；对于一级故障，应在2小时内到达现场。”</p>
+</blockquote>
+<p>这里有多个标点。</p>
+<p>但业务上：</p>
+<blockquote>
+<p>完全可以是一条完整的售后服务要求。</p>
+</blockquote>
+<hr />
+<h1 id="三十三如果用普通-sentence-splitter">三十三、如果用普通 Sentence
+Splitter</h1>
+<p>可能切成：</p>
+<pre class="text"><code>A：
+供应商应提供7×24小时服务热线。
+
+B：
+并应在收到故障通知后30分钟内响应。
+
+C：
+对于一级故障，应在2小时内到达现场。</code></pre>
+<hr />
+<h1 id="三十四问题是什么">三十四、问题是什么？</h1>
+<p>B 单独看：</p>
+<blockquote>
+<p>主语缺失。</p>
+</blockquote>
+<p>C 单独看：</p>
+<blockquote>
+<p>不知道服务对象是谁。</p>
+</blockquote>
+<hr />
+<h1 id="三十五所以简单按">三十五、所以简单按</h1>
+<pre class="text"><code>。！？；</code></pre>
+<p>全部切开：</p>
+<blockquote>
+<p>很危险。</p>
+</blockquote>
+<hr />
+<h1 id="三十六clause-segmentation-更接近">三十六、Clause Segmentation
+更接近</h1>
+<blockquote>
+<p><strong>业务语义边界识别。</strong></p>
+</blockquote>
+<p>它问：</p>
+<blockquote>
+<p>哪些文本必须一起看，才能形成一个完整要求？</p>
+</blockquote>
+<hr />
+<h1
+id="三十七一个采购条款可能只有一句">三十七、一个采购条款可能只有一句</h1>
+<p>例如：</p>
+<blockquote>
+<p>“本项目不接受联合体投标。”</p>
+</blockquote>
+<p>这非常适合作为一个独立 Clause。</p>
+<hr />
+<h1 id="三十八也可能有三句">三十八、也可能有三句</h1>
+<p>例如：</p>
+<blockquote>
+<p>“项目服务期为三年。合同一年一签。采购人根据年度考核结果决定是否续签。”</p>
+</blockquote>
+<p>这三个句子：</p>
+<blockquote>
+<p>很可能属于一个完整合同期限机制。</p>
+</blockquote>
+<hr />
+<h1 id="三十九如果拆太细">三十九、如果拆太细</h1>
+<p>模型会看不完整。</p>
+<hr />
+<h1 id="四十如果不拆">四十、如果不拆</h1>
+<p>整页甚至整章作为一个 Clause，</p>
+<p>模型又无法：</p>
+<blockquote>
+<p>精确定位风险。</p>
+</blockquote>
+<hr />
+<h1 id="四十一所以-clause-segmentation-的本质又是一个平衡">四十一、所以
+Clause Segmentation 的本质又是一个平衡</h1>
+<pre class="text"><code>太细
+→ Context丢失
+
+太粗
+→ 判断对象不清楚</code></pre>
+<p>我们要找：</p>
+<h1 id="business-atomicity">Business Atomicity</h1>
+<p>业务原子性。</p>
+<hr />
+<h1 id="四十二什么叫-business-atomicity">四十二、什么叫 Business
+Atomicity？</h1>
+<p>就是：</p>
+<blockquote>
+<p><strong>再往下拆，就会让一个独立业务要求失去完整意义。</strong></p>
+</blockquote>
+<hr />
+<h1 id="四十三比如">四十三、比如</h1>
+<pre class="text"><code>供应商必须是本市注册企业，且注册时间不少于5年。</code></pre>
+<p>这里有两个条件：</p>
+<pre class="text"><code>本市注册
++
+注册满5年</code></pre>
+<p>要不要拆成两条？</p>
+<hr />
+<h1 id="四十四答案不是绝对的">四十四、答案不是绝对的</h1>
+<p>如果未来任务是：</p>
+<blockquote>
+<p>风险类型细粒度识别，</p>
+</blockquote>
+<p>可能值得拆。</p>
+<p>因为：</p>
+<pre class="text"><code>本地注册要求</code></pre>
+<p>和：</p>
+<pre class="text"><code>企业成立年限</code></pre>
+<p>可能是两类不同风险。</p>
+<hr />
+<h1 id="四十五但如果拆以后变成">四十五、但如果拆以后变成：</h1>
+<pre class="text"><code>且注册时间不少于5年</code></pre>
+<p>上下文又不完整。</p>
+<p>所以更好的做法可能是：</p>
+<blockquote>
+<p>保留一个 Parent Clause，</p>
+</blockquote>
+<p>再允许有：</p>
+<h1 id="sub-conditions">Sub-conditions</h1>
+<hr />
+<h1 id="四十六例如">四十六、例如</h1>
+<pre class="text"><code>Clause C001
+供应商必须是本市注册企业，且注册时间不少于5年。
+
+Subcondition 1
+必须是本市注册企业
+
+Subcondition 2
+注册时间不少于5年</code></pre>
+<p>这样：</p>
+<blockquote>
+<p>既保留完整条款，</p>
+</blockquote>
+<p>又能细粒度分析。</p>
+<hr />
+<h1
+id="四十七这是一种很重要的设计思路">四十七、这是一种很重要的设计思路</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>保</mi><mi>留</mi><mi>原</mi><mi>始</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>允</mi><mi>许</mi><mi>派</mi><mi>生</mi><mi>S</mi><mi>u</mi><mi>b</mi><mo>−</mo><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+保留原始Clause
++
+允许派生Sub-Clause
+}
+</annotation></semantics></math></p>
+<p>不要一上来：</p>
+<blockquote>
+<p>永久切碎原文。</p>
+</blockquote>
+<hr />
+<h1
+id="四十八这和上一阶段lossless-first完全一致">四十八、这和上一阶段“Lossless
+First”完全一致</h1>
+<p>数据工程里我们越来越看到一个共同原则：</p>
+<blockquote>
+<p><strong>早期尽量保留，后期按任务派生。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="四十九现在看一个真实一点的采购结构">四十九、现在看一个真实一点的采购结构</h1>
+<pre class="text"><code>第四章 评标办法
+
+4.1 评标方法
+
+本项目采用综合评分法。
+
+4.2 评分标准
+
+（一）技术部分，满分40分
+
+1. 技术方案，20分
+根据投标人技术方案的完整性、可行性评分。
+
+2. 项目经验，10分
+每提供一个类似项目业绩得2分，最高10分。
+
+（二）商务部分，满分30分
+...</code></pre>
+<hr />
+<h1 id="五十这里到底有哪些-clause">五十、这里到底有哪些 Clause？</h1>
+<p>可能至少有：</p>
+<pre class="text"><code>本项目采用综合评分法。</code></pre>
+<p>以及：</p>
+<pre class="text"><code>技术方案，20分
+根据投标人技术方案的完整性、可行性评分。</code></pre>
+<p>以及：</p>
+<pre class="text"><code>项目经验，10分
+每提供一个类似项目业绩得2分，最高10分。</code></pre>
+<hr />
+<h1 id="五十一注意第二条">五十一、注意第二条</h1>
+<p>如果只切：</p>
+<pre class="text"><code>技术方案，20分</code></pre>
+<p>信息不够。</p>
+<hr />
+<h1 id="五十二如果只切">五十二、如果只切：</h1>
+<pre class="text"><code>根据投标人技术方案的完整性、可行性评分。</code></pre>
+<p>又丢了：</p>
+<blockquote>
+<p>20 分。</p>
+</blockquote>
+<p>所以这两个 Block：</p>
+<blockquote>
+<p>应该属于同一个评分 Clause。</p>
+</blockquote>
+<hr />
+<h1
+id="五十三这就是为什么-clause-segmentation-不能只按段落">五十三、这就是为什么
+Clause Segmentation 不能只按段落</h1>
+<p>有时：</p>
+<pre class="text"><code>多个Paragraph
+=
+一个Clause</code></pre>
+<hr />
+<h1 id="五十四反过来也可能">五十四、反过来也可能</h1>
+<p>一个 Paragraph 里：</p>
+<blockquote>
+<p>包含多个 Clause。</p>
+</blockquote>
+<p>例如：</p>
+<blockquote>
+<p>“供应商应具有软件开发能力；应具备3名高级工程师；应在项目所在地设置服务点。”</p>
+</blockquote>
+<p>三个业务条件挤在一段。</p>
+<hr />
+<h1 id="五十五所以">五十五、所以：</h1>
+<pre class="text"><code>Paragraph
+≠
+Clause</code></pre>
+<p>这条也值得记。</p>
+<hr />
+<h1
+id="五十六到这里我们已经有三个不同概念">五十六、到这里我们已经有三个不同概念</h1>
+<pre class="text"><code>Sentence
+Paragraph
+Clause</code></pre>
+<p>必须彻底分开。</p>
+<hr />
+<h1 id="五十七sentence">五十七、Sentence</h1>
+<p>语言学边界。</p>
+<p>例如：</p>
+<blockquote>
+<p>句号、问号。</p>
+</blockquote>
+<hr />
+<h1 id="五十八paragraph">五十八、Paragraph</h1>
+<p>版式边界。</p>
+<p>例如：</p>
+<blockquote>
+<p>一个段落。</p>
+</blockquote>
+<hr />
+<h1 id="五十九clause">五十九、Clause</h1>
+<p>业务判断边界。</p>
+<p>例如：</p>
+<blockquote>
+<p>一个完整资格条件、技术要求、评分项。</p>
+</blockquote>
+<hr />
+<h1 id="六十这三个层次偶尔一致">六十、这三个层次偶尔一致</h1>
+<p>但：</p>
+<blockquote>
+<p>经常不一致。</p>
+</blockquote>
+<hr />
+<h1 id="六十一现在看表格">六十一、现在看表格</h1>
+<p>假设技术参数表：</p>
+<table>
+<thead>
+<tr class="header">
+<th>序号</th>
+<th>技术指标</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>CPU</td>
+<td>核心数≥32</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>内存</td>
+<td>≥256GB</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>存储</td>
+<td>≥10TB</td>
+</tr>
+</tbody>
+</table>
+<p>这里每一行：</p>
+<blockquote>
+<p>很可能就是一个 Clause。</p>
+</blockquote>
+<hr />
+<h1 id="六十二所以-table-row-也可以变成">六十二、所以 Table Row
+也可以变成</h1>
+<h1 id="clauseunit">ClauseUnit</h1>
+<p>例如：</p>
+<pre class="text"><code>Clause 1
+技术指标：CPU
+要求：核心数≥32</code></pre>
+<hr />
+<h1 id="六十三但不能只保存">六十三、但不能只保存：</h1>
+<pre class="text"><code>核心数≥32</code></pre>
+<p>因为缺少：</p>
+<blockquote>
+<p>CPU。</p>
+</blockquote>
+<hr />
+<h1 id="六十四所以表格-clause-的-context-往往包括">六十四、所以表格
+Clause 的 Context 往往包括</h1>
+<pre class="text"><code>Column Header
++
+Row Header
++
+Cell Content
++
+Table Caption
++
+Parent Section</code></pre>
+<hr />
+<h1 id="六十五比如">六十五、比如：</h1>
+<pre class="text"><code>Section:
+第三章 / 技术要求
+
+Table:
+服务器技术参数表
+
+Item:
+CPU
+
+Requirement:
+核心数≥32</code></pre>
+<p>这样才完整。</p>
+<hr />
+<h1
+id="六十六这就是表格的结构化价值">六十六、这就是表格的结构化价值</h1>
+<p>表格不是：</p>
+<blockquote>
+<p>转成纯文本越早越好。</p>
+</blockquote>
+<p>更理想的是先保存：</p>
+<pre class="text"><code>row
+column
+header
+cell</code></pre>
+<p>然后根据任务：</p>
+<blockquote>
+<p>生成 Clause View。</p>
+</blockquote>
+<hr />
+<h1 id="六十七评分表更加明显">六十七、评分表更加明显</h1>
+<table>
+<thead>
+<tr class="header">
+<th>评分项</th>
+<th style="text-align: right;">分值</th>
+<th>评分规则</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>本地服务机构</td>
+<td style="text-align: right;">5</td>
+<td>在本市设有服务机构得5分</td>
+</tr>
+</tbody>
+</table>
+<p>这里真正要审查的 Clause 不是：</p>
+<pre class="text"><code>5</code></pre>
+<p>也不是：</p>
+<pre class="text"><code>本地服务机构</code></pre>
+<p>而是完整关系：</p>
+<pre class="text"><code>本地服务机构
++
+5分
++
+在本市设有服务机构得5分</code></pre>
+<hr />
+<h1
+id="六十八否则模型可能完全不知道">六十八、否则模型可能完全不知道</h1>
+<blockquote>
+<p>这个“5”奖励的是什么。</p>
+</blockquote>
+<hr />
+<h1
+id="六十九所以结构恢复的目标不仅是标题层级">六十九、所以结构恢复的目标不仅是标题层级</h1>
+<p>还包括：</p>
+<blockquote>
+<p><strong>业务关系。</strong></p>
+</blockquote>
+<hr />
+<h1 id="七十现在看跨页-clause">七十、现在看跨页 Clause</h1>
+<p>这是政府采购文件特别常见的问题。</p>
+<p>第 27 页底部：</p>
+<pre class="text"><code>供应商应提供本项目所需的技术支持服务，包括但不限于：</code></pre>
+<p>第 28 页顶部：</p>
+<pre class="text"><code>（1）7×24小时电话支持；
+（2）重大故障2小时内到场；
+（3）每季度提供一次巡检服务。</code></pre>
+<hr />
+<h1 id="七十一如果按页独立切">七十一、如果按页独立切</h1>
+<p>第 27 页：</p>
+<pre class="text"><code>供应商应提供……包括但不限于：</code></pre>
+<p>是一条残缺 Clause。</p>
+<hr />
+<h1 id="七十二第-28-页">七十二、第 28 页：</h1>
+<pre class="text"><code>（1）7×24小时电话支持</code></pre>
+<p>又缺少：</p>
+<blockquote>
+<p>主语和上位要求。</p>
+</blockquote>
+<hr />
+<h1 id="七十三所以-page-boundary">七十三、所以 Page Boundary</h1>
+<p>不能等价于：</p>
+<h1 id="clause-boundary">Clause Boundary</h1>
+<hr />
+<h1 id="七十四这一点特别重要">七十四、这一点特别重要</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>P</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>m</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>B</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+PageBoundary
+\neq
+SemanticBoundary
+}
+</annotation></semantics></math></p>
+<p>PDF 页只是：</p>
+<blockquote>
+<p>打印版式。</p>
+</blockquote>
+<p>不是：</p>
+<blockquote>
+<p>业务语义边界。</p>
+</blockquote>
+<hr />
+<h1
+id="七十五所以跨页结构恢复要利用">七十五、所以跨页结构恢复要利用</h1>
+<pre class="text"><code>编号连续
++
+句法连续
++
+缩进连续
++
+Section未变化</code></pre>
+<p>判断：</p>
+<blockquote>
+<p>这是上一页延续。</p>
+</blockquote>
+<hr />
+<h1 id="七十六比如上一页最后是">七十六、比如上一页最后是：</h1>
+<pre class="text"><code>包括：</code></pre>
+<p>下一页直接：</p>
+<pre class="text"><code>（1）</code></pre>
+<p>这是很强的延续信号。</p>
+<hr />
+<h1 id="七十七再比如表格">七十七、再比如表格</h1>
+<p>上一页表格有：</p>
+<pre class="text"><code>序号 评分项 分值</code></pre>
+<p>下一页继续：</p>
+<pre class="text"><code>4 企业实力 5分</code></pre>
+<p>很可能：</p>
+<blockquote>
+<p>还是同一张表。</p>
+</blockquote>
+<hr />
+<h1
+id="七十八所以结构恢复一定要跨页看">七十八、所以结构恢复一定要跨页看</h1>
+<p>不能：</p>
+<blockquote>
+<p>每页独立处理后永不联系。</p>
+</blockquote>
+<hr />
+<h1 id="七十九现在看另一个危险对象">七十九、现在看另一个危险对象</h1>
+<h1 id="appendix-attachment">Appendix / Attachment</h1>
+<p>例如：</p>
+<pre class="text"><code>附件1：
+中小企业声明函格式</code></pre>
+<p>里面也有：</p>
+<pre class="text"><code>一、
+二、
+1.
+2.</code></pre>
+<p>编号形式和正文一样。</p>
+<hr />
+<h1 id="八十如果机器没有识别">八十、如果机器没有识别</h1>
+<pre class="text"><code>附件</code></pre>
+<p>这个新的 Section Boundary，</p>
+<p>可能把模板里的内容：</p>
+<blockquote>
+<p>接到采购需求下面。</p>
+</blockquote>
+<hr />
+<h1
+id="八十一所以一些特殊结构词也很重要">八十一、所以一些特殊结构词也很重要</h1>
+<p>例如：</p>
+<pre class="text"><code>附件
+附表
+格式
+投标文件格式
+合同草案
+评分办法
+采购需求
+资格条件</code></pre>
+<p>这些往往：</p>
+<blockquote>
+<p>是高价值 Structural Anchor。</p>
+</blockquote>
+<hr />
+<h1 id="八十二什么叫-structural-anchor">八十二、什么叫 Structural
+Anchor？</h1>
+<p>就是：</p>
+<blockquote>
+<p>对文档层级特别有提示作用的文本。</p>
+</blockquote>
+<hr />
+<h1 id="八十三比如">八十三、比如：</h1>
+<pre class="text"><code>第三章 采购需求</code></pre>
+<p>几乎明确告诉你：</p>
+<blockquote>
+<p>后面进入采购需求区域。</p>
+</blockquote>
+<hr />
+<h1 id="八十四">八十四、</h1>
+<pre class="text"><code>第四章 评标办法</code></pre>
+<p>意味着：</p>
+<blockquote>
+<p>后面的条款很可能属于评分和评标。</p>
+</blockquote>
+<hr />
+<h1 id="八十五这对后面-risk-type-也有帮助">八十五、这对后面 Risk Type
+也有帮助</h1>
+<p>比如同一句：</p>
+<pre class="text"><code>在本市设有机构</code></pre>
+<p>如果位于：</p>
+<pre class="text"><code>供应商资格条件</code></pre>
+<p>可能是：</p>
+<blockquote>
+<p>Qualification Risk。</p>
+</blockquote>
+<hr />
+<h1 id="八十六如果位于">八十六、如果位于：</h1>
+<pre class="text"><code>评分标准</code></pre>
+<p>可能是：</p>
+<blockquote>
+<p>Scoring Rule Risk。</p>
+</blockquote>
+<hr />
+<h1 id="八十七所以-structure-和-risk-taxonomy">八十七、所以 Structure 和
+Risk Taxonomy</h1>
+<p>不是完全独立的。</p>
+<hr />
+<h1 id="八十八但这里有一个重要边界">八十八、但这里有一个重要边界</h1>
+<p>不要在结构恢复阶段直接说：</p>
+<blockquote>
+<p>“这是违规条款。”</p>
+</blockquote>
+<p>结构阶段应该主要回答：</p>
+<pre class="text"><code>它是什么结构？
+属于哪里？</code></pre>
+<hr />
+<h1 id="八十九而风险阶段回答">八十九、而风险阶段回答：</h1>
+<pre class="text"><code>它有没有问题？</code></pre>
+<p>不要混。</p>
+<hr />
+<h1 id="九十这叫">九十、这叫</h1>
+<h1 id="structural-classification">Structural Classification</h1>
+<p>和：</p>
+<h1 id="compliance-classification">Compliance Classification</h1>
+<p>分离。</p>
+<hr />
+<h1 id="九十一例如结构恢复可以标记">九十一、例如结构恢复可以标记：</h1>
+<pre class="text"><code>section_type = supplier_qualification</code></pre>
+<p>这不代表：</p>
+<pre class="text"><code>risk_present = true</code></pre>
+<hr />
+<h1 id="九十二资格条件本身">九十二、资格条件本身：</h1>
+<blockquote>
+<p>完全可以合法合理。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>T</mi><mi>y</mi><mi>p</mi><mi>e</mi><mo>≠</mo><mi>R</mi><mi>i</mi><mi>s</mi><mi>k</mi><mi>L</mi><mi>a</mi><mi>b</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SectionType
+\neq
+RiskLabel
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="九十三这个区别非常重要">九十三、这个区别非常重要</h1>
+<p>否则模型很容易学成：</p>
+<pre class="text"><code>资格条件
+=
+风险</code></pre>
+<p>那就废了。</p>
+<hr />
+<h1 id="九十四现在开始设计-section-type">九十四、现在开始设计 Section
+Type</h1>
+<p>为了帮助后续任务，可以给 Section 一个业务类别。</p>
+<p>例如第一版：</p>
+<table>
+<thead>
+<tr class="header">
+<th>Section Type</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>procurement_notice</td>
+<td>采购公告</td>
+</tr>
+<tr class="even">
+<td>supplier_qualification</td>
+<td>供应商资格</td>
+</tr>
+<tr class="odd">
+<td>procurement_requirement</td>
+<td>采购需求</td>
+</tr>
+<tr class="even">
+<td>technical_requirement</td>
+<td>技术要求</td>
+</tr>
+<tr class="odd">
+<td>commercial_requirement</td>
+<td>商务要求</td>
+</tr>
+<tr class="even">
+<td>scoring_rule</td>
+<td>评分标准</td>
+</tr>
+<tr class="odd">
+<td>contract_term</td>
+<td>合同条款</td>
+</tr>
+<tr class="even">
+<td>attachment</td>
+<td>附件/格式</td>
+</tr>
+</tbody>
+</table>
+<p>这只是结构标签。</p>
+<hr />
+<h1
+id="九十五为什么不直接只保存标题文字">九十五、为什么不直接只保存标题文字？</h1>
+<p>因为不同文件会写：</p>
+<pre class="text"><code>资格要求</code></pre>
+<pre class="text"><code>投标人资格</code></pre>
+<pre class="text"><code>申请人的资格要求</code></pre>
+<pre class="text"><code>供应商条件</code></pre>
+<p>其实都可能对应：</p>
+<pre class="text"><code>supplier_qualification</code></pre>
+<hr />
+<h1 id="九十六所以可以同时保存">九十六、所以可以同时保存</h1>
+<pre class="text"><code>section_title_raw</code></pre>
+<p>和：</p>
+<pre class="text"><code>section_type</code></pre>
+<hr />
+<h1 id="九十七例如">九十七、例如：</h1>
+<div class="sourceCode" id="cb484"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb484-1"><a href="#cb484-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb484-2"><a href="#cb484-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_title_raw&quot;</span><span class="fu">:</span> <span class="st">&quot;申请人的资格要求&quot;</span><span class="fu">,</span></span>
+<span id="cb484-3"><a href="#cb484-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_type&quot;</span><span class="fu">:</span> <span class="st">&quot;supplier_qualification&quot;</span></span>
+<span id="cb484-4"><a href="#cb484-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这样：</p>
+<blockquote>
+<p>原文不丢。</p>
+</blockquote>
+<p>同时：</p>
+<blockquote>
+<p>结构统一。</p>
+</blockquote>
+<hr />
+<h1
+id="九十八这是非常好的数据工程习惯">九十八、这是非常好的数据工程习惯</h1>
+<pre class="text"><code>Raw Value
++
+Normalized Value</code></pre>
+<p>两者同时保留。</p>
+<hr />
+<h1 id="九十九现在设计-section-node">九十九、现在设计 Section Node</h1>
+<p>概念上可以是：</p>
+<div class="sourceCode" id="cb486"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb486-1"><a href="#cb486-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb486-2"><a href="#cb486-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SEC-0032&quot;</span><span class="fu">,</span></span>
+<span id="cb486-3"><a href="#cb486-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;3.2 售后服务&quot;</span><span class="fu">,</span></span>
+<span id="cb486-4"><a href="#cb486-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;level&quot;</span><span class="fu">:</span> <span class="dv">2</span><span class="fu">,</span></span>
+<span id="cb486-5"><a href="#cb486-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_type&quot;</span><span class="fu">:</span> <span class="st">&quot;commercial_requirement&quot;</span><span class="fu">,</span></span>
+<span id="cb486-6"><a href="#cb486-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parent_section_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SEC-0030&quot;</span><span class="fu">,</span></span>
+<span id="cb486-7"><a href="#cb486-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;start_page&quot;</span><span class="fu">:</span> <span class="dv">27</span><span class="fu">,</span></span>
+<span id="cb486-8"><a href="#cb486-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;end_page&quot;</span><span class="fu">:</span> <span class="dv">29</span></span>
+<span id="cb486-9"><a href="#cb486-9" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="一百注意-parent_section_id">一百、注意
+<code>parent_section_id</code></h1>
+<p>这非常关键。</p>
+<p>有了它：</p>
+<blockquote>
+<p>Section Tree 才能重建。</p>
+</blockquote>
+<hr />
+<h1 id="一百零一然后-clauseunit-可以引用-section">一百零一、然后
+ClauseUnit 可以引用 Section</h1>
+<p>例如：</p>
+<div class="sourceCode" id="cb487"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb487-1"><a href="#cb487-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb487-2"><a href="#cb487-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb487-3"><a href="#cb487-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SEC-0032&quot;</span><span class="fu">,</span></span>
+<span id="cb487-4"><a href="#cb487-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后2小时内到达现场。&quot;</span></span>
+<span id="cb487-5"><a href="#cb487-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="一百零二这样就形成">一百零二、这样就形成：</h1>
+<pre class="text"><code>Document
+↓
+Section
+↓
+Clause</code></pre>
+<hr />
+<h1 id="一百零三但-clause-还应该保存来源-block">一百零三、但 Clause
+还应该保存来源 Block</h1>
+<p>因为以后要追溯。</p>
+<p>例如：</p>
+<pre class="text"><code>source_block_ids</code></pre>
+<p>可能：</p>
+<pre class="text"><code>B00872
+B00873</code></pre>
+<hr />
+<h1 id="一百零四为什么可能两个-block">一百零四、为什么可能两个
+Block？</h1>
+<p>因为一条 Clause：</p>
+<blockquote>
+<p>可能跨两个段落。</p>
+</blockquote>
+<p>或者：</p>
+<blockquote>
+<p>跨页。</p>
+</blockquote>
+<hr />
+<h1 id="一百零五所以-clause-不应该强迫">一百零五、所以 Clause
+不应该强迫：</h1>
+<pre class="text"><code>1 Clause = 1 Block</code></pre>
+<p>更好的关系是：</p>
+<pre class="text"><code>1 Clause
+←
+1..N Source Blocks</code></pre>
+<hr />
+<h1 id="一百零六反过来也可能">一百零六、反过来也可能</h1>
+<pre class="text"><code>1 Block
+→
+N Clauses</code></pre>
+<p>因为一个段落可能有多个独立条件。</p>
+<hr />
+<h1 id="一百零七这说明">一百零七、这说明：</h1>
+<blockquote>
+<p>Block 和 Clause 是不同层。</p>
+</blockquote>
+<p>这个概念一定要稳住。</p>
+<hr />
+<h1 id="一百零八第-2-阶段的-block-是">一百零八、第 2 阶段的 Block
+是</h1>
+<blockquote>
+<p>页面版式单元。</p>
+</blockquote>
+<p>第 3 阶段的 Clause 是：</p>
+<blockquote>
+<p>业务语义单元。</p>
+</blockquote>
+<hr />
+<h1 id="一百零九它们关系很多对多">一百零九、它们关系很多对多</h1>
+<p>概念上：</p>
+<pre class="text"><code>Layout Block
+   ↕
+Clause Unit</code></pre>
+<p>不是简单一一对应。</p>
+<hr />
+<h1 id="一百一十现在看嵌套条款">一百一十、现在看嵌套条款</h1>
+<p>例如：</p>
+<pre class="text"><code>1. 供应商须满足以下条件：
+   （1）具有独立法人资格；
+   （2）注册资本不低于5000万元；
+   （3）在本市设有固定服务机构。</code></pre>
+<p>这里到底应该切几条？</p>
+<hr />
+<h1
+id="一百一十一至少有两种表示方式">一百一十一、至少有两种表示方式</h1>
+<p>方式 A：</p>
+<blockquote>
+<p>整体作为一个 Clause。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十二方式-b">一百一十二、方式 B：</h1>
+<p>Parent Clause：</p>
+<pre class="text"><code>供应商须满足以下条件：</code></pre>
+<p>三个 Child Clause：</p>
+<pre class="text"><code>具有独立法人资格
+注册资本不低于5000万元
+在本市设有固定服务机构</code></pre>
+<hr />
+<h1
+id="一百一十三对于我们的风险审查任务">一百一十三、对于我们的风险审查任务</h1>
+<p>方式 B：</p>
+<blockquote>
+<p>更有价值。</p>
+</blockquote>
+<p>因为三个子条件：</p>
+<blockquote>
+<p>风险性质可能不同。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十四但我们不能丢掉-parent">一百一十四、但我们不能丢掉
+Parent</h1>
+<p>因为子条款：</p>
+<blockquote>
+<p>是在“供应商须满足以下条件”的语境下成立。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十五所以-clause-本身也可以形成小树">一百一十五、所以
+Clause 本身也可以形成小树</h1>
+<pre class="text"><code>Clause Parent
+│
+├── Subclause 1
+├── Subclause 2
+└── Subclause 3</code></pre>
+<hr />
+<h1 id="一百一十六这时可以有">一百一十六、这时可以有：</h1>
+<pre class="text"><code>parent_clause_id</code></pre>
+<hr />
+<h1
+id="一百一十七于是文档树可以变成">一百一十七、于是文档树可以变成</h1>
+<pre class="text"><code>Project
+└── Document
+    └── Section
+        └── Clause
+            └── Sub-Clause</code></pre>
+<p>这已经非常接近真正的政府采购数据结构。</p>
+<hr />
+<h1 id="一百一十八但不要无限嵌套">一百一十八、但不要无限嵌套</h1>
+<p>现实文档可能：</p>
+<pre class="text"><code>1
+（1）
+1）
+①
+a.</code></pre>
+<p>层级非常深。</p>
+<p>如果完整复制所有层级：</p>
+<blockquote>
+<p>数据会很复杂。</p>
+</blockquote>
+<hr />
+<h1 id="一百一十九所以我们要问">一百一十九、所以我们要问</h1>
+<blockquote>
+<p><strong>哪些层级对业务判断真正有用？</strong></p>
+</blockquote>
+<p>这和 Schema 第一阶段的原则一样：</p>
+<h1 id="minimal-but-sufficient-1">Minimal but Sufficient</h1>
+<hr />
+<h1 id="一百二十例如对于-clauseunit">一百二十、例如对于 ClauseUnit</h1>
+<p>第一版可能只保留：</p>
+<pre class="text"><code>section_path
+parent_clause_text
+clause_text</code></pre>
+<p>就已经足够。</p>
+<p>数据库内部可以：</p>
+<blockquote>
+<p>保留完整树。</p>
+</blockquote>
+<p>训练 View：</p>
+<blockquote>
+<p>再简化。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十一再次看到">一百二十一、再次看到</h1>
+<pre class="text"><code>Master Representation</code></pre>
+<p>和：</p>
+<pre class="text"><code>Task View</code></pre>
+<p>的区别。</p>
+<hr />
+<h1
+id="一百二十二现在说一个非常关键的问题">一百二十二、现在说一个非常关键的问题</h1>
+<h1 id="clause-boundary-detection">Clause Boundary Detection</h1>
+<p>机器究竟怎么判断：</p>
+<blockquote>
+<p>一条 Clause 结束了？</p>
+</blockquote>
+<hr />
+<h1
+id="一百二十三强信号之一编号变化">一百二十三、强信号之一：编号变化</h1>
+<p>例如：</p>
+<pre class="text"><code>1. 条件A
+2. 条件B</code></pre>
+<p>通常：</p>
+<blockquote>
+<p><code>2.</code> 是新 Clause 开始。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十四但编号也可能在-clause-内部">一百二十四、但编号也可能在
+Clause 内部</h1>
+<p>例如：</p>
+<blockquote>
+<p>“服务内容包括：1）巡检；2）培训；3）应急支持。”</p>
+</blockquote>
+<p>这里：</p>
+<pre class="text"><code>1）
+2）
+3）</code></pre>
+<p>可能只是：</p>
+<blockquote>
+<p>一个 Clause 里的子项目。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十五所以单看编号不够">一百二十五、所以单看编号不够</h1>
+<p>要看：</p>
+<blockquote>
+<p>当前层级。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十六如果当前已经在">一百二十六、如果当前已经在：</h1>
+<pre class="text"><code>1.</code></pre>
+<p>下面看到：</p>
+<pre class="text"><code>1）</code></pre>
+<p>很可能：</p>
+<blockquote>
+<p>子级。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十七如果连续出现">一百二十七、如果连续出现：</h1>
+<pre class="text"><code>1.
+2.
+3.</code></pre>
+<p>并且格式一致，</p>
+<p>很可能：</p>
+<blockquote>
+<p>同级 Clause。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十八强信号之二缩进">一百二十八、强信号之二：缩进</h1>
+<p>例如：</p>
+<pre class="text"><code>1. 主条款
+    （1）子条件
+    （2）子条件</code></pre>
+<p>缩进：</p>
+<blockquote>
+<p>帮助推断层级。</p>
+</blockquote>
+<hr />
+<h1 id="一百二十九强信号之三字体与-style">一百二十九、强信号之三：字体与
+Style</h1>
+<p>标题可能：</p>
+<blockquote>
+<p>粗体。</p>
+</blockquote>
+<p>Clause：</p>
+<blockquote>
+<p>正文字体。</p>
+</blockquote>
+<p>子项：</p>
+<blockquote>
+<p>缩进但不加粗。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十强信号之四标点与句法">一百三十、强信号之四：标点与句法</h1>
+<p>例如：</p>
+<pre class="text"><code>供应商应满足以下条件：</code></pre>
+<p>冒号：</p>
+<blockquote>
+<p>很可能提示下面还有子项。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十一如果下一-block-是">一百三十一、如果下一 Block
+是：</h1>
+<pre class="text"><code>（1）……</code></pre>
+<p>非常可能：</p>
+<blockquote>
+<p>属于上一个 Parent。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十二强信号之五空白距离">一百三十二、强信号之五：空白距离</h1>
+<p>标题上下通常：</p>
+<blockquote>
+<p>空间更大。</p>
+</blockquote>
+<p>同一 Clause 内连续行：</p>
+<blockquote>
+<p>间距更紧。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十三强信号之六页面位置">一百三十三、强信号之六：页面位置</h1>
+<p>比如一行：</p>
+<blockquote>
+<p>居中、页面顶部、字号大。</p>
+</blockquote>
+<p>更像：</p>
+<blockquote>
+<p>Heading。</p>
+</blockquote>
+<hr />
+<h1
+id="一百三十四强信号之七词汇模式">一百三十四、强信号之七：词汇模式</h1>
+<p>比如：</p>
+<pre class="text"><code>采购需求
+供应商资格
+评审标准
+合同条款
+技术要求</code></pre>
+<p>很像：</p>
+<blockquote>
+<p>Section Anchor。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十五所以整体思路不是">一百三十五、所以整体思路不是</h1>
+<pre class="text"><code>if 字号大:
+    标题</code></pre>
+<p>而是：</p>
+<pre class="text"><code>多个信号
+↓
+综合判断</code></pre>
+<hr />
+<h1 id="一百三十六这可以用规则做吗">一百三十六、这可以用规则做吗？</h1>
+<p>可以。</p>
+<p>第一版其实很适合：</p>
+<blockquote>
+<p>Rule-based + Heuristic。</p>
+</blockquote>
+<p>因为政府采购文档：</p>
+<blockquote>
+<p>编号和格式有很强规律。</p>
+</blockquote>
+<hr />
+<h1 id="一百三十七例如简单规则">一百三十七、例如简单规则：</h1>
+<pre class="text"><code>如果文本匹配
+“第X章”
++
+长度短
++
+字体较大
+
+→ Heading Level 1</code></pre>
+<hr />
+<h1 id="一百三十八再比如">一百三十八、再比如：</h1>
+<pre class="text"><code>如果匹配
+^\d+\.\d+
++
+后面没有长句
++
+后面有多个编号项
+
+→ Section Heading</code></pre>
+<hr />
+<h1
+id="一百三十九但规则能解决所有文档吗">一百三十九、但规则能解决所有文档吗？</h1>
+<p>当然不能。</p>
+<p>因为现实文件：</p>
+<blockquote>
+<p>太乱。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十有些标题完全没有编号">一百四十、有些标题完全没有编号</h1>
+<p>例如：</p>
+<pre class="text"><code>特别资格条件</code></pre>
+<p>只有：</p>
+<blockquote>
+<p>加粗。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十一有些正文恰好很短">一百四十一、有些正文恰好很短</h1>
+<p>例如：</p>
+<pre class="text"><code>不接受联合体。</code></pre>
+<p>长度也很短。</p>
+<p>但：</p>
+<blockquote>
+<p>它不是标题。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十二所以成熟方案可能是">一百四十二、所以成熟方案可能是</h1>
+<pre class="text"><code>Rules
++
+Layout Features
++
+Statistical / ML Model</code></pre>
+<p>甚至：</p>
+<blockquote>
+<p>LLM 辅助结构判断。</p>
+</blockquote>
+<hr />
+<h1
+id="一百四十三但这里有一个重要工程原则">一百四十三、但这里有一个重要工程原则</h1>
+<p>不要一上来就用大模型：</p>
+<blockquote>
+<p>识别所有标题和层级。</p>
+</blockquote>
+<p>为什么？</p>
+<hr />
+<h1 id="一百四十四因为很多结构信号">一百四十四、因为很多结构信号</h1>
+<p>本来是：</p>
+<blockquote>
+<p>确定性规则可以很好识别。</p>
+</blockquote>
+<p>比如：</p>
+<pre class="text"><code>第三章</code></pre>
+<p>根本不需要：</p>
+<blockquote>
+<p>让 LLM 花钱思考。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十五所以推荐">一百四十五、所以推荐：</h1>
+<pre class="text"><code>确定性明显的
+→ Rule
+
+模糊的
+→ Model
+
+极难的
+→ Human Review</code></pre>
+<p>这又是：</p>
+<h1 id="hybrid-pipeline">Hybrid Pipeline</h1>
+<hr />
+<h1
+id="一百四十六这和-procurementai-最终架构其实一模一样">一百四十六、这和
+ProcurementAI 最终架构其实一模一样</h1>
+<pre class="text"><code>规则擅长的
+→ Rule Engine
+
+模糊语义判断
+→ LLM
+
+高风险边界
+→ Human</code></pre>
+<p>数据工程和产品架构：</p>
+<blockquote>
+<p>思路高度一致。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十七现在说-confidence">一百四十七、现在说 Confidence</h1>
+<p>假设系统识别：</p>
+<pre class="text"><code>“第三章 采购需求”</code></pre>
+<p>置信度：</p>
+<blockquote>
+<p>很高。</p>
+</blockquote>
+<hr />
+<h1 id="一百四十八但遇到">一百四十八、但遇到：</h1>
+<pre class="text"><code>其他要求</code></pre>
+<p>它不知道这是：</p>
+<blockquote>
+<p>一级标题、二级标题还是正文小标题。</p>
+</blockquote>
+<p>可以：</p>
+<pre class="text"><code>structure_confidence = low</code></pre>
+<hr />
+<h1 id="一百四十九然后不要硬猜">一百四十九、然后不要硬猜</h1>
+<p>而是标记：</p>
+<pre class="text"><code>STRUCTURE_AMBIGUOUS</code></pre>
+<hr />
+<h1
+id="一百五十这和第一阶段-needs_review-是同一个哲学">一百五十、这和第一阶段
+<code>needs_review</code> 是同一个哲学</h1>
+<blockquote>
+<p><strong>不确定时允许说不确定。</strong></p>
+</blockquote>
+<p>不要逼 Pipeline：</p>
+<blockquote>
+<p>假装百分之百知道。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十一低置信度-section-会影响什么">一百五十一、低置信度
+Section 会影响什么？</h1>
+<p>比如：</p>
+<blockquote>
+<p>下一步 Clause 属于哪里。</p>
+</blockquote>
+<p>所以可以：</p>
+<blockquote>
+<p>触发人工复核。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十二特别是-gold-set-来源文件">一百五十二、特别是 Gold Set
+来源文件</h1>
+<p>我们更应该：</p>
+<blockquote>
+<p>提高结构校验标准。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十三而大量-cpt-corpus">一百五十三、而大量 CPT Corpus</h1>
+<p>可能允许：</p>
+<blockquote>
+<p>较低的结构精度。</p>
+</blockquote>
+<p>再次出现：</p>
+<h1 id="purpose-specific-quality-threshold">Purpose-specific Quality
+Threshold</h1>
+<hr />
+<h1
+id="一百五十四现在看一个特别典型的失败案例">一百五十四、现在看一个特别典型的失败案例</h1>
+<p>原文：</p>
+<pre class="text"><code>第四章 评标办法
+
+4.2 商务评分
+
+1. 企业业绩，10分。
+近三年每提供一个类似项目得2分，最高10分。
+
+2. 服务能力，5分。
+在本市设有固定服务机构得5分。</code></pre>
+<hr />
+<h1 id="一百五十五错误切分方法">一百五十五、错误切分方法：</h1>
+<pre class="text"><code>Clause A:
+企业业绩，10分。
+
+Clause B:
+近三年每提供一个类似项目得2分，最高10分。
+
+Clause C:
+服务能力，5分。
+
+Clause D:
+在本市设有固定服务机构得5分。</code></pre>
+<hr />
+<h1 id="一百五十六问题是">一百五十六、问题是</h1>
+<p>A+B：</p>
+<blockquote>
+<p>其实一个评分项。</p>
+</blockquote>
+<p>C+D：</p>
+<blockquote>
+<p>也是一个评分项。</p>
+</blockquote>
+<hr />
+<h1 id="一百五十七如果拆错">一百五十七、如果拆错</h1>
+<p>模型看到：</p>
+<pre class="text"><code>在本市设有固定服务机构得5分。</code></pre>
+<p>还能判断一些东西。</p>
+<p>但失去了：</p>
+<pre class="text"><code>评分项：服务能力
+分值：5</code></pre>
+<hr />
+<h1
+id="一百五十八而这些信息对风险解释很重要">一百五十八、而这些信息对风险解释很重要</h1>
+<p>因为：</p>
+<blockquote>
+<p>它不是资格门槛，</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>评分加分项。</p>
+</blockquote>
+<p>业务性质：</p>
+<blockquote>
+<p>完全不同。</p>
+</blockquote>
+<hr />
+<h1
+id="一百五十九所以-clause-segmentation-必须尽量保留">一百五十九、所以
+Clause Segmentation 必须尽量保留</h1>
+<h1 id="functional-context">Functional Context</h1>
+<p>也就是：</p>
+<blockquote>
+<p>这条话在文件里承担什么功能。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十例如同一句">一百六十、例如同一句：</h1>
+<pre class="text"><code>在本市设有服务机构</code></pre>
+<p>放在：</p>
+<pre class="text"><code>资格条件</code></pre>
+<p>含义：</p>
+<blockquote>
+<p>进入资格门槛。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十一放在">一百六十一、放在：</h1>
+<pre class="text"><code>评分办法</code></pre>
+<p>含义：</p>
+<blockquote>
+<p>竞争评分条件。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十二放在">一百六十二、放在：</h1>
+<pre class="text"><code>合同履约要求</code></pre>
+<p>又可能：</p>
+<blockquote>
+<p>是中标后的履约要求。</p>
+</blockquote>
+<hr />
+<h1 id="一百六十三三者">一百六十三、三者：</h1>
+<blockquote>
+<p>风险判断完全可能不同。</p>
+</blockquote>
+<hr />
+<h1
+id="一百六十四所以我们不应该把-clause-当成孤岛">一百六十四、所以我们不应该把
+Clause 当成孤岛</h1>
+<p>更合理：</p>
+<pre class="text"><code>Clause
++
+Section Type
++
+Section Path
++
+Parent Context</code></pre>
+<p>一起存在。</p>
+<hr />
+<h1
+id="一百六十五现在第一次设计-clauseunit_v0.1">一百六十五、现在第一次设计
+<code>ClauseUnit_V0.1</code></h1>
+<p>可以先长这样：</p>
+<div class="sourceCode" id="cb537"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb537-1"><a href="#cb537-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb537-2"><a href="#cb537-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00178&quot;</span><span class="fu">,</span></span>
+<span id="cb537-3"><a href="#cb537-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;document_id&quot;</span><span class="fu">:</span> <span class="st">&quot;DOC-00152-01&quot;</span><span class="fu">,</span></span>
+<span id="cb537-4"><a href="#cb537-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-5"><a href="#cb537-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_id&quot;</span><span class="fu">:</span> <span class="st">&quot;SEC-0032&quot;</span><span class="fu">,</span></span>
+<span id="cb537-6"><a href="#cb537-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_path&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb537-7"><a href="#cb537-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;第三章 采购需求&quot;</span><span class="ot">,</span></span>
+<span id="cb537-8"><a href="#cb537-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;3.2 售后服务&quot;</span></span>
+<span id="cb537-9"><a href="#cb537-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb537-10"><a href="#cb537-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_type&quot;</span><span class="fu">:</span> <span class="st">&quot;commercial_requirement&quot;</span><span class="fu">,</span></span>
+<span id="cb537-11"><a href="#cb537-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-12"><a href="#cb537-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_text&quot;</span><span class="fu">:</span> <span class="st">&quot;供应商应保证故障发生后2小时内到达项目现场。&quot;</span><span class="fu">,</span></span>
+<span id="cb537-13"><a href="#cb537-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-14"><a href="#cb537-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parent_clause_text&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">,</span></span>
+<span id="cb537-15"><a href="#cb537-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-16"><a href="#cb537-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;source_block_ids&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb537-17"><a href="#cb537-17" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;B00872&quot;</span></span>
+<span id="cb537-18"><a href="#cb537-18" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb537-19"><a href="#cb537-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-20"><a href="#cb537-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;start_page&quot;</span><span class="fu">:</span> <span class="dv">27</span><span class="fu">,</span></span>
+<span id="cb537-21"><a href="#cb537-21" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;end_page&quot;</span><span class="fu">:</span> <span class="dv">27</span><span class="fu">,</span></span>
+<span id="cb537-22"><a href="#cb537-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-23"><a href="#cb537-23" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_order&quot;</span><span class="fu">:</span> <span class="dv">18</span><span class="fu">,</span></span>
+<span id="cb537-24"><a href="#cb537-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-25"><a href="#cb537-25" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;structure_confidence&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="er">.</span><span class="dv">98</span><span class="fu">,</span></span>
+<span id="cb537-26"><a href="#cb537-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb537-27"><a href="#cb537-27" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;warnings&quot;</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb537-28"><a href="#cb537-28" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这就是第一版概念。</p>
+<hr />
+<h1 id="一百六十六如果-clause-跨页">一百六十六、如果 Clause 跨页</h1>
+<p>可能：</p>
+<div class="sourceCode" id="cb538"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb538-1"><a href="#cb538-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb538-2"><a href="#cb538-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;start_page&quot;</span><span class="fu">:</span> <span class="dv">27</span><span class="fu">,</span></span>
+<span id="cb538-3"><a href="#cb538-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;end_page&quot;</span><span class="fu">:</span> <span class="dv">28</span></span>
+<span id="cb538-4"><a href="#cb538-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="一百六十七如果有-parent">一百六十七、如果有 Parent</h1>
+<p>比如：</p>
+<pre class="text"><code>供应商应满足以下条件：</code></pre>
+<p>可以：</p>
+<div class="sourceCode" id="cb540"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb540-1"><a href="#cb540-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb540-2"><a href="#cb540-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parent_clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00177&quot;</span></span>
+<span id="cb540-3"><a href="#cb540-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h1 id="一百六十八如果来自表格">一百六十八、如果来自表格</h1>
+<p>可以增加：</p>
+<pre class="text"><code>source_type = table_row</code></pre>
+<p>或者：</p>
+<pre class="text"><code>table_id
+row_id</code></pre>
+<hr />
+<h1 id="一百六十九例如评分表-clause">一百六十九、例如评分表 Clause</h1>
+<div class="sourceCode" id="cb543"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb543-1"><a href="#cb543-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb543-2"><a href="#cb543-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_id&quot;</span><span class="fu">:</span> <span class="st">&quot;CLAUSE-00421&quot;</span><span class="fu">,</span></span>
+<span id="cb543-3"><a href="#cb543-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;section_type&quot;</span><span class="fu">:</span> <span class="st">&quot;scoring_rule&quot;</span><span class="fu">,</span></span>
+<span id="cb543-4"><a href="#cb543-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb543-5"><a href="#cb543-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;table_caption&quot;</span><span class="fu">:</span> <span class="st">&quot;商务评分表&quot;</span><span class="fu">,</span></span>
+<span id="cb543-6"><a href="#cb543-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;row_label&quot;</span><span class="fu">:</span> <span class="st">&quot;服务能力&quot;</span><span class="fu">,</span></span>
+<span id="cb543-7"><a href="#cb543-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;score&quot;</span><span class="fu">:</span> <span class="dv">5</span><span class="fu">,</span></span>
+<span id="cb543-8"><a href="#cb543-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb543-9"><a href="#cb543-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clause_text&quot;</span><span class="fu">:</span> <span class="st">&quot;在本市设有固定服务机构得5分。&quot;</span></span>
+<span id="cb543-10"><a href="#cb543-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>注意：</p>
+<blockquote>
+<p>不一定最终这么设计。</p>
+</blockquote>
+<p>但思想已经很清楚。</p>
+<hr />
+<h1 id="一百七十clauseunit-最重要的不是字段多">一百七十、ClauseUnit
+最重要的不是字段多</h1>
+<p>而是保证三件事：</p>
+<pre class="text"><code>① 知道它是什么
+
+② 知道它属于哪里
+
+③ 知道它从原文哪里来</code></pre>
+<hr />
+<h1 id="一百七十一也就是">一百七十一、也就是：</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>I</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>H</mi><mi>i</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>r</mi><mi>c</mi><mi>h</mi><mi>y</mi><mo>+</mo><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Identity
++
+Hierarchy
++
+Provenance
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="一百七十二这三个是-clause-数据的骨架">一百七十二、这三个是
+Clause 数据的骨架</h1>
+<p>后面才加：</p>
+<blockquote>
+<p>Annotation。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十三现在谈稳定-id">一百七十三、现在谈稳定 ID</h1>
+<p><code>clause_id</code>：</p>
+<blockquote>
+<p>不能只用当前行号。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十四为什么">一百七十四、为什么？</h1>
+<p>Parser 更新以后：</p>
+<blockquote>
+<p>Clause 顺序可能变化。</p>
+</blockquote>
+<p>如果 ID 是：</p>
+<pre class="text"><code>row_328</code></pre>
+<p>可能全部乱掉。</p>
+<hr />
+<h1 id="一百七十五可以考虑基于">一百七十五、可以考虑基于</h1>
+<pre class="text"><code>document_id
++
+stable local identifier</code></pre>
+<p>生成 Clause ID。</p>
+<hr />
+<h1 id="一百七十六或者再保存">一百七十六、或者再保存：</h1>
+<pre class="text"><code>clause_fingerprint</code></pre>
+<p>帮助以后追踪：</p>
+<blockquote>
+<p>同一条 Clause 在 Parser 版本更新后是否变化。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十七比如">一百七十七、比如：</h1>
+<pre class="text"><code>旧 Parser:
+CLAUSE-102
+文本A
+
+新 Parser:
+CLAUSE-102
+文本A + 补回漏掉的半句</code></pre>
+<p>你需要知道：</p>
+<blockquote>
+<p>这其实是同一业务条款被修正。</p>
+</blockquote>
+<hr />
+<h1 id="一百七十八这会影响后面">一百七十八、这会影响后面</h1>
+<h1 id="dataset-versioning">Dataset Versioning</h1>
+<p>第 11 阶段会专门处理。</p>
+<p>现在先埋下意识。</p>
+<hr />
+<h1
+id="一百七十九接下来一个重要问题">一百七十九、接下来一个重要问题</h1>
+<h1 id="section-boundary">Section Boundary</h1>
+<p>什么时候一个 Section 结束？</p>
+<hr />
+<h1 id="一百八十最直接">一百八十、最直接：</h1>
+<blockquote>
+<p>遇到同级或者更高级 Heading。</p>
+</blockquote>
+<p>例如：</p>
+<pre class="text"><code>3.1 资格条件
+...
+3.2 技术要求</code></pre>
+<p>那么：</p>
+<pre class="text"><code>3.1</code></pre>
+<p>结束于：</p>
+<pre class="text"><code>3.2</code></pre>
+<p>之前。</p>
+<hr />
+<h1
+id="一百八十一树算法上可以理解为">一百八十一、树算法上可以理解为</h1>
+<p>当出现：</p>
+<pre class="text"><code>new_level &lt;= current_level</code></pre>
+<p>就要：</p>
+<blockquote>
+<p>关闭当前某些层级。</p>
+</blockquote>
+<p>不用背算法。</p>
+<p>记住：</p>
+<blockquote>
+<p>标题层级像一个栈。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十二可以想象">一百八十二、可以想象</h1>
+<pre class="text"><code>第三章
+    3.1
+        3.1.1</code></pre>
+<p>现在遇到：</p>
+<pre class="text"><code>3.2</code></pre>
+<p>说明：</p>
+<pre class="text"><code>3.1.1结束
+3.1结束</code></pre>
+<p>回到：</p>
+<pre class="text"><code>第三章</code></pre>
+<p>下面开：</p>
+<pre class="text"><code>3.2</code></pre>
+<hr />
+<h1 id="一百八十三这就叫-hierarchy-stack">一百八十三、这就叫 Hierarchy
+Stack</h1>
+<p>是非常常见的结构恢复方法。</p>
+<hr />
+<h1
+id="一百八十四现实中编号会乱怎么办">一百八十四、现实中编号会乱怎么办？</h1>
+<p>例如：</p>
+<pre class="text"><code>3.1
+3.2
+3.2.1
+3.4</code></pre>
+<p>缺少：</p>
+<pre class="text"><code>3.3</code></pre>
+<p>不能因为编号不连续：</p>
+<blockquote>
+<p>就判文档损坏。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十五因为原文真的可能">一百八十五、因为原文真的可能：</h1>
+<blockquote>
+<p>没有 3.3。</p>
+</blockquote>
+<p>所以规则应该：</p>
+<blockquote>
+<p>容忍缺号。</p>
+</blockquote>
+<hr />
+<h1 id="一百八十六还有重复编号">一百八十六、还有重复编号</h1>
+<p>例如：</p>
+<pre class="text"><code>1.
+1.
+2.</code></pre>
+<p>可能：</p>
+<blockquote>
+<p>原文编辑错误。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十七结构恢复应该做什么">一百八十七、结构恢复应该做什么？</h1>
+<p>保留：</p>
+<blockquote>
+<p>原文编号。</p>
+</blockquote>
+<p>同时加：</p>
+<pre class="text"><code>NUMBERING_INCONSISTENT</code></pre>
+<p>Warning。</p>
+<p>不要偷偷：</p>
+<blockquote>
+<p>帮原文改成 1、2、3。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十八这又是一个重要原则">一百八十八、这又是一个重要原则</h1>
+<h1 id="preserve-source-truth">Preserve Source Truth</h1>
+<p>数据工程：</p>
+<blockquote>
+<p>不应该悄悄替原文件“纠错”。</p>
+</blockquote>
+<hr />
+<h1
+id="一百八十九如果需要规范化编号">一百八十九、如果需要规范化编号</h1>
+<p>可以另存：</p>
+<pre class="text"><code>normalized_order</code></pre>
+<p>但原始：</p>
+<pre class="text"><code>raw_number</code></pre>
+<p>应该保留。</p>
+<hr />
+<h1 id="一百九十类似">一百九十、类似：</h1>
+<div class="sourceCode" id="cb564"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb564-1"><a href="#cb564-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb564-2"><a href="#cb564-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;raw_number&quot;</span><span class="fu">:</span> <span class="st">&quot;1.&quot;</span><span class="fu">,</span></span>
+<span id="cb564-3"><a href="#cb564-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;normalized_order&quot;</span><span class="fu">:</span> <span class="dv">2</span></span>
+<span id="cb564-4"><a href="#cb564-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>这样：</p>
+<blockquote>
+<p>可追溯。</p>
+</blockquote>
+<hr />
+<h1
+id="一百九十一现在谈标题正文混排">一百九十一、现在谈标题正文混排</h1>
+<p>现实里可能：</p>
+<pre class="text"><code>3.1 资格条件：供应商应满足以下条件：</code></pre>
+<p>标题和正文：</p>
+<blockquote>
+<p>同一行。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十二机器需要拆成">一百九十二、机器需要拆成</h1>
+<pre class="text"><code>Heading:
+3.1 资格条件
+
+Lead Text:
+供应商应满足以下条件：</code></pre>
+<hr />
+<h1 id="一百九十三否则如果整行都当-heading">一百九十三、否则如果整行都当
+Heading</h1>
+<p>会丢掉：</p>
+<blockquote>
+<p>“供应商应满足以下条件”。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十四反过来全当正文">一百九十四、反过来全当正文</h1>
+<p>又会丢掉：</p>
+<blockquote>
+<p>Section Heading。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十五这说明有时一个-block">一百九十五、这说明有时一个
+Block：</h1>
+<blockquote>
+<p>需要内部再拆。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十六这叫-block-refinement">一百九十六、这叫 Block
+Refinement</h1>
+<p>第 2 阶段是：</p>
+<blockquote>
+<p>Layout Block。</p>
+</blockquote>
+<p>第 3 阶段可以：</p>
+<blockquote>
+<p>根据语义继续精炼。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十七但不要修改原-block">一百九十七、但不要修改原
+Block</h1>
+<p>更好的方式：</p>
+<pre class="text"><code>Raw Block
+↓
+Derived Structural Nodes</code></pre>
+<p>仍然保留：</p>
+<blockquote>
+<p>来源关系。</p>
+</blockquote>
+<hr />
+<h1 id="一百九十八例如">一百九十八、例如</h1>
+<pre class="text"><code>B0123
+原始：
+“3.1 资格条件：供应商应满足以下条件：”</code></pre>
+<p>派生：</p>
+<pre class="text"><code>Section Heading
+“3.1 资格条件”</code></pre>
+<p>和：</p>
+<pre class="text"><code>Lead Clause
+“供应商应满足以下条件：”</code></pre>
+<p>两者都指向：</p>
+<pre class="text"><code>B0123</code></pre>
+<hr />
+<h1 id="一百九十九这样不会丢-provenance">一百九十九、这样不会丢
+provenance。</h1>
+<hr />
+<h1 id="二百现在讲标题重复">二百、现在讲“标题重复”</h1>
+<p>跨页打印时可能每页顶部重复：</p>
+<pre class="text"><code>第三章 采购需求</code></pre>
+<p>这到底是：</p>
+<blockquote>
+<p>Header</p>
+</blockquote>
+<p>还是：</p>
+<blockquote>
+<p>Section Heading？</p>
+</blockquote>
+<hr />
+<h1 id="二百零一第-2-阶段已经告诉我们">二百零一、第 2
+阶段已经告诉我们</h1>
+<p>如果它：</p>
+<ul>
+<li>每页固定顶部；</li>
+<li>大量重复；</li>
+<li>位置稳定；</li>
+</ul>
+<p>更可能：</p>
+<blockquote>
+<p>Running Header。</p>
+</blockquote>
+<hr />
+<h1
+id="二百零二结构恢复时不能把每一页都当">二百零二、结构恢复时不能把每一页都当：</h1>
+<blockquote>
+<p>新的第三章开始。</p>
+</blockquote>
+<p>否则：</p>
+<blockquote>
+<p>文档树被切碎。</p>
+</blockquote>
+<hr />
+<h1 id="二百零三这说明第-2-阶段的-layout-信息">二百零三、这说明第 2
+阶段的 Layout 信息</h1>
+<p>会直接帮助第 3 阶段。</p>
+<p>课程阶段虽然分开：</p>
+<blockquote>
+<p>数据本身是连续流水线。</p>
+</blockquote>
+<hr />
+<h1 id="二百零四现在看目录页">二百零四、现在看“目录页”</h1>
+<p>TOC：</p>
+<pre class="text"><code>第三章 采购需求 ........ 37
+第四章 评标办法 ........ 82</code></pre>
+<p>里面也有很多标题。</p>
+<hr />
+<h1
+id="二百零五如果机器把目录页也当正文结构">二百零五、如果机器把目录页也当正文结构</h1>
+<p>会生成：</p>
+<blockquote>
+<p>虚假的 Section。</p>
+</blockquote>
+<hr />
+<h1 id="二百零六所以要识别">二百零六、所以要识别</h1>
+<h1 id="table-of-contents">Table of Contents</h1>
+<p>目录。</p>
+<hr />
+<h1 id="二百零七目录常见信号">二百零七、目录常见信号：</h1>
+<pre class="text"><code>目录
+点线
+页码
+大量标题+数字</code></pre>
+<p>然后标记：</p>
+<pre class="text"><code>block_type = toc</code></pre>
+<hr />
+<h1 id="二百零八后续-structure-recovery">二百零八、后续 Structure
+Recovery：</h1>
+<blockquote>
+<p>不把它当真正 Section Start。</p>
+</blockquote>
+<hr />
+<h1 id="二百零九类似还有">二百零九、类似还有</h1>
+<h1 id="list-of-tables">List of Tables</h1>
+<h1 id="list-of-figures">List of Figures</h1>
+<p>在部分技术采购文件中也可能出现。</p>
+<hr />
+<h1 id="二百一十所以标题文字出现了">二百一十、所以“标题文字出现了”</h1>
+<p>不等于：</p>
+<blockquote>
+<p>文档真的进入那个 Section。</p>
+</blockquote>
+<p>还要看：</p>
+<blockquote>
+<p>它出现在哪种结构区域。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十一现在进入-semantic-section-classification">二百一十一、现在进入
+Semantic Section Classification</h1>
+<p>当结构已经识别出：</p>
+<pre class="text"><code>3.2 申请人的资格要求</code></pre>
+<p>我们可以再映射：</p>
+<pre class="text"><code>section_type =
+supplier_qualification</code></pre>
+<hr />
+<h1
+id="二百一十二这个映射可以先用字典">二百一十二、这个映射可以先用字典</h1>
+<p>例如：</p>
+<pre class="text"><code>资格要求
+申请人资格
+供应商资格
+资格条件</code></pre>
+<p>映射到：</p>
+<pre class="text"><code>supplier_qualification</code></pre>
+<hr />
+<h1 id="二百一十三">二百一十三、</h1>
+<pre class="text"><code>评分办法
+评审标准
+评分标准
+综合评分表</code></pre>
+<p>映射到：</p>
+<pre class="text"><code>scoring_rule</code></pre>
+<hr />
+<h1 id="二百一十四">二百一十四、</h1>
+<pre class="text"><code>技术要求
+技术参数
+技术规格</code></pre>
+<p>映射到：</p>
+<pre class="text"><code>technical_requirement</code></pre>
+<hr />
+<h1 id="二百一十五这叫-normalization-mapping">二百一十五、这叫
+Normalization Mapping</h1>
+<p>不是改原文。</p>
+<p>而是：</p>
+<blockquote>
+<p>额外添加统一类别。</p>
+</blockquote>
+<hr />
+<h1 id="二百一十六如果标题是">二百一十六、如果标题是：</h1>
+<pre class="text"><code>其他要求</code></pre>
+<p>怎么办？</p>
+<p>语义太模糊。</p>
+<p>可以：</p>
+<pre class="text"><code>section_type = other</code></pre>
+<p>或者：</p>
+<pre class="text"><code>unknown</code></pre>
+<hr />
+<h1 id="二百一十七不要强行分类">二百一十七、不要强行分类</h1>
+<p>这又回到：</p>
+<blockquote>
+<p>允许不确定。</p>
+</blockquote>
+<hr />
+<h1
+id="二百一十八现在看一个完整示例">二百一十八、现在看一个完整示例</h1>
+<p>原始 Parsed Blocks：</p>
+<pre class="text"><code>B1 第三章 采购需求
+B2 3.1 资格条件
+B3 1. 供应商应具有独立承担民事责任的能力。
+B4 2. 供应商须在本市注册成立5年以上。
+B5 3.2 技术要求
+B6 1. 数据库服务器内存不得低于256GB。</code></pre>
+<hr />
+<h1 id="二百一十九structure-recovery-后">二百一十九、Structure Recovery
+后</h1>
+<pre class="text"><code>SEC1
+title = 第三章 采购需求
+level = 1
+type = procurement_requirement</code></pre>
+<hr />
+<h1 id="二百二十">二百二十、</h1>
+<pre class="text"><code>SEC2
+title = 3.1 资格条件
+level = 2
+parent = SEC1
+type = supplier_qualification</code></pre>
+<hr />
+<h1 id="二百二十一">二百二十一、</h1>
+<pre class="text"><code>C1
+text = 供应商应具有独立承担民事责任的能力。
+section = SEC2</code></pre>
+<hr />
+<h1 id="二百二十二">二百二十二、</h1>
+<pre class="text"><code>C2
+text = 供应商须在本市注册成立5年以上。
+section = SEC2</code></pre>
+<hr />
+<h1 id="二百二十三">二百二十三、</h1>
+<pre class="text"><code>SEC3
+title = 3.2 技术要求
+level = 2
+parent = SEC1
+type = technical_requirement</code></pre>
+<hr />
+<h1 id="二百二十四">二百二十四、</h1>
+<pre class="text"><code>C3
+text = 数据库服务器内存不得低于256GB。
+section = SEC3</code></pre>
+<p>这时：</p>
+<blockquote>
+<p>文档真正开始变成业务数据。</p>
+</blockquote>
+<hr />
+<h1 id="二百二十五然后-stage-1-的-schema-就可以接进来">二百二十五、然后
+Stage 1 的 Schema 就可以接进来</h1>
+<p>比如：</p>
+<pre class="text"><code>Clause C2
+↓
+送给专家标注
+↓
+risk_present
+risk_type
+rationale
+evidence</code></pre>
+<hr />
+<h1
+id="二百二十六所以整个链终于连起来">二百二十六、所以整个链终于连起来</h1>
+<pre class="text"><code>Raw PDF
+↓
+Parsed Block
+↓
+Section Tree
+↓
+ClauseUnit
+↓
+Task Schema
+↓
+Annotation</code></pre>
+<hr />
+<h1
+id="二百二十七这就是为什么第-123-阶段顺序不能乱">二百二十七、这就是为什么第
+1、2、3 阶段顺序不能乱</h1>
+<p>如果一开始直接：</p>
+<blockquote>
+<p>对 PDF 全文做 SFT，</p>
+</blockquote>
+<p>你跳过了：</p>
+<pre class="text"><code>结构恢复
++
+业务单元定义</code></pre>
+<p>后面几乎一定付出代价。</p>
+<hr />
+<h1
+id="二百二十八现在讲一个非常重要的错误">二百二十八、现在讲一个非常重要的错误</h1>
+<h1 id="over-segmentation">Over-segmentation</h1>
+<p>切得太细。</p>
+<hr />
+<h1 id="二百二十九例如">二百二十九、例如：</h1>
+<blockquote>
+<p>“投标人应在合同签订后10日内完成系统部署，并在部署完成后提供不少于三年的免费维护服务。”</p>
+</blockquote>
+<p>切成：</p>
+<pre class="text"><code>投标人应在合同签订后10日内完成系统部署</code></pre>
+<p>和：</p>
+<pre class="text"><code>并在部署完成后提供不少于三年的免费维护服务</code></pre>
+<p>第二段：</p>
+<blockquote>
+<p>主语弱化。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十而这两个条件">二百三十、而这两个条件：</h1>
+<blockquote>
+<p>可能属于同一个履约要求。</p>
+</blockquote>
+<p>切太细：</p>
+<blockquote>
+<p>Context 损失。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十一另一个错误">二百三十一、另一个错误：</h1>
+<h1 id="under-segmentation">Under-segmentation</h1>
+<p>切得太粗。</p>
+<hr />
+<h1 id="二百三十二比如整段">二百三十二、比如整段：</h1>
+<pre class="text"><code>供应商须具备以下条件：
+1. 本市注册；
+2. 注册资本5000万元以上；
+3. 具有ISO认证；
+4. 近三年完成5个同类项目；
+5. 配备20名工程师。</code></pre>
+<p>全部作为一个 Clause。</p>
+<hr />
+<h1 id="二百三十三模型如果说">二百三十三、模型如果说：</h1>
+<blockquote>
+<p>“有风险。”</p>
+</blockquote>
+<p>你很难知道：</p>
+<blockquote>
+<p>是哪一项。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十四也很难标">二百三十四、也很难标：</h1>
+<pre class="text"><code>risk_subtype</code></pre>
+<p>因为里面可能：</p>
+<blockquote>
+<p>同时有四种不同风险。</p>
+</blockquote>
+<hr />
+<h1 id="二百三十五所以理想结构是">二百三十五、所以理想结构是：</h1>
+<pre class="text"><code>Parent Clause
+供应商须具备以下条件
+
+Child 1
+本市注册
+
+Child 2
+注册资本5000万元以上
+
+Child 3
+ISO认证
+
+Child 4
+业绩要求
+
+Child 5
+人员要求</code></pre>
+<hr />
+<h1 id="二百三十六这就是">二百三十六、这就是</h1>
+<h1 id="hierarchical-segmentation">Hierarchical Segmentation</h1>
+<p>层级切分。</p>
+<p>通常比：</p>
+<blockquote>
+<p>暴力平铺</p>
+</blockquote>
+<p>更适合政府采购文件。</p>
+<hr />
+<h1
+id="二百三十七接下来一个特别重要的问题">二百三十七、接下来一个特别重要的问题</h1>
+<h1 id="minimal-context-window">Minimal Context Window</h1>
+<p>切出 Clause 后，</p>
+<p>到底带多少上下文给模型？</p>
+<hr />
+<h1 id="二百三十八如果只带-clause">二百三十八、如果只带 Clause：</h1>
+<pre class="text"><code>不得低于500万元。</code></pre>
+<p>不够。</p>
+<hr />
+<h1 id="二百三十九如果带整份-200-页">二百三十九、如果带整份 200
+页：</h1>
+<blockquote>
+<p>太多。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十所以第一版可以考虑">二百四十、所以第一版可以考虑：</h1>
+<pre class="text"><code>Parent Section Title
++
+Parent Clause
++
+Target Clause
++
+必要邻近文本</code></pre>
+<hr />
+<h1 id="二百四十一例如">二百四十一、例如：</h1>
+<pre class="text"><code>Section:
+供应商资格条件
+
+Parent:
+供应商应满足以下条件：
+
+Target:
+注册资本不得低于5000万元。</code></pre>
+<p>这已经比：</p>
+<blockquote>
+<p>单独一句</p>
+</blockquote>
+<p>强很多。</p>
+<hr />
+<h1
+id="二百四十二如果项目背景很重要">二百四十二、如果项目背景很重要</h1>
+<p>再加：</p>
+<pre class="text"><code>Project Context</code></pre>
+<p>例如：</p>
+<pre class="text"><code>项目预算：
+300万元</code></pre>
+<hr />
+<h1 id="二百四十三于是模型就能发现">二百四十三、于是模型就能发现</h1>
+<blockquote>
+<p>注册资本要求和项目规模之间是否可能失衡。</p>
+</blockquote>
+<hr />
+<h1
+id="二百四十四这再次连接第一阶段">二百四十四、这再次连接第一阶段</h1>
+<p>当时我们说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>a</mi><mi>r</mi><mi>g</mi><mi>e</mi><mi>t</mi><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mo>+</mo><mi>M</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>N</mi><mi>e</mi><mi>c</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>a</mi><mi>r</mi><mi>y</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TargetClause
++
+MinimalNecessaryContext
+}
+</annotation></semantics></math></p>
+<p>现在我们开始真正知道：</p>
+<blockquote>
+<p>这个 Context 从哪里来。</p>
+</blockquote>
+<p>就是：</p>
+<h1 id="document-structure">Document Structure</h1>
+<hr />
+<h1
+id="二百四十五所以结构恢复的价值之一">二百四十五、所以结构恢复的价值之一</h1>
+<p>就是：</p>
+<blockquote>
+<p>帮助自动构造合理 Context。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十六如果没有-section-tree">二百四十六、如果没有 Section
+Tree</h1>
+<p>你只能：</p>
+<blockquote>
+<p>粗暴取前后 500 字。</p>
+</blockquote>
+<hr />
+<h1 id="二百四十七这可能把">二百四十七、这可能把：</h1>
+<blockquote>
+<p>无关上一节内容</p>
+</blockquote>
+<p>也塞进来。</p>
+<hr />
+<h1 id="二百四十八有-section-tree-后">二百四十八、有 Section Tree
+后</h1>
+<p>可以优先取：</p>
+<pre class="text"><code>同一Section</code></pre>
+<p>或者：</p>
+<pre class="text"><code>Parent Clause</code></pre>
+<p>这会更准确。</p>
+<hr />
+<h1 id="二百四十九这对-rag-也同样重要">二百四十九、这对 RAG
+也同样重要</h1>
+<p>将来法规 RAG：</p>
+<blockquote>
+<p>按法规条款层级切。</p>
+</blockquote>
+<p>采购文件 RAG：</p>
+<blockquote>
+<p>按 Section / Clause 切。</p>
+</blockquote>
+<p>通常会比：</p>
+<blockquote>
+<p>固定 500 Token 切块</p>
+</blockquote>
+<p>更符合语义。</p>
+<hr />
+<h1 id="二百五十所以-clause-segmentation-不是只服务-sft">二百五十、所以
+Clause Segmentation 不是只服务 SFT</h1>
+<p>它同时服务：</p>
+<pre class="text"><code>SFT
+RAG
+Evaluation
+UI定位
+Error Analysis</code></pre>
+<hr />
+<h1 id="二百五十一例如产品-ui">二百五十一、例如产品 UI</h1>
+<p>模型告诉用户：</p>
+<blockquote>
+<p>风险出现在：</p>
+</blockquote>
+<pre class="text"><code>第三章 采购需求
+→ 3.1 供应商资格
+→ 第2条</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>“大概在第 17,823 个字符附近。”</p>
+</blockquote>
+<p>结构化数据：</p>
+<blockquote>
+<p>直接提升产品体验。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十二这就是-structure-的另一种价值">二百五十二、这就是
+Structure 的另一种价值</h1>
+<h1 id="explainability">Explainability</h1>
+<p>可追溯定位。</p>
+<hr />
+<h1 id="二百五十三现在谈-structure-benchmark">二百五十三、现在谈
+Structure Benchmark</h1>
+<p>和 Parser 一样，</p>
+<p>Structure Recovery：</p>
+<blockquote>
+<p>也需要评测。</p>
+</blockquote>
+<hr />
+<h1 id="二百五十四不能只是看">二百五十四、不能只是看：</h1>
+<blockquote>
+<p>“好像标题都识别出来了。”</p>
+</blockquote>
+<p>可以建立小型 Gold。</p>
+<hr />
+<h1 id="二百五十五人工标">二百五十五、人工标：</h1>
+<pre class="text"><code>哪些是Heading
+Heading Level
+Parent Section
+Clause Boundary
+Clause Parent
+Table Row Clause</code></pre>
+<hr />
+<h1 id="二百五十六然后评价">二百五十六、然后评价</h1>
+<p>例如：</p>
+<pre class="text"><code>Heading Detection Accuracy
+
+Hierarchy Accuracy
+
+Clause Boundary Precision
+
+Clause Boundary Recall</code></pre>
+<p>不用现在背公式。</p>
+<hr />
+<h1 id="二百五十七直觉上">二百五十七、直觉上：</h1>
+<p>如果系统把不是 Clause 的地方：</p>
+<blockquote>
+<p>切成很多假 Clause，</p>
+</blockquote>
+<p>Precision 会差。</p>
+<hr />
+<h1 id="二百五十八如果很多真实-clause">二百五十八、如果很多真实
+Clause：</h1>
+<blockquote>
+<p>没切出来，</p>
+</blockquote>
+<p>Recall 会差。</p>
+<hr />
+<h1 id="二百五十九为什么两个都重要">二百五十九、为什么两个都重要？</h1>
+<p>切太多：</p>
+<blockquote>
+<p>数据碎。</p>
+</blockquote>
+<p>切太少：</p>
+<blockquote>
+<p>风险混在一起。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十我们甚至可以单独看">二百六十、我们甚至可以单独看</h1>
+<pre class="text"><code>Table Clause Accuracy</code></pre>
+<hr />
+<h1 id="二百六十一因为采购文件中">二百六十一、因为采购文件中：</h1>
+<blockquote>
+<p>表格是高风险区域。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十二还可以单独看">二百六十二、还可以单独看</h1>
+<pre class="text"><code>Cross-page Clause Accuracy</code></pre>
+<p>因为：</p>
+<blockquote>
+<p>跨页很容易出错。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十三这就是-slice-evaluation">二百六十三、这就是 Slice
+Evaluation</h1>
+<p>第一课学过的思维又回来。</p>
+<hr />
+<h1
+id="二百六十四数据工程同样不能只看平均分">二百六十四、数据工程同样不能只看平均分</h1>
+<p>一个结构模型：</p>
+<blockquote>
+<p>普通段落 99%。</p>
+</blockquote>
+<p>但：</p>
+<blockquote>
+<p>评分表只有 60%。</p>
+</blockquote>
+<p>对 ProcurementAI：</p>
+<blockquote>
+<p>仍然可能不能用。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十五现在设计结构-warning">二百六十五、现在设计结构
+Warning</h1>
+<p>可以有：</p>
+<pre class="text"><code>HEADING_LEVEL_AMBIGUOUS
+
+NUMBERING_INCONSISTENT
+
+CROSS_PAGE_CLAUSE
+
+TABLE_CLAUSE_UNCERTAIN
+
+ORPHAN_SUBCLAUSE
+
+PARENT_MISSING
+
+OVERLONG_CLAUSE</code></pre>
+<hr />
+<h1 id="二百六十六什么叫-orphan-subclause">二百六十六、什么叫 Orphan
+Subclause？</h1>
+<p>比如：</p>
+<pre class="text"><code>（2）注册资本不低于500万元</code></pre>
+<p>但系统找不到：</p>
+<pre class="text"><code>（1）</code></pre>
+<p>也找不到 Parent。</p>
+<hr />
+<h1 id="二百六十七这可能说明">二百六十七、这可能说明：</h1>
+<ul>
+<li>上一页漏解析；</li>
+<li>Parent 被误删；</li>
+<li>编号本来就错；</li>
+<li>Clause Boundary 错。</li>
+</ul>
+<p>应该：</p>
+<blockquote>
+<p>标 Warning。</p>
+</blockquote>
+<hr />
+<h1 id="二百六十八什么叫-overlong-clause">二百六十八、什么叫 Overlong
+Clause？</h1>
+<p>如果系统切出：</p>
+<pre class="text"><code>18,000字</code></pre>
+<p>一个 Clause，</p>
+<p>大概率：</p>
+<blockquote>
+<p>切分失败。</p>
+</blockquote>
+<hr />
+<h1
+id="二百六十九当然不是说超过某字数一定错">二百六十九、当然不是说超过某字数一定错。</h1>
+<p>而是：</p>
+<blockquote>
+<p>异常检测信号。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十同理-extremely-short-clause">二百七十、同理 Extremely
+Short Clause</h1>
+<p>比如只有：</p>
+<pre class="text"><code>“如下：”</code></pre>
+<p>也可能只是：</p>
+<blockquote>
+<p>Parent Lead Text。</p>
+</blockquote>
+<p>不应该当独立业务 Clause。</p>
+<hr />
+<h1
+id="二百七十一所以结构质量检查可以利用">二百七十一、所以结构质量检查可以利用</h1>
+<pre class="text"><code>长度分布
+编号模式
+父子关系
+Section一致性</code></pre>
+<p>自动发现异常。</p>
+<hr />
+<h1
+id="二百七十二这其实越来越像编译器">二百七十二、这其实越来越像编译器</h1>
+<p>原始文件：</p>
+<blockquote>
+<p>像源代码。</p>
+</blockquote>
+<p>Parser：</p>
+<blockquote>
+<p>读字符和布局。</p>
+</blockquote>
+<p>Structure Recovery：</p>
+<blockquote>
+<p>建 AST。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十三ast-是什么">二百七十三、AST 是什么？</h1>
+<p>Abstract Syntax Tree。</p>
+<p>不用记术语。</p>
+<p>只要知道：</p>
+<blockquote>
+<p>把平面的符号恢复成有层级的结构树。</p>
+</blockquote>
+<hr />
+<h1
+id="二百七十四政府采购文档也可以有自己的文档-ast">二百七十四、政府采购文档也可以有自己的“文档
+AST”</h1>
+<p>例如：</p>
+<pre class="text"><code>Document
+├── Chapter
+│   ├── Section
+│   │   ├── Clause
+│   │   └── Clause
+│   └── Section
+└── Appendix</code></pre>
+<hr />
+<h1 id="二百七十五这个类比很漂亮">二百七十五、这个类比很漂亮</h1>
+<p>因为以后很多操作：</p>
+<blockquote>
+<p>都可以在树上完成。</p>
+</blockquote>
+<hr />
+<h1 id="二百七十六比如删除整段页眉">二百七十六、比如删除整段页眉</h1>
+<p>在 Block 层。</p>
+<hr />
+<h1
+id="二百七十七比如找全部技术要求">二百七十七、比如找全部技术要求</h1>
+<p>查：</p>
+<pre class="text"><code>section_type = technical_requirement</code></pre>
+<hr />
+<h1 id="二百七十八比如取某-clause-的-parent">二百七十八、比如取某 Clause
+的 Parent</h1>
+<p>直接：</p>
+<blockquote>
+<p>向树上走一层。</p>
+</blockquote>
+<hr />
+<h1
+id="二百七十九比从一整串字符串里">二百七十九、比从一整串字符串里：</h1>
+<blockquote>
+<p>正则乱找</p>
+</blockquote>
+<p>可靠得多。</p>
+<hr />
+<h1 id="二百八十现在看一个复杂案例">二百八十、现在看一个复杂案例</h1>
+<p>原文：</p>
+<pre class="text"><code>第三章 采购需求
+
+一、项目概况
+……
+
+二、服务要求
+
+（一）人员要求
+
+1. 项目经理应具有……
+2. 项目团队不少于10人。
+
+（二）响应要求
+
+供应商应提供7×24小时服务，并满足以下要求：
+1）普通故障30分钟内响应；
+2）重大故障2小时内到场；
+3）每季度开展一次巡检。</code></pre>
+<hr />
+<h1 id="二百八十一文档树应该大致是">二百八十一、文档树应该大致是</h1>
+<pre class="text"><code>第三章 采购需求
+│
+├── 一、项目概况
+│
+└── 二、服务要求
+     │
+     ├── （一）人员要求
+     │     ├── Clause 1
+     │     └── Clause 2
+     │
+     └── （二）响应要求
+           └── Parent Clause
+                 ├── Subclause 1
+                 ├── Subclause 2
+                 └── Subclause 3</code></pre>
+<hr />
+<h1
+id="二百八十二这就是我们真正想恢复的东西">二百八十二、这就是我们真正想恢复的东西。</h1>
+<hr />
+<h1 id="二百八十三如果只是-plain-text">二百八十三、如果只是 Plain
+Text</h1>
+<p>你只有：</p>
+<blockquote>
+<p>一串字。</p>
+</blockquote>
+<hr />
+<h1 id="二百八十四有-tree-后">二百八十四、有 Tree 后</h1>
+<p>你知道：</p>
+<pre class="text"><code>重大故障2小时内到场</code></pre>
+<p>属于：</p>
+<pre class="text"><code>采购需求
+→ 服务要求
+→ 响应要求</code></pre>
+<hr />
+<h1 id="二百八十五这就是-structural-semantics">二百八十五、这就是
+Structural Semantics</h1>
+<p>结构本身：</p>
+<blockquote>
+<p>就带语义。</p>
+</blockquote>
+<hr />
+<h1
+id="二百八十六再看一个评分表案例">二百八十六、再看一个评分表案例</h1>
+<pre class="text"><code>第四章 评标办法
+
+商务评分表
+
+项目经验 | 10分 | 每个同类项目2分
+本地服务 | 5分  | 本市有服务机构得5分
+人员资质 | 5分  | 每名高级工程师1分</code></pre>
+<hr />
+<h1 id="二百八十七structure-recovery-后最好不是">二百八十七、Structure
+Recovery 后最好不是：</h1>
+<pre class="text"><code>10分
+5分
+5分</code></pre>
+<hr />
+<h1 id="二百八十八而是">二百八十八、而是：</h1>
+<pre class="text"><code>评分项1
+name = 项目经验
+score = 10
+rule = 每个同类项目2分</code></pre>
+<hr />
+<h1 id="二百八十九">二百八十九、</h1>
+<pre class="text"><code>评分项2
+name = 本地服务
+score = 5
+rule = 本市有服务机构得5分</code></pre>
+<hr />
+<h1 id="二百九十然后每一个评分项">二百九十、然后每一个评分项：</h1>
+<blockquote>
+<p>都可以派生为 Clause。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十一未来模型审查">二百九十一、未来模型审查：</h1>
+<pre class="text"><code>risk_type = scoring_rule</code></pre>
+<p>就非常自然。</p>
+<hr />
+<h1
+id="二百九十二所以表格恢复和-clause-segmentation">二百九十二、所以表格恢复和
+Clause Segmentation</h1>
+<p>要协同。</p>
+<p>但依然建议：</p>
+<blockquote>
+<p>先保留 Table Structure，</p>
+</blockquote>
+<p>再派生 Clause。</p>
+<hr />
+<h1
+id="二百九十三现在讲一个常见错误">二百九十三、现在讲一个常见错误</h1>
+<h1 id="flatten-first">Flatten First</h1>
+<p>有人会：</p>
+<pre class="text"><code>所有表格
+↓
+转成Markdown字符串
+↓
+以后只保存字符串</code></pre>
+<hr />
+<h1 id="二百九十四这样方便喂-llm">二百九十四、这样方便喂 LLM。</h1>
+<p>但代价是：</p>
+<blockquote>
+<p>Row / Cell 原始关系可能丢失。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十五更好的方法">二百九十五、更好的方法：</h1>
+<pre class="text"><code>Structured Table
+作为Master</code></pre>
+<p>然后生成：</p>
+<pre class="text"><code>Markdown View</code></pre>
+<p>供模型使用。</p>
+<hr />
+<h1 id="二百九十六这再次是">二百九十六、这再次是：</h1>
+<pre class="text"><code>Master Representation
+&gt;
+Task Representation</code></pre>
+<hr />
+<h1
+id="二百九十七现在讲文件里的注释">二百九十七、现在讲文件里的“注释”</h1>
+<p>比如：</p>
+<pre class="text"><code>注：
+1. 本项仅适用于……
+2. 如为联合体……</code></pre>
+<p>这些是不是 Clause？</p>
+<hr />
+<h1 id="二百九十八答案">二百九十八、答案：</h1>
+<blockquote>
+<p>有时是。</p>
+</blockquote>
+<p>因为“注”可能改变：</p>
+<blockquote>
+<p>上面规则的适用范围。</p>
+</blockquote>
+<hr />
+<h1 id="二百九十九所以不能简单把">二百九十九、所以不能简单把：</h1>
+<pre class="text"><code>注：</code></pre>
+<p>都当无关文本。</p>
+<hr />
+<h1 id="三百需要判断它是">三百、需要判断它是：</h1>
+<pre class="text"><code>explanatory_note</code></pre>
+<p>还是：</p>
+<blockquote>
+<p>真正具有约束意义的条件。</p>
+</blockquote>
+<hr />
+<h1
+id="三百零一所以结构类型还可以包括">三百零一、所以结构类型还可以包括</h1>
+<pre class="text"><code>note
+remark
+footnote</code></pre>
+<hr />
+<h1 id="三百零二尤其表格脚注">三百零二、尤其表格脚注</h1>
+<p>例如：</p>
+<blockquote>
+<p>“以上证书须在有效期内，否则不得分。”</p>
+</blockquote>
+<p>虽然只是表格下面一行小字。</p>
+<p>但业务上：</p>
+<blockquote>
+<p>非常重要。</p>
+</blockquote>
+<hr />
+<h1
+id="三百零三如果-parser-或-structure-recovery-把它当普通-footer-删除">三百零三、如果
+Parser 或 Structure Recovery 把它当普通 Footer 删除</h1>
+<p>就出大问题。</p>
+<hr />
+<h1 id="三百零四所以看起来像脚注">三百零四、所以“看起来像脚注”</h1>
+<p>不等于：</p>
+<blockquote>
+<p>无业务意义。</p>
+</blockquote>
+<p>要区分：</p>
+<pre class="text"><code>页面Footer</code></pre>
+<p>和：</p>
+<pre class="text"><code>业务Footnote</code></pre>
+<hr />
+<h1
+id="三百零五这也是为什么仅靠位置">三百零五、这也是为什么仅靠位置：</h1>
+<blockquote>
+<p>不够。</p>
+</blockquote>
+<p>还需要内容语义。</p>
+<hr />
+<h1 id="三百零六现在看合同条款">三百零六、现在看“合同条款”</h1>
+<p>合同草案可能有：</p>
+<pre class="text"><code>第十二条 违约责任
+12.1 ...
+12.2 ...
+12.3 ...</code></pre>
+<p>结构非常像法规。</p>
+<p>Clause Segmentation：</p>
+<blockquote>
+<p>也可以沿同一框架处理。</p>
+</blockquote>
+<hr />
+<h1 id="三百零七所以今天学的不是">三百零七、所以今天学的不是：</h1>
+<blockquote>
+<p>只适用于招标文件的技巧。</p>
+</blockquote>
+<p>而是一套：</p>
+<h1 id="hierarchical-document-parsing">Hierarchical Document
+Parsing</h1>
+<p>通用框架。</p>
+<hr />
+<h1 id="三百零八未来法规-rag-也会用">三百零八、未来法规 RAG 也会用</h1>
+<p>例如：</p>
+<pre class="text"><code>法律
+↓
+章
+↓
+节
+↓
+条
+↓
+款
+↓
+项</code></pre>
+<hr />
+<h1 id="三百零九所以第四课第-3-阶段">三百零九、所以第四课第 3 阶段</h1>
+<p>其实也在为第 6 课 RAG：</p>
+<blockquote>
+<p>提前打地基。</p>
+</blockquote>
+<hr />
+<h1
+id="三百一十现在讨论一条-clause-是否需要保留原始编号">三百一十、现在讨论一条
+Clause 是否需要保留原始编号</h1>
+<p>答案：</p>
+<blockquote>
+<p>强烈建议保留。</p>
+</blockquote>
+<p>比如：</p>
+<pre class="text"><code>raw_clause_number = &quot;（三）&quot;</code></pre>
+<hr />
+<h1 id="三百一十一为什么">三百一十一、为什么？</h1>
+<p>用户以后问：</p>
+<blockquote>
+<p>“第三章第二节第（三）项为什么有风险？”</p>
+</blockquote>
+<p>系统可以：</p>
+<blockquote>
+<p>精确对应。</p>
+</blockquote>
+<hr />
+<h1
+id="三百一十二法律和采购工作非常重视">三百一十二、法律和采购工作非常重视</h1>
+<h1 id="citation-localization">Citation / Localization</h1>
+<p>也就是：</p>
+<blockquote>
+<p>能不能定位回原文。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十三所以-clause-应该尽量保存">三百一十三、所以 Clause
+应该尽量保存：</h1>
+<pre class="text"><code>page
+section_path
+raw_number
+source_blocks</code></pre>
+<hr />
+<h1 id="三百一十四如果来自表格">三百一十四、如果来自表格：</h1>
+<pre class="text"><code>table_caption
+row_label
+column_labels</code></pre>
+<p>也应该尽量保留。</p>
+<hr />
+<h1
+id="三百一十五这会让最终审查报告">三百一十五、这会让最终审查报告</h1>
+<p>从：</p>
+<blockquote>
+<p>“AI 说有风险”</p>
+</blockquote>
+<p>升级为：</p>
+<blockquote>
+<p>“第三章采购需求 → 供应商资格条件 → 第（二）项存在潜在风险。”</p>
+</blockquote>
+<p>这才是专业系统。</p>
+<hr />
+<h1
+id="三百一十六现在看数据切分的提前收益">三百一十六、现在看数据切分的提前收益</h1>
+<p>同一项目里：</p>
+<blockquote>
+<p>很多 Clause。</p>
+</blockquote>
+<p>它们全部有：</p>
+<pre class="text"><code>project_id</code></pre>
+<p>以及：</p>
+<pre class="text"><code>document_id</code></pre>
+<hr />
+<h1 id="三百一十七第-6-阶段切数据时">三百一十七、第 6 阶段切数据时</h1>
+<p>就可以：</p>
+<pre class="text"><code>Group by Project</code></pre>
+<p>而不是：</p>
+<blockquote>
+<p>按 Clause 行随机切。</p>
+</blockquote>
+<hr />
+<h1 id="三百一十八如果-section-clause-来源丢了">三百一十八、如果 Section
+/ Clause 来源丢了</h1>
+<p>之后想修复：</p>
+<blockquote>
+<p>非常难。</p>
+</blockquote>
+<p>所以今天保存 Hierarchy：</p>
+<blockquote>
+<p>其实也在帮后面防数据泄漏。</p>
+</blockquote>
+<hr />
+<h1
+id="三百一十九现在设计一个-clause-quality-status">三百一十九、现在设计一个
+Clause Quality Status</h1>
+<p>例如：</p>
+<pre class="text"><code>auto_segmented</code></pre>
+<hr />
+<h1 id="三百二十">三百二十、</h1>
+<pre class="text"><code>human_verified</code></pre>
+<hr />
+<h1 id="三百二十一">三百二十一、</h1>
+<pre class="text"><code>structure_uncertain</code></pre>
+<hr />
+<h1 id="三百二十二为什么值得有">三百二十二、为什么值得有？</h1>
+<p>因为自动切出的 Clause：</p>
+<blockquote>
+<p>并不都同样可信。</p>
+</blockquote>
+<hr />
+<h1 id="三百二十三未来-gold-set">三百二十三、未来 Gold Set</h1>
+<p>可以优先使用：</p>
+<pre class="text"><code>human_verified</code></pre>
+<hr />
+<h1 id="三百二十四大规模预训练数据">三百二十四、大规模预训练数据</h1>
+<p>可能允许：</p>
+<pre class="text"><code>auto_segmented</code></pre>
+<hr />
+<h1 id="三百二十五再次强调">三百二十五、再次强调：</h1>
+<blockquote>
+<p>数据质量是分层的。</p>
+</blockquote>
+<p>不需要所有数据：</p>
+<blockquote>
+<p>用最高成本处理。</p>
+</blockquote>
+<hr />
+<h1
+id="三百二十六现在做一次完整的-structure-pipeline">三百二十六、现在做一次完整的
+Structure Pipeline</h1>
+<p>总图：</p>
+<pre class="text"><code>ParsedDocument
+      │
+      ▼
+过滤Layout噪声标记
+      │
+      ▼
+Heading Candidate Detection
+      │
+      ▼
+Heading Level Inference
+      │
+      ▼
+Section Tree Construction
+      │
+      ▼
+Section Type Normalization
+      │
+      ▼
+Paragraph / List / Table Analysis
+      │
+      ▼
+Clause Boundary Detection
+      │
+      ▼
+Parent / Child Clause Recovery
+      │
+      ▼
+Cross-page Merge
+      │
+      ▼
+Clause Quality Check
+      │
+      ▼
+ClauseUnit_V0.1</code></pre>
+<p>这就是这一阶段的工程主线。</p>
+<hr />
+<h1
+id="三百二十七再把三个层级放在一起">三百二十七、再把三个层级放在一起</h1>
+<pre class="text"><code>L1 Parsed Block</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>页面上有什么内容？</p>
+</blockquote>
+<hr />
+<h1 id="三百二十八">三百二十八、</h1>
+<pre class="text"><code>L2 Document Structure</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>这些内容属于哪一章、哪一节？</p>
+</blockquote>
+<hr />
+<h1 id="三百二十九">三百二十九、</h1>
+<pre class="text"><code>L3 Clause Unit</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>哪个最小业务要求应该成为训练/审查对象？</p>
+</blockquote>
+<hr />
+<h1 id="三百三十然后第-4-层才是">三百三十、然后第 4 层才是</h1>
+<pre class="text"><code>L4 Annotation</code></pre>
+<p>回答：</p>
+<blockquote>
+<p>这个 Clause 有没有风险？</p>
+</blockquote>
+<hr />
+<h1 id="三百三十一层层分开">三百三十一、层层分开</h1>
+<p>最大的好处：</p>
+<blockquote>
+<p>出错能定位。</p>
+</blockquote>
+<hr />
+<h1
+id="三百三十二例如某条模型预测错了">三百三十二、例如某条模型预测错了</h1>
+<p>你可以检查：</p>
+<pre class="text"><code>模型错？</code></pre>
+<p>如果不是：</p>
+<pre class="text"><code>Label错？</code></pre>
+<p>再不是：</p>
+<pre class="text"><code>Clause切错？</code></pre>
+<p>再不是：</p>
+<pre class="text"><code>Section归错？</code></pre>
+<p>再不是：</p>
+<pre class="text"><code>Parser错？</code></pre>
+<hr />
+<h1 id="三百三十三这就是">三百三十三、这就是：</h1>
+<h1 id="debuggable-data-pipeline">Debuggable Data Pipeline</h1>
+<p>可调试的数据流水线。</p>
+<hr />
+<h1 id="三百三十四对专业-ai-项目特别重要">三百三十四、对专业 AI
+项目特别重要</h1>
+<p>因为很多所谓：</p>
+<blockquote>
+<p>模型错误</p>
+</blockquote>
+<p>其实是：</p>
+<blockquote>
+<p>数据工程错误。</p>
+</blockquote>
+<hr />
+<h1
+id="三百三十五本阶段最容易犯的-12-个错误">三百三十五、本阶段最容易犯的
+12 个错误</h1>
+<p><strong>错误 1：</strong></p>
+<blockquote>
+<p>句号就是 Clause 边界。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 2：</strong></p>
+<blockquote>
+<p>Paragraph 就等于 Clause。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 3：</strong></p>
+<blockquote>
+<p>Block 就等于 Clause。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 4：</strong></p>
+<blockquote>
+<p>页尾就是 Clause 结束。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 5：</strong></p>
+<blockquote>
+<p>标题字号大就一定是 Heading。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 6：</strong></p>
+<blockquote>
+<p>有编号就一定是新 Clause。</p>
+</blockquote>
+<p>错。</p>
+<p>可能是子项。</p>
+<p><strong>错误 7：</strong></p>
+<blockquote>
+<p>表格转成全文字符串以后结构就不重要了。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 8：</strong></p>
+<blockquote>
+<p>Section Type 就是 Risk Type。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 9：</strong></p>
+<blockquote>
+<p>Clause 越短越适合训练。</p>
+</blockquote>
+<p>错。</p>
+<p><strong>错误 10：</strong></p>
+<blockquote>
+<p>Clause 越长信息越完整，所以越好。</p>
+</blockquote>
+<p>也错。</p>
+<p><strong>错误 11：</strong></p>
+<blockquote>
+<p>自动结构恢复必须强行给每个地方一个确定答案。</p>
+</blockquote>
+<p>错。</p>
+<p>允许 Warning / Unknown。</p>
+<p><strong>错误 12：</strong></p>
+<blockquote>
+<p>只保留最终 Clause 文本就够。</p>
+</blockquote>
+<p>不够。</p>
+<p>还需要：</p>
+<blockquote>
+<p>Hierarchy + Provenance。</p>
+</blockquote>
+<hr />
+<h1 id="三百三十六本阶段最重要的-5-个">三百三十六、本阶段最重要的 5
+个“≠”</h1>
+<pre class="text"><code>Sentence
+≠
+Clause</code></pre>
+<pre class="text"><code>Paragraph
+≠
+Clause</code></pre>
+<pre class="text"><code>Block
+≠
+Clause</code></pre>
+<pre class="text"><code>Page Boundary
+≠
+Clause Boundary</code></pre>
+<pre class="text"><code>Section Type
+≠
+Risk Label</code></pre>
+<p>如果这五个不再混，</p>
+<p>本阶段已经成功了一半。</p>
+<hr />
+<h1 id="三百三十七再记一个最重要的">三百三十七、再记一个最重要的“=”</h1>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>l</mi><mi>a</mi><mi>u</mi><mi>s</mi><mi>e</mi><mi>U</mi><mi>n</mi><mi>i</mi><mi>t</mi><mo>=</mo><mi>B</mi><mi>u</mi><mi>s</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>A</mi><mi>t</mi><mi>o</mi><mi>m</mi><mi>i</mi><mi>c</mi><mi>R</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>m</mi><mi>e</mi><mi>n</mi><mi>t</mi><mo>+</mo><mi>S</mi><mi>t</mi><mi>r</mi><mi>u</mi><mi>c</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>e</mi><mi>x</mi><mi>t</mi><mo>+</mo><mi>S</mi><mi>o</mi><mi>u</mi><mi>r</mi><mi>c</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>o</mi><mi>v</mi><mi>e</mi><mi>n</mi><mi>a</mi><mi>n</mi><mi>c</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ClauseUnit
+=
+BusinessAtomicRequirement
++
+StructuralContext
++
+SourceProvenance
+}
+</annotation></semantics></math></p>
+<p>翻译成人话：</p>
+<blockquote>
+<p><strong>一条 Clause
+不只是那一句文字，而是一个尽量完整的业务要求，加上它属于哪一章哪一节，以及它能回到原文件哪里。</strong></p>
+</blockquote>
+<hr />
+<h1 id="三百三十八现在看-stage-13-的完整关系">三百三十八、现在看 Stage
+1～3 的完整关系</h1>
+<pre class="text"><code>第四课 · Stage 1
+Task Schema
+“未来一条训练样本应该是什么？”
+
+             ↓
+
+第四课 · Stage 2
+ParsedDocument
+“原文件怎样恢复成可信机器文本？”
+
+             ↓
+
+第四课 · Stage 3
+ClauseUnit
+“可信文本怎样恢复成业务结构和条款？”</code></pre>
+<p>现在数据已经第一次从：</p>
+<pre class="text"><code>文件</code></pre>
+<p>走到：</p>
+<pre class="text"><code>业务单元</code></pre>
+<hr />
+<h1
+id="三百三十九这一步的重要性非常大">三百三十九、这一步的重要性非常大</h1>
+<p>因为从下一阶段开始，</p>
+<p>我们才能真正讨论：</p>
+<blockquote>
+<p>哪些东西应该删？</p>
+</blockquote>
+<blockquote>
+<p>哪些东西应该规范化？</p>
+</blockquote>
+<blockquote>
+<p>数字、空格、标点到底能不能改？</p>
+</blockquote>
+<p>也就是：</p>
+<h1 id="cleaning">Cleaning</h1>
+<hr />
+<h1 id="三百四十第-3-阶段掌握测试">三百四十、第 3 阶段掌握测试</h1>
+<p>如果现在不看前文，你能够自己解释下面这些问题，本阶段就真正掌握：</p>
+<blockquote>
+<p>为什么正确提取文字以后仍然需要 Structure Recovery？</p>
+</blockquote>
+<blockquote>
+<p>为什么文档结构更像一棵树，而不是一串字符串？</p>
+</blockquote>
+<blockquote>
+<p>Heading Detection 为什么不能只靠字号？</p>
+</blockquote>
+<blockquote>
+<p>编号体系为什么对政府采购文档特别重要？</p>
+</blockquote>
+<blockquote>
+<p>Section Number 和 Clause Number 为什么不同？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Parent-Child Relation？</p>
+</blockquote>
+<blockquote>
+<p><code>section_path</code> 为什么对模型理解和产品定位都重要？</p>
+</blockquote>
+<blockquote>
+<p>Clause 为什么不能简单定义成一句话？</p>
+</blockquote>
+<blockquote>
+<p>Sentence、Paragraph、Block、Clause 四者有什么区别？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Business Atomicity？</p>
+</blockquote>
+<blockquote>
+<p>为什么一条 Clause 可能由多个 Block 组成？</p>
+</blockquote>
+<blockquote>
+<p>为什么一个 Block 也可能包含多个 Clause？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Parent Clause 和 Sub-Clause 最好都保留？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Page Boundary 不能作为 Clause Boundary？</p>
+</blockquote>
+<blockquote>
+<p>跨页 Clause 怎样判断连续性？</p>
+</blockquote>
+<blockquote>
+<p>为什么表格的一行可以成为一个 Clause？</p>
+</blockquote>
+<blockquote>
+<p>为什么评分项需要把“评分名称 + 分值 + 规则”一起保存？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Table Master Structure 不应该过早 flatten？</p>
+</blockquote>
+<blockquote>
+<p><code>section_type</code> 和 <code>risk_type</code>
+为什么不能混？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Raw Section Title 和 Normalized Section Type
+最好同时保留？</p>
+</blockquote>
+<blockquote>
+<p>Clause 为什么要保存 source_block_ids？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Clause ID 需要稳定？</p>
+</blockquote>
+<blockquote>
+<p>为什么编号不连续不代表结构一定错误？</p>
+</blockquote>
+<blockquote>
+<p>为什么原始编号应该保留，而不是自动偷偷纠正？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Over-segmentation？</p>
+</blockquote>
+<blockquote>
+<p>什么叫 Under-segmentation？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Hierarchical Segmentation 比暴力切段更适合采购文件？</p>
+</blockquote>
+<blockquote>
+<p>Minimal Context 为什么可以由 Section Tree 帮助构造？</p>
+</blockquote>
+<blockquote>
+<p>Structure Recovery 为什么同时服务 SFT、RAG、评测和产品 UI？</p>
+</blockquote>
+<blockquote>
+<p>为什么结构解析也需要自己的 Gold Set 和 Benchmark？</p>
+</blockquote>
+<blockquote>
+<p>为什么 Gold 数据更适合使用人工确认过的 ClauseUnit？</p>
+</blockquote>
+<p>如果这些你都能讲清楚：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>四</mi><mi>课</mi><mi>第</mi><mn>3</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第四课第3阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="三百四十一本阶段最终只记一句话">三百四十一、本阶段最终只记一句话</h1>
+<blockquote>
+<p><strong>Clause Segmentation
+不是把文本按句号切开，而是把一个采购文档重新恢复成“章—节—条款”的业务树：让每一条
+Clause
+既是尽量完整的最小业务要求，又保留它的父级章节、必要上下文以及回到原文件页码和
+Block 的来源路径。</strong></p>
+</blockquote>
+<p>最后把整个阶段压成一张图：</p>
+<pre class="text"><code>                 ParsedDocument
+                       │
+                       ▼
+                Layout Blocks
+                       │
+                       ▼
+              Heading Detection
+                       │
+                       ▼
+                Section Tree
+             ┌─────────┴─────────┐
+             ▼                   ▼
+       Section Type         Parent / Child
+             │                   │
+             └─────────┬─────────┘
+                       ▼
+              Clause Segmentation
+                       │
+              ┌────────┼────────┐
+              ▼        ▼        ▼
+           Paragraph  List    Table Row
+              │        │        │
+              └────────┼────────┘
+                       ▼
+               Parent / Sub-Clause
+                       │
+                       ▼
+                 ClauseUnit_V0.1
+                       │
+            ┌──────────┼──────────┐
+            ▼          ▼          ▼
+           SFT        RAG       Evaluation</code></pre>
+<hr />
+<h1 id="下一阶段第四课-第-4-阶段">下一阶段：第四课 · 第 4 阶段</h1>
+<h2
+id="数据清洗与规范化为什么看起来更干净不一定代表数据更正确哪些东西可以删哪些字符绝对不能乱改">数据清洗与规范化——为什么“看起来更干净”不一定代表“数据更正确”？哪些东西可以删，哪些字符绝对不能乱改？</h2>
+<p>第 4 阶段我们会第一次真正做：</p>
+<h1 id="cleaning-1">Cleaning</h1>
+<p>但重点绝不是：</p>
+<blockquote>
+<p>多写几个 <code>.replace()</code>。</p>
+</blockquote>
+<p>我们会专门解决一个很危险的问题：</p>
+<pre class="text"><code>清洗
+≠
+把文本改得漂亮</code></pre>
+<p>比如：</p>
+<pre class="text"><code>500 万元</code></pre>
+<p>能不能自动改成：</p>
+<pre class="text"><code>500万元</code></pre>
+<p>通常问题不大。</p>
+<p>但：</p>
+<pre class="text"><code>不得低于500万元</code></pre>
+<p>如果清洗程序误删：</p>
+<pre class="text"><code>不得</code></pre>
+<p>整个语义直接翻转。</p>
+<p>下一阶段我们会建立：</p>
+<pre class="text"><code>Raw Text
+↓
+Normalized Text</code></pre>
+<p>之间的安全边界，并拆清：</p>
+<p><strong>空格、Unicode、全半角、页码、重复 Header/Footer、乱码、OCR
+噪声、数字、单位、日期、编号、否定词、表格内容以及规范化日志应该怎样处理。</strong></p>
+<p>最终得到：</p>
+<h1 id="cleanclause_v0.1"><code>CleanClause_V0.1</code></h1>
+<p>也就是第一次把 <code>ClauseUnit_V0.1</code>
+变成真正可以进入后续去重、切分和标注流程的高质量文本单元。</p>
+<hr /><div class="nav"><a class="btn" href="stage02.html">← 第 2 阶段</a><a class="btn" href="stage04.html">第 4 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

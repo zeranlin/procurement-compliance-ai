@@ -1,0 +1,1136 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课 · 第10阶段：训练显存到底花在哪里？</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第5课 · 第10阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>设计或排查 SFT、LoRA/QLoRA、训练配置和 Checkpoint。<ul><li>能推理，不代表能训练。</li><li>Model Weights + KV Cache + Activations / Runtime Buffers</li><li>Model Weights + Forward中间结果 + Backward所需信息 + Gradients + Optimizer States</li></ul></div><h1 id="第五课-第-10-阶段">第五课 · 第 10 阶段</h1>
+<h1 id="训练显存到底花在哪里-1">训练显存到底花在哪里？</h1>
+<h2 id="为什么-7b-模型已经-qlora-4-bit-了训练时照样可能-oom">为什么 7B
+模型已经 QLoRA 4-bit 了，训练时照样可能 OOM？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-9">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：LIGHT。</strong>
+审计原因：英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-9">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>能推理，不代表能训练。</strong></li>
+<li><strong>Model Weights + KV Cache + Activations / Runtime
+Buffers</strong></li>
+<li><strong>Model Weights + Forward中间结果 + Backward所需信息 +
+Gradients + Optimizer States</strong></li>
+<li><strong>BF16 Base 约16-bit/parameter</strong></li>
+<li><strong>NF4 Base 约4-bit/parameter + metadata</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-9">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>LoRA</code></td>
+<td>LoRA：冻结大部分基座参数，只训练低秩增量矩阵</td>
+</tr>
+<tr class="even">
+<td><code>QLoRA</code></td>
+<td>QLoRA：量化基座模型并训练 LoRA，以降低显存成本</td>
+</tr>
+<tr class="odd">
+<td><code>Gradient</code></td>
+<td>梯度：损失对参数变化方向和敏感度的局部信息</td>
+</tr>
+<tr class="even">
+<td><code>Batch</code></td>
+<td>批次：一次参与计算的一组样本</td>
+</tr>
+<tr class="odd">
+<td><code>Act</code></td>
+<td>Act/行动：调用工具、写状态或请求人工</td>
+</tr>
+<tr class="even">
+<td><code>Attention</code></td>
+<td>注意力：根据内容相关性动态聚合信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-9">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 9 阶段我们解决的是：</p>
+<blockquote>
+<p><strong>怎样把 Frozen Base Model 的权重显存压下来。</strong></p>
+</blockquote>
+<p>现在必须解决一个非常现实的问题：</p>
+<pre class="text"><code>7B Base
+已经4-bit了
+
+LoRA
+也只有几千万参数
+
+为什么24GB显卡
+还是可能突然 OOM？</code></pre>
+<p>答案是：</p>
+<blockquote>
+<p><strong>训练显存从来不只有 Model Weights。</strong></p>
+</blockquote>
+<p>真正的训练显存账本更接近：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>M</mi><mrow><mi>p</mi><mi>e</mi><mi>a</mi><mi>k</mi></mrow></msub><mo>≈</mo><msub><mi>M</mi><mrow><mi>b</mi><mi>a</mi><mi>s</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>M</mi><mrow><mi>t</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>M</mi><mrow><mi>g</mi><mi>r</mi><mi>a</mi><mi>d</mi></mrow></msub><mo>+</mo><msub><mi>M</mi><mrow><mi>o</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi></mrow></msub><mo>+</mo><msub><mi>M</mi><mrow><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></msub><mo>+</mo><msub><mi>M</mi><mrow><mi>t</mi><mi>e</mi><mi>m</mi><mi>p</mi><mi>o</mi><mi>r</mi><mi>a</mi><mi>r</mi><mi>y</mi></mrow></msub><mo>+</mo><msub><mi>M</mi><mrow><mi>r</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi></mrow></msub></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+M_{peak}
+\approx
+M_{base}
++
+M_{trainable}
++
+M_{grad}
++
+M_{optimizer}
++
+M_{activation}
++
+M_{temporary}
++
+M_{runtime}
+}
+</annotation></semantics></math></p>
+<p>本阶段最终形成：</p>
+<h1
+id="trainingmemorybudget_v0.1"><code>TrainingMemoryBudget_V0.1</code></h1>
+<hr />
+<h1 id="一本阶段只解决一个核心问题-8">一、本阶段只解决一个核心问题</h1>
+<p>你以后碰到：</p>
+<pre class="text"><code>CUDA out of memory</code></pre>
+<p>第一反应不能再是：</p>
+<blockquote>
+<p>“模型太大。”</p>
+</blockquote>
+<p>而应该问：</p>
+<blockquote>
+<p><strong>到底是哪一类显存在涨？它主要跟 Parameter Count、Trainable
+Parameters、Sequence Length，还是 Micro Batch Size 有关？</strong></p>
+</blockquote>
+<p>先把总图锁死：</p>
+<pre class="text"><code>                         GPU VRAM
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+        ▼                   ▼                   ▼
+    Model Side          Training Side       Runtime Side
+        │                   │                   │
+ Base Weights           Gradients          Temp Buffers
+ LoRA Weights           Optimizer          CUDA Context
+                        Activations        Allocator
+                                           Framework</code></pre>
+<p>一句话：</p>
+<blockquote>
+<p><strong>模型有多大，只解释了显存账本的一部分。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二今天只锁死-5-个核心心智模型-1">二、今天只锁死 5
+个核心心智模型</h1>
+<h2 id="心智模型-1inference-memory-training-memory">心智模型
+1：Inference Memory ≠ Training Memory</h2>
+<p>推理时主要关心：</p>
+<pre class="text"><code>Model Weights
++
+KV Cache
++
+Activations / Runtime Buffers</code></pre>
+<p>训练时则需要：</p>
+<pre class="text"><code>Model Weights
++
+Forward中间结果
++
+Backward所需信息
++
+Gradients
++
+Optimizer States</code></pre>
+<p>所以同一个模型：</p>
+<blockquote>
+<p>能推理，不代表能训练。</p>
+</blockquote>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>a</mi><mi>n</mi><mi>L</mi><mi>o</mi><mi>a</mi><mi>d</mi><mi>F</mi><mi>o</mi><mi>r</mi><mi>I</mi><mi>n</mi><mi>f</mi><mi>e</mi><mi>r</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mo>≠</mo><mi>C</mi><mi>a</mi><mi>n</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+CanLoadForInference
+\neq
+CanTrain
+}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="心智模型-2qlora-主要砍掉-base-weight-memory不会自动砍掉-activation">心智模型
+2：QLoRA 主要砍掉 Base Weight Memory，不会自动砍掉 Activation</h2>
+<p>第 9 阶段：</p>
+<pre class="text"><code>BF16 Base
+约16-bit/parameter</code></pre>
+<p>变成：</p>
+<pre class="text"><code>NF4 Base
+约4-bit/parameter + metadata</code></pre>
+<p>这对：</p>
+<h1 id="base-weights">Base Weights</h1>
+<p>非常有效。</p>
+<p>但 Forward 过程中每一层产生的：</p>
+<pre class="text"><code>Hidden States
+Attention中间量
+MLP中间量</code></pre>
+<p>并不会因为 Base Weight 是 4-bit：</p>
+<blockquote>
+<p>全部自动缩成四分之一。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mn>4</mn><mi>b</mi><mi>i</mi><mi>t</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi><mo>≠</mo><mn>4</mn><mi>b</mi><mi>i</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+4bitWeights
+\neq
+4bitActivations
+}
+</annotation></semantics></math></p>
+<hr />
+<h2
+id="心智模型-3lora-让-gradient-optimizer-很小但-activation-仍经过完整-base-model">心智模型
+3：LoRA 让 Gradient / Optimizer 很小，但 Activation 仍经过完整 Base
+Model</h2>
+<p>QLoRA 中真正 Trainable 的：</p>
+<pre class="text"><code>LoRA A/B</code></pre>
+<p>很少。</p>
+<p>因此：</p>
+<pre class="text"><code>Gradient Memory
+Optimizer State Memory</code></pre>
+<p>相对 Full Fine-Tuning 可以小很多。</p>
+<p>但一条 Token 仍然要跑过：</p>
+<blockquote>
+<p>整个 Transformer。</p>
+</blockquote>
+<p>所以：</p>
+<pre class="text"><code>7B Base
+虽然Frozen</code></pre>
+<p>不等于：</p>
+<pre class="text"><code>Forward只算1%的模型</code></pre>
+<p>整个模型仍参与计算。</p>
+<hr />
+<h2
+id="心智模型-4sequence-length-和-micro-batch-size-是-activation-memory-的两大旋钮">心智模型
+4：Sequence Length 和 Micro Batch Size 是 Activation Memory
+的两大旋钮</h2>
+<p>非常粗略地说：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>M</mi><mtext mathvariant="normal">activation</mtext></msub><mo>∝</mo><msub><mi>B</mi><mtext mathvariant="normal">micro</mtext></msub><mo>×</mo><mi>S</mi><mo>×</mo><mi>L</mi><mo>×</mo><mi>H</mi></mrow><annotation encoding="application/x-tex">
+M_{\text{activation}}
+\propto
+B_{\text{micro}}
+\times
+S
+\times
+L
+\times
+H
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>B</mi><mtext mathvariant="normal">micro</mtext></msub><annotation encoding="application/x-tex">B_{\text{micro}}</annotation></semantics></math>：单次真正送进
+GPU 的样本数；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>S</mi><annotation encoding="application/x-tex">S</annotation></semantics></math>：Sequence
+Length；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">L</annotation></semantics></math>：Transformer
+层数；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>H</mi><annotation encoding="application/x-tex">H</annotation></semantics></math>：Hidden
+Size。</li>
+</ul>
+<p>真实公式会复杂得多，但这个心智模型非常有用。</p>
+<p>也就是说：</p>
+<blockquote>
+<p><strong>参数没变，只把 2048 Token 改成 8192
+Token，训练显存也可能完全变成另一回事。</strong></p>
+</blockquote>
+<hr />
+<h2 id="心智模型-5oom-要按显存来源诊断不能随机调参">心智模型 5：OOM
+要按“显存来源”诊断，不能随机调参</h2>
+<p>最差的调试方式：</p>
+<pre class="text"><code>OOM
+↓
+rank乱改
+↓
+batch乱改
+↓
+alpha乱改
+↓
+再装几个包</code></pre>
+<p>正确思路：</p>
+<pre class="text"><code>OOM
+ ↓
+是哪类Memory？
+ ↓
+对应哪个Scaling变量？
+ ↓
+只改最相关的旋钮
+ ↓
+重新测Peak VRAM</code></pre>
+<p>这叫：</p>
+<h1 id="memory-attribution">Memory Attribution</h1>
+<h2 id="显存归因">显存归因</h2>
+<hr />
+<h1 id="三训练显存正式拆成-7-个账户">三、训练显存正式拆成 7 个账户</h1>
+<table>
+<thead>
+<tr class="header">
+<th>显存账户</th>
+<th>主要由什么决定</th>
+<th>QLoRA 是否明显降低</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Base Weights</strong></td>
+<td>Base 参数量、量化位宽</td>
+<td><strong>是，核心收益</strong></td>
+</tr>
+<tr class="even">
+<td><strong>LoRA / Trainable Weights</strong></td>
+<td>Rank、Target Modules</td>
+<td>数量本来就小</td>
+</tr>
+<tr class="odd">
+<td><strong>Gradients</strong></td>
+<td>Trainable 参数量</td>
+<td><strong>LoRA 大幅降低</strong></td>
+</tr>
+<tr class="even">
+<td><strong>Optimizer States</strong></td>
+<td>Trainable 参数量、优化器</td>
+<td><strong>LoRA 大幅降低</strong></td>
+</tr>
+<tr class="odd">
+<td><strong>Activations</strong></td>
+<td>Batch、Sequence、模型结构</td>
+<td><strong>不会自动消失</strong></td>
+</tr>
+<tr class="even">
+<td><strong>Temporary Buffers</strong></td>
+<td>Attention/kernel/算子</td>
+<td>部分受实现影响</td>
+</tr>
+<tr class="odd">
+<td><strong>Runtime Overhead</strong></td>
+<td>CUDA、allocator、框架等</td>
+<td>与4-bit不是一回事</td>
+</tr>
+</tbody>
+</table>
+<p>以后看到显存：</p>
+<blockquote>
+<p>就用这 7 个账户查账。</p>
+</blockquote>
+<hr />
+<h1 id="四账户-1base-model-weights">四、账户 1：Base Model Weights</h1>
+<p>这是最好理解的一块。</p>
+<p>如果模型有：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">
+N
+</annotation></semantics></math></p>
+<p>个参数。</p>
+<p>BF16 理论裸权重：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>M</mi><mtext mathvariant="normal">base</mtext></msub><mo>≈</mo><mn>2</mn><mi>N</mi><mrow><mspace width="0.333em"></mspace><mtext mathvariant="normal"> bytes</mtext></mrow></mrow><annotation encoding="application/x-tex">
+M_{\text{base}}
+\approx
+2N \text{ bytes}
+</annotation></semantics></math></p>
+<p>7B：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn><mo>×</mo><msup><mn>10</mn><mn>9</mn></msup><mo>×</mo><mn>2</mn><mo>≈</mo><mn>14</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+7\times10^9\times2
+\approx14GB
+</annotation></semantics></math></p>
+<p>QLoRA 4-bit 裸编码理论上：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn><mo>×</mo><msup><mn>10</mn><mn>9</mn></msup><mo>×</mo><mn>0.5</mn><mo>≈</mo><mn>3.5</mn><mi>G</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">
+7\times10^9\times0.5
+\approx3.5GB
+</annotation></semantics></math></p>
+<p>但上一阶段已经强调：</p>
+<blockquote>
+<p>实际驻留显存还要加量化
+Scale、Metadata、非量化参数、临时工作区等。</p>
+</blockquote>
+<p>因此这里最重要的不是死记：</p>
+<pre class="text"><code>7B = X GB</code></pre>
+<p>而是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>B</mi><mi>a</mi><mi>s</mi><mi>e</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>∝</mo><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mo>×</mo><mi>S</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>B</mi><mi>i</mi><mi>t</mi><mi>s</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+BaseWeightMemory
+\propto
+ParameterCount
+\times
+StorageBits
+}
+</annotation></semantics></math></p>
+<p>这块就是 QLoRA 最擅长压缩的地方。</p>
+<hr />
+<h1 id="五账户-24lora-weightgradientoptimizer-state">五、账户 2～4：LoRA
+Weight、Gradient、Optimizer State</h1>
+<p>假设 LoRA 真正可训练参数只有：</p>
+<pre class="text"><code>20M Parameters</code></pre>
+<p>那么需要 Gradient 的：</p>
+<blockquote>
+<p>主要也是这 20M。</p>
+</blockquote>
+<p>Optimizer 需要保存状态的：</p>
+<blockquote>
+<p>主要也是这些 Trainable Parameters。</p>
+</blockquote>
+<p>这和 Full Fine-Tuning 完全不同。</p>
+<p>Full FT：</p>
+<pre class="text"><code>7B参数
+都可能需要Gradient和Optimizer State</code></pre>
+<p>LoRA：</p>
+<pre class="text"><code>7B Base
+Frozen
+
+20M LoRA
+Trainable</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>主</mi><mi>要</mi><mi>跟</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>C</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>t</mi><mi>走</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OptimizerMemory
+主要跟
+TrainableParameterCount
+走
+}
+</annotation></semantics></math></p>
+<p>而不是简单跟：</p>
+<blockquote>
+<p>Base Model 总参数量走。</p>
+</blockquote>
+<hr />
+<h1 id="六为什么-optimizer-state-有时比你想象得更贵">六、为什么
+Optimizer State 有时比你想象得更贵？</h1>
+<p>例如常见 AdamW 会为可训练参数维护：</p>
+<pre class="text"><code>First Moment
+m
+
+Second Moment
+v</code></pre>
+<p>这些状态可能使用 FP32 等精度。</p>
+<p>某些训练方案还可能存在：</p>
+<pre class="text"><code>Master Weights</code></pre>
+<p>等额外副本。</p>
+<p>因此不能机械记：</p>
+<blockquote>
+<p>“一个参数训练永远固定 X bytes。”</p>
+</blockquote>
+<p>因为这取决于：</p>
+<pre class="text"><code>Optimizer
+Parameter Dtype
+Gradient Dtype
+Mixed Precision实现
+8-bit Optimizer与否
+Framework</code></pre>
+<p>长期正确心智模型：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>e</mi><mi>r</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>跟</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mi>P</mi><mi>a</mi><mi>r</mi><mi>a</mi><mi>m</mi><mi>e</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>强</mi><mi>相</mi><mi>关</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+OptimizerState
+跟 Trainable Parameters 强相关
+}
+</annotation></semantics></math></p>
+<p>这正是 LoRA 为什么能省大量训练显存。</p>
+<hr />
+<h1 id="七真正的大户activations">七、真正的大户：Activations</h1>
+<p>这里就是很多人第一次 QLoRA OOM 的原因。</p>
+<p>假设输入经过第 1 层 Transformer：</p>
+<pre class="text"><code>Hidden State
+↓
+Attention
+↓
+MLP
+↓
+Layer Output</code></pre>
+<p>然后还有：</p>
+<pre class="text"><code>第2层
+第3层
+...
+第32层</code></pre>
+<p>Backward 要计算：</p>
+<blockquote>
+<p>每一步参数变化对最终 Loss 的影响。</p>
+</blockquote>
+<p>因此训练期间需要保存或能够重新得到大量中间信息。</p>
+<p>这些中间结果统称：</p>
+<h1 id="activations-1">Activations</h1>
+<h2 id="激活值-中间激活">激活值 / 中间激活</h2>
+<p>可以把它理解成：</p>
+<blockquote>
+<p><strong>Forward 为了让 Backward
+以后能够追责，留下的计算现场。</strong></p>
+</blockquote>
+<hr />
+<h1 id="八为什么-batch-size-会直接推高-activation">八、为什么 Batch Size
+会直接推高 Activation？</h1>
+<p>假设：</p>
+<pre class="text"><code>micro_batch_size = 1</code></pre>
+<p>GPU 同时保存：</p>
+<blockquote>
+<p>一条 Sequence 的大量中间结果。</p>
+</blockquote>
+<p>改成：</p>
+<pre class="text"><code>micro_batch_size = 4</code></pre>
+<p>现在同一时刻要处理：</p>
+<blockquote>
+<p>4 条。</p>
+</blockquote>
+<p>因此很多 Activation Memory 会近似跟：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>B</mi><mtext mathvariant="normal">micro</mtext></msub><annotation encoding="application/x-tex">
+B_{\text{micro}}
+</annotation></semantics></math></p>
+<p>一起增加。</p>
+<p>注意我这里特意写：</p>
+<h1 id="micro-batch-size">Micro Batch Size</h1>
+<p>而不是：</p>
+<h1 id="effective-batch-size">Effective Batch Size</h1>
+<p>这两个后面必须分开。</p>
+<hr />
+<h1 id="九为什么-sequence-length-更危险">九、为什么 Sequence Length
+更危险？</h1>
+<p>假设：</p>
+<pre class="text"><code>Batch = 1</code></pre>
+<p>但长度：</p>
+<pre class="text"><code>2048
+→
+4096
+→
+8192</code></pre>
+<p>每层都要处理更多 Token。</p>
+<p>大量 Hidden State 相关存储大致会随：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>S</mi><annotation encoding="application/x-tex">
+S
+</annotation></semantics></math></p>
+<p>增长。</p>
+<p>Attention 又更特殊。</p>
+<p>经典 Attention 计算里：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">
+QK^T
+</annotation></semantics></math></p>
+<p>会形成与：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mo>×</mo><mi>S</mi></mrow><annotation encoding="application/x-tex">
+S\times S
+</annotation></semantics></math></p>
+<p>相关的结构。</p>
+<p>因此传统实现的某些 Attention 中间内存：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mrow><mo stretchy="true" form="prefix">(</mo><msup><mi>S</mi><mn>2</mn></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+O(S^2)
+</annotation></semantics></math></p>
+<p>增长非常快。</p>
+<p>这就是为什么：</p>
+<blockquote>
+<p>长上下文训练特别容易吃显存。</p>
+</blockquote>
+<hr />
+<h1
+id="十但这里必须做一个现代实现修正flashattention-会改变显存复杂度不会改变所有计算规律">十、但这里必须做一个现代实现修正：FlashAttention
+会改变“显存复杂度”，不会改变所有计算规律</h1>
+<p>如果使用传统 Attention，并显式保存完整 Attention Matrix：</p>
+<blockquote>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>S</mi><mn>2</mn></msup><annotation encoding="application/x-tex">S^2</annotation></semantics></math>
+中间结果会非常昂贵。</p>
+</blockquote>
+<p>FlashAttention / 高效 SDPA 等实现：</p>
+<blockquote>
+<p>不需要把完整 Attention Matrix 长时间写回显存。</p>
+</blockquote>
+<p>因此能显著降低 Attention 的峰值显存。</p>
+<p>所以不能简单说：</p>
+<blockquote>
+<p>“序列长度翻倍，所有训练显存一定四倍。”</p>
+</blockquote>
+<p>这是不精确的。</p>
+<p>更准确：</p>
+<blockquote>
+<p><strong>Attention 的理论计算量依然随序列长度呈近似二次增长，而高效
+Attention Kernel 可以避免完整
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>S</mi><mn>2</mn></msup><annotation encoding="application/x-tex">S^2</annotation></semantics></math>
+Attention Matrix
+的显存驻留，使实际峰值显存增长比朴素实现健康很多。</strong></p>
+</blockquote>
+<p>这条区别很重要：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>x</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>S</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>d</mi><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ComputeComplexity
+\neq
+StoredActivationMemory
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一gradient-checkpointing-为什么能省显存">十一、Gradient
+Checkpointing 为什么能省显存？</h1>
+<p>正常做法：</p>
+<pre class="text"><code>Forward
+↓
+保存大量Activation
+↓
+Backward直接使用</code></pre>
+<p>Gradient Checkpointing：</p>
+<h1 id="梯度检查点">梯度检查点</h1>
+<p>采用：</p>
+<pre class="text"><code>Forward
+↓
+只保留部分Checkpoint
+↓
+其他Activation不长期保存
+↓
+Backward需要时
+重新Forward计算</code></pre>
+<p>也就是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>↓</mo><mspace width="1.0em"></mspace><mtext mathvariant="normal">换取</mtext><mspace width="1.0em"></mspace><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mo>↑</mo></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Memory
+\downarrow
+\quad
+\text{换取}
+\quad
+Compute
+\uparrow
+}
+</annotation></semantics></math></p>
+<p>中文：</p>
+<blockquote>
+<p><strong>不存那么多计算现场，等需要的时候再重算。</strong></p>
+</blockquote>
+<hr />
+<h1 id="十二gradient-checkpointing-省的不是-model-weight">十二、Gradient
+Checkpointing 省的不是 Model Weight</h1>
+<p>这一点很容易搞混。</p>
+<p>QLoRA：</p>
+<blockquote>
+<p>主要压 Base Weight。</p>
+</blockquote>
+<p>Gradient Checkpointing：</p>
+<blockquote>
+<p>主要压 Activation。</p>
+</blockquote>
+<p>所以二者非常互补：</p>
+<pre class="text"><code>QLoRA
+        ↓
+Base Weight Memory ↓
+
+Gradient Checkpointing
+        ↓
+Activation Memory ↓</code></pre>
+<p>这也是为什么这两个技术经常一起出现。</p>
+<hr />
+<h1 id="十三gradient-accumulation-又是在解决什么">十三、Gradient
+Accumulation 又是在解决什么？</h1>
+<p>假设你希望：</p>
+<pre class="text"><code>Effective Batch Size = 16</code></pre>
+<p>但 GPU 一次只能放：</p>
+<pre class="text"><code>Micro Batch Size = 2</code></pre>
+<p>可以让 8 个 Micro-batch：</p>
+<pre class="text"><code>forward
+backward
+
+forward
+backward
+
+...
+
+累计8次Gradient</code></pre>
+<p>然后：</p>
+<pre class="text"><code>optimizer.step()</code></pre>
+<p>于是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>B</mi><mtext mathvariant="normal">effective</mtext></msub><mo>=</mo><msub><mi>B</mi><mtext mathvariant="normal">micro</mtext></msub><mo>×</mo><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>S</mi><mi>t</mi><mi>e</mi><mi>p</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">
+B_{\text{effective}}
+=
+B_{\text{micro}}
+\times
+GradientAccumulationSteps
+</annotation></semantics></math></p>
+<p>单卡、单进程的简化情况例如：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mo>×</mo><mn>8</mn><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">
+2\times8=16
+</annotation></semantics></math></p>
+<p>这叫：</p>
+<h1 id="gradient-accumulation-1">Gradient Accumulation</h1>
+<h2 id="梯度累积-1">梯度累积</h2>
+<hr />
+<h1 id="十四gradient-accumulation-最容易被误解的一点">十四、Gradient
+Accumulation 最容易被误解的一点</h1>
+<p>它可以让：</p>
+<blockquote>
+<p><strong>有效 Batch 变大，而不要求一次把整个 Batch 放进
+GPU。</strong></p>
+</blockquote>
+<p>但是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>G</mi><mi>r</mi><mi>a</mi><mi>d</mi><mi>i</mi><mi>e</mi><mi>n</mi><mi>t</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>m</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>不</mi><mi>会</mi><mi>让</mi><mi>单</mi><mi>个</mi><mi>M</mi><mi>i</mi><mi>c</mi><mi>r</mi><mi>o</mi><mi>B</mi><mi>a</mi><mi>t</mi><mi>c</mi><mi>h</mi><mi>本</mi><mi>身</mi><mi>变</mi><mi>小</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+GradientAccumulation
+不会让单个MicroBatch本身变小
+}
+</annotation></semantics></math></p>
+<p>所以如果：</p>
+<pre class="text"><code>micro_batch = 1
+sequence_length = 32K</code></pre>
+<p>这一条本身已经 OOM，</p>
+<p>再把：</p>
+<pre class="text"><code>gradient_accumulation_steps</code></pre>
+<p>从 4 调到 32：</p>
+<blockquote>
+<p>没用。</p>
+</blockquote>
+<p>因为连第一条 Forward 都进不去。</p>
+<hr />
+<h1 id="十五packing-对显存又是什么关系">十五、Packing
+对显存又是什么关系？</h1>
+<p>第 4 阶段学了 Packing。</p>
+<p>Packing 的主要目标是：</p>
+<h1 id="token-utilization">Token Utilization</h1>
+<p>减少 Padding Waste。</p>
+<p>但一定不要误解成：</p>
+<blockquote>
+<p><code>packing=True</code> 必然降低 Peak VRAM。</p>
+</blockquote>
+<p>如果 Packed Sequence 最终仍是：</p>
+<pre class="text"><code>4096 Tokens</code></pre>
+<p>GPU 依然需要处理：</p>
+<blockquote>
+<p>一条 4096 长度 Sequence。</p>
+</blockquote>
+<p>Packing 的主要收益更接近：</p>
+<blockquote>
+<p><strong>同样的计算长度中，装更多真实训练 Token。</strong></p>
+</blockquote>
+<p>它是：</p>
+<h1 id="efficiency-optimization">Efficiency Optimization</h1>
+<p>而不一定是：</p>
+<h1 id="peak-memory-reduction">Peak Memory Reduction</h1>
+<p>这一点很关键。</p>
+<hr />
+<h1 id="十六为什么-rank-通常不是-qlora-oom-的第一嫌疑人">十六、为什么
+Rank 通常不是 QLoRA OOM 的第一嫌疑人？</h1>
+<p>假设：</p>
+<pre class="text"><code>r = 16</code></pre>
+<p>改成：</p>
+<pre class="text"><code>r = 8</code></pre>
+<p>LoRA Trainable Parameters 的确减少。</p>
+<p>Gradient 和 Optimizer State：</p>
+<blockquote>
+<p>也会减少。</p>
+</blockquote>
+<p>但如果真正显存大头已经变成：</p>
+<h1 id="activations-2">Activations</h1>
+<p>那么这个变化：</p>
+<blockquote>
+<p>可能救不了多少显存。</p>
+</blockquote>
+<p>所以出现 OOM 时，不要机械：</p>
+<pre class="text"><code>先砍Rank</code></pre>
+<p>要看账本。</p>
+<p>对于 QLoRA，一个很常见的优先诊断方向反而是：</p>
+<pre class="text"><code>Micro Batch Size
+
+Sequence Length
+
+Gradient Checkpointing
+
+Attention Implementation</code></pre>
+<hr />
+<h1 id="十七7b-qlora-为什么模型才几-gb仍然会-oom">十七、7B QLoRA
+为什么“模型才几 GB”仍然会 OOM？</h1>
+<p>现在可以精准回答了。</p>
+<p>假设只是概念例子：</p>
+<pre class="text"><code>4-bit Base
+≈ 几GB级
+
+LoRA
+≈ 相对较小</code></pre>
+<p>但你又设置：</p>
+<pre class="text"><code>Sequence Length = 8192
+
+Micro Batch = 4
+
+Gradient Checkpointing = OFF
+
+Attention implementation
+不够省显存</code></pre>
+<p>那么：</p>
+<pre class="text"><code>Base Weight
+并不是主犯
+
+Activation
++
+Attention Temp
++
+Runtime Buffer</code></pre>
+<p>完全可能把剩余显存吃光。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>F</mi><mi>o</mi><mi>o</mi><mi>t</mi><mi>p</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>t</mi><mo>≠</mo><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>T</mi><mi>r</mi><mi>a</mi><mi>i</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>F</mi><mi>o</mi><mi>o</mi><mi>t</mi><mi>p</mi><mi>r</mi><mi>i</mi><mi>n</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SmallWeightFootprint
+\neq
+SmallTrainingFootprint
+}
+</annotation></semantics></math></p>
+<p>这是今天最重要的一句话之一。</p>
+<hr />
+<h1
+id="十八还有一个经常混进来的东西kv-cache">十八、还有一个经常混进来的东西：KV
+Cache</h1>
+<p>推理阶段我们经常讨论：</p>
+<h1 id="kv-cache">KV Cache</h1>
+<p>它会随着生成长度和 Batch 增长。</p>
+<p>但普通 Causal LM 训练时：</p>
+<blockquote>
+<p>通常并不需要像自回归推理那样保留跨生成步骤的 KV Cache。</p>
+</blockquote>
+<p>训练配置里一般会：</p>
+<pre class="text"><code>use_cache = False</code></pre>
+<p>尤其和 Gradient Checkpointing 一起时。</p>
+<p>所以看到训练 OOM：</p>
+<blockquote>
+<p>不要第一时间把所有显存都归因到推理阶段熟悉的 KV Cache。</p>
+</blockquote>
+<p>训练真正的大头通常另有其人。</p>
+<hr />
+<h1 id="十九oom-时建立一个精准的处理顺序">十九、OOM
+时建立一个精准的处理顺序</h1>
+<p>对于我们的 <code>ProcurementLM_V0.1</code> QLoRA
+Baseline，可以采用：</p>
+<pre class="text"><code>OOM
+ │
+ ▼
+1. 先确认有没有错误配置
+   ├─ 是否意外加载BF16完整Base副本？
+   ├─ 是否use_cache不合理开启？
+   └─ 实际dtype是否符合预期？
+ │
+ ▼
+2. 降低 Micro Batch Size
+ │
+ ▼
+3. 检查 / 降低 Sequence Length
+   并优化Context Selection
+ │
+ ▼
+4. 开启 Gradient Checkpointing
+ │
+ ▼
+5. 使用合适的高效Attention实现
+ │
+ ▼
+6. 再检查 Packing / Length Bucketing 等吞吐效率
+ │
+ ▼
+7. 如果仍不足
+   再考虑Rank / Target Modules等Trainable Scope
+ │
+ ▼
+8. 更进一步
+   Offload / Distributed / 更大显存GPU</code></pre>
+<p>这里有一个原则：</p>
+<blockquote>
+<p><strong>先砍无效显存，再砍业务信息。</strong></p>
+</blockquote>
+<p>例如不要为了 OOM：</p>
+<blockquote>
+<p>第一刀直接把关键上下文从 4096 暴力砍到 512。</p>
+</blockquote>
+<p>先确认有没有其他浪费。</p>
+<hr />
+<h1
+id="二十真正应该监控的是-peak-vram而不是理论估计">二十、真正应该监控的是
+Peak VRAM，而不是“理论估计”</h1>
+<p>理论公式可以帮助定位方向。</p>
+<p>但真实训练最终要记录：</p>
+<pre class="text"><code>Peak Allocated VRAM
+
+Peak Reserved VRAM
+
+Sequence Length
+
+Micro Batch Size
+
+Gradient Accumulation
+
+Gradient Checkpointing
+
+Attention Backend
+
+Quantization Config
+
+Trainable Parameters</code></pre>
+<p>因为 CUDA Allocator 还会涉及：</p>
+<h1 id="reserved-memory">Reserved Memory</h1>
+<p>以及：</p>
+<h1 id="fragmentation">Fragmentation</h1>
+<h2 id="显存碎片">显存碎片</h2>
+<p>所以有时：</p>
+<pre class="text"><code>实际Tensor总量</code></pre>
+<p>没有完全占满显卡，</p>
+<p>仍可能因为：</p>
+<blockquote>
+<p>当前找不到足够大的连续可用块</p>
+</blockquote>
+<p>而 OOM。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>T</mi><mi>h</mi><mi>e</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>≠</mo><mi>O</mi><mi>b</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>d</mi><mi>P</mi><mi>e</mi><mi>a</mi><mi>k</mi><mi>V</mi><mi>R</mi><mi>A</mi><mi>M</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+TheoreticalMemory
+\neq
+ObservedPeakVRAM
+}
+</annotation></semantics></math></p>
+<hr />
+<h1
+id="二十一本阶段工程产物trainingmemorybudget_v0.1">二十一、本阶段工程产物：<code>TrainingMemoryBudget_V0.1</code></h1>
+<p>第一版至少记录这些字段：</p>
+<pre class="text"><code>base_model
+base_model_revision
+
+quantization
+compute_dtype
+
+parameter_count
+trainable_parameter_count
+
+max_sequence_length
+micro_batch_size
+gradient_accumulation_steps
+
+gradient_checkpointing
+
+attention_backend
+
+packing_enabled
+
+optimizer
+optimizer_precision
+
+peak_allocated_vram
+peak_reserved_vram
+
+tokens_per_step
+supervised_tokens_per_step
+
+oom_status</code></pre>
+<p>同时建立显存归因：</p>
+<pre class="text"><code>Base Weight
+Trainable Weight
+Gradient
+Optimizer
+Activation
+Temporary / Attention
+Runtime Overhead</code></pre>
+<p>不是要求你精确算到：</p>
+<blockquote>
+<p>每个字节。</p>
+</blockquote>
+<p>而是要求：</p>
+<blockquote>
+<p><strong>知道哪一个旋钮主要影响哪一块。</strong></p>
+</blockquote>
+<hr />
+<h1
+id="二十二这一阶段最值得保留的一张变量地图">二十二、这一阶段最值得保留的一张“变量地图”</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>你修改的变量</th>
+<th>最直接影响的显存</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base Model 参数量</td>
+<td>Base Weight</td>
+</tr>
+<tr class="even">
+<td>4-bit / BF16</td>
+<td>Base Weight</td>
+</tr>
+<tr class="odd">
+<td>Rank</td>
+<td>LoRA Weight、Grad、Optimizer</td>
+</tr>
+<tr class="even">
+<td>Target Modules</td>
+<td>LoRA Weight、Grad、Optimizer</td>
+</tr>
+<tr class="odd">
+<td>Micro Batch Size</td>
+<td><strong>Activation</strong></td>
+</tr>
+<tr class="even">
+<td>Sequence Length</td>
+<td><strong>Activation + Attention + Compute</strong></td>
+</tr>
+<tr class="odd">
+<td>Gradient Accumulation</td>
+<td>有效 Batch；对单 Micro-batch Peak VRAM影响较小</td>
+</tr>
+<tr class="even">
+<td>Gradient Checkpointing</td>
+<td><strong>Activation ↓，Compute ↑</strong></td>
+</tr>
+<tr class="odd">
+<td>FlashAttention / 高效 Attention</td>
+<td>Attention 中间内存、吞吐</td>
+</tr>
+<tr class="even">
+<td>Packing</td>
+<td>Token 利用率，未必直接降低 Peak VRAM</td>
+</tr>
+</tbody>
+</table>
+<p>这张表比背 CUDA 参数值重要得多。</p>
+<hr />
+<h1 id="二十三把本阶段压成最精准的-5-句话">二十三、把本阶段压成最精准的
+5 句话</h1>
+<blockquote>
+<p><strong>第一，训练显存不只是模型权重，而是 Base Weight、Trainable
+Weight、Gradient、Optimizer State、Activation、Temporary Buffer 和
+Runtime Overhead 的总和。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第二，QLoRA 主要降低冻结 Base Model 的 Weight Memory，LoRA
+主要降低 Gradient 和 Optimizer 对应的 Trainable Parameter Memory，但完整
+Transformer 的 Activation 仍然存在。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第三，Micro Batch Size 和 Sequence Length 是 Activation
+显存的核心变量；长上下文尤其昂贵，高效 Attention
+可以降低中间显存，但不会让长序列计算免费。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第四，Gradient Checkpointing 用额外计算换 Activation
+显存；Gradient Accumulation 用多个小 Micro-batch 组成较大的 Effective
+Batch，两者解决的是完全不同的问题。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>第五，OOM
+不是“模型太大”四个字能解释的；必须先定位显存账户，再调对应变量，并用真实
+Peak VRAM 验证。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十四本阶段最核心的一张图">二十四、本阶段最核心的一张图</h1>
+<pre class="text"><code>                    Training Peak VRAM
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+       ▼                   ▼                   ▼
+     Weights             Training           Runtime
+       │                   │                   │
+ Quantized Base        Activations         Buffers
+ LoRA Params           Gradients           CUDA
+                      Optimizer            Allocator
+                           │
+             ┌─────────────┼─────────────┐
+             │             │             │
+             ▼             ▼             ▼
+        Sequence       Micro Batch     Checkpointing
+         Length           Size              │
+             │             │                ▼
+             └──────┬──────┘           Memory ↓
+                    │                  Compute ↑
+                    ▼
+             Activation Peak
+                    │
+                    ▼
+              OOM or Stable</code></pre>
+<p>脑子里只留一句：</p>
+<blockquote>
+<p><strong>QLoRA 省权重，Checkpointing 省激活，Accumulation 省一次性
+Batch；三件事别混。</strong></p>
+</blockquote>
+<hr />
+<h1 id="二十五本阶段掌握测试">二十五、本阶段掌握测试</h1>
+<p>不回看正文，你现在应该能够解释：为什么同一个 7B
+模型能够推理却未必能够训练；训练显存有哪些主要组成；QLoRA
+主要压缩哪一部分；为什么 LoRA 能显著减少 Gradient 和 Optimizer
+State；为什么 Base Model Frozen 后 Activation 仍然存在；为什么 Micro
+Batch Size 和 Effective Batch Size 不是一回事；Gradient Accumulation
+为什么不能解决“单条 32K Sequence 已经 OOM”；Gradient Checkpointing
+为什么能省显存以及它付出的代价是什么；为什么 Sequence Length 会强烈影响
+Activation 和 Attention；FlashAttention 为什么能省显存但不会消除
+Attention 的计算成本；为什么 Packing 主要提升 Token Utilization
+而不保证降低 Peak VRAM；为什么 QLoRA OOM 时 Rank
+往往不是第一刀；为什么训练阶段不应该把所有显存问题都归因于 KV
+Cache；以及为什么最终必须记录真实的 Peak Allocated / Reserved
+VRAM，而不能只看理论权重大小。</p>
+<p>如果这些能完整讲出来：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>第</mi><mi>五</mi><mi>课</mi><mi>第</mi><mn>10</mn><mi>阶</mi><mi>段</mi><mi>真</mi><mi>正</mi><mi>掌</mi><mi>握</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+第五课第10阶段真正掌握
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="本阶段最后只记一句话-9">本阶段最后只记一句话</h1>
+<blockquote>
+<p><strong>训练显存是一张完整账本：QLoRA 把冻结 Base Weight 压下来，LoRA
+把需要 Gradient 和 Optimizer 的参数规模压下来，但真正训练时仍然要为完整
+Transformer 的 Activation、Attention 中间量和运行时缓冲付费；所以 OOM
+的正确解决方式不是盲目缩模型，而是先判断显存到底花在哪，再针对 Sequence
+Length、Micro Batch、Checkpointing、Attention 实现和 Trainable Scope
+精准下刀。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第五课-第-11-阶段">下一阶段：第五课 · 第 11 阶段</h1>
+<h1 id="真正跑一次-sft-训练">真正跑一次 SFT 训练</h1>
+<h2 id="前面-10-个阶段终于要第一次全部接成可执行训练流程">前面 10
+个阶段，终于要第一次全部接成可执行训练流程</h2>
+<p>下一阶段不再新增一堆理论概念，而是把目前所有组件真正组装起来：</p>
+<pre class="text"><code>ProcurementDataset_V0.1
+        ↓
+Chat Template
+        ↓
+Assistant-only Loss
+        ↓
+Length Policy
+        ↓
+Packing
+        ↓
+4-bit NF4 Base
+        ↓
+LoRA Config
+        ↓
+Target Modules
+        ↓
+Training Arguments
+        ↓
+Trainer / Training Loop
+        ↓
+Forward
+        ↓
+Loss
+        ↓
+Backward
+        ↓
+Optimizer Step
+        ↓
+ProcurementLM_V0.1 Adapter</code></pre>
+<p>下一阶段我们会第一次真正回答：</p>
+<blockquote>
+<p><strong>从 <code>from_pretrained()</code>
+到训练启动，一个完整可运行的 ProcurementLM QLoRA SFT
+脚本到底由哪些部分组成，每一行为什么存在，以及开跑前必须检查哪几项才不会“代码能跑、训练却是错的”。</strong></p>
+</blockquote>
+<hr /><div class="nav"><a class="btn" href="stage09.html">← 第 9 阶段</a><a class="btn" href="stage11.html">第 11 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>

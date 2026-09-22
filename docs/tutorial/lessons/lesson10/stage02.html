@@ -1,0 +1,538 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第10课 · 第2阶段：Quantization：FP16、BF16、INT8、INT4 与精度—显存权衡</title><style>
+:root{--bg:#f7f8fb;--panel:#fff;--text:#1d2433;--muted:#687386;--line:#e4e8ef;--code:#f2f4f8;--quote:#eef3ff;--accent:#3559e0;--math:#fbfcff}
+html[data-theme="dark"]{--bg:#111318;--panel:#191c23;--text:#edf0f7;--muted:#abb3c0;--line:#2c313a;--code:#20242d;--quote:#1d2744;--accent:#91a6ff;--math:#151923}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.82}
+header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}header strong{margin-right:auto}
+button,a.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+main{max-width:1120px;margin:0 auto;padding:34px 28px 90px}article{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:46px 52px}
+pre{overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px}blockquote{margin:20px 0;padding:14px 18px;background:var(--quote);border-left:4px solid var(--accent);border-radius:8px}
+table{border-collapse:collapse;width:100%;margin:18px 0}th,td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--code)}
+p > math[display="block"]{display:block;width:max-content;max-width:100%;margin:22px auto;padding:13px 18px;background:var(--math);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.note{font-size:14px;color:var(--muted);background:var(--code);border-radius:10px;padding:14px 16px;margin-bottom:28px}.nav{display:flex;justify-content:space-between;gap:10px;margin-top:42px;padding-top:22px;border-top:1px solid var(--line)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}.stage-card{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--panel)}.stage-card h3{margin:7px 0}.stage-card p{color:var(--muted);font-size:14px}
+@media(max-width:800px){main{padding:15px}article{padding:24px 18px}}@media print{header{display:none}main{max-width:none;padding:0}article{border:0;padding:0}}
+</style></head><body><header><strong>第10课 · 第2阶段</strong><a class="btn" href="LESSON_INDEX.html">本课阶段目录</a><a class="btn" href="LESSON_ALL.html">本课完整合订</a><a class="btn" href="../../manual/NAVIGATION_MANUAL.html">课程导航说明书</a><a class="btn" href="../../index.html">总首页</a><button onclick="toggleTheme()">深/浅</button><button onclick="window.print()">打印</button></header><main><article><div class="note"><strong>快速定位：</strong>处理部署、延迟、吞吐、量化、多GPU、监控、灰度、回滚和 MLOps。<ul><li>Quantization ≠ FreeCompression。低 bit 是数值近似，不是无损压缩。</li><li>DataTypeChoice = Memory + Numerical + Kernel Decision。</li><li>StoragePrecision ≠ ComputePrecision。</li></ul></div><h1 id="第十课-第-2-阶段">第十课 · 第 2 阶段</h1>
+<h1
+id="quantizationfp16bf16int8int4-与精度显存权衡-1">Quantization：FP16、BF16、INT8、INT4
+与精度—显存权衡</h1>
+<h2
+id="为什么把-weight-从-16-bit-压到-8-bit-4-bit-可以显著省显存为什么-quantization-不是免费压缩而是一次必须经过-benchmark-验证的数值近似-1">为什么把
+Weight 从 16 bit 压到 8 bit / 4 bit 可以显著省显存？为什么 Quantization
+不是“免费压缩”，而是一次必须经过 Benchmark 验证的数值近似？</h2>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 START -->
+<h2 id="v2-增强阅读导航先抓主干再看细节-1">V2
+增强阅读导航：先抓主干，再看细节</h2>
+<blockquote>
+<p><strong>本阶段修复级别：MEDIUM。</strong>
+审计原因：核心心智模型出现偏后，阅读前段缺少认知锚点；英文工程术语/代码表达较多，中文释义不足。<br />
+原正文完整保留；新增这一层的目的，是把“要长期记住的判断框架”提前，把大量编号内容降为展开、案例、反例和工程参考。</p>
+</blockquote>
+<h3 id="a.-本阶段核心心智模型前置-1">A. 本阶段核心心智模型（前置）</h3>
+<ol type="1">
+<li><strong>Quantization ≠ FreeCompression。低 bit
+是数值近似，不是无损压缩。</strong></li>
+<li><strong>DataTypeChoice = Memory + Numerical + Kernel
+Decision。</strong></li>
+<li><strong>StoragePrecision ≠ ComputePrecision。</strong></li>
+<li><strong>WeightQuantization ≠ ActivationQuantization。</strong></li>
+<li><strong>QuantizedModel 是独立 Serving Version。</strong></li>
+<li><strong>SmallerModel ≠ FasterModel。性能收益取决于真实
+Kernel。</strong></li>
+<li><strong>WeightMemorySaving ≠ TotalVRAMSaving。</strong></li>
+</ol>
+<h3 id="b.-中文释义增强本阶段重要英文工程术语-1">B.
+中文释义增强：本阶段重要英文工程术语</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>英文工程表达</th>
+<th>中文工程 / 业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Quantization</code></td>
+<td>量化：用更低位宽表示权重/激活以降低显存和计算成本</td>
+</tr>
+<tr class="even">
+<td><code>FP16</code></td>
+<td>FP16：16 位浮点，节省显存但数值范围较窄</td>
+</tr>
+<tr class="odd">
+<td><code>BF16</code></td>
+<td>BF16：保留较大指数范围的 16 位浮点，常用于大模型</td>
+</tr>
+<tr class="even">
+<td><code>Throughput</code></td>
+<td>吞吐：单位时间内处理请求或生成 Token 的能力</td>
+</tr>
+<tr class="odd">
+<td><code>Benchmark</code></td>
+<td>Benchmark/基准评测：冻结数据、协议、指标和治理后公平比较版本</td>
+</tr>
+<tr class="even">
+<td><code>Latency</code></td>
+<td>延迟：单个请求从进入到完成的时间</td>
+</tr>
+<tr class="odd">
+<td><code>Calibration</code></td>
+<td>校准：使模型置信度更接近实际正确率</td>
+</tr>
+<tr class="even">
+<td><code>Memory</code></td>
+<td>任务记忆：保存跨步骤需要复用的结构化信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c.-建议阅读层级-1">C. 建议阅读层级</h3>
+<pre class="text"><code>一级：核心心智模型    # 中文：先建立判断框架
+↓
+二级：关键公式 / 流程 / Schema    # 中文：理解系统怎样工作
+↓
+三级：政府采购案例与反例    # 中文：把抽象边界落到业务
+↓
+四级：编号细节与工程扩展    # 中文：按需要查阅，不要求一次全部记忆</code></pre>
+<!-- PEDAGOGY_CN_ENHANCEMENT_V2 END -->
+<p>第 1 阶段已经建立：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>≠</mo><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{Latency \neq Throughput}
+</annotation></semantics></math></p>
+<p>现在进入最常见的推理优化之一：</p>
+<h1 id="quantization">Quantization</h1>
+<h2 id="量化">量化</h2>
+<p>本阶段第一条边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{Quantization \neq FreeCompression}
+</annotation></semantics></math></p>
+<p>量化的本质不是“无损变小”，而是：</p>
+<blockquote>
+<p>用更少 bit 去近似原来的数值。</p>
+</blockquote>
+<p>本阶段最终形成：</p>
+<h1
+id="procurementquantizationpolicy_v0.1-1"><code>ProcurementQuantizationPolicy_V0.1</code></h1>
+<hr />
+<h1 id="一weight-显存为什么和-bit-数直接相关">一、Weight 显存为什么和
+bit 数直接相关？</h1>
+<p>若模型有
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>P</mi><annotation encoding="application/x-tex">P</annotation></semantics></math>
+个参数，每个参数使用
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>b</mi><annotation encoding="application/x-tex">b</annotation></semantics></math>
+bit，则仅 Weight 的理论存储量近似：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><msub><mi>y</mi><mrow><mi>w</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>s</mi></mrow></msub><mo>≈</mo><mfrac><mrow><mi>P</mi><mo>⋅</mo><mi>b</mi></mrow><mn>8</mn></mfrac></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Memory_{weights}\approx \frac{P\cdot b}{8}
+}
+</annotation></semantics></math></p>
+<p>因此理论上：</p>
+<pre class="text"><code>16 bit → 每参数约 2 bytes
+8 bit  → 每参数约 1 byte
+4 bit  → 每参数约 0.5 byte</code></pre>
+<p>所以从 16 bit 到 8 bit：</p>
+<blockquote>
+<p>Weight 存储大约减半。</p>
+</blockquote>
+<p>从 16 bit 到 4 bit：</p>
+<blockquote>
+<p>Weight 存储大约变成四分之一。</p>
+</blockquote>
+<p>但真实推理显存还包括：</p>
+<pre class="text"><code>KV Cache
+Runtime Buffer
+CUDA Context
+Workspace
+Batch Metadata</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>S</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mo>≠</mo><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mi>V</mi><mi>R</mi><mi>A</mi><mi>M</mi><mi>S</mi><mi>a</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+WeightMemorySaving
+\neq
+TotalVRAMSaving
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="二fp16-与-bf16">二、FP16 与 BF16</h1>
+<p>两者都是 16 位浮点。</p>
+<p>FP16：</p>
+<blockquote>
+<p>尾数精度相对更高，但动态范围较窄。</p>
+</blockquote>
+<p>BF16：</p>
+<blockquote>
+<p>动态范围更大，但尾数精度较低。</p>
+</blockquote>
+<p>工程上最终选哪个，需要看：</p>
+<pre class="text"><code>GPU支持
+模型训练精度
+Kernel实现
+推理引擎</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>D</mi><mi>a</mi><mi>t</mi><mi>a</mi><mi>T</mi><mi>y</mi><mi>p</mi><mi>e</mi><mi>C</mi><mi>h</mi><mi>o</mi><mi>i</mi><mi>c</mi><mi>e</mi><mo>=</mo><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>N</mi><mi>u</mi><mi>m</mi><mi>e</mi><mi>r</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>+</mo><mi>K</mi><mi>e</mi><mi>r</mi><mi>n</mi><mi>e</mi><mi>l</mi><mi>D</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+DataTypeChoice
+=
+MemoryDecision
++
+NumericalDecision
++
+KernelDecision
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="三整数量化怎样映射浮点数">三、整数量化怎样映射浮点数？</h1>
+<p>一种常见抽象：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi><mo>=</mo><mi>r</mi><mi>o</mi><mi>u</mi><mi>n</mi><mi>d</mi><mrow><mo stretchy="true" form="prefix">(</mo><mfrac><mi>x</mi><mi>s</mi></mfrac><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mi>z</mi></mrow><annotation encoding="application/x-tex">
+q=
+round\left(\frac{x}{s}\right)+z
+</annotation></semantics></math></p>
+<p>其中：</p>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>s</mi><annotation encoding="application/x-tex">s</annotation></semantics></math>：Scale，缩放因子；</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>z</mi><annotation encoding="application/x-tex">z</annotation></semantics></math>：Zero
+Point，零点。</li>
+</ul>
+<p>反量化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>x</mi><mo accent="true">̂</mo></mover><mo>=</mo><mi>s</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>q</mi><mo>−</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\hat{x}=s(q-z)
+</annotation></semantics></math></p>
+<p>通常：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>x</mi><mo accent="true">̂</mo></mover><mo>≠</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">
+\hat{x}\neq x
+</annotation></semantics></math></p>
+<p>量化误差：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><msub><mi>e</mi><mi>q</mi></msub><mo>=</mo><mi>x</mi><mo>−</mo><mover><mi>x</mi><mo accent="true">̂</mo></mover></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+e_q=x-\hat{x}
+}
+</annotation></semantics></math></p>
+<p>因此低 bit 的核心交换关系是：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>L</mi><mi>e</mi><mi>s</mi><mi>s</mi><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>↔</mo><mi>M</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>A</mi><mi>p</mi><mi>p</mi><mi>r</mi><mi>o</mi><mi>x</mi><mi>i</mi><mi>m</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+LessMemory
+\leftrightarrow
+MoreApproximation
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="四symmetricasymmetric-与-scale-粒度">四、Symmetric、Asymmetric
+与 Scale 粒度</h1>
+<h2 id="symmetric-quantization">Symmetric Quantization</h2>
+<p>对称量化</p>
+<p>数值范围围绕 0 对称。</p>
+<h2 id="asymmetric-quantization">Asymmetric Quantization</h2>
+<p>非对称量化</p>
+<p>允许使用 Zero Point，更适合偏移分布。</p>
+<p>Scale 还可以分为：</p>
+<pre class="text"><code>Per-Tensor
+整个Tensor一个Scale
+
+Per-Channel
+每个Channel一个Scale
+
+Group-wise
+每组Weight一个Scale</code></pre>
+<p>一般来说：</p>
+<blockquote>
+<p>粒度越细，越容易降低量化误差，但元数据和 Kernel 复杂度更高。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>F</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>r</mi><mi>G</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>u</mi><mi>l</mi><mi>a</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>≠</mo><mi>F</mi><mi>r</mi><mi>e</mi><mi>e</mi><mi>A</mi><mi>c</mi><mi>c</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>y</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+FinerGranularity
+\neq
+FreeAccuracy
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="五weight-only-与-activation-quantization">五、Weight-only 与
+Activation Quantization</h1>
+<h1 id="weight-only-quantization">Weight-only Quantization</h1>
+<p>只量化权重</p>
+<p>例如：</p>
+<pre class="text"><code>Weight = INT4
+Activation = FP16/BF16</code></pre>
+<p>重点是：</p>
+<blockquote>
+<p>减少 Weight 存储和 Weight 读取带宽。</p>
+</blockquote>
+<p>但：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi><mi>P</mi><mi>r</mi><mi>e</mi><mi>c</mi><mi>i</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+StoragePrecision
+\neq
+ComputePrecision
+}
+</annotation></semantics></math></p>
+<p>Weight 存成 INT4，不代表整个算子都在 INT4 中计算。</p>
+<hr />
+<h1 id="activation-quantization">Activation Quantization</h1>
+<p>激活量化</p>
+<p>Activation 会随输入动态变化，并可能存在：</p>
+<h1 id="outlier">Outlier</h1>
+<p>离群值</p>
+<p>所以一般比固定 Weight 更难量化。</p>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>W</mi><mi>e</mi><mi>i</mi><mi>g</mi><mi>h</mi><mi>t</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>A</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+WeightQuantization
+\neq
+ActivationQuantization
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="六quantization-calibration">六、Quantization Calibration</h1>
+<p>这里的 Calibration 是：</p>
+<blockquote>
+<p>用代表性样本观察数值分布，为 Scale、Clipping Range
+等量化参数提供依据。</p>
+</blockquote>
+<p>它不是第九课的 Confidence Calibration。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>≠</mo><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>e</mi><mi>C</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>b</mi><mi>r</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QuantizationCalibration
+\neq
+ConfidenceCalibration
+}
+</annotation></semantics></math></p>
+<p>而且校准数据应该尽量接近生产：</p>
+<pre class="text"><code>中文采购长文
+RAG长上下文
+结构化输出
+真实任务分布</code></pre>
+<hr />
+<h1 id="七ptq-与-qat">七、PTQ 与 QAT</h1>
+<h1 id="ptq">PTQ</h1>
+<p>Post-Training Quantization 训练后量化</p>
+<p>优点：</p>
+<pre class="text"><code>成本低
+速度快
+不必完整重训</code></pre>
+<h1 id="qat">QAT</h1>
+<p>Quantization-Aware Training 量化感知训练</p>
+<p>训练时模拟量化误差，让模型适应低精度表示。</p>
+<p>通常：</p>
+<blockquote>
+<p>成本更高，但在更激进量化场景下可能更有价值。</p>
+</blockquote>
+<hr />
+<h1 id="八为什么量化后不一定更快">八、为什么量化后不一定更快？</h1>
+<p>如果：</p>
+<pre class="text"><code>低bit Kernel不成熟
+硬件不擅长该格式
+频繁反量化
+Batch形态不匹配</code></pre>
+<p>就可能：</p>
+<blockquote>
+<p>显存省了，但速度没有提升。</p>
+</blockquote>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>S</mi><mi>m</mi><mi>a</mi><mi>l</mi><mi>l</mi><mi>e</mi><mi>r</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mo>≠</mo><mi>F</mi><mi>a</mi><mi>s</mi><mi>t</mi><mi>e</mi><mi>r</mi><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+SmallerModel
+\neq
+FasterModel
+}
+</annotation></semantics></math></p>
+<p>真正性能收益必须经过：</p>
+<pre class="text"><code>真实硬件
+真实Engine
+真实Workload</code></pre>
+<p>实测。</p>
+<hr />
+<h1 id="九quantized-model-是新版本">九、Quantized Model 是新版本</h1>
+<p>量化以后数值行为已经改变。</p>
+<p>所以：</p>
+<pre class="text"><code>ProcurementLM_V0.2-FP16
+ProcurementLM_V0.2-INT8
+ProcurementLM_V0.2-INT4</code></pre>
+<p>必须视为不同 Serving Artifact。</p>
+<p>至少版本化：</p>
+<pre class="text"><code>quantization_method
+bit_width
+group_size
+zero_point
+calibration_version
+kernel_version</code></pre>
+<p>因此：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>Q</mi><mi>u</mi><mi>a</mi><mi>n</mi><mi>t</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>C</mi><mi>o</mi><mi>n</mi><mi>f</mi><mi>i</mi><mi>g</mi><mo>∈</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>V</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+QuantizationConfig
+\in
+ServingVersion
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十质量回归必须用-procurementbench_v1">十、质量回归必须用
+<code>ProcurementBench_V1</code></h1>
+<p>不能只看：</p>
+<pre class="text"><code>Perplexity</code></pre>
+<p>而应至少检查：</p>
+<pre class="text"><code>Classification
+Generation
+RAG
+Agent
+Critical Slices
+Calibration
+Regression</code></pre>
+<p>因为量化可能只伤：</p>
+<pre class="text"><code>复杂推理
+长上下文
+数字
+结构化输出
+稀有风险</code></pre>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>A</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi><mo>≠</mo><mi>C</mi><mi>r</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>S</mi><mi>l</mi><mi>i</mi><mi>c</mi><mi>e</mi><mi>S</mi><mi>t</mi><mi>a</mi><mi>b</mi><mi>l</mi><mi>e</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+AverageQualityStable
+\neq
+CriticalSliceStable
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十一受控量化比较">十一、受控量化比较</h1>
+<p>至少比较：</p>
+<pre class="text"><code>FP16/BF16 Baseline
+INT8 Candidate
+INT4 Candidate</code></pre>
+<p>固定：</p>
+<pre class="text"><code>模型
+Benchmark
+Prompt
+Workload
+Hardware
+Serving Engine</code></pre>
+<p>比较：</p>
+<pre class="text"><code>VRAM
+TTFT
+TPOT
+Throughput
+P95/P99
+Cost
+Quality Delta</code></pre>
+<p>量化选型是：</p>
+<h1 id="pareto-decision">Pareto Decision</h1>
+<h2 id="帕累托决策">帕累托决策</h2>
+<p>即：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>e</mi><mi>m</mi><mi>o</mi><mi>r</mi><mi>y</mi><mo>+</mo><mi>L</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi><mo>+</mo><mi>T</mi><mi>h</mi><mi>r</mi><mi>o</mi><mi>u</mi><mi>g</mi><mi>h</mi><mi>p</mi><mi>u</mi><mi>t</mi><mo>+</mo><mi>Q</mi><mi>u</mi><mi>a</mi><mi>l</mi><mi>i</mi><mi>t</mi><mi>y</mi><mo>+</mo><mi>C</mi><mi>o</mi><mi>s</mi><mi>t</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Memory
++
+Latency
++
+Throughput
++
+Quality
++
+Cost
+}
+</annotation></semantics></math></p>
+<p>之间做折中。</p>
+<hr />
+<h1 id="十二什么时候不值得量化">十二、什么时候不值得量化？</h1>
+<p>如果：</p>
+<pre class="text"><code>FP16已满足SLO
+显存足够
+并发压力不大
+质量要求极高</code></pre>
+<p>量化带来的工程复杂度和回归风险可能不值得。</p>
+<p>所以：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>O</mi><mi>p</mi><mi>t</mi><mi>i</mi><mi>m</mi><mi>i</mi><mi>z</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>必</mi><mi>须</mi><mi>由</mi><mi>B</mi><mi>o</mi><mi>t</mi><mi>t</mi><mi>l</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>c</mi><mi>k</mi><mi>驱</mi><mi>动</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+Optimization
+必须由
+Bottleneck
+驱动
+}
+</annotation></semantics></math></p>
+<hr />
+<h1 id="十三本阶段正式工程产物">十三、本阶段正式工程产物</h1>
+<h1
+id="procurementquantizationpolicy_v0.1-2"><code>ProcurementQuantizationPolicy_V0.1</code></h1>
+<p>至少锁定：</p>
+<pre class="text"><code>quantization_policy_version
+base_model_version
+baseline_dtype
+candidate_dtypes
+weight_quantization
+activation_quantization
+kv_quantization_policy
+symmetric_asymmetric
+scale_granularity
+group_size
+zero_point_policy
+calibration_dataset_version
+ptq_qat_mode
+quantization_kernel
+serving_engine_version
+hardware_profile
+weight_memory
+total_vram
+ttft
+tpot
+throughput
+p95_latency
+quality_benchmark_version
+overall_quality_delta
+critical_slice_delta
+release_gate
+rollback_target</code></pre>
+<hr />
+<h1 id="十四本阶段最重要的-9-个核心心智模型">十四、本阶段最重要的 9
+个核心心智模型</h1>
+<blockquote>
+<p><strong>① <code>Quantization ≠ FreeCompression</code>。低 bit
+是数值近似，不是无损压缩。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>②
+<code>DataTypeChoice = Memory + Numerical + Kernel Decision</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>③
+<code>StoragePrecision ≠ ComputePrecision</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>④
+<code>WeightQuantization ≠ ActivationQuantization</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑤ <code>QuantizedModel</code> 是独立 Serving
+Version。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑥ <code>SmallerModel ≠ FasterModel</code>。性能收益取决于真实
+Kernel。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑦
+<code>WeightMemorySaving ≠ TotalVRAMSaving</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑧
+<code>AverageQualityStable ≠ CriticalSliceStable</code>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong>⑨
+<code>Optimization must follow Bottleneck</code>。</strong></p>
+</blockquote>
+<hr />
+<h1 id="下一阶段第十课-第-3-阶段">下一阶段：第十课 · 第 3 阶段</h1>
+<h1 id="kv-cache为什么推理显存不只是模型-weight">KV
+Cache：为什么推理显存不只是模型 Weight？</h1>
+<p>下一阶段最关键的边界：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><menclose notation="box"><mrow><mi>M</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>F</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>I</mi><mi>n</mi><mi>G</mi><mi>P</mi><mi>U</mi><mo>≠</mo><mi>S</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>i</mi><mi>n</mi><mi>g</mi><mi>F</mi><mi>i</mi><mi>t</mi><mi>s</mi><mi>I</mi><mi>n</mi><mi>G</mi><mi>P</mi><mi>U</mi></mrow></menclose><annotation encoding="application/x-tex">
+\boxed{
+ModelFitsInGPU
+\neq
+ServingFitsInGPU
+}
+</annotation></semantics></math></p>
+<p>并建立：</p>
+<h1
+id="procurementkvcachepolicy_v0.1"><code>ProcurementKVCachePolicy_V0.1</code></h1>
+<hr /><div class="nav"><a class="btn" href="stage01.html">← 第 1 阶段</a><a class="btn" href="stage03.html">第 3 阶段 →</a></div></article></main><script>function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme==="dark"?"light":"dark";localStorage.setItem("course-v22-theme",r.dataset.theme)}document.documentElement.dataset.theme=localStorage.getItem("course-v22-theme")||"light";</script></body></html>
