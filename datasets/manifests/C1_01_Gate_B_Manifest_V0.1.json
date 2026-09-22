@@ -1,0 +1,107 @@
+{
+  "manifest_version": "C1_01_GATE_B_DATA_READINESS_V0.1",
+  "generated_at": "2026-09-22T15:52:06Z",
+  "schema": {
+    "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/contracts/task/c1_01_local_entry_precondition/03_dataset_schema/C1_01_Dataset_Schema_V0.2.json",
+    "sha256": "484cb50e52e337d24cd014db9ddf1af98d5d82fee9706c512307bb8190da25fb",
+    "version": "0.2"
+  },
+  "files": {
+    "source_catalog": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/source_catalog/C1_01_Source_Catalog_V0.1.jsonl",
+      "sha256": "6af238dfb457455360476cd983a33e8e554aa301ff368594811528e36ea04016",
+      "bytes": 828
+    },
+    "case_intake": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/staging/C1_01_Case_Intake_V0.1.jsonl",
+      "sha256": "35cffe3bf67e7793c1fc55172c9740218114765b254db7eca41d2b42898a00ae",
+      "bytes": 2721
+    },
+    "internal_silver": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/curated/C1_01_Internal_Silver_CasePack_V0.1.jsonl",
+      "sha256": "3e7dee0d5da1b730204a004f810d69e7439bde342a2523df032a3e898909297c",
+      "bytes": 9178
+    },
+    "train": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/benchmark/train/C1_01_TRAIN_Pilot_V0.1.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "dev": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/benchmark/dev/C1_01_DEV_Pilot_V0.1.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "readiness_report": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/reports/C1_01_Gate_B_Readiness_V0.1.json",
+      "sha256": "4663e20c3232d1a92895f7097ad6f8d7a20f04b5741ec7e9c66d1579b317a02a",
+      "bytes": 827
+    },
+    "leakage_report": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/reports/C1_01_Gate_B_Leakage_Report_V0.1.json",
+      "sha256": "fd06bdedb012fc6f39093c8bb44fc17c3d3e8d8a26926b78fc85e9630dfceaef",
+      "bytes": 253
+    },
+    "statistics_report": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/reports/C1_01_Gate_B_Statistics_V0.1.json",
+      "sha256": "94dc1c7360946a240b59e5cdc11f6a9306b470ee0bbffd1edbb8802b3f8a35de",
+      "bytes": 349
+    },
+    "source_coverage_report": {
+      "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/reports/C1_01_Gate_B_Source_Coverage_V0.1.json",
+      "sha256": "2eac88166cc2ad2da6b97d9d23346ce8e78c8c80cd40101ec245123c51148970",
+      "bytes": 354
+    }
+  },
+  "split_policy": "eligible records only; group by project_id+leakage_group_id before deterministic 80/20 split",
+  "access_boundary": {
+    "blind_test_gold": "NOT_READ",
+    "raw_procurement_files": "EXTERNAL_ONLY",
+    "teacher_external_transfer": false
+  },
+  "readiness": {
+    "status": "PILOT_NOT_READY",
+    "contract": "C1-01_LOCAL_ENTRY_PRECONDITION",
+    "schema_version": "0.2",
+    "internal_silver_candidate_count": 3,
+    "train_count": 0,
+    "dev_count": 0,
+    "target": {
+      "train_range": [
+        300,
+        500
+      ],
+      "dev_range": [
+        80,
+        100
+      ]
+    },
+    "readiness_gap": {
+      "train_shortfall_to_minimum": 300,
+      "dev_shortfall_to_minimum": 80
+    },
+    "eligibility_counts": {
+      "HOLD": 3
+    },
+    "review_state_counts": {
+      "PENDING_SECOND_PASS": 3
+    },
+    "blocked_reasons": [
+      "PENDING_SECOND_PASS records require independent human double review.",
+      "HOLD records are not eligible for TRAIN or DEV.",
+      "Pilot has one public source and three clauses; source coverage is not representative."
+    ],
+    "blind_gold_accessed": false,
+    "teacher_external_transfer": false
+  },
+  "statistics": {
+    "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/reports/C1_01_Gate_B_Statistics_V0.1.json",
+    "sha256": "94dc1c7360946a240b59e5cdc11f6a9306b470ee0bbffd1edbb8802b3f8a35de",
+    "bytes": 349
+  },
+  "source_coverage": {
+    "path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/datasets/reports/C1_01_Gate_B_Source_Coverage_V0.1.json",
+    "sha256": "2eac88166cc2ad2da6b97d9d23346ce8e78c8c80cd40101ec245123c51148970",
+    "bytes": 354
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "duplicate_key_count": 0,
+  "duplicate_keys": {},
+  "leakage_group_count": 1,
+  "leakage_groups": {
+    "LG-HLCG15-032": [
+      "S-C101-GATEB-001",
+      "S-C101-GATEB-002",
+      "S-C101-GATEB-003"
+    ]
+  },
+  "pair_cross_split_violations": []
+}

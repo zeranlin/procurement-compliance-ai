@@ -1,0 +1,19 @@
+{
+  "record_count": 3,
+  "train_count": 0,
+  "dev_count": 0,
+  "match_state_counts": {
+    "NO_MATCH": 3
+  },
+  "source_kind_counts": {
+    "PROCUREMENT_DOCUMENT": 3
+  },
+  "eligibility_counts": {
+    "HOLD": 3
+  },
+  "review_state_counts": {
+    "PENDING_SECOND_PASS": 3
+  },
+  "evidence_verified_count": 3,
+  "source_document_verified_count": 3
+}

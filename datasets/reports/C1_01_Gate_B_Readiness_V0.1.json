@@ -1,0 +1,35 @@
+{
+  "status": "PILOT_NOT_READY",
+  "contract": "C1-01_LOCAL_ENTRY_PRECONDITION",
+  "schema_version": "0.2",
+  "internal_silver_candidate_count": 3,
+  "train_count": 0,
+  "dev_count": 0,
+  "target": {
+    "train_range": [
+      300,
+      500
+    ],
+    "dev_range": [
+      80,
+      100
+    ]
+  },
+  "readiness_gap": {
+    "train_shortfall_to_minimum": 300,
+    "dev_shortfall_to_minimum": 80
+  },
+  "eligibility_counts": {
+    "HOLD": 3
+  },
+  "review_state_counts": {
+    "PENDING_SECOND_PASS": 3
+  },
+  "blocked_reasons": [
+    "PENDING_SECOND_PASS records require independent human double review.",
+    "HOLD records are not eligible for TRAIN or DEV.",
+    "Pilot has one public source and three clauses; source coverage is not representative."
+  ],
+  "blind_gold_accessed": false,
+  "teacher_external_transfer": false
+}

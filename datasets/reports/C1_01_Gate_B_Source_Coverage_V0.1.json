@@ -1,0 +1,14 @@
+{
+  "source_count": 1,
+  "verified_source_count": 1,
+  "intake_clause_count": 3,
+  "source_clause_counts": {
+    "SRC-C101-GATEB-001": 3
+  },
+  "pages_covered": [
+    4,
+    8
+  ],
+  "coverage_status": "PILOT_ONLY_ONE_PUBLIC_SOURCE",
+  "coverage_gap": "Add independent procurement projects and positive local-entry clauses before TRAIN/DEV readiness."
+}
