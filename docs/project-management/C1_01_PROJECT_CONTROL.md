@@ -15,17 +15,17 @@
 
 ```text
 Project Status:
-C1-01 END-TO-END CONTRACT FROZEN / GATE-A_COMPLETE
+GATE_B_READINESS_PLANNING
 
 Current Owner:
-02 数据工程组 + 04 QA / Benchmark Team
+项目负责人 + 02/03/04 工作流 Owner
 
 Current Task:
-Gate-B Data / Benchmark Readiness
+Gate-B Data / Benchmark Readiness Planning
 
 Current Position:
 [业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ✅]
-→ [Final Freeze ✅ GATE-A_COMPLETE] → [Gate-B Readiness ▶]
+→ [Final Freeze ✅ GATE-A_COMPLETE] → [Gate-B Readiness ▶ PLANNING]
 → [Base Model ⏸] → [Fine-tune ⏸]
 → [Blind Test ⏸] → [Demo Gate ⏸]
 
@@ -36,7 +36,7 @@ Formal Model Run:
 BLOCKED
 
 Blocking Reason:
-Gate-B 数据与 Benchmark Readiness 尚未完成；正式模型运行仍未授权
+Gate-B 数据、Snapshot、Runtime ACL、Evaluator 和模型环境尚未完成；正式模型运行/训练仍未授权
 ```
 
 ### 当前结论
@@ -44,11 +44,12 @@ Gate-B 数据与 Benchmark Readiness 尚未完成；正式模型运行仍未授�
 | 项目 | 状态 |
 |---|---|
 | 01 业务组整改 | ✅ DONE |
-| 02 数据工程组整改 | ✅ DATA_SIGNOFF_PASS |
-| 03 算法组整改 | ✅ DONE |
-| 04 测试与评测组最终验收 | ✅ QA_FINAL_SIGNOFF_PASS |
+| 02 数据工程组整改 | ▶ GATE_B_DATA_PREP |
+| 03 算法组整改 | ▶ GATE_B_ENVIRONMENT_PREP |
+| 04 测试与评测组最终验收 | ▶ GATE_B_SNAPSHOT_ACL_PREP |
 | 项目负责人 Final Freeze Review | ✅ COMPLETE |
 | `C1-01 END-TO-END CONTRACT FROZEN` | ✅ GATE-A_COMPLETE |
+| Gate-B Data / Benchmark Readiness | ▶ PLANNING |
 | 正式 Base Model Benchmark | ⏸ BLOCKED |
 | Fine-tune | ⏸ BLOCKED |
 | Blind Benchmark | ⏸ BLOCKED |
@@ -103,6 +104,7 @@ GoldAsset > OneCheckpoint
 | P2 | Model Protocol | 冻结模型输入、输出、Preflight、版本绑定 | 03 算法组 | ✅ DONE | BaselineProtocol Frozen |
 | P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ✅ QA_FINAL_SIGNOFF_PASS | Cross-Team Verification PASS |
 | P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ✅ GATE-A_COMPLETE | `C1-01 END-TO-END CONTRACT FROZEN` |
+| P4.5 | Gate-B Data / Benchmark Readiness | 数据、Snapshot、ACL、Evaluator、模型环境就绪 | 项目负责人 + 02/03/04 | ▶ PLANNING | Gate-B Readiness Review |
 | P5 | Base Model Baseline | Zero-shot / Few-shot / DEV Benchmark | 03 + 04 | ⏸ BLOCKED | Baseline Report |
 | P6 | Training Decision | 判断是否进入 SFT / LoRA / QLoRA | 项目负责人 | ⏸ BLOCKED | Fine-tune Decision |
 | P7 | Candidate Model | 训练、版本、实验追踪、回归 | 03 算法组 | ⏸ BLOCKED | Candidate Release |
@@ -154,7 +156,7 @@ WAIT_FOR_INTEGRATION_FEEDBACK
 
 ## 02 - 数据工程组
 
-**状态：✅ DONE / DATA_SIGNOFF_PASS**
+**状态：▶ GATE_B_DATA_PREP**
 
 已完成：
 
@@ -187,14 +189,14 @@ data_eligibility = REWORK_SOURCE
 当前动作：
 
 ```text
-WAIT_FOR_INTEGRATION_FEEDBACK
+GATE_B_DATA_PREP
 ```
 
 ---
 
 ## 03 - 算法组
 
-**状态：✅ DONE / GATE-A_COMPLETE**
+**状态：▶ GATE_B_ENVIRONMENT_PREP**
 
 已完成：
 
@@ -234,14 +236,14 @@ INVALID Prediction
 当前动作：
 
 ```text
-GATE-B_DEPENDENCY_HANDOFF
+GATE_B_ENVIRONMENT_PREP
 ```
 
 ---
 
 ## 04 - 测试与评测组
 
-**状态：✅ DONE / QA_FINAL_SIGNOFF_PASS**
+**状态：▶ GATE_B_SNAPSHOT_ACL_PREP**
 
 本轮已完成：
 
@@ -569,7 +571,7 @@ NO BLOCKING ISSUE
 
 ```text
 Owner:
-02 数据工程组 + 04 QA / Benchmark Team
+项目负责人 + 02/03/04 工作流 Owner
 ```
 
 必须依次完成：
@@ -683,6 +685,7 @@ Change Log
 |---|---|---|---|
 | 2026-09-22 | PROJECT_CONTROL_V0.1 | 建立 C1-01 项目总控看板；同步 01/02/03 已完成、04 当前主责状态 | Project Manager |
 | 2026-09-22 | PROJECT_CONTROL_V0.1 | 02 DATA_SIGNOFF、04 QA_FINAL_SIGNOFF 完成；C1-01 Gate-A 合同冻结，转入 Gate-B Readiness | Project Manager |
+| 2026-09-22 | PROJECT_CONTROL_V0.1 | 建立 Gate-B Plan、Readiness Checklist、模型选择记录与最终验收矩阵；保持模型/训练 BLOCKED | Project Manager |
 
 ---
 
@@ -690,19 +693,19 @@ Change Log
 
 ```text
 C1-01 STATUS:
-C1-01 END-TO-END CONTRACT FROZEN / GATE-A_COMPLETE
+GATE_B_READINESS_PLANNING
 
 01 Business:
 DONE
 
 02 Data:
-DONE
+GATE_B_DATA_PREP
 
 03 Algorithm:
-DONE
+GATE_B_ENVIRONMENT_PREP
 
 04 QA:
-QA_FINAL_SIGNOFF_PASS
+GATE_B_SNAPSHOT_ACL_PREP
 
 FORMAL MODEL BENCHMARK:
 NOT AUTHORIZED
