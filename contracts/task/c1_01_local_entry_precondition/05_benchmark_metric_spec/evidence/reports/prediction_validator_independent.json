@@ -1,0 +1,41 @@
+{
+  "verification_id": "QA-REVERIFY-GATE-A-01",
+  "verification_time": "2026-09-22T14:27:06Z",
+  "validator": "evidence/protocol/C1_01_Preflight_Check_V0.2.1.py",
+  "status": "PASS",
+  "checks": {
+    "valid_match": {
+      "result": "VALID",
+      "errors": []
+    },
+    "valid_needs_context": {
+      "result": "VALID",
+      "errors": []
+    },
+    "illegal_json": {
+      "result": "INVALID",
+      "errors": ["prediction must be one JSON object"]
+    },
+    "missing_field": {
+      "result": "INVALID",
+      "errors": ["prediction keys are not exactly the frozen output keys"]
+    },
+    "wrong_enum": {
+      "result": "INVALID",
+      "errors": ["invalid match_state"]
+    },
+    "wrong_evidence": {
+      "result": "INVALID",
+      "errors": ["evidence_spans[0] is not an exact half-open source substring"]
+    },
+    "unknown_extra_record_id": {
+      "result": "INVALID",
+      "errors": ["requirement_id mismatch"]
+    }
+  },
+  "rules_confirmed": [
+    "Invalid prediction is retained with its sample identifier and raw response audit record",
+    "Invalid prediction remains in the structured-output denominator",
+    "Invalid prediction is not silently relabeled"
+  ]
+}
