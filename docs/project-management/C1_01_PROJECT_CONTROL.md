@@ -4,7 +4,7 @@
 > 项目：ProcurementComplianceLM  
 > 任务：`C1-01_LOCAL_ENTRY_PRECONDITION`  
 > 中文：第1类-第1项——外地企业进入本地市场前置限制识别  
-> 当前版本：`PROJECT_CONTROL_V0.1`  
+> 当前版本：`PROJECT_CONTROL_V0.2`
 > 当前日期：`2026-09-22`
 
 ---
@@ -22,7 +22,7 @@ Current Task:
 Cross-Team Contract Verification
 
 Current Position:
-[业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ▶]
+[业务文档 ✅] → [数据 / Schema BLOCKED] → [Baseline Protocol BLOCKED] → [测试复核 BLOCKED]
 → [Final Freeze ⏳] → [Base Model ⏸] → [Fine-tune ⏸]
 → [Blind Test ⏸] → [Demo Gate ⏸]
 
@@ -33,17 +33,17 @@ Formal Model Run:
 BLOCKED
 
 Blocking Reason:
-Final Cross-Team Freeze 尚未签署
+QA revalidation 发现 DatasetSchema / BaselineProtocol 仍为 DRAFT，且仓库无可运行 Snapshot、候选数据或 evaluator runtime
 ```
 
 ### 当前结论
 
 | 项目 | 状态 |
 |---|---|
-| 01 业务组整改 | ✅ DONE |
-| 02 数据工程组整改 | ✅ DONE |
-| 03 算法组整改 | ✅ DONE |
-| 04 测试与评测组最终验收 | ▶ CURRENT |
+| 01 业务组契约 | ✅ 文档存在 |
+| 02 数据工程组契约 | ⏸ BLOCKED / Schema DRAFT、无可核验数据 |
+| 03 算法组协议 | ⏸ BLOCKED / BaselineProtocol DRAFT、无 runtime |
+| 04 测试与评测组最终验收 | ⏸ BLOCKED / 见 QA Revalidation Record |
 | 项目负责人 Final Freeze Review | ⏳ PENDING |
 | `C1-01 END-TO-END CONTRACT FROZEN` | ⏳ PENDING |
 | 正式 Base Model Benchmark | ⏸ BLOCKED |
@@ -96,9 +96,9 @@ GoldAsset > OneCheckpoint
 | Phase | 阶段 | 核心目标 | Owner | 状态 | Exit Gate |
 |---|---|---|---|---|---|
 | P0 | Business Contract | 冻结任务定义、标签语义、业务边界 | 01 业务组 | ✅ DONE | BusinessTaskSpec + LabelGuide Frozen |
-| P1 | Data Contract | 冻结 Dataset 生命周期、资格、Schema、Leakage | 02 数据工程组 | ✅ DONE | DatasetSchema Frozen |
-| P2 | Model Protocol | 冻结模型输入、输出、Preflight、版本绑定 | 03 算法组 | ✅ DONE | BaselineProtocol Frozen |
-| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ▶ CURRENT | Cross-Team Verification PASS |
+| P1 | Data Contract | 冻结 Dataset 生命周期、资格、Schema、Leakage | 02 数据工程组 | ⏸ BLOCKED | DatasetSchema Frozen |
+| P2 | Model Protocol | 冻结模型输入、输出、Preflight、版本绑定 | 03 算法组 | ⏸ BLOCKED | BaselineProtocol Frozen |
+| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ⏸ BLOCKED | Cross-Team Verification PASS |
 | P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ⏳ PENDING | `C1-01 CONTRACT FROZEN` |
 | P5 | Base Model Baseline | Zero-shot / Few-shot / DEV Benchmark | 03 + 04 | ⏸ BLOCKED | Baseline Report |
 | P6 | Training Decision | 判断是否进入 SFT / LoRA / QLoRA | 项目负责人 | ⏸ BLOCKED | Fine-tune Decision |
@@ -309,8 +309,8 @@ N/A
 |---|---|---|---|---|
 | A1 | `BR_C1_01_Business_Task_Spec` | 01 | 🔒 FROZEN | version + sha256 |
 | A2 | `C1_01_Label_Guide` | 01 | 🔒 FROZEN | version + sha256 |
-| A3 | `C1_01_Dataset_Schema` | 02 | ✅整改完成 | QA 确认实际 frozen version + sha256 |
-| A4 | `C1_01_Baseline_Protocol` | 03 | ✅整改完成 | QA 确认实际 frozen version + sha256 |
+| A3 | `C1_01_Dataset_Schema` | 02 | ⏸ DRAFT | QA 确认实际 frozen version + sha256 |
+| A4 | `C1_01_Baseline_Protocol` | 03 | ⏸ DRAFT | QA 确认实际 frozen version + sha256 |
 | A5 | `C1_01_Benchmark_Metric_Spec` | 04 | 🔒 FROZEN | version + sha256 |
 | A6 | `C1_01_Blind_Test_Rules / Gold_Access_Boundary` | 04 | 🔒 FROZEN | version + sha256 |
 
@@ -352,11 +352,11 @@ dependency_hashes
 | T11 | `DISPUTED → HOLD` | ✅ |
 | T12 | Hard Negative 独立切片 | ✅ |
 | T13 | Counterfactual pair 同 leakage group | ✅ |
-| T14 | Train / Benchmark Leakage = 0 | 待 QA 最终验收 |
+| T14 | Train / Benchmark Leakage = 0 | BLOCKED：无数据快照 |
 | T15 | Invalid Prediction 不得静默删除 | ✅ |
-| T16 | Blind Gold QA 独占 | 待权限回归测试 |
-| T17 | 六资产 version/hash 全锁定 | 待 QA |
-| T18 | 无 Open P0 Integration Issue | 待 QA |
+| T16 | Blind Gold QA 独占 | 静态 PASS / 运行时 BLOCKED |
+| T17 | 六资产 version/hash 全锁定 | BLOCKED：无 Freeze Manifest |
+| T18 | 无 Open P0 Integration Issue | BLOCKED：存在 BLK-01~BLK-06 |
 
 ---
 
@@ -372,17 +372,17 @@ C1-01 END-TO-END CONTRACT FROZEN
 |---|---|---|
 | G1 | Business semantics frozen | ✅ |
 | G2 | Label semantics frozen | ✅ |
-| G3 | Dataset schema frozen | ✅整改完成 / 待 QA确认 |
+| G3 | Dataset schema frozen | BLOCKED / 当前 DRAFT |
 | G4 | ParseFailure isolated | ✅ |
-| G5 | Baseline protocol frozen | ✅整改完成 / 待 QA确认 |
+| G5 | Baseline protocol frozen | BLOCKED / 当前 DRAFT |
 | G6 | Benchmark metric frozen | ✅ |
 | G7 | Blind test rules frozen | ✅ |
-| G8 | Gold access boundary verified | ⏳ |
-| G9 | All six asset hashes pinned | ⏳ |
-| G10 | Seed / affected data revalidated | ✅ |
+| G8 | Gold access boundary verified | BLOCKED / 静态 PASS、运行时未验证 |
+| G9 | All six asset hashes pinned | BLOCKED / 无 Freeze Manifest |
+| G10 | Seed / affected data revalidated | BLOCKED / 仓库无数据实物 |
 | G11 | No DISPUTED enters Train/Dev | ✅ / 待 QA回归 |
 | G12 | No REWORK_SOURCE enters Train/Blind | ✅ / 待 QA回归 |
-| G13 | No known P0 integration issue | ⏳ |
+| G13 | No known P0 integration issue | BLOCKED / 存在 QA P0 blocker |
 
 当前：
 
@@ -551,12 +551,14 @@ NO BLOCKING ISSUE
 
 | ID | Blocker | Owner | Severity | 状态 |
 |---|---|---|---|---|
-| BLK-01 | QA Cross-Team Compatibility Verification 未完成 | 04 | P0 | ▶ OPEN |
-| BLK-02 | Gold Access Boundary Regression 未完成 | 04 | P0 | ▶ OPEN |
-| BLK-03 | Six-Asset Freeze Manifest 未最终锁定 | 04 | P0 | ▶ OPEN |
+| BLK-01 | QA Cross-Team Compatibility Verification 无可执行 runtime | 04 | P0 | ▶ OPEN |
+| BLK-02 | Gold Access Boundary Regression 无隔离 evaluator | 04 | P0 | ▶ OPEN |
+| BLK-03 | Six-Asset Freeze Manifest / Snapshot 实物缺失 | 04 | P0 | ▶ OPEN |
 | BLK-04 | PM Final Freeze Review 未执行 | PM | P0 | WAITING |
+| BLK-05 | Dataset Schema 仍为 DRAFT，仓库无可核验候选数据 | 02 | P0 | ▶ OPEN |
+| BLK-06 | BaselineProtocol 仍为 DRAFT，未产生 Base Model 成绩 | 03 | P0 | ▶ OPEN |
 
-当前无已知业务 / 数据 / 算法组 P0 blocker。
+当前无已知业务语义 P0 blocker；数据、算法接口和评测运行时存在 P0 blocker。
 
 ---
 
@@ -572,12 +574,14 @@ Owner:
 必须依次完成：
 
 ```text
-1. Benchmark Eligibility Validation
-2. Metric / Schema Compatibility Test
-3. Freeze Manifest
-4. Access Boundary Regression
-5. Traceability Verification
-6. 提交 QA Final Package
+1. 数据组交付可核验候选数据与 Dataset Snapshot
+2. 算法组冻结 BaselineProtocol 并交付可执行 harness
+3. Benchmark Eligibility Validation
+4. Metric / Schema Compatibility Test
+5. Freeze Manifest
+6. Access Boundary Regression
+7. Traceability Verification
+8. 提交 QA Final Package
 ```
 
 之后：
@@ -680,6 +684,7 @@ Change Log
 | Date | Version | Change | Owner |
 |---|---|---|---|
 | 2026-09-22 | PROJECT_CONTROL_V0.1 | 建立 C1-01 项目总控看板；同步 01/02/03 已完成、04 当前主责状态 | Project Manager |
+| 2026-09-22 | PROJECT_CONTROL_V0.2 | QA 依据仓库实物复核；确认 Schema / BaselineProtocol DRAFT、无候选数据、无 Snapshot/evaluator；维持 Final Freeze 与正式模型运行 BLOCKED | 04 QA / Benchmark |
 
 ---
 
@@ -693,13 +698,13 @@ INTEGRATION_FREEZE
 DONE
 
 02 Data:
-DONE
+BLOCKED
 
 03 Algorithm:
-DONE
+BLOCKED
 
 04 QA:
-IN_PROGRESS
+BLOCKED
 
 FORMAL MODEL BENCHMARK:
 NOT AUTHORIZED
