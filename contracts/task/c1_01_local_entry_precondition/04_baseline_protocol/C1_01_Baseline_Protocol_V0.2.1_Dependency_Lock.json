@@ -1,0 +1,61 @@
+{
+  "lock_version": "C1_01_Baseline_Protocol_V0.2.1",
+  "hash_algorithm": "SHA-256",
+  "generated_on": "2026-09-22",
+  "dependencies": [
+    {
+      "name": "BusinessTaskSpec",
+      "version": "BR_C1_01_Business_Task_Spec_V0.1",
+      "path": "contracts/task/c1_01_local_entry_precondition/01_business_task_spec/BR_C1_01_Business_Task_Spec_V0.1.md",
+      "sha256": "0fa169fa0fa34ef8e702c4cae8e10e89cdce4260aa198f7a45a4a28d5c3a74ab"
+    },
+    {
+      "name": "LabelGuide",
+      "version": "C1_01_Label_Guide_V0.1",
+      "path": "contracts/task/c1_01_local_entry_precondition/02_label_guide/C1_01_Label_Guide_V0.1.md",
+      "sha256": "9b6352b5f6e400f2ad9ecca1cead4e26b03b3e81b8e6f761276b15ac3ffd67a6"
+    },
+    {
+      "name": "DatasetSchema",
+      "version": "C1_01_Dataset_Schema_V0.1",
+      "path": "contracts/task/c1_01_local_entry_precondition/03_dataset_schema/C1_01_Dataset_Schema_V0.1.json",
+      "sha256": "b75008d2368857da02e2a7fd98c1b89f99ac155ae72830cda3b8b11c8aeb7fa7"
+    },
+    {
+      "name": "BaselineProtocol",
+      "version": "C1_01_Baseline_Protocol_V0.2",
+      "path": "contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/C1_01_Baseline_Protocol_V0.2.md",
+      "sha256": "20fcb71fee5dedbc7150110c3e749c7a7296eb00dd5fce7e9f55c0d7e3ab54f9"
+    },
+    {
+      "name": "BenchmarkMetricSpec",
+      "version": "C1_01_Benchmark_Metric_Spec_V0.2",
+      "path": "contracts/task/c1_01_local_entry_precondition/05_benchmark_metric_spec/C1_01_Benchmark_Metric_Spec_V0.2.md",
+      "sha256": "18b73e559485317ee0883486fd14923196ca017d862d6797209da96b53a5046c"
+    },
+    {
+      "name": "BlindTestManagementRules",
+      "version": "C1_01_Blind_Test_Management_Rules_V0.1",
+      "path": "contracts/task/c1_01_local_entry_precondition/06_blind_test/C1_01_Blind_Test_Management_Rules_V0.1.md",
+      "sha256": "43514c360ff21586e13f0e91c91eae21459c8a157e816c092f3d462ccdca667a"
+    },
+    {
+      "name": "BlindTestGoldAccessBoundary",
+      "version": "C1_01_Blind_Test_Gold_Access_Boundary_V0.1",
+      "path": "contracts/task/c1_01_local_entry_precondition/06_blind_test/C1_01_Blind_Test_Gold_Access_Boundary_V0.1.md",
+      "sha256": "6b6a895c29703f1a66df22fb6fdab884b197ed085abdea7dad16f543d3fe2338"
+    },
+    {
+      "name": "BaselineHarness",
+      "version": "C1_01_Baseline_Harness_V0.2",
+      "path": "contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness.py",
+      "sha256": "59a25235e6d9bf94a8f1c4b59063c6b62c9bb6e3a92feae4ecc49fc9ba3545aa"
+    },
+    {
+      "name": "AdapterStub",
+      "version": "C1_01_Adapter_Stub_V0.2",
+      "path": "contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/adapter_stub.py",
+      "sha256": "4359b0598dbb3c897be8fc7276f8fe9245939085f395bc9397d87c4d528f570b"
+    }
+  ]
+}

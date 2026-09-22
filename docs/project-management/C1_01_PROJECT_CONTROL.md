@@ -7,6 +7,8 @@
 > 当前版本：`PROJECT_CONTROL_V0.1`  
 > 当前日期：`2026-09-22`
 
+> 算法协议当前冻结实现：`C1_01_Baseline_Protocol_V0.2`；对应指标接口：`C1_01_Benchmark_Metric_Spec_V0.2`；依赖锁与回归证据见 `04_baseline_protocol/C1_01_Baseline_Protocol_Freeze_Record_V0.2.1.md`。
+
 ---
 
 ## 0. 10 秒状态总览
@@ -310,8 +312,8 @@ N/A
 | A1 | `BR_C1_01_Business_Task_Spec` | 01 | 🔒 FROZEN | version + sha256 |
 | A2 | `C1_01_Label_Guide` | 01 | 🔒 FROZEN | version + sha256 |
 | A3 | `C1_01_Dataset_Schema` | 02 | ✅整改完成 | QA 确认实际 frozen version + sha256 |
-| A4 | `C1_01_Baseline_Protocol` | 03 | ✅整改完成 | QA 确认实际 frozen version + sha256 |
-| A5 | `C1_01_Benchmark_Metric_Spec` | 04 | 🔒 FROZEN | version + sha256 |
+| A4 | `C1_01_Baseline_Protocol_V0.2` | 03 | ✅整改完成 | QA 确认实际 frozen version + sha256 |
+| A5 | `C1_01_Benchmark_Metric_Spec_V0.2` | 04 | 🔒 FROZEN | version + sha256 |
 | A6 | `C1_01_Blind_Test_Rules / Gold_Access_Boundary` | 04 | 🔒 FROZEN | version + sha256 |
 
 最终 Freeze Manifest 必须至少记录：
