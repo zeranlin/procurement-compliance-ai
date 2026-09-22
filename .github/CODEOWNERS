@@ -1,0 +1,4 @@
+# Replace the placeholders with organization team handles when teams are created.
+* @zeranlin
+/contracts/task/c1_01_local_entry_precondition/06_blind_test/ @zeranlin
+/modules/procurement-benchmark/ @zeranlin

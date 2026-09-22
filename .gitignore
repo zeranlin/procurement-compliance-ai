@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+
+# Data and model artifacts
+datasets/raw/
+datasets/private/
+datasets/benchmark/blind_test_gold/*
+!datasets/benchmark/blind_test_gold/README.md
+checkpoints/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+
+# Experiment output
+experiments/**/outputs/
+experiments/**/runs/
+reports/generated/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

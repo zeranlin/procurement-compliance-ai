@@ -1,0 +1,17 @@
+name: contract-check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/validate_structure.py
+      - run: python scripts/validate_contracts.py
+      - run: python scripts/detect_leakage.py
