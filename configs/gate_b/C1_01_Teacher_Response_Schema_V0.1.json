@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:procurementlm:c1-01:teacher-response:0.1",
+  "title": "C1-01 Teacher Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "status", "model", "candidate"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["DISABLED", "VALID", "INVALID", "ERROR"]},
+    "model": {"const": "deepseek-flash"},
+    "candidate": {"type": ["object", "null"]},
+    "error_code": {"type": ["string", "null"]}
+  }
+}

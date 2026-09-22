@@ -1,0 +1,36 @@
+{
+  "profile_version": "C1_01_GATE_B_RUN_PROFILES_V0.1",
+  "formal_execution_enabled": false,
+  "profiles": {
+    "zero_shot": {
+      "mode": "ZERO_SHOT",
+      "status": "TEMPLATE_ONLY",
+      "few_shot": false,
+      "fine_tune": false,
+      "requires": ["model_artifact_frozen", "train_ready", "dev_ready", "preflight_pass"]
+    },
+    "few_shot": {
+      "mode": "FEW_SHOT",
+      "status": "TEMPLATE_ONLY",
+      "few_shot": true,
+      "source": "approved_train_only",
+      "fine_tune": false,
+      "requires": ["model_artifact_frozen", "train_ready", "dev_ready", "few_shot_isolation_pass"]
+    },
+    "lora": {
+      "mode": "LORA_SFT",
+      "status": "TEMPLATE_ONLY",
+      "method": "LoRA",
+      "training_enabled": false,
+      "requires": ["train_ready", "dev_ready", "peft_available", "formal_approval"]
+    },
+    "qlora": {
+      "mode": "QLORA_SFT",
+      "status": "TEMPLATE_ONLY",
+      "method": "QLoRA",
+      "quantization": "4bit_nf4",
+      "training_enabled": false,
+      "requires": ["train_ready", "dev_ready", "bitsandbytes_available", "formal_approval"]
+    }
+  }
+}

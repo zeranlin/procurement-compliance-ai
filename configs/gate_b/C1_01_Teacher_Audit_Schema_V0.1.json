@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:procurementlm:c1-01:teacher-audit:0.1",
+  "title": "C1-01 Teacher Audit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "model", "result", "raw_response_sha256", "raw_response_length", "external_transfer"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 1},
+    "model": {"const": "deepseek-flash"},
+    "result": {"enum": ["NOT_CALLED", "ALLOWED", "DENIED", "ERROR"]},
+    "raw_response_sha256": {"type": ["string", "null"]},
+    "raw_response_length": {"type": "integer", "minimum": 0},
+    "external_transfer": {"const": false},
+    "reason": {"type": "string"}
+  }
+}

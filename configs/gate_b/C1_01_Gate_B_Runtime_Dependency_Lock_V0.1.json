@@ -1,0 +1,40 @@
+{
+  "lock_version": "C1_01_GATE_B_RUNTIME_V0.1",
+  "probe_mode": "READ_ONLY_LOCAL",
+  "platform": {
+    "system": "macOS",
+    "machine": "arm64",
+    "chip": "Apple M2",
+    "memory_gb": 16
+  },
+  "python": "3.13.2",
+  "installed": {
+    "torch": "2.11.0",
+    "transformers": "4.50.0",
+    "accelerate": "1.13.0",
+    "safetensors": "0.5.3",
+    "tokenizers": "0.21.1"
+  },
+  "missing_optional": [
+    "vllm",
+    "sglang",
+    "peft",
+    "bitsandbytes",
+    "flash-attn",
+    "triton"
+  ],
+  "accelerators": {
+    "cuda": false,
+    "mps": false
+  },
+  "transformers_compatibility": {
+    "qwen3_5_config_available": false,
+    "qwen3_config_available": false,
+    "formal_model_load_allowed": false
+  },
+  "network_and_install_policy": {
+    "model_download_allowed": false,
+    "dependency_install_allowed": false,
+    "external_api_allowed": false
+  }
+}

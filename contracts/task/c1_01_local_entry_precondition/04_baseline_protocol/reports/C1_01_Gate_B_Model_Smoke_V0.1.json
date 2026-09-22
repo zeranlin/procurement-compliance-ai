@@ -1,0 +1,121 @@
+{
+  "report_version": "C1_01_GATE_B_MODEL_SMOKE_V0.1",
+  "status": "SMOKE_PASS_READINESS_BLOCKED",
+  "readiness_status": "BLOCKED_PENDING_ARTIFACT_AND_RUNTIME",
+  "external_calls": {
+    "model_download": false,
+    "dependency_install": false,
+    "teacher_api": false
+  },
+  "environment": {
+    "python": "3.13.2",
+    "platform": "macOS-15.3.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "packages": {
+      "torch": "2.11.0",
+      "transformers": "4.50.0",
+      "accelerate": "1.13.0",
+      "safetensors": "0.5.3",
+      "tokenizers": "0.21.1"
+    }
+  },
+  "preflight": {
+    "status": "PASS",
+    "checks": {
+      "business_spec": "PASS",
+      "label_guide": "PASS",
+      "dataset_schema": "PASS",
+      "metric_spec": "PASS",
+      "blind_test_rules": "PASS",
+      "blind_gold_boundary": "PASS",
+      "dataset_candidate": "SKIPPED_SMOKE"
+    }
+  },
+  "synthetic_adapter": [
+    {
+      "expected": "MATCH",
+      "actual": "MATCH",
+      "status": "VALID",
+      "pass": true,
+      "errors": []
+    },
+    {
+      "expected": "NEEDS_CONTEXT",
+      "actual": "NEEDS_CONTEXT",
+      "status": "VALID",
+      "pass": true,
+      "errors": []
+    },
+    {
+      "expected": "NO_MATCH",
+      "actual": "NO_MATCH",
+      "status": "VALID",
+      "pass": true,
+      "errors": []
+    }
+  ],
+  "official_harness_smoke": {
+    "protocol": "C1_01_Baseline_Protocol_V0.2.1",
+    "status": "PASS",
+    "results": [
+      {
+        "case": "MATCH",
+        "pass": true,
+        "status": "VALID",
+        "actual": "MATCH",
+        "errors": []
+      },
+      {
+        "case": "NO_MATCH",
+        "pass": true,
+        "status": "VALID",
+        "actual": "NO_MATCH",
+        "errors": []
+      },
+      {
+        "case": "NEEDS_CONTEXT",
+        "pass": true,
+        "status": "VALID",
+        "actual": "NEEDS_CONTEXT",
+        "errors": []
+      },
+      {
+        "case": "REWORK_SOURCE",
+        "pass": true,
+        "status": "REFUSED_INPUT",
+        "errors": [
+          "REWORK_SOURCE is not a model input"
+        ]
+      },
+      {
+        "case": "INVALID_JSON",
+        "pass": true,
+        "status": "INVALID",
+        "errors": [
+          "INVALID_JSON: Expecting property name enclosed in double quotes"
+        ]
+      },
+      {
+        "case": "Schema hash mismatch",
+        "pass": true,
+        "status": "RUN_ABORTED",
+        "errors": [
+          "dependency hash mismatch: dataset_schema"
+        ]
+      },
+      {
+        "case": "Version hash mismatch",
+        "pass": true,
+        "status": "RUN_ABORTED",
+        "errors": [
+          "dependency version mismatch: dataset_schema"
+        ]
+      }
+    ]
+  },
+  "formal_runs": {
+    "benchmark": false,
+    "fine_tune": false,
+    "blind_test": false
+  }
+}

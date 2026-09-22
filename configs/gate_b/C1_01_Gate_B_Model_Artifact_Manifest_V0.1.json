@@ -1,0 +1,48 @@
+{
+  "manifest_version": "C1_01_GATE_B_MODEL_ARTIFACT_V0.1",
+  "status": "BLOCKED_PENDING_ARTIFACT_AND_RUNTIME",
+  "task_id": "C1-01_LOCAL_ENTRY_PRECONDITION",
+  "model_policy": {
+    "preferred": {
+      "model_id": "Qwen/Qwen3.5-4B",
+      "variant": "post-trained",
+      "revision": null,
+      "weights_present": false,
+      "config_sha256": null,
+      "tokenizer_sha256": null
+    },
+    "ablation": {
+      "model_id": "Qwen/Qwen3.5-4B-Base",
+      "variant": "base",
+      "revision": null,
+      "weights_present": false,
+      "config_sha256": null,
+      "tokenizer_sha256": null
+    }
+  },
+  "generation": {
+    "text_only": true,
+    "thinking": false,
+    "response_format": "strict_json",
+    "temperature": 0.0,
+    "seed": 0
+  },
+  "teacher": {
+    "provider": "DeepSeek",
+    "api_model": "deepseek-flash",
+    "enabled": false,
+    "external_transfer_allowed": false,
+    "raw_response_persistence": "digest_and_length_only"
+  },
+  "formal_runs": {
+    "base_model": false,
+    "benchmark": false,
+    "fine_tune": false,
+    "blind_test": false
+  },
+  "blockers": [
+    "model weights and tokenizer are not present locally",
+    "model revision and config/tokenizer hashes are unavailable",
+    "Qwen3.5 Transformers compatibility is not verified in the local runtime"
+  ]
+}

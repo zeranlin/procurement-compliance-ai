@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:procurementlm:c1-01:teacher-request:0.1",
+  "title": "C1-01 Teacher Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "task_id", "model", "input", "policy"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 1},
+    "task_id": {"const": "C1-01_LOCAL_ENTRY_PRECONDITION"},
+    "model": {"const": "deepseek-flash"},
+    "input": {"type": "object"},
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text_only", "thinking", "strict_json", "external_transfer_allowed"],
+      "properties": {
+        "text_only": {"const": true},
+        "thinking": {"const": false},
+        "strict_json": {"const": true},
+        "external_transfer_allowed": {"const": false}
+      }
+    }
+  }
+}
