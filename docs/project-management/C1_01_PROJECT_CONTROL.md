@@ -15,27 +15,28 @@
 
 ```text
 Project Status:
-WAITING_QA_FINAL_SIGNOFF
+C1-01 END-TO-END CONTRACT FROZEN / GATE-A_COMPLETE
 
 Current Owner:
-04 - QA / Benchmark Team
+02 数据工程组 + 04 QA / Benchmark Team
 
 Current Task:
-QA Final Signoff
+Gate-B Data / Benchmark Readiness
 
 Current Position:
-[业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ▶]
-→ [Final Freeze WAITING_QA_FINAL_SIGNOFF] → [Base Model ⏸] → [Fine-tune ⏸]
+[业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ✅]
+→ [Final Freeze ✅ GATE-A_COMPLETE] → [Gate-B Readiness ▶]
+→ [Base Model ⏸] → [Fine-tune ⏸]
 → [Blind Test ⏸] → [Demo Gate ⏸]
 
 Next Gate:
-C1-01 END-TO-END CONTRACT FROZEN
+GATE-B DATA / BENCHMARK READINESS
 
 Formal Model Run:
 BLOCKED
 
 Blocking Reason:
-Final Cross-Team Freeze 尚未签署
+Gate-B 数据与 Benchmark Readiness 尚未完成；正式模型运行仍未授权
 ```
 
 ### 当前结论
@@ -45,9 +46,9 @@ Final Cross-Team Freeze 尚未签署
 | 01 业务组整改 | ✅ DONE |
 | 02 数据工程组整改 | ✅ DATA_SIGNOFF_PASS |
 | 03 算法组整改 | ✅ DONE |
-| 04 测试与评测组最终验收 | ▶ WAITING_QA_FINAL_SIGNOFF |
-| 项目负责人 Final Freeze Review | ⏳ WAITING_FOR_QA_SIGNOFF |
-| `C1-01 END-TO-END CONTRACT FROZEN` | ⏳ PENDING |
+| 04 测试与评测组最终验收 | ✅ QA_FINAL_SIGNOFF_PASS |
+| 项目负责人 Final Freeze Review | ✅ COMPLETE |
+| `C1-01 END-TO-END CONTRACT FROZEN` | ✅ GATE-A_COMPLETE |
 | 正式 Base Model Benchmark | ⏸ BLOCKED |
 | Fine-tune | ⏸ BLOCKED |
 | Blind Benchmark | ⏸ BLOCKED |
@@ -100,8 +101,8 @@ GoldAsset > OneCheckpoint
 | P0 | Business Contract | 冻结任务定义、标签语义、业务边界 | 01 业务组 | ✅ DONE | BusinessTaskSpec + LabelGuide Frozen |
 | P1 | Data Contract | 冻结 Dataset 生命周期、资格、Schema、Leakage | 02 数据工程组 | ✅ DONE | DatasetSchema Frozen |
 | P2 | Model Protocol | 冻结模型输入、输出、Preflight、版本绑定 | 03 算法组 | ✅ DONE | BaselineProtocol Frozen |
-| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ▶ WAITING_QA_FINAL_SIGNOFF | Cross-Team Verification PASS |
-| P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ⏳ WAITING_FOR_QA_SIGNOFF | `C1-01 CONTRACT FROZEN` |
+| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ✅ QA_FINAL_SIGNOFF_PASS | Cross-Team Verification PASS |
+| P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ✅ GATE-A_COMPLETE | `C1-01 END-TO-END CONTRACT FROZEN` |
 | P5 | Base Model Baseline | Zero-shot / Few-shot / DEV Benchmark | 03 + 04 | ⏸ BLOCKED | Baseline Report |
 | P6 | Training Decision | 判断是否进入 SFT / LoRA / QLoRA | 项目负责人 | ⏸ BLOCKED | Fine-tune Decision |
 | P7 | Candidate Model | 训练、版本、实验追踪、回归 | 03 算法组 | ⏸ BLOCKED | Candidate Release |
@@ -193,7 +194,7 @@ WAIT_FOR_INTEGRATION_FEEDBACK
 
 ## 03 - 算法组
 
-**状态：✅ DONE / WAITING_FINAL_SIGNOFF**
+**状态：✅ DONE / GATE-A_COMPLETE**
 
 已完成：
 
@@ -233,14 +234,14 @@ INVALID Prediction
 当前动作：
 
 ```text
-WAITING_FINAL_SIGNOFF
+GATE-B_DEPENDENCY_HANDOFF
 ```
 
 ---
 
 ## 04 - 测试与评测组
 
-**状态：▶ WAITING_QA_FINAL_SIGNOFF**
+**状态：✅ DONE / QA_FINAL_SIGNOFF_PASS**
 
 本轮已完成：
 
@@ -389,7 +390,7 @@ C1-01 END-TO-END CONTRACT FROZEN
 当前：
 
 ```text
-FINAL FREEZE = WAITING_QA_FINAL_SIGNOFF
+FINAL FREEZE = C1-01 END-TO-END CONTRACT FROZEN / GATE-A_COMPLETE
 ```
 
 ---
@@ -416,14 +417,14 @@ G1 ~ G13 ALL PASS
 C1-01 END-TO-END CONTRACT FROZEN
         ↓
 Project Status:
-BASELINE_EXECUTION
+GATE_B_DATA_BENCHMARK_READINESS
 ```
 
 ---
 
 # 8. Baseline Execution 解锁后的任务
 
-Contract Frozen 后，严格按以下顺序：
+Gate-B Data / Benchmark Readiness 完成并授权后，才进入 Baseline Execution，严格按以下顺序：
 
 ```text
 B01 Base Model Zero-shot
@@ -556,7 +557,7 @@ NO BLOCKING ISSUE
 | BLK-01 | QA Cross-Team Compatibility Verification | 04 | P0 | ✅ PASS |
 | BLK-02 | Gold Access Boundary Regression | 04 | P0 | ✅ PASS |
 | BLK-03 | Six-Asset Freeze Manifest | 04 | P0 | ✅ LOCKED |
-| BLK-04 | 04 QA_FINAL_SIGNOFF / PM Final Freeze Review | 04 / PM | P0 | WAITING_QA_FINAL_SIGNOFF |
+| BLK-04 | 04 QA_FINAL_SIGNOFF / PM Final Freeze Review | 04 / PM | P0 | ✅ SIGNED |
 
 当前无已知业务 / 数据 / 算法组 P0 blocker。
 
@@ -568,18 +569,17 @@ NO BLOCKING ISSUE
 
 ```text
 Owner:
-04 - QA / Benchmark Team
+02 数据工程组 + 04 QA / Benchmark Team
 ```
 
 必须依次完成：
 
 ```text
-1. Benchmark Eligibility Validation
-2. Metric / Schema Compatibility Test
-3. Freeze Manifest
-4. Access Boundary Regression
-5. Traceability Verification
-6. 提交 QA Final Package
+1. 生成并审核合格的 TRAIN / DEV / BENCHMARK_CANDIDATE 数据
+2. 生成 blind_test_input，保持 Blind Gold 隔离
+3. 完成 QA isolated evaluator 与 runtime ACL Regression
+4. 完成 Gate-B Benchmark Readiness 评审
+5. Gate-B 通过后，才可申请 Base Model / DEV Benchmark
 ```
 
 之后：
@@ -587,9 +587,9 @@ Owner:
 ```text
 Project Manager
     ↓
-Final Freeze Review
+Gate-B Readiness Review
     ↓
-G1 ~ G13
+BASELINE_EXECUTION 授权判断
 ```
 
 ---
@@ -682,6 +682,7 @@ Change Log
 | Date | Version | Change | Owner |
 |---|---|---|---|
 | 2026-09-22 | PROJECT_CONTROL_V0.1 | 建立 C1-01 项目总控看板；同步 01/02/03 已完成、04 当前主责状态 | Project Manager |
+| 2026-09-22 | PROJECT_CONTROL_V0.1 | 02 DATA_SIGNOFF、04 QA_FINAL_SIGNOFF 完成；C1-01 Gate-A 合同冻结，转入 Gate-B Readiness | Project Manager |
 
 ---
 
@@ -689,7 +690,7 @@ Change Log
 
 ```text
 C1-01 STATUS:
-INTEGRATION_FREEZE
+C1-01 END-TO-END CONTRACT FROZEN / GATE-A_COMPLETE
 
 01 Business:
 DONE
@@ -701,13 +702,13 @@ DONE
 DONE
 
 04 QA:
-IN_PROGRESS
+QA_FINAL_SIGNOFF_PASS
 
 FORMAL MODEL BENCHMARK:
 NOT AUTHORIZED
 
 NEXT PROJECT DECISION:
-FINAL FREEZE REVIEW
+GATE-B DATA / BENCHMARK READINESS
 
 TARGET:
 C1-01 END-TO-END CONTRACT FROZEN

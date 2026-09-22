@@ -6,11 +6,11 @@
 **技术底座**：`a720a03460a99725f3892ec005ad566cd66a52ec`（03 最终协议 + 04 Gate-A 资产）  
 **01 集成提交**：`0751558`（来源 `a7592ec`，仅引入 01 业务专属 6 个文件）  
 **02 来源核对**：`83aff9a`；其 9 个数据文件与底座逐字节一致，未重复引入  
-**02 DATA_SIGNOFF**：`PASS`（候选 `717a0bb1356ced24978b0e28d7bf8115603bf3be`）
-**04 QA_FINAL_SIGNOFF**：`WAITING`
-**当前结论**：`WAITING_QA_FINAL_SIGNOFF`
+**02 DATA_SIGNOFF**：`PASS`（绑定候选 `717a0bb1356ced24978b0e28d7bf8115603bf3be`）
+**04 QA_FINAL_SIGNOFF**：`PASS`（绑定候选 `717a0bb1356ced24978b0e28d7bf8115603bf3be`）
+**当前结论**：`C1-01 END-TO-END CONTRACT FROZEN / GATE-A_COMPLETE`
 
-> 本文是项目负责人最终签署前的集成复核记录。`GATE-A_REVERIFY_PASS` 与 `contract_ready=true` 可以引用；在 02 `DATA_SIGNOFF` 和 04 `QA_FINAL_SIGNOFF` 完成前，不宣布 `C1-01 END-TO-END CONTRACT FROZEN`。
+> 本文记录最终双签后的 Gate-A 合同冻结。`GATE-A_REVERIFY_PASS`、`contract_ready=true` 和 `C1-01 END-TO-END CONTRACT FROZEN` 可以引用；`benchmark_ready=false`，下一阶段转入 Gate-B 数据与 Benchmark Readiness。
 
 ## 0. 候选修复记录
 
@@ -58,19 +58,27 @@
 - 当前没有 `TRAIN`、`DEV` 或 `BLIND_GOLD` 数据集；
 - 未运行 Base Model、DEV Benchmark、Blind Benchmark 或 Fine-tune；
 - 不包含 Blind Gold 明文，不改变 QA 独占访问边界；
-- 不合并 `main`，不宣布 `C1-01 END-TO-END CONTRACT FROZEN`。
+- 不合并 `main`；Gate-A 已完成最终合同冻结。
 
 ## 4. 签署要求
 
-当前集成结论保持：
+最终集成结论：
 
 ```text
-WAITING_QA_FINAL_SIGNOFF
+C1-01 END-TO-END CONTRACT FROZEN
+GATE-A_COMPLETE
 ```
 
 | 签署方 | 结果 | 核验摘要 |
 |---|---|---|
 | 02 数据工程组 | `DATA_SIGNOFF_PASS` | Seed/Schema hash 正确；29/29 Schema/Cross-field；`integrity_errors=[]`；Manifest 8/8；Seed-03、Seed-21、CF01-03 未漂移；全部 `dataset_role=UNASSIGNED` |
-| 04 测试与评测组 | `WAITING` | 待 `QA_FINAL_SIGNOFF_PASS` |
+| 04 测试与评测组 | `QA_FINAL_SIGNOFF_PASS` | 六资产/hash chain/Freeze Manifest 一致；Preflight 正向与拒绝场景、Prediction Validator、Harness Regression 符合预期；`open_contract_p0=0`；无 Blind Gold payload/敏感凭据 |
 
-在 04 完成 `QA_FINAL_SIGNOFF_PASS` 前，项目负责人不得将总控状态推进为最终 `FROZEN`，也不得宣布 `C1-01 END-TO-END CONTRACT FROZEN`。
+## 5. Gate-B Handoff
+
+Gate-A 完成不等于 Benchmark Ready。下一阶段仅处理数据与 Benchmark Readiness：
+
+- 生成并审核合格的 `TRAIN`、`DEV`、`BENCHMARK_CANDIDATE` 和 Blind 输入边界；
+- 完成 runtime ACL、隔离评测器和 Blind Test 运行准备；
+- 在 Gate-B 完成前，Base Model、DEV Benchmark、Fine-tune、Candidate Model Training 和 Blind Benchmark 仍未授权；
+- Blind Gold 继续由 QA 隔离持有，算法组、业务组、数据组和项目负责人不得读取明文。
