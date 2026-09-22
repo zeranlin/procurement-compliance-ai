@@ -10,6 +10,13 @@
 
 > 本文是项目负责人最终签署前的集成复核记录。`GATE-A_REVERIFY_PASS` 与 `contract_ready=true` 可以引用；在 02 `DATA_SIGNOFF` 和 04 `QA_FINAL_SIGNOFF` 完成前，不宣布 `C1-01 END-TO-END CONTRACT FROZEN`。
 
+## 0. 候选修复记录
+
+- `ea2f8c2` 被本候选替代：02 `DATA_SIGNOFF` 发现 01 Seed 输入文件仍是旧字节。
+- 仅将 `01_business_task_spec/C1_01_Seed_Cases_V0.1.jsonl` 更新为 `ab0adf8` 的正确字节；未引入 `ab0adf8` 的其他资产。
+- 修复后 Seed 输入 SHA-256：`fa3db35e81e259eb3c406ca12bbead9ba18b4cb87316acf5c5916539d75f067e`。
+- 差异仅涉及 `C101-SEED-03` 和 `C101-SEED-21` 两行；重验证输出继续保持 `03=DISPUTED/HOLD`、`21=UNAVAILABLE_SOURCE_REWORK/target=null/REWORK_SOURCE`。
+
 ## 1. 业务语义最终复核
 
 1. 本任务识别投标前或评分阶段针对外地供应商设置的本地注册、既有分支机构、既有办公/服务地点、与采购人距离等市场准入条件或竞争优势。
