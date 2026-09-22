@@ -1,0 +1,111 @@
+{
+  "verification_id": "QA-REVERIFY-GATE-A-01",
+  "task_id": "C1-01_LOCAL_ENTRY_PRECONDITION",
+  "project": "ProcurementComplianceLM",
+  "owner": "04-测试与评测组",
+  "verification_time": "2026-09-22T10:11:57Z",
+  "scope": "Gate-A Contract Freeze only",
+  "verdict": "GATE-A_REVERIFY_PASS",
+  "contract_ready": true,
+  "benchmark_ready": false,
+  "open_contract_p0": 0,
+  "assets": {
+    "business_task_spec": {
+      "version": "BR_C1_01_Business_Task_Spec_V0.1",
+      "sha256": "0fa169fa0fa34ef8e702c4cae8e10e89cdce4260aa198f7a45a4a28d5c3a74ab",
+      "owner": "01 业务组",
+      "result": "PASS"
+    },
+    "label_guide": {
+      "version": "C1_01_Label_Guide_V0.1",
+      "sha256": "9b6352b5f6e400f2ad9ecca1cead4e26b03b3e81b8e6f761276b15ac3ffd67a6",
+      "owner": "01 业务组",
+      "result": "PASS"
+    },
+    "dataset_schema": {
+      "version": "C1_01_Dataset_Schema_V0.2",
+      "sha256": "484cb50e52e337d24cd014db9ddf1af98d5d82fee9706c512307bb8190da25fb",
+      "owner": "02 数据工程组",
+      "result": "PASS"
+    },
+    "baseline_protocol": {
+      "version": "C1_01_Baseline_Protocol_V0.2.1",
+      "sha256": "f6844fef88b06d0844f8e086656eebabbb7ce873479fba1e5c3492a246401d2b",
+      "owner": "03 算法组",
+      "result": "PASS"
+    },
+    "benchmark_metric_spec": {
+      "version": "C1_01_Benchmark_Metric_Spec_V0.2",
+      "sha256": "cb443a64178fb894d751bc02dbc6fc9f142e33a9e2130a121ab9e0a881f64a7d",
+      "owner": "04 测试与评测组",
+      "result": "PASS"
+    },
+    "blind_test_management_rules": {
+      "version": "C1_01_Blind_Test_Management_Rules_V0.1",
+      "sha256": "43514c360ff21586e13f0e91c91eae21459c8a157e816c092f3d462ccdca667a",
+      "owner": "04 测试与评测组",
+      "result": "PASS"
+    },
+    "blind_gold_access_boundary": {
+      "version": "C1_01_Blind_Test_Gold_Access_Boundary_V0.1",
+      "sha256": "6b6a895c29703f1a66df22fb6fdab884b197ed085abdea7dad16f543d3fe2338",
+      "owner": "04 测试与评测组",
+      "result": "PASS"
+    }
+  },
+  "contract_checks": {
+    "version_match": "PASS",
+    "hash_match": "PASS",
+    "field_match": "PASS",
+    "enum_match": "PASS",
+    "cross_field_rule_match": "PASS",
+    "eligibility_match": "PASS",
+    "prediction_invalid_rule_match": "PASS",
+    "assembly_invalid_rule_match": "PASS",
+    "needs_context_rule_match": "PASS",
+    "access_policy_contract": "PASS"
+  },
+  "preflight_scenarios": {
+    "metric_spec_v0_2_exact_hash": {"expected": "PASS", "observed": "PASS", "exit_code": 0},
+    "metric_spec_v0_1": {"expected": "RUN_ABORTED", "observed": "RUN_ABORTED", "exit_code": 2},
+    "metric_spec_v0_2_wrong_hash": {"expected": "RUN_ABORTED", "observed": "RUN_ABORTED", "exit_code": 2},
+    "dataset_schema_v0_2": {"expected": "PASS", "observed": "PASS", "exit_code": 0},
+    "dataset_schema_v0_1": {"expected": "RUN_ABORTED", "observed": "RUN_ABORTED", "exit_code": 2},
+    "rework_source": {"expected": "REFUSED_OR_ABORT", "observed": "RUN_ABORTED", "exit_code": 2},
+    "hold": {"expected": "ABORT", "observed": "RUN_ABORTED", "exit_code": 2},
+    "disputed": {"expected": "ABORT", "observed": "RUN_ABORTED", "exit_code": 2},
+    "pending_data_qa": {"expected": "ABORT", "observed": "RUN_ABORTED", "exit_code": 2},
+    "needs_context_valid": {"expected": "PASS", "observed": "PASS", "exit_code": 0},
+    "eligible_train_dev_blind": {"expected": "PASS", "observed": "PASS", "exit_code": 0}
+  },
+  "prediction_validator_checks": {
+    "valid_match": "VALID",
+    "illegal_json": "INVALID",
+    "missing_field": "INVALID",
+    "wrong_enum": "INVALID",
+    "wrong_evidence": "INVALID",
+    "unknown_extra_record_id": "INVALID"
+  },
+  "gate_a_matrix": {
+    "A-G1": "PASS",
+    "A-G2": "PASS",
+    "A-G3": "PASS",
+    "A-G4": "PASS",
+    "A-G5": "PASS",
+    "A-G6": "PASS",
+    "A-G7": "PASS",
+    "A-G8": "PASS",
+    "A-G9": "PASS",
+    "A-G10": "PASS"
+  },
+  "gate_b_handoff": {
+    "benchmark_candidate_count": 0,
+    "blind_test_n": 0,
+    "blind_input_generated": false,
+    "blind_gold_generated": false,
+    "qa_isolated_evaluator_deployed": false,
+    "runtime_acl_regression": "N/A_GATE_A",
+    "formal_model_run": "N/A_GATE_A"
+  }
+}
+

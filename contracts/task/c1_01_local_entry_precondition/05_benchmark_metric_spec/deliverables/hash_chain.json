@@ -1,0 +1,90 @@
+{
+  "chain_id": "C1_01_CONTRACT_FREEZE_CHAIN_V0.2.1",
+  "verification_id": "QA-REVERIFY-GATE-A-01",
+  "verification_time": "2026-09-22T10:11:57Z",
+  "status": "FROZEN_FOR_GATE_A_REVERIFY",
+  "verdict": "GATE-A_REVERIFY_PASS",
+  "contract_ready": true,
+  "benchmark_ready": false,
+  "assets": [
+    {
+      "name": "BusinessTaskSpec",
+      "version": "BR_C1_01_Business_Task_Spec_V0.1",
+      "sha256": "0fa169fa0fa34ef8e702c4cae8e10e89cdce4260aa198f7a45a4a28d5c3a74ab",
+      "owner": "01 业务组",
+      "freeze_status": "FROZEN",
+      "depends_on": ["project_business_boundary"],
+      "verification_result": "PASS"
+    },
+    {
+      "name": "LabelGuide",
+      "version": "C1_01_Label_Guide_V0.1",
+      "sha256": "9b6352b5f6e400f2ad9ecca1cead4e26b03b3e81b8e6f761276b15ac3ffd67a6",
+      "owner": "01 业务组",
+      "freeze_status": "FROZEN",
+      "depends_on": ["BusinessTaskSpec"],
+      "verification_result": "PASS"
+    },
+    {
+      "name": "DatasetSchema",
+      "version": "C1_01_Dataset_Schema_V0.2",
+      "sha256": "484cb50e52e337d24cd014db9ddf1af98d5d82fee9706c512307bb8190da25fb",
+      "owner": "02 数据工程组",
+      "freeze_status": "FROZEN",
+      "depends_on": ["BusinessTaskSpec", "LabelGuide"],
+      "verification_result": "PASS"
+    },
+    {
+      "name": "BaselineProtocol",
+      "version": "C1_01_Baseline_Protocol_V0.2.1",
+      "sha256": "f6844fef88b06d0844f8e086656eebabbb7ce873479fba1e5c3492a246401d2b",
+      "owner": "03 算法组",
+      "freeze_status": "FROZEN",
+      "depends_on": ["BusinessTaskSpec", "LabelGuide", "DatasetSchema", "BenchmarkMetricSpec", "BlindTestManagementRules", "BlindGoldAccessBoundary"],
+      "verification_result": "PASS"
+    },
+    {
+      "name": "BenchmarkMetricSpec",
+      "version": "C1_01_Benchmark_Metric_Spec_V0.2",
+      "sha256": "cb443a64178fb894d751bc02dbc6fc9f142e33a9e2130a121ab9e0a881f64a7d",
+      "owner": "04 测试与评测组",
+      "freeze_status": "FROZEN_FOR_SCHEMA_V0.2_COMPATIBILITY",
+      "depends_on": ["DatasetSchema", "LabelGuide", "BusinessTaskSpec"],
+      "verification_result": "PASS"
+    },
+    {
+      "name": "BlindTestManagementRules",
+      "version": "C1_01_Blind_Test_Management_Rules_V0.1",
+      "sha256": "43514c360ff21586e13f0e91c91eae21459c8a157e816c092f3d462ccdca667a",
+      "owner": "04 测试与评测组",
+      "freeze_status": "FROZEN",
+      "depends_on": ["BenchmarkMetricSpec", "DatasetSchema"],
+      "verification_result": "PASS"
+    },
+    {
+      "name": "BlindGoldAccessBoundary",
+      "version": "C1_01_Blind_Test_Gold_Access_Boundary_V0.1",
+      "sha256": "6b6a895c29703f1a66df22fb6fdab884b197ed085abdea7dad16f543d3fe2338",
+      "owner": "04 测试与评测组",
+      "freeze_status": "FROZEN",
+      "depends_on": ["BlindTestManagementRules", "BaselineProtocol"],
+      "verification_result": "PASS"
+    }
+  ],
+  "protocol_evidence": {
+    "baseline_lock_sha256": "cdfc432c56892625d7dab1ab6b60515942e20e8a3c45f35fafd3bc62ea228758",
+    "protocol_freeze_record_sha256": "cd461acff02c9932f0e6861aea42f0acae5ab0cd6cb27248152df708385d3072",
+    "dependency_registry_sha256": "f5944d533ad7bddf7cc47da9d8b4b7f75dcfb266c827651b0b10a74810508fb0",
+    "model_output_schema_sha256": "6680eca2912a0e84d47e8cd02baab2235c365dadcd482c5c10fb2ebedefbf6c9"
+  },
+  "invariants": [
+    "Version Match + Hash Match = Run Allowed",
+    "DatasetSchema V0.2 is required",
+    "BaselineProtocol V0.2.1 is required",
+    "BenchmarkMetricSpec V0.2 is required",
+    "REWORK_SOURCE is Benchmark Assembly Invalid",
+    "Prediction Invalid remains in scoring denominator",
+    "Any version/hash change requires a new Freeze or Snapshot"
+  ]
+}
+
