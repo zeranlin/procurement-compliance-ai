@@ -1,0 +1,27 @@
+{
+  "protocol": "C1_01_Baseline_Protocol_V0.2.1",
+  "status": "PASS",
+  "manifest": "/Users/linzeran/.codex/worktrees/c8ce/procurement-compliance-ai/contracts/task/c1_01_local_entry_precondition/05_benchmark_metric_spec/evidence/protocol/C1_01_Baseline_Protocol_V0.2.1.lock.json",
+  "checks": {
+    "business_spec": "PASS",
+    "label_guide": "PASS",
+    "dataset_schema": "PASS",
+    "metric_spec": "PASS",
+    "blind_test_rules": "PASS",
+    "blind_gold_boundary": "PASS",
+    "TRAIN": "PASS",
+    "DEV": "PASS",
+    "BLIND_INPUT": "PASS",
+    "train_dev_leakage": "PASS",
+    "no_rework_hold_disputed_blind_gold": "PASS"
+  },
+  "errors": [],
+  "dependency_hashes_observed": {
+    "business_spec": "0fa169fa0fa34ef8e702c4cae8e10e89cdce4260aa198f7a45a4a28d5c3a74ab",
+    "label_guide": "9b6352b5f6e400f2ad9ecca1cead4e26b03b3e81b8e6f761276b15ac3ffd67a6",
+    "dataset_schema": "484cb50e52e337d24cd014db9ddf1af98d5d82fee9706c512307bb8190da25fb",
+    "metric_spec": "cb443a64178fb894d751bc02dbc6fc9f142e33a9e2130a121ab9e0a881f64a7d",
+    "blind_test_rules": "43514c360ff21586e13f0e91c91eae21459c8a157e816c092f3d462ccdca667a",
+    "blind_gold_boundary": "6b6a895c29703f1a66df22fb6fdab884b197ed085abdea7dad16f543d3fe2338"
+  }
+}

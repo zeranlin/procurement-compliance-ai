@@ -1,0 +1,186 @@
+{
+  "protocol": "C1_01_Baseline_Protocol_V0.2.1",
+  "status": "PASS",
+  "scope": "CONTRACT_FIXTURE_ONLY",
+  "model_run": false,
+  "dev_benchmark": false,
+  "blind_test": false,
+  "results": [
+    {
+      "case": "CASE 01 MetricSpec V0.2 + correct hash",
+      "expected": "PASS",
+      "actual": "PASS",
+      "pass": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "case": "CASE 02 MetricSpec V0.1",
+      "expected": "RUN_ABORTED",
+      "actual": "RUN_ABORTED",
+      "pass": true,
+      "detail": {
+        "errors": [
+          "dependency version mismatch: metric_spec"
+        ]
+      }
+    },
+    {
+      "case": "CASE 03 MetricSpec V0.2 + wrong hash",
+      "expected": "RUN_ABORTED",
+      "actual": "RUN_ABORTED",
+      "pass": true,
+      "detail": {
+        "errors": [
+          "dependency hash mismatch: metric_spec"
+        ]
+      }
+    },
+    {
+      "case": "CASE 04 DatasetSchema V0.2 + correct hash",
+      "expected": "PASS",
+      "actual": "PASS",
+      "pass": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "case": "CASE 05 DatasetSchema V0.1",
+      "expected": "RUN_ABORTED",
+      "actual": "RUN_ABORTED",
+      "pass": true,
+      "detail": {
+        "errors": [
+          "dependency version mismatch: dataset_schema"
+        ]
+      }
+    },
+    {
+      "case": "Formal contract fixture",
+      "expected": "PASS",
+      "actual": "PASS",
+      "pass": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "case": "CASE 06 REWORK_SOURCE",
+      "expected": "RUN_ABORTED",
+      "actual": "RUN_ABORTED",
+      "pass": true,
+      "detail": {
+        "errors": [
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_06_REWORK_SOURCE.jsonl:S-C101-REWORK-SOURCE-001: data_eligibility=REWORK_SOURCE is blocked",
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_06_REWORK_SOURCE.jsonl:S-C101-REWORK-SOURCE-001: expected data_eligibility=TRAIN_ELIGIBLE"
+        ]
+      }
+    },
+    {
+      "case": "CASE 07 HOLD",
+      "expected": "RUN_ABORTED",
+      "actual": "RUN_ABORTED",
+      "pass": true,
+      "detail": {
+        "errors": [
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_07_HOLD.jsonl:S-C101-HOLD-001: data_eligibility=HOLD is blocked",
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_07_HOLD.jsonl:S-C101-HOLD-001: expected data_eligibility=TRAIN_ELIGIBLE"
+        ]
+      }
+    },
+    {
+      "case": "CASE 08 DISPUTED",
+      "expected": "RUN_ABORTED",
+      "actual": "RUN_ABORTED",
+      "pass": true,
+      "detail": {
+        "errors": [
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_08_DISPUTED.jsonl:S-C101-DISPUTED-001: review_state=DISPUTED is blocked",
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_08_DISPUTED.jsonl:S-C101-DISPUTED-001: record must be INTERNAL_REVIEWED"
+        ]
+      }
+    },
+    {
+      "case": "CASE 09 PENDING_DATA_QA",
+      "expected": "RUN_ABORTED",
+      "actual": "RUN_ABORTED",
+      "pass": true,
+      "detail": {
+        "errors": [
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_09_PENDING_DATA_QA.jsonl:S-C101-PENDING-DATA-QA-001: data_eligibility=PENDING_DATA_QA is blocked",
+          "/tmp/c101-v021-contract-ibyezk7r/CASE_09_PENDING_DATA_QA.jsonl:S-C101-PENDING-DATA-QA-001: expected data_eligibility=TRAIN_ELIGIBLE"
+        ]
+      }
+    },
+    {
+      "case": "REWORK_SOURCE adapter boundary",
+      "expected": "REFUSED_INPUT",
+      "actual": "REFUSED_INPUT",
+      "pass": true,
+      "detail": {
+        "validation_errors": [
+          "REWORK_SOURCE is not a model input"
+        ]
+      }
+    },
+    {
+      "case": "HOLD adapter boundary",
+      "expected": "REFUSED_INPUT",
+      "actual": "REFUSED_INPUT",
+      "pass": true,
+      "detail": {
+        "validation_errors": [
+          "HOLD is not a model input"
+        ]
+      }
+    },
+    {
+      "case": "DISPUTED adapter boundary",
+      "expected": "REFUSED_INPUT",
+      "actual": "REFUSED_INPUT",
+      "pass": true,
+      "detail": {
+        "validation_errors": [
+          "DISPUTED is not a model input"
+        ]
+      }
+    },
+    {
+      "case": "PENDING_DATA_QA adapter boundary",
+      "expected": "REFUSED_INPUT",
+      "actual": "REFUSED_INPUT",
+      "pass": true,
+      "detail": {
+        "validation_errors": [
+          "PENDING_DATA_QA is not a model input"
+        ]
+      }
+    },
+    {
+      "case": "Prediction INVALID retention/denominator semantics",
+      "expected": "PASS",
+      "actual": "PASS",
+      "pass": true,
+      "detail": {
+        "sample_id_preserved": true,
+        "counts": {
+          "total": 1,
+          "valid": 0,
+          "invalid": 1,
+          "gold_MATCH": 1,
+          "gold_NEEDS_CONTEXT": 0,
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "needs_context_correct": 0,
+          "hard_negative_total": 0,
+          "hard_negative_fp": 0
+        },
+        "structured_output_valid_rate": 0.0,
+        "match_recall": 0.0
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "protocol": "C1_01_Baseline_Protocol_V0.2.1",
+  "status": "PASS",
+  "results": [
+    {
+      "case": "MATCH",
+      "pass": true,
+      "status": "VALID",
+      "actual": "MATCH",
+      "errors": []
+    },
+    {
+      "case": "NO_MATCH",
+      "pass": true,
+      "status": "VALID",
+      "actual": "NO_MATCH",
+      "errors": []
+    },
+    {
+      "case": "NEEDS_CONTEXT",
+      "pass": true,
+      "status": "VALID",
+      "actual": "NEEDS_CONTEXT",
+      "errors": []
+    },
+    {
+      "case": "REWORK_SOURCE",
+      "pass": true,
+      "status": "REFUSED_INPUT",
+      "errors": [
+        "REWORK_SOURCE is not a model input"
+      ]
+    },
+    {
+      "case": "INVALID_JSON",
+      "pass": true,
+      "status": "INVALID",
+      "errors": [
+        "INVALID_JSON: Expecting property name enclosed in double quotes"
+      ]
+    },
+    {
+      "case": "Schema hash mismatch",
+      "pass": true,
+      "status": "RUN_ABORTED",
+      "errors": [
+        "dependency hash mismatch: dataset_schema"
+      ]
+    },
+    {
+      "case": "Version hash mismatch",
+      "pass": true,
+      "status": "RUN_ABORTED",
+      "errors": [
+        "dependency version mismatch: dataset_schema"
+      ]
+    }
+  ]
+}

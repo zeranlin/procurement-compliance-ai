@@ -1,0 +1,1079 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:procurementlm:c1-01:dataset-schema:0.2",
+  "title": "C1-01 Requirement dataset contract, Dataset Schema V0.2",
+  "description": "Breaking change from V0.1. One row is one Requirement. LABELED rows have a target; UNAVAILABLE_SOURCE_REWORK rows have target=null. Cross-record checks and exact evidence/source checks live in validate_sample.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "schema_sha256",
+    "task_id",
+    "sample_id",
+    "leakage_group_id",
+    "annotation_state",
+    "input",
+    "target",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.2"
+    },
+    "schema_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "task_id": {
+      "const": "C1-01_LOCAL_ENTRY_PRECONDITION"
+    },
+    "sample_id": {
+      "type": "string",
+      "pattern": "^S-C101-[A-Za-z0-9._-]+$"
+    },
+    "leakage_group_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "annotation_state": {
+      "enum": [
+        "LABELED",
+        "UNAVAILABLE_SOURCE_REWORK"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirement_id",
+        "project_id",
+        "document_id",
+        "document_version",
+        "clause_id",
+        "clause_text",
+        "business_stage",
+        "context",
+        "source_location",
+        "parser_quality",
+        "source_defect_prevents_judgment",
+        "source_defect_reason"
+      ],
+      "properties": {
+        "requirement_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clause_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clause_text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "business_stage": {
+          "enum": [
+            "QUALIFICATION",
+            "SCORING",
+            "TECHNICAL",
+            "CONTRACT",
+            null
+          ]
+        },
+        "context": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "context_id",
+                  "text",
+                  "document_id",
+                  "document_version",
+                  "source_location"
+                ],
+                "properties": {
+                  "context_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "document_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "document_version": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source_location": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "page",
+                      "section"
+                    ],
+                    "properties": {
+                      "page": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 1
+                      },
+                      "section": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "pdf_page_index": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "page_label": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "source_location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "page",
+            "section"
+          ],
+          "properties": {
+            "page": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "section": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pdf_page_index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "page_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "parser_quality": {
+          "enum": [
+            "PASS",
+            "UNCERTAIN"
+          ]
+        },
+        "source_defect_prevents_judgment": {
+          "type": "boolean"
+        },
+        "source_defect_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "item_id",
+            "requirement_id",
+            "match_state",
+            "subtype",
+            "evidence_text",
+            "evidence_spans",
+            "evidence_refs",
+            "reasoning_factors",
+            "missing_context_questions",
+            "confidence",
+            "human_review_required"
+          ],
+          "properties": {
+            "item_id": {
+              "const": "C1-01_LOCAL_ENTRY_PRECONDITION"
+            },
+            "requirement_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "match_state": {
+              "enum": [
+                "MATCH",
+                "NO_MATCH",
+                "NEEDS_CONTEXT"
+              ]
+            },
+            "subtype": {
+              "enum": [
+                "SUPPLIER_REGISTRATION_LOCATION",
+                "DISTANCE_TO_PURCHASER",
+                "PREEXISTING_LOCAL_BRANCH",
+                "OTHER_RELATED",
+                "NONE"
+              ]
+            },
+            "evidence_text": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "minLength": 1
+                }
+              ]
+            },
+            "evidence_spans": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "text",
+                  "anchor",
+                  "context_id",
+                  "document_id",
+                  "document_version",
+                  "page",
+                  "section",
+                  "start_char",
+                  "end_char"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "anchor": {
+                    "enum": [
+                      "CLAUSE",
+                      "CONTEXT"
+                    ]
+                  },
+                  "context_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "document_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "document_version": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "page": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "section": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "start_char": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "end_char": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            },
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "document_id",
+                  "document_version",
+                  "page",
+                  "section"
+                ],
+                "properties": {
+                  "document_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "document_version": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "page": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "section": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "reasoning_factors": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "supplier_location_attribute",
+                  "distance_to_purchaser",
+                  "preexisting_branch",
+                  "pre_award_condition",
+                  "market_entry_gate",
+                  "scoring_advantage",
+                  "post_award_service",
+                  "location_mention_only",
+                  "local_service_term_ambiguous",
+                  "cross_reference_missing",
+                  "source_parse_uncertain",
+                  "exception_needs_review"
+                ]
+              }
+            },
+            "missing_context_questions": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "confidence": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            },
+            "human_review_required": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "seed_id",
+        "source_record_sha256",
+        "source_kind",
+        "source_url",
+        "source_title",
+        "source_sha256",
+        "is_verbatim_procurement_clause",
+        "source_verified_at_procurement_document_level",
+        "evidence_status",
+        "case_slice",
+        "pair_id",
+        "counterfactual_change",
+        "parent_sample_id",
+        "review_state",
+        "label_authority",
+        "data_eligibility",
+        "dataset_role",
+        "source_rework_reason",
+        "guide_version",
+        "spec_version"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seed_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_kind": {
+          "enum": [
+            "PROCUREMENT_DOCUMENT",
+            "OFFICIAL_CASE_PARAPHRASE",
+            "SYNTHETIC"
+          ]
+        },
+        "source_url": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            }
+          ]
+        },
+        "source_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_sha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          ]
+        },
+        "is_verbatim_procurement_clause": {
+          "type": "boolean"
+        },
+        "source_verified_at_procurement_document_level": {
+          "type": "boolean"
+        },
+        "evidence_status": {
+          "enum": [
+            "UNVERIFIED",
+            "VERIFIED"
+          ]
+        },
+        "case_slice": {
+          "enum": [
+            "OFFICIAL_ANCHOR_POSITIVE",
+            "OFFICIAL_ANCHOR_HARD_NEGATIVE",
+            "OFFICIAL_ANCHOR_HARD_POSITIVE",
+            "OFFICIAL_ANCHOR_OTHER_ITEM",
+            "TYPICAL_POSITIVE",
+            "HARD_POSITIVE",
+            "NORMAL_NEGATIVE",
+            "HARD_NEGATIVE",
+            "OTHER_ITEM_NEGATIVE",
+            "MISSING_CONTEXT",
+            "PARSE_FAILURE",
+            "EXCEPTION_REVIEW",
+            "COUNTERFACTUAL_POSITIVE",
+            "COUNTERFACTUAL_HARD_NEGATIVE"
+          ]
+        },
+        "pair_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "counterfactual_change": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent_sample_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review_state": {
+          "enum": [
+            "PENDING_SECOND_PASS",
+            "DISPUTED",
+            "INTERNAL_REVIEWED"
+          ]
+        },
+        "label_authority": {
+          "const": "INTERNAL_SILVER"
+        },
+        "data_eligibility": {
+          "enum": [
+            "HOLD",
+            "REWORK_SOURCE",
+            "PENDING_DATA_QA",
+            "TRAIN_ELIGIBLE",
+            "BENCHMARK_CANDIDATE"
+          ]
+        },
+        "dataset_role": {
+          "enum": [
+            "UNASSIGNED",
+            "REWORK_QUEUE",
+            "TRAIN",
+            "DEV",
+            "BLIND_INPUT",
+            "BLIND_GOLD",
+            "REGRESSION"
+          ]
+        },
+        "source_rework_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "guide_version": {
+          "const": "C1_01_Label_Guide_V0.1"
+        },
+        "spec_version": {
+          "const": "BR_C1_01_Business_Task_Spec_V0.1"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "annotation_state": {
+            "const": "LABELED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "properties": {
+              "parser_quality": {
+                "const": "PASS"
+              },
+              "source_defect_prevents_judgment": {
+                "const": false
+              },
+              "source_defect_reason": {
+                "const": null
+              }
+            }
+          },
+          "target": {
+            "not": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "annotation_state": {
+            "const": "UNAVAILABLE_SOURCE_REWORK"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "const": null
+          },
+          "input": {
+            "properties": {
+              "parser_quality": {
+                "const": "UNCERTAIN"
+              },
+              "source_defect_prevents_judgment": {
+                "const": true
+              },
+              "source_defect_reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "const": "REWORK_SOURCE"
+              },
+              "dataset_role": {
+                "enum": [
+                  "UNASSIGNED",
+                  "REWORK_QUEUE"
+                ]
+              },
+              "source_rework_reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "input": {
+            "properties": {
+              "source_defect_prevents_judgment": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "annotation_state": {
+            "const": "UNAVAILABLE_SOURCE_REWORK"
+          },
+          "input": {
+            "properties": {
+              "parser_quality": {
+                "const": "UNCERTAIN"
+              }
+            }
+          },
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "enum": [
+                  "REWORK_SOURCE",
+                  "HOLD"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "input": {
+            "properties": {
+              "parser_quality": {
+                "const": "UNCERTAIN"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "annotation_state": {
+            "const": "UNAVAILABLE_SOURCE_REWORK"
+          },
+          "input": {
+            "properties": {
+              "source_defect_prevents_judgment": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "review_state": {
+                "const": "DISPUTED"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "const": "HOLD"
+              }
+            }
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "properties": {
+                  "human_review_required": {
+                    "const": true
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "const": "REWORK_SOURCE"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "annotation_state": {
+            "const": "UNAVAILABLE_SOURCE_REWORK"
+          },
+          "target": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "enum": [
+                  "TRAIN_ELIGIBLE",
+                  "BENCHMARK_CANDIDATE"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "annotation_state": {
+            "const": "LABELED"
+          },
+          "target": {
+            "not": {
+              "type": "null"
+            }
+          },
+          "input": {
+            "properties": {
+              "parser_quality": {
+                "const": "PASS"
+              },
+              "source_defect_prevents_judgment": {
+                "const": false
+              }
+            }
+          },
+          "metadata": {
+            "properties": {
+              "source_kind": {
+                "const": "PROCUREMENT_DOCUMENT"
+              },
+              "source_verified_at_procurement_document_level": {
+                "const": true
+              },
+              "evidence_status": {
+                "const": "VERIFIED"
+              },
+              "review_state": {
+                "const": "INTERNAL_REVIEWED"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "source_kind": {
+                "enum": [
+                  "SYNTHETIC",
+                  "OFFICIAL_CASE_PARAPHRASE"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "source_verified_at_procurement_document_level": {
+                "const": false
+              },
+              "is_verbatim_procurement_clause": {
+                "const": false
+              },
+              "source_sha256": {
+                "const": null
+              },
+              "data_eligibility": {
+                "enum": [
+                  "HOLD",
+                  "PENDING_DATA_QA",
+                  "REWORK_SOURCE"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "dataset_role": {
+                "enum": [
+                  "TRAIN",
+                  "DEV"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "const": "TRAIN_ELIGIBLE"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "dataset_role": {
+                "const": "BLIND_GOLD"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "const": "BENCHMARK_CANDIDATE"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "dataset_role": {
+                "const": "REWORK_QUEUE"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "data_eligibility": {
+                "const": "REWORK_SOURCE"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "match_state": {
+                "const": "MATCH"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "subtype": {
+                "enum": [
+                  "SUPPLIER_REGISTRATION_LOCATION",
+                  "DISTANCE_TO_PURCHASER",
+                  "PREEXISTING_LOCAL_BRANCH",
+                  "OTHER_RELATED"
+                ]
+              },
+              "missing_context_questions": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "match_state": {
+                "const": "NO_MATCH"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "subtype": {
+                "const": "NONE"
+              },
+              "missing_context_questions": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "match_state": {
+                "const": "NEEDS_CONTEXT"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "subtype": {
+                "const": "NONE"
+              },
+              "missing_context_questions": {
+                "minItems": 1
+              },
+              "human_review_required": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "case_slice": {
+                "const": "PARSE_FAILURE"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "annotation_state": {
+            "const": "UNAVAILABLE_SOURCE_REWORK"
+          },
+          "input": {
+            "properties": {
+              "parser_quality": {
+                "const": "UNCERTAIN"
+              }
+            }
+          },
+          "target": {
+            "const": null
+          }
+        }
+      }
+    }
+  ]
+}

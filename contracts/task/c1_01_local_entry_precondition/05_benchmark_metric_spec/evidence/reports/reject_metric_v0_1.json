@@ -1,0 +1,26 @@
+{
+  "protocol": "C1_01_Baseline_Protocol_V0.2.1",
+  "status": "RUN_ABORTED",
+  "manifest": "/private/tmp/c1qa-negative.PY5kM6/metric-v0-1/C1_01_Baseline_Protocol_V0.2.1.lock.json",
+  "checks": {
+    "business_spec": "PASS",
+    "label_guide": "PASS",
+    "dataset_schema": "PASS",
+    "metric_spec": "FAIL",
+    "blind_test_rules": "PASS",
+    "blind_gold_boundary": "PASS",
+    "dataset_candidate": "SKIPPED_SMOKE"
+  },
+  "errors": [
+    "dependency version mismatch: metric_spec",
+    "dependency hash mismatch: metric_spec"
+  ],
+  "dependency_hashes_observed": {
+    "business_spec": "0fa169fa0fa34ef8e702c4cae8e10e89cdce4260aa198f7a45a4a28d5c3a74ab",
+    "label_guide": "9b6352b5f6e400f2ad9ecca1cead4e26b03b3e81b8e6f761276b15ac3ffd67a6",
+    "dataset_schema": "484cb50e52e337d24cd014db9ddf1af98d5d82fee9706c512307bb8190da25fb",
+    "metric_spec": "6d2b7581cf252a896291094e1957dbe7c94c437318d7c3221c5b2256065a426e",
+    "blind_test_rules": "43514c360ff21586e13f0e91c91eae21459c8a157e816c092f3d462ccdca667a",
+    "blind_gold_boundary": "6b6a895c29703f1a66df22fb6fdab884b197ed085abdea7dad16f543d3fe2338"
+  }
+}

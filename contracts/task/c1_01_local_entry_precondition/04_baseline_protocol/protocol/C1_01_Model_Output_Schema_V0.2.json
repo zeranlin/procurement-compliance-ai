@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:procurementlm:c1-01:model-output:0.2",
+  "title": "C1-01 Base Model Prediction Output V0.2",
+  "description": "Exactly one prediction object per Requirement. This is the model output contract; source-rework records are dataset states and are never model outputs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "item_id",
+    "requirement_id",
+    "match_state",
+    "subtype",
+    "evidence_text",
+    "evidence_spans",
+    "evidence_refs",
+    "reasoning_factors",
+    "missing_context_questions",
+    "confidence",
+    "human_review_required"
+  ],
+  "properties": {
+    "item_id": {
+      "const": "C1-01_LOCAL_ENTRY_PRECONDITION"
+    },
+    "requirement_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "match_state": {
+      "enum": [
+        "MATCH",
+        "NO_MATCH",
+        "NEEDS_CONTEXT"
+      ]
+    },
+    "subtype": {
+      "enum": [
+        "SUPPLIER_REGISTRATION_LOCATION",
+        "DISTANCE_TO_PURCHASER",
+        "PREEXISTING_LOCAL_BRANCH",
+        "OTHER_RELATED",
+        "NONE"
+      ]
+    },
+    "evidence_text": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ]
+    },
+    "evidence_spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "anchor",
+          "context_id",
+          "document_id",
+          "document_version",
+          "page",
+          "section",
+          "start_char",
+          "end_char"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "anchor": {
+            "enum": [
+              "CLAUSE",
+              "CONTEXT"
+            ]
+          },
+          "context_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "document_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "section": {
+            "type": "string",
+            "minLength": 1
+          },
+          "start_char": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_char": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "document_id",
+          "document_version",
+          "page",
+          "section"
+        ],
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "document_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "section": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "reasoning_factors": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "supplier_location_attribute",
+          "distance_to_purchaser",
+          "preexisting_branch",
+          "pre_award_condition",
+          "market_entry_gate",
+          "scoring_advantage",
+          "post_award_service",
+          "location_mention_only",
+          "local_service_term_ambiguous",
+          "cross_reference_missing",
+          "source_parse_uncertain",
+          "exception_needs_review"
+        ]
+      }
+    },
+    "missing_context_questions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "human_review_required": {
+      "type": "boolean"
+    }
+  }
+}
