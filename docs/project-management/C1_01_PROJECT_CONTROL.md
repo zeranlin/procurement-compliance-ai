@@ -15,17 +15,17 @@
 
 ```text
 Project Status:
-INTEGRATION_FREEZE
+WAITING_FINAL_SIGNOFF
 
 Current Owner:
-04 - QA / Benchmark Team
+项目负责人 / 最终集成
 
 Current Task:
-Cross-Team Contract Verification
+Final Contract Freeze Signoff
 
 Current Position:
-[业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ▶]
-→ [Final Freeze ⏳] → [Base Model ⏸] → [Fine-tune ⏸]
+[业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ✅]
+→ [Final Freeze WAITING_FINAL_SIGNOFF] → [Base Model ⏸] → [Fine-tune ⏸]
 → [Blind Test ⏸] → [Demo Gate ⏸]
 
 Next Gate:
@@ -45,8 +45,8 @@ Final Cross-Team Freeze 尚未签署
 | 01 业务组整改 | ✅ DONE |
 | 02 数据工程组整改 | ✅ DONE |
 | 03 算法组整改 | ✅ DONE |
-| 04 测试与评测组最终验收 | ▶ CURRENT |
-| 项目负责人 Final Freeze Review | ⏳ PENDING |
+| 04 测试与评测组最终验收 | ✅ GATE-A_REVERIFY_PASS |
+| 项目负责人 Final Freeze Review | ▶ WAITING_FINAL_SIGNOFF |
 | `C1-01 END-TO-END CONTRACT FROZEN` | ⏳ PENDING |
 | 正式 Base Model Benchmark | ⏸ BLOCKED |
 | Fine-tune | ⏸ BLOCKED |
@@ -100,8 +100,8 @@ GoldAsset > OneCheckpoint
 | P0 | Business Contract | 冻结任务定义、标签语义、业务边界 | 01 业务组 | ✅ DONE | BusinessTaskSpec + LabelGuide Frozen |
 | P1 | Data Contract | 冻结 Dataset 生命周期、资格、Schema、Leakage | 02 数据工程组 | ✅ DONE | DatasetSchema Frozen |
 | P2 | Model Protocol | 冻结模型输入、输出、Preflight、版本绑定 | 03 算法组 | ✅ DONE | BaselineProtocol Frozen |
-| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ▶ CURRENT | Cross-Team Verification PASS |
-| P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ⏳ PENDING | `C1-01 CONTRACT FROZEN` |
+| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ✅ GATE-A_REVERIFY_PASS | Cross-Team Verification PASS |
+| P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ▶ WAITING_FINAL_SIGNOFF | `C1-01 CONTRACT FROZEN` |
 | P5 | Base Model Baseline | Zero-shot / Few-shot / DEV Benchmark | 03 + 04 | ⏸ BLOCKED | Baseline Report |
 | P6 | Training Decision | 判断是否进入 SFT / LoRA / QLoRA | 项目负责人 | ⏸ BLOCKED | Fine-tune Decision |
 | P7 | Candidate Model | 训练、版本、实验追踪、回归 | 03 算法组 | ⏸ BLOCKED | Candidate Release |
@@ -193,7 +193,7 @@ WAIT_FOR_INTEGRATION_FEEDBACK
 
 ## 03 - 算法组
 
-**状态：✅ DONE / WAIT_FOR_QA**
+**状态：✅ DONE / WAITING_FINAL_SIGNOFF**
 
 已完成：
 
@@ -233,16 +233,16 @@ INVALID Prediction
 当前动作：
 
 ```text
-WAIT_FOR_QA_COMPATIBILITY_VERIFICATION
+WAITING_FINAL_SIGNOFF
 ```
 
 ---
 
 ## 04 - 测试与评测组
 
-**状态：▶ CURRENT OWNER**
+**状态：✅ DONE / GATE-A_REVERIFY_PASS**
 
-当前必须完成：
+本轮已完成：
 
 ### QA-FIX-01
 更新 Benchmark Snapshot Eligibility Rule：
@@ -311,8 +311,8 @@ N/A
 |---|---|---|---|---|
 | A1 | `BR_C1_01_Business_Task_Spec` | 01 | 🔒 FROZEN | version + sha256 |
 | A2 | `C1_01_Label_Guide` | 01 | 🔒 FROZEN | version + sha256 |
-| A3 | `C1_01_Dataset_Schema` | 02 | ✅整改完成 | QA 确认实际 frozen version + sha256 |
-| A4 | `C1_01_Baseline_Protocol_V0.2` | 03 | ✅整改完成 | QA 确认实际 frozen version + sha256 |
+| A3 | `C1_01_Dataset_Schema` | 02 | 🔒 FROZEN | version + sha256 |
+| A4 | `C1_01_Baseline_Protocol_V0.2` | 03 | 🔒 FROZEN | version + sha256 |
 | A5 | `C1_01_Benchmark_Metric_Spec_V0.2` | 04 | 🔒 FROZEN | version + sha256 |
 | A6 | `C1_01_Blind_Test_Rules / Gold_Access_Boundary` | 04 | 🔒 FROZEN | version + sha256 |
 
@@ -354,11 +354,11 @@ dependency_hashes
 | T11 | `DISPUTED → HOLD` | ✅ |
 | T12 | Hard Negative 独立切片 | ✅ |
 | T13 | Counterfactual pair 同 leakage group | ✅ |
-| T14 | Train / Benchmark Leakage = 0 | 待 QA 最终验收 |
+| T14 | Train / Benchmark Leakage = 0 | ✅ |
 | T15 | Invalid Prediction 不得静默删除 | ✅ |
-| T16 | Blind Gold QA 独占 | 待权限回归测试 |
-| T17 | 六资产 version/hash 全锁定 | 待 QA |
-| T18 | 无 Open P0 Integration Issue | 待 QA |
+| T16 | Blind Gold QA 独占 | ✅ Gate-A policy；runtime ACL 属 Gate-B |
+| T17 | 六资产 version/hash 全锁定 | ✅ |
+| T18 | 无 Open P0 Integration Issue | ✅ |
 
 ---
 
@@ -374,22 +374,22 @@ C1-01 END-TO-END CONTRACT FROZEN
 |---|---|---|
 | G1 | Business semantics frozen | ✅ |
 | G2 | Label semantics frozen | ✅ |
-| G3 | Dataset schema frozen | ✅整改完成 / 待 QA确认 |
+| G3 | Dataset schema frozen | ✅ |
 | G4 | ParseFailure isolated | ✅ |
-| G5 | Baseline protocol frozen | ✅整改完成 / 待 QA确认 |
+| G5 | Baseline protocol frozen | ✅ |
 | G6 | Benchmark metric frozen | ✅ |
 | G7 | Blind test rules frozen | ✅ |
-| G8 | Gold access boundary verified | ⏳ |
-| G9 | All six asset hashes pinned | ⏳ |
+| G8 | Gold access boundary verified | ✅ |
+| G9 | All six asset hashes pinned | ✅ |
 | G10 | Seed / affected data revalidated | ✅ |
-| G11 | No DISPUTED enters Train/Dev | ✅ / 待 QA回归 |
-| G12 | No REWORK_SOURCE enters Train/Blind | ✅ / 待 QA回归 |
-| G13 | No known P0 integration issue | ⏳ |
+| G11 | No DISPUTED enters Train/Dev | ✅ |
+| G12 | No REWORK_SOURCE enters Train/Blind | ✅ |
+| G13 | No known P0 integration issue | ✅ |
 
 当前：
 
 ```text
-FINAL FREEZE = NOT YET APPROVED
+FINAL FREEZE = WAITING_FINAL_SIGNOFF
 ```
 
 ---
@@ -553,10 +553,10 @@ NO BLOCKING ISSUE
 
 | ID | Blocker | Owner | Severity | 状态 |
 |---|---|---|---|---|
-| BLK-01 | QA Cross-Team Compatibility Verification 未完成 | 04 | P0 | ▶ OPEN |
-| BLK-02 | Gold Access Boundary Regression 未完成 | 04 | P0 | ▶ OPEN |
-| BLK-03 | Six-Asset Freeze Manifest 未最终锁定 | 04 | P0 | ▶ OPEN |
-| BLK-04 | PM Final Freeze Review 未执行 | PM | P0 | WAITING |
+| BLK-01 | QA Cross-Team Compatibility Verification | 04 | P0 | ✅ PASS |
+| BLK-02 | Gold Access Boundary Regression | 04 | P0 | ✅ PASS |
+| BLK-03 | Six-Asset Freeze Manifest | 04 | P0 | ✅ LOCKED |
+| BLK-04 | PM Final Freeze Review / 双方签署 | PM | P0 | WAITING_FINAL_SIGNOFF |
 
 当前无已知业务 / 数据 / 算法组 P0 blocker。
 
