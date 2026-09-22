@@ -1,0 +1,52 @@
+{
+  "registry_version": "C1_01_Protocol_Dependency_Registry_V0.2.1",
+  "protocol": "C1_01_Baseline_Protocol_V0.2.1",
+  "status": "FROZEN",
+  "task_id": "C1-01_LOCAL_ENTRY_PRECONDITION",
+  "generated_for": "ALG-PATCH-01",
+  "dependencies": {
+    "business_spec": {
+      "version": "BR_C1_01_Business_Task_Spec_V0.1",
+      "sha256": "0fa169fa0fa34ef8e702c4cae8e10e89cdce4260aa198f7a45a4a28d5c3a74ab",
+      "status": "FROZEN",
+      "owner": "业务组"
+    },
+    "label_guide": {
+      "version": "C1_01_Label_Guide_V0.1",
+      "sha256": "9b6352b5f6e400f2ad9ecca1cead4e26b03b3e81b8e6f761276b15ac3ffd67a6",
+      "status": "FROZEN",
+      "owner": "业务组"
+    },
+    "dataset_schema": {
+      "version": "C1_01_Dataset_Schema_V0.2",
+      "sha256": "484cb50e52e337d24cd014db9ddf1af98d5d82fee9706c512307bb8190da25fb",
+      "status": "FROZEN",
+      "owner": "数据工程组"
+    },
+    "metric_spec": {
+      "version": "C1_01_Benchmark_Metric_Spec_V0.2",
+      "sha256": "cb443a64178fb894d751bc02dbc6fc9f142e33a9e2130a121ab9e0a881f64a7d",
+      "status": "FROZEN_FOR_SCHEMA_V0.2_COMPATIBILITY",
+      "owner": "测试与评测组"
+    },
+    "blind_test_rules": {
+      "version": "C1_01_Blind_Test_Management_Rules_V0.1",
+      "sha256": "43514c360ff21586e13f0e91c91eae21459c8a157e816c092f3d462ccdca667a",
+      "status": "FROZEN",
+      "owner": "测试与评测组"
+    },
+    "blind_gold_boundary": {
+      "version": "C1_01_Blind_Test_Gold_Access_Boundary_V0.1",
+      "sha256": "6b6a895c29703f1a66df22fb6fdab884b197ed085abdea7dad16f543d3fe2338",
+      "status": "FROZEN",
+      "owner": "测试与评测组"
+    }
+  },
+  "chain_invariants": [
+    "Version Match + Hash Match = Run Allowed",
+    "DatasetSchema is V0.2",
+    "BenchmarkMetricSpec is V0.2",
+    "All six dependency hashes are recorded",
+    "Metric semantics are delegated to BenchmarkMetricSpec"
+  ]
+}
