@@ -1,0 +1,80 @@
+{
+  "snapshot_id": "C1_01_BenchmarkSnapshot_GateB_Readiness_V0.1",
+  "task_id": "C1-01_LOCAL_ENTRY_PRECONDITION",
+  "status": "BLOCKED_READINESS_GAP",
+  "benchmark_ready": false,
+  "owner": "04-测试与评测组",
+  "generated_at": "2026-09-22T15:59:54Z",
+  "schema": {
+    "version": "C1_01_Dataset_Schema_V0.2",
+    "sha256": "484cb50e52e337d24cd014db9ddf1af98d5d82fee9706c512307bb8190da25fb"
+  },
+  "protocol": {
+    "version": "C1_01_Baseline_Protocol_V0.2.1",
+    "sha256": "f6844fef88b06d0844f8e086656eebabbb7ce873479fba1e5c3492a246401d2b",
+    "lock_sha256": "cdfc432c56892625d7dab1ab6b60515942e20e8a3c45f35fafd3bc62ea228758"
+  },
+  "metric_spec": {
+    "version": "C1_01_Benchmark_Metric_Spec_V0.2",
+    "sha256": "cb443a64178fb894d751bc02dbc6fc9f142e33a9e2130a121ab9e0a881f64a7d"
+  },
+  "source_candidate_sha256": "a63fdb8cb103c17600c43f121bdc5137c48eb5f75d82a44aeb996a647dbbea04",
+  "source_record_count": 29,
+  "dev_snapshot": {
+    "sample_count": 0,
+    "input_file": "dev_input.jsonl",
+    "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "blind_snapshot": {
+    "sample_count": 0,
+    "input_file": "blind_test_input.jsonl",
+    "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gold_file": null,
+    "gold_sha256": null
+  },
+  "split_counts": {
+    "DEV": 0,
+    "BLIND_INPUT": 0
+  },
+  "coverage": {
+    "match_states": {},
+    "match_subtypes": {},
+    "case_slices": {},
+    "counterfactual_pair_count": 0,
+    "hard_negative_count": 0
+  },
+  "leakage_check_result": "PASS",
+  "counterfactual_check_result": "PASS",
+  "gold_exported": false,
+  "blocked_record_reasons": {
+    "data_eligibility_not_BENCHMARK_CANDIDATE": 29,
+    "dataset_role_not_allowed": 29,
+    "source_kind_not_PROCUREMENT_DOCUMENT": 29,
+    "source_not_verified": 29,
+    "evidence_not_VERIFIED": 29,
+    "review_state_not_INTERNAL_REVIEWED": 1,
+    "review_state_DISPUTED": 1,
+    "annotation_state_not_LABELED": 1,
+    "target_null": 1,
+    "source_parse_not_reliable": 1
+  },
+  "readiness_gaps": [
+    "blind_test_n_lt_50:0",
+    "match_state_coverage_incomplete",
+    "subtype_coverage_missing:DISTANCE_TO_PURCHASER,OTHER_RELATED,PREEXISTING_LOCAL_BRANCH,SUPPLIER_REGISTRATION_LOCATION",
+    "hard_negative_coverage_missing",
+    "counterfactual_pair_coverage_missing",
+    "dev_snapshot_has_no_eligible_record",
+    "blind_snapshot_has_no_eligible_record"
+  ],
+  "dependencies": {
+    "metric_spec_lock_version": "C1_01_Benchmark_Metric_Spec_V0.2",
+    "metric_spec_lock_sha256": "cb443a64178fb894d751bc02dbc6fc9f142e33a9e2130a121ab9e0a881f64a7d"
+  },
+  "schema_validation": {
+    "record_count": 29,
+    "schema_valid_count": 29,
+    "cross_field_valid_count": 29,
+    "integrity_errors": []
+  }
+}

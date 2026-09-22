@@ -1,0 +1,65 @@
+{
+  "report_id": "C1_01_GATE_B_QA_V0.1",
+  "verification_date": "2026-09-23",
+  "status": "GATE-B_BLOCKED_READINESS_GAP",
+  "contract_ready": true,
+  "benchmark_ready": false,
+  "formal_blind_test_run": false,
+  "blind_gold_generated": false,
+  "data_pilot": {
+    "source_commit": "f018855769d435471468a97267d6fa6c0ace5543",
+    "manifest_sha256": "d5373c907aff721319c91c0ab10e3f729837a6688fc0fc9ee04f26c052850556",
+    "internal_silver_candidate_count": 3,
+    "schema_valid_count": 3,
+    "cross_field_valid_count": 3,
+    "train_count": 0,
+    "dev_count": 0,
+    "review_state_counts": {"PENDING_SECOND_PASS": 3},
+    "eligibility_counts": {"HOLD": 3},
+    "source_count": 1,
+    "blind_gold_accessed": false,
+    "pilot_status": "PILOT_NOT_READY"
+  },
+  "assembly_recheck": {
+    "source_record_count": 3,
+    "eligible_dev_count": 0,
+    "eligible_blind_count": 0,
+    "benchmark_ready": false,
+    "gold_exported": false,
+    "status": "BLOCKED_READINESS_GAP"
+  },
+  "synthetic_regression": {
+    "sample_count": 12,
+    "coverage": ["MATCH", "NO_MATCH", "NEEDS_CONTEXT", "four_match_subtypes", "hard_negative", "counterfactual_pair"],
+    "invalid_prediction_count": 1,
+    "structured_output_valid_rate": 0.9166666666666666,
+    "alignment_duplicate": "INVALID_SUBMISSION",
+    "alignment_unknown": "INVALID_SUBMISSION",
+    "alignment_missing": "INVALID_SUBMISSION",
+    "gate_decision": "BLOCKED_READINESS_GAP"
+  },
+  "access_boundary_regression": {
+    "status": "PASS",
+    "algorithm_read_gold": "DENIED",
+    "business_read_gold": "DENIED",
+    "data_read_gold": "DENIED",
+    "pm_read_gold": "DENIED",
+    "ops_read_gold": "DENIED",
+    "qa_isolated_evaluator_read_gold": "ALLOWED",
+    "audit_contains_gold_plaintext": false
+  },
+  "readiness_gaps": [
+    "TRAIN=0",
+    "DEV=0",
+    "internal_silver=3_pending_second_pass",
+    "one_source_only",
+    "blind_test_n=0_lt_50",
+    "production_runtime_acl_and_isolated_evaluator_not_deployed"
+  ],
+  "owners": {
+    "GB-DATA-001": "02 数据工程组",
+    "GB-DATA-002": "02 数据工程组 + 01 业务组",
+    "GB-DATA-003": "02 数据工程组 + 04 测试组",
+    "GB-RUNTIME-001": "平台/运维 + 04 测试组"
+  }
+}

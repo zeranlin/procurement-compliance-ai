@@ -1,0 +1,99 @@
+{
+  "status": "PASS",
+  "policy_version": "C1_01_Blind_Test_Gold_Access_Boundary_V0.1",
+  "service_accounts": {
+    "ALGORITHM": "svc-c101-algorithm",
+    "BUSINESS": "svc-c101-business",
+    "DATA": "svc-c101-data",
+    "PM": "svc-c101-pm",
+    "OPS": "svc-c101-ops",
+    "QA": "svc-c101-qa-isolated-evaluator"
+  },
+  "gold_sha256_for_test_only": "94b18ed3d051e1f4cc43faeb57933219328bb27aeed0cf893d85d80561cbff40",
+  "gold_plaintext_exported": false,
+  "audit_contains_gold_plaintext": false,
+  "checks": [
+    {
+      "role": "ALGORITHM",
+      "action": "read",
+      "asset": "blind_test_input",
+      "expected": "ALLOWED",
+      "actual": "ALLOWED",
+      "pass": true
+    },
+    {
+      "role": "ALGORITHM",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "DENIED",
+      "actual": "DENIED",
+      "pass": true
+    },
+    {
+      "role": "BUSINESS",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "DENIED",
+      "actual": "DENIED",
+      "pass": true
+    },
+    {
+      "role": "DATA",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "DENIED",
+      "actual": "DENIED",
+      "pass": true
+    },
+    {
+      "role": "PM",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "DENIED",
+      "actual": "DENIED",
+      "pass": true
+    },
+    {
+      "role": "OPS",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "DENIED",
+      "actual": "DENIED",
+      "pass": true
+    },
+    {
+      "role": "QA",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "ALLOWED",
+      "actual": "ALLOWED",
+      "pass": true
+    },
+    {
+      "role": "ALGORITHM",
+      "action": "read",
+      "asset": "aggregate_report",
+      "expected": "ALLOWED",
+      "actual": "ALLOWED",
+      "pass": true
+    },
+    {
+      "role": "OPS",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "DENIED",
+      "actual": "DENIED",
+      "pass": true
+    },
+    {
+      "role": "QA",
+      "action": "read",
+      "asset": "blind_test_gold",
+      "expected": "DENIED",
+      "actual": "DENIED",
+      "pass": true
+    }
+  ],
+  "denied_probe_count": 7,
+  "allowed_probe_count": 3
+}

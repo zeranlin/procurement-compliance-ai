@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "fixture": "tests/fixtures/gate_b/C1_01_Synthetic_Blind_Input_V0.1.jsonl",
+  "synthetic_sample_count": 12,
+  "coverage_declared_by_fixture": {
+    "match_subtypes": [
+      "DISTANCE_TO_PURCHASER",
+      "OTHER_RELATED",
+      "PREEXISTING_LOCAL_BRANCH",
+      "SUPPLIER_REGISTRATION_LOCATION"
+    ],
+    "match_states": [
+      "MATCH",
+      "NEEDS_CONTEXT",
+      "NO_MATCH"
+    ],
+    "hard_negative": true,
+    "counterfactual_pair": true
+  },
+  "evaluation_status": "READINESS_GAP",
+  "gate_decision": "BLOCKED_READINESS_GAP",
+  "invalid_denominator_check": {
+    "invalid_count": 1,
+    "structured_output_valid_rate": 0.9166666666666666,
+    "pass": true
+  },
+  "alignment_checks": {
+    "duplicate_id": "INVALID_SUBMISSION",
+    "unknown_id": "INVALID_SUBMISSION",
+    "missing_id": "INVALID_SUBMISSION"
+  },
+  "gold_written_to_repository": false,
+  "readiness_gap": "synthetic fixture has N<50; no formal Benchmark Ready claim"
+}
