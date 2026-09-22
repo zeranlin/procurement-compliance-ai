@@ -15,17 +15,17 @@
 
 ```text
 Project Status:
-WAITING_FINAL_SIGNOFF
+WAITING_QA_FINAL_SIGNOFF
 
 Current Owner:
-项目负责人 / 最终集成
+04 - QA / Benchmark Team
 
 Current Task:
-Final Contract Freeze Signoff
+QA Final Signoff
 
 Current Position:
-[业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ✅]
-→ [Final Freeze WAITING_FINAL_SIGNOFF] → [Base Model ⏸] → [Fine-tune ⏸]
+[业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ▶]
+→ [Final Freeze WAITING_QA_FINAL_SIGNOFF] → [Base Model ⏸] → [Fine-tune ⏸]
 → [Blind Test ⏸] → [Demo Gate ⏸]
 
 Next Gate:
@@ -43,10 +43,10 @@ Final Cross-Team Freeze 尚未签署
 | 项目 | 状态 |
 |---|---|
 | 01 业务组整改 | ✅ DONE |
-| 02 数据工程组整改 | ✅ DONE |
+| 02 数据工程组整改 | ✅ DATA_SIGNOFF_PASS |
 | 03 算法组整改 | ✅ DONE |
-| 04 测试与评测组最终验收 | ✅ GATE-A_REVERIFY_PASS |
-| 项目负责人 Final Freeze Review | ▶ WAITING_FINAL_SIGNOFF |
+| 04 测试与评测组最终验收 | ▶ WAITING_QA_FINAL_SIGNOFF |
+| 项目负责人 Final Freeze Review | ⏳ WAITING_FOR_QA_SIGNOFF |
 | `C1-01 END-TO-END CONTRACT FROZEN` | ⏳ PENDING |
 | 正式 Base Model Benchmark | ⏸ BLOCKED |
 | Fine-tune | ⏸ BLOCKED |
@@ -100,8 +100,8 @@ GoldAsset > OneCheckpoint
 | P0 | Business Contract | 冻结任务定义、标签语义、业务边界 | 01 业务组 | ✅ DONE | BusinessTaskSpec + LabelGuide Frozen |
 | P1 | Data Contract | 冻结 Dataset 生命周期、资格、Schema、Leakage | 02 数据工程组 | ✅ DONE | DatasetSchema Frozen |
 | P2 | Model Protocol | 冻结模型输入、输出、Preflight、版本绑定 | 03 算法组 | ✅ DONE | BaselineProtocol Frozen |
-| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ✅ GATE-A_REVERIFY_PASS | Cross-Team Verification PASS |
-| P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ▶ WAITING_FINAL_SIGNOFF | `C1-01 CONTRACT FROZEN` |
+| P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ▶ WAITING_QA_FINAL_SIGNOFF | Cross-Team Verification PASS |
+| P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ⏳ WAITING_FOR_QA_SIGNOFF | `C1-01 CONTRACT FROZEN` |
 | P5 | Base Model Baseline | Zero-shot / Few-shot / DEV Benchmark | 03 + 04 | ⏸ BLOCKED | Baseline Report |
 | P6 | Training Decision | 判断是否进入 SFT / LoRA / QLoRA | 项目负责人 | ⏸ BLOCKED | Fine-tune Decision |
 | P7 | Candidate Model | 训练、版本、实验追踪、回归 | 03 算法组 | ⏸ BLOCKED | Candidate Release |
@@ -153,7 +153,7 @@ WAIT_FOR_INTEGRATION_FEEDBACK
 
 ## 02 - 数据工程组
 
-**状态：✅ DONE / WAIT_FOR_INTEGRATION_FEEDBACK**
+**状态：✅ DONE / DATA_SIGNOFF_PASS**
 
 已完成：
 
@@ -240,7 +240,7 @@ WAITING_FINAL_SIGNOFF
 
 ## 04 - 测试与评测组
 
-**状态：✅ DONE / GATE-A_REVERIFY_PASS**
+**状态：▶ WAITING_QA_FINAL_SIGNOFF**
 
 本轮已完成：
 
@@ -389,7 +389,7 @@ C1-01 END-TO-END CONTRACT FROZEN
 当前：
 
 ```text
-FINAL FREEZE = WAITING_FINAL_SIGNOFF
+FINAL FREEZE = WAITING_QA_FINAL_SIGNOFF
 ```
 
 ---
@@ -556,7 +556,7 @@ NO BLOCKING ISSUE
 | BLK-01 | QA Cross-Team Compatibility Verification | 04 | P0 | ✅ PASS |
 | BLK-02 | Gold Access Boundary Regression | 04 | P0 | ✅ PASS |
 | BLK-03 | Six-Asset Freeze Manifest | 04 | P0 | ✅ LOCKED |
-| BLK-04 | PM Final Freeze Review / 双方签署 | PM | P0 | WAITING_FINAL_SIGNOFF |
+| BLK-04 | 04 QA_FINAL_SIGNOFF / PM Final Freeze Review | 04 / PM | P0 | WAITING_QA_FINAL_SIGNOFF |
 
 当前无已知业务 / 数据 / 算法组 P0 blocker。
 

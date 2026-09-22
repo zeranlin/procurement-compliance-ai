@@ -6,7 +6,9 @@
 **技术底座**：`a720a03460a99725f3892ec005ad566cd66a52ec`（03 最终协议 + 04 Gate-A 资产）  
 **01 集成提交**：`0751558`（来源 `a7592ec`，仅引入 01 业务专属 6 个文件）  
 **02 来源核对**：`83aff9a`；其 9 个数据文件与底座逐字节一致，未重复引入  
-**当前结论**：`WAITING_FINAL_SIGNOFF`  
+**02 DATA_SIGNOFF**：`PASS`（候选 `717a0bb1356ced24978b0e28d7bf8115603bf3be`）
+**04 QA_FINAL_SIGNOFF**：`WAITING`
+**当前结论**：`WAITING_QA_FINAL_SIGNOFF`
 
 > 本文是项目负责人最终签署前的集成复核记录。`GATE-A_REVERIFY_PASS` 与 `contract_ready=true` 可以引用；在 02 `DATA_SIGNOFF` 和 04 `QA_FINAL_SIGNOFF` 完成前，不宣布 `C1-01 END-TO-END CONTRACT FROZEN`。
 
@@ -63,7 +65,12 @@
 当前集成结论保持：
 
 ```text
-WAITING_FINAL_SIGNOFF
+WAITING_QA_FINAL_SIGNOFF
 ```
 
-请 02 数据工程组完成 `DATA_SIGNOFF`，请 04 测试与评测组完成 `QA_FINAL_SIGNOFF`。两项签署完成后，项目负责人再决定是否将总控状态推进为最终冻结。
+| 签署方 | 结果 | 核验摘要 |
+|---|---|---|
+| 02 数据工程组 | `DATA_SIGNOFF_PASS` | Seed/Schema hash 正确；29/29 Schema/Cross-field；`integrity_errors=[]`；Manifest 8/8；Seed-03、Seed-21、CF01-03 未漂移；全部 `dataset_role=UNASSIGNED` |
+| 04 测试与评测组 | `WAITING` | 待 `QA_FINAL_SIGNOFF_PASS` |
+
+在 04 完成 `QA_FINAL_SIGNOFF_PASS` 前，项目负责人不得将总控状态推进为最终 `FROZEN`，也不得宣布 `C1-01 END-TO-END CONTRACT FROZEN`。
