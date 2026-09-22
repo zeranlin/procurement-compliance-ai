@@ -7,7 +7,7 @@
 > 当前版本：`PROJECT_CONTROL_V0.1`  
 > 当前日期：`2026-09-22`
 
-> 算法协议当前冻结实现：`C1_01_Baseline_Protocol_V0.2`；对应指标接口：`C1_01_Benchmark_Metric_Spec_V0.2`；依赖锁与回归证据见 `04_baseline_protocol/C1_01_Baseline_Protocol_Freeze_Record_V0.2.1.md`。
+> 算法协议当前冻结实现：`C1_01_Baseline_Protocol_V0.2.1`；对应指标接口：`C1_01_Benchmark_Metric_Spec_V0.2`（SHA-256：`cb443a...`）；依赖锁与 Gate-A 回归证据见 `04_baseline_protocol/protocol/`、`04_baseline_protocol/harness/` 及 `05_benchmark_metric_spec/deliverables/`。
 
 ---
 

@@ -10,12 +10,10 @@ contracts:
 	@python3 scripts/validate_contracts.py
 
 baseline-preflight:
-	@python3 contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness.py preflight \
-		--input contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/fixtures/C1_01_Baseline_Smoke_Input_V0.2.jsonl --smoke
+	@python3 contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness/C1_01_Baseline_Harness_V0.2.1/C1_01_Preflight_Check_V0.2.1.py \
+		--manifest contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness/C1_01_Baseline_Harness_V0.2.1/C1_01_Baseline_Protocol_V0.2.1.lock.json --smoke
 
 baseline-smoke:
-	@python3 contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness.py run \
-		--input contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/fixtures/C1_01_Baseline_Smoke_Input_V0.2.jsonl \
-		--adapter-command "python3 contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/adapter_stub.py" \
-		--model-id STUB --model-revision interface-only \
-		--output /tmp/c1_01_smoke_predictions.jsonl --manifest /tmp/c1_01_smoke_manifest.json --smoke
+	@python3 contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness/C1_01_Baseline_Harness_V0.2.1/harness.py smoke \
+		--manifest contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness/C1_01_Baseline_Harness_V0.2.1/C1_01_Baseline_Protocol_V0.2.1.lock.json \
+		--adapter-command "python3 contracts/task/c1_01_local_entry_precondition/04_baseline_protocol/harness/C1_01_Baseline_Harness_V0.2.1/adapter_stub.py"
