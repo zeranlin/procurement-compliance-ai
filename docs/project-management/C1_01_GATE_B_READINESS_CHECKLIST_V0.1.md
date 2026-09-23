@@ -1,7 +1,7 @@
 # C1-01 Gate-B Readiness Checklist V0.1
 
 **基线**：Gate-A 最终冻结 `67948a8`  
-**当前状态**：`NOT_READY`  
+**当前状态**：`NOT_READY / REVIEW_DEFERRED`
 **下一评审**：Gate-B Data / Benchmark Readiness Review  
 **规则**：未有证据不得勾选 PASS；计划、候选和运行结果必须分开记录。
 
@@ -17,6 +17,17 @@
 | D-B06 | `DISPUTED`/`HOLD`/`REWORK_SOURCE` 隔离 | 过滤结果、`C101-SEED-03/21` 专项核对 | 02/04 | NOT_STARTED |
 | D-B07 | Benchmark Candidate 达到预注册规模与覆盖 | sample count、切片覆盖、hard negative、counterfactual 覆盖 | 02/04 | NOT_STARTED |
 | D-B08 | 数据包签署 | Data Manifest、输入 hash、Owner、时间、签名 | 02 | NOT_STARTED |
+
+### 1.1 复核延期治理
+
+| ID | 检查项 | 必需证据 | Owner | 状态 |
+|---|---|---|---|---|
+| R-B01 | 候选逐条 Codex 暂代复核工作项关闭 | Owner 延期决策、聚合计数、状态边界 | PM/01 | COMPLETE_WITH_DEFERRED_REVIEW |
+| R-B02 | 402 条未复核候选保持隔离 | `PENDING_01_CODEX_REVIEW`、`label=null`、三项资格均为 false | 01/02 | QUEUED_NOT_REVIEWED |
+| R-B03 | 人工专家二审 | 专家 Owner、逐条结论、证据与版本化回归报告 | 专家团队/01/04 | DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING |
+| R-B04 | 6 个旧版文档解析阻塞隔离 | `PARSER_BLOCKED` 清单与后续解析修复记录 | 02/01 | PARSER_BLOCKED |
+
+`R-B01` 的完成只表示延期决策已执行，不表示 `R-B02` 或 `R-B03` PASS。402 条记录不得进入正式训练、DEV、Benchmark 或 Gold。
 
 ## 2. Benchmark Snapshot 与 ACL
 
@@ -71,6 +82,13 @@ SNAPSHOT_READY = FALSE
 ACL_READY = FALSE
 MODEL_ENV_READY = FALSE
 GATE_B_READY = FALSE
+CODEX_REVIEW_TASK = COMPLETE_WITH_DEFERRED_REVIEW
+EXPERT_REVIEW = DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING
+REVIEWED_CANDIDATES = 1
+PENDING_CANDIDATES = 402
+PARSER_BLOCKED_DOCUMENTS = 6
+BENCHMARK_READY = FALSE
+TRAINING_AUTHORIZED = FALSE
 BASE_MODEL = BLOCKED
 FINE_TUNE = BLOCKED
 BLIND_BENCHMARK = BLOCKED

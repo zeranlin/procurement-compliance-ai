@@ -2,15 +2,15 @@
 
 **基线**：Gate-A 最终冻结 `67948a8`  
 **评审对象**：Gate-B Data / Benchmark Readiness  
-**当前判定**：`PENDING`  
+**当前判定**：`PENDING / REVIEW_DEFERRED`
 **原则**：Gate-A 的 `contract_ready=true` 不等于 Gate-B 的 `benchmark_ready=true`。
 
 ## 1. 总体验收矩阵
 
 | Gate-B 项 | 入口条件 | 必需证据 | Owner | 退出条件 | 当前 |
 |---|---|---|---|---|---|
-| GB-01 数据候选资格 | Gate-A hash 不变 | Schema/Cross-field、来源、证据、角色、pair/leakage、去重报告 | 02 | 所有候选记录满足资格，隔离争议/源件修复 | PENDING |
-| GB-02 Train/Dev 准入 | GB-01 PASS | split manifest、role allowlist、source lineage、数量与 hash | 02 | 无 `DISPUTED/HOLD/REWORK_SOURCE` 越权，项目/模板泄漏为 0 | PENDING |
+| GB-01 数据候选资格 | Gate-A hash 不变 | Schema/Cross-field、来源、证据、角色、pair/leakage、去重报告 | 02 | 所有候选记录满足资格，隔离争议/源件修复 | PENDING：1 条暂代复核，402 条待复核 |
+| GB-02 Train/Dev 准入 | GB-01 PASS | split manifest、role allowlist、source lineage、数量与 hash | 02 | 无 `DISPUTED/HOLD/REWORK_SOURCE` 越权，项目/模板泄漏为 0 | BLOCKED_BY_DEFERRED_REVIEW |
 | GB-03 Benchmark Snapshot | GB-01/02 PASS | snapshot ID、input/gold hash、split、metric/evaluator hash、freeze record | 04 | Snapshot 不可变，版本与内容一致 | PENDING |
 | GB-04 Blind Gold 隔离 | GB-03 组装完成 | 存储/挂载/备份/缓存清单，算法侧脱敏 input | 04 | 非 QA 角色不能读取 Gold 或真值派生物 | PENDING |
 | GB-05 Runtime ACL | GB-04 | 正向/拒绝 Probe、service account、audit log、告警 | 04 | 允许/拒绝矩阵全部符合，审计证据完整 | PENDING |
@@ -22,6 +22,20 @@
 | GB-11 Training Decision | Base/DEV 结果完成 | 基线报告、误差分析、数据/泄漏复核 | PM | 明确 GO/NO-GO | BLOCKED |
 | GB-12 LoRA/QLoRA | GB-11=GO | 训练数据、代码、配置、实验登记、回归计划 | PM/03 | 单独训练授权 | BLOCKED |
 | GB-13 Blind Benchmark | 新 Snapshot/ACL/evaluator PASS | run_id、提交校验、隔离评测、发布审批 | PM/04 | 单独 Blind 授权 | BLOCKED |
+
+## 1.1 项目负责人批准的复核延期
+
+```text
+decision_type = PROJECT_OWNER_APPROVED_DEFERRAL
+review_task_status = COMPLETE_WITH_DEFERRED_REVIEW
+reviewed_count = 1
+pending_count = 402
+pending_state = PENDING_01_CODEX_REVIEW
+parser_blocked_document_count = 6
+expert_review_status = DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING
+```
+
+该例外允许环境准备、候选数据工程和 E2E Dry-Run 继续，但不改变 GB-01、GB-02 或 GB-09 的未通过状态。402 条候选继续保持 `label=null`、`training_eligible=false`、`expert_signoff=false`、`gold_eligible=false`。
 
 ## 2. 安全硬门槛
 
@@ -73,6 +87,12 @@ Runtime ACL: PENDING
 Evaluator Readiness: PENDING
 Model Environment: PENDING
 Gate-B: PENDING
+Codex Review Work Item: COMPLETE_WITH_DEFERRED_REVIEW
+Expert Review: DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING
+Reviewed / Pending: 1 / 402
+Parser Blocked Documents: 6
+Benchmark Ready: FALSE
+Training Authorized: FALSE
 Base Model: BLOCKED
 Training: BLOCKED
 Blind Benchmark: BLOCKED

@@ -5,7 +5,7 @@
 > 任务：`C1-01_LOCAL_ENTRY_PRECONDITION`  
 > 中文：第1类-第1项——外地企业进入本地市场前置限制识别  
 > 当前版本：`PROJECT_CONTROL_V0.1`  
-> 当前日期：`2026-09-22`
+> 当前日期：`2026-09-23`
 
 > 算法协议当前冻结实现：`C1_01_Baseline_Protocol_V0.2.1`；对应指标接口：`C1_01_Benchmark_Metric_Spec_V0.2`（SHA-256：`cb443a...`）；依赖锁与 Gate-A 回归证据见 `04_baseline_protocol/protocol/`、`04_baseline_protocol/harness/` 及 `05_benchmark_metric_spec/deliverables/`。
 
@@ -15,17 +15,17 @@
 
 ```text
 Project Status:
-GATE_B_READINESS_PLANNING
+GATE_B_PREPARATION_WITH_DEFERRED_REVIEW
 
 Current Owner:
 项目负责人 + 02/03/04 工作流 Owner
 
 Current Task:
-Gate-B Data / Benchmark Readiness Planning
+Gate-B 准备继续；候选逐条复核工作项按 Owner 决策延期关闭
 
 Current Position:
 [业务 ✅] → [数据 ✅] → [算法 ✅] → [测试最终验收 ✅]
-→ [Final Freeze ✅ GATE-A_COMPLETE] → [Gate-B Readiness ▶ PLANNING]
+→ [Final Freeze ✅ GATE-A_COMPLETE] → [Gate-B Readiness ▶ REVIEW_DEFERRED]
 → [Base Model ⏸] → [Fine-tune ⏸]
 → [Blind Test ⏸] → [Demo Gate ⏸]
 
@@ -36,7 +36,7 @@ Formal Model Run:
 BLOCKED
 
 Blocking Reason:
-Gate-B 数据、Snapshot、Runtime ACL、Evaluator 和模型环境尚未完成；正式模型运行/训练仍未授权
+402 条候选尚未逐条复核、专家二审延期、6 个旧版文档解析阻塞；Gate-B 其他数据、Snapshot、ACL、Evaluator 和环境证据也未完成
 ```
 
 ### 当前结论
@@ -49,7 +49,13 @@ Gate-B 数据、Snapshot、Runtime ACL、Evaluator 和模型环境尚未完成�
 | 04 测试与评测组最终验收 | ▶ GATE_B_SNAPSHOT_ACL_PREP |
 | 项目负责人 Final Freeze Review | ✅ COMPLETE |
 | `C1-01 END-TO-END CONTRACT FROZEN` | ✅ GATE-A_COMPLETE |
-| Gate-B Data / Benchmark Readiness | ▶ PLANNING |
+| Gate-B Data / Benchmark Readiness | ▶ PREPARATION_WITH_DEFERRED_REVIEW |
+| 候选逐条 Codex 暂代复核工作项 | ✅ COMPLETE_WITH_DEFERRED_REVIEW |
+| 已复核 / 待复核候选 | 1 / 402 |
+| 人工专家二审 | ⏸ DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING |
+| 旧版文档解析阻塞 | 6 / PARSER_BLOCKED |
+| `benchmark_ready` | ❌ FALSE |
+| `training_authorized` | ❌ FALSE |
 | 正式 Base Model Benchmark | ⏸ BLOCKED |
 | Fine-tune | ⏸ BLOCKED |
 | Blind Benchmark | ⏸ BLOCKED |
@@ -104,7 +110,7 @@ GoldAsset > OneCheckpoint
 | P2 | Model Protocol | 冻结模型输入、输出、Preflight、版本绑定 | 03 算法组 | ✅ DONE | BaselineProtocol Frozen |
 | P3 | Benchmark Governance | 验证六资产兼容、Blind 权限、Freeze Manifest | 04 测试组 | ✅ QA_FINAL_SIGNOFF_PASS | Cross-Team Verification PASS |
 | P4 | Final Contract Freeze | 13 项 Freeze Gate 总验收 | 项目负责人 | ✅ GATE-A_COMPLETE | `C1-01 END-TO-END CONTRACT FROZEN` |
-| P4.5 | Gate-B Data / Benchmark Readiness | 数据、Snapshot、ACL、Evaluator、模型环境就绪 | 项目负责人 + 02/03/04 | ▶ PLANNING | Gate-B Readiness Review |
+| P4.5 | Gate-B Data / Benchmark Readiness | 数据、Snapshot、ACL、Evaluator、模型环境就绪 | 项目负责人 + 02/03/04 | ▶ PREPARATION_WITH_DEFERRED_REVIEW | Gate-B Readiness Review |
 | P5 | Base Model Baseline | Zero-shot / Few-shot / DEV Benchmark | 03 + 04 | ⏸ BLOCKED | Baseline Report |
 | P6 | Training Decision | 判断是否进入 SFT / LoRA / QLoRA | 项目负责人 | ⏸ BLOCKED | Fine-tune Decision |
 | P7 | Candidate Model | 训练、版本、实验追踪、回归 | 03 算法组 | ⏸ BLOCKED | Candidate Release |
@@ -117,7 +123,7 @@ GoldAsset > OneCheckpoint
 
 ## 01 - 业务组 / 产品组
 
-**状态：✅ DONE / WAIT_FOR_INTEGRATION_FEEDBACK**
+**状态：✅ DONE / REVIEW_TASK_COMPLETE_WITH_DEFERRED_REVIEW**
 
 已完成：
 
@@ -147,10 +153,13 @@ REWORK_SOURCE / PARSE_FAILURE
 当前动作：
 
 ```text
-WAIT_FOR_INTEGRATION_FEEDBACK
+候选逐条 Codex 暂代复核工作项：COMPLETE_WITH_DEFERRED_REVIEW
+已完成暂代复核：1
+待复核：402（PENDING_01_CODEX_REVIEW / label=null）
+专家二审：DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING
 ```
 
-除非 QA 发现真实业务契约冲突，否则不重新打开业务口径。
+该状态关闭的是本阶段工作项，不代表 402 条样本已复核。除非 QA 发现真实业务契约冲突，否则不重新打开已冻结业务口径；专家团队入驻后按延期台账重开候选复核。
 
 ---
 
@@ -168,6 +177,8 @@ WAIT_FOR_INTEGRATION_FEEDBACK
 - `DISPUTED → HOLD`；
 - Seed / affected data 重新验证；
 - Schema / Validator / Data Contract 更新。
+- 已形成 403 条本地隔离候选，其中 1 条为 Codex 暂代复核、402 条保持 `PENDING_01_CODEX_REVIEW`；全部 `training_eligible=false`、`expert_signoff=false`、`gold_eligible=false`；
+- 已将 402 条候选登记为 `deferred_expert_review_queue`，6 个旧版文档继续单列 `PARSER_BLOCKED`。
 
 目标结构：
 
@@ -190,6 +201,8 @@ data_eligibility = REWORK_SOURCE
 
 ```text
 GATE_B_DATA_PREP
+仅继续候选工程、隔离、统计和 Dry-Run 准备
+不得把延期候选升级为正式标签或训练数据
 ```
 
 ---
@@ -560,8 +573,10 @@ NO BLOCKING ISSUE
 | BLK-02 | Gold Access Boundary Regression | 04 | P0 | ✅ PASS |
 | BLK-03 | Six-Asset Freeze Manifest | 04 | P0 | ✅ LOCKED |
 | BLK-04 | 04 QA_FINAL_SIGNOFF / PM Final Freeze Review | 04 / PM | P0 | ✅ SIGNED |
+| BLK-05 | 402 条候选未完成逐条业务复核与专家二审 | 专家团队 / 01 / PM | P0（正式数据准入） | DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING |
+| BLK-06 | 6 个旧版文档解析阻塞 | 02 / 01 | P1 | PARSER_BLOCKED |
 
-当前无已知业务 / 数据 / 算法组 P0 blocker。
+Gate-A 当前无已知 P0 blocker；Gate-B 正式数据准入存在 `BLK-05`，因此不得声明数据质量、Benchmark Ready 或 Training Authorized PASS。
 
 ---
 
@@ -574,14 +589,24 @@ Owner:
 项目负责人 + 02/03/04 工作流 Owner
 ```
 
-必须依次完成：
+本阶段允许并行继续：
 
 ```text
-1. 生成并审核合格的 TRAIN / DEV / BENCHMARK_CANDIDATE 数据
-2. 生成 blind_test_input，保持 Blind Gold 隔离
-3. 完成 QA isolated evaluator 与 runtime ACL Regression
-4. 完成 Gate-B Benchmark Readiness 评审
-5. Gate-B 通过后，才可申请 Base Model / DEV Benchmark
+1. 模型与运行环境准备
+2. 候选数据工程、去重、分层和队列维护
+3. 不使用正式标签权威的 E2E Dry-Run
+4. QA isolated evaluator、runtime ACL 和审计准备
+```
+
+专家团队入驻后必须依次完成：
+
+```text
+1. 重开为 REOPENED_FOR_EXPERT_REVIEW
+2. 优先复核高风险、HOLD、冲突与证据不完整候选
+3. 执行分层抽样并对问题同层回溯
+4. 完成 402 条全量回归；新标签新增版本，不静默覆盖
+5. 单列修复并复核 6 个 PARSER_BLOCKED 文档
+6. 重跑数据 QA、Schema、leakage、角色资格与 Gate-B 评审
 ```
 
 之后：
@@ -635,6 +660,8 @@ BASELINE_EXECUTION 授权判断
 | `FROZEN` | 已成为不可静默修改的正式 Contract |
 | `QUARANTINED` | 因缺陷或泄漏暂停使用 |
 | `INVALIDATED` | 运行/快照已判无效 |
+| `COMPLETE_WITH_DEFERRED_REVIEW` | 本阶段工作项按 Owner 决策关闭，但明确存在未完成逐条复核 |
+| `DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING` | 等待专家团队入驻后重开并执行版本化全量回归 |
 
 禁止使用模糊状态：
 
@@ -686,6 +713,7 @@ Change Log
 | 2026-09-22 | PROJECT_CONTROL_V0.1 | 建立 C1-01 项目总控看板；同步 01/02/03 已完成、04 当前主责状态 | Project Manager |
 | 2026-09-22 | PROJECT_CONTROL_V0.1 | 02 DATA_SIGNOFF、04 QA_FINAL_SIGNOFF 完成；C1-01 Gate-A 合同冻结，转入 Gate-B Readiness | Project Manager |
 | 2026-09-22 | PROJECT_CONTROL_V0.1 | 建立 Gate-B Plan、Readiness Checklist、模型选择记录与最终验收矩阵；保持模型/训练 BLOCKED | Project Manager |
+| 2026-09-23 | PROJECT_CONTROL_V0.1 | 记录 Owner 批准的 AI/专家复核延期：1 条已复核、402 条待复核、6 个解析阻塞；允许准备与 Dry-Run，保持 Benchmark/Training 未授权 | Project Manager |
 
 ---
 
@@ -693,10 +721,10 @@ Change Log
 
 ```text
 C1-01 STATUS:
-GATE_B_READINESS_PLANNING
+GATE_B_PREPARATION_WITH_DEFERRED_REVIEW
 
 01 Business:
-DONE
+DONE / REVIEW_TASK_COMPLETE_WITH_DEFERRED_REVIEW
 
 02 Data:
 GATE_B_DATA_PREP
@@ -706,6 +734,21 @@ GATE_B_ENVIRONMENT_PREP
 
 04 QA:
 GATE_B_SNAPSHOT_ACL_PREP
+
+CODEX CANDIDATE REVIEW:
+1 REVIEWED / 402 PENDING_01_CODEX_REVIEW
+
+EXPERT REVIEW:
+DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING
+
+PARSER BLOCKED DOCUMENTS:
+6
+
+BENCHMARK_READY:
+FALSE
+
+TRAINING_AUTHORIZED:
+FALSE
 
 FORMAL MODEL BENCHMARK:
 NOT AUTHORIZED

@@ -3,9 +3,10 @@
 **任务**：`C1-01_LOCAL_ENTRY_PRECONDITION`  
 **基线**：`67948a874546627a07e6a7578e6938a2ff01fa7d`（Gate-A 最终冻结）  
 **分支**：`codex/c1-01-gate-b-readiness`  
-**计划状态**：`GATE_B_READINESS_PLANNING`  
+**计划状态**：`GATE_B_PREPARATION_WITH_DEFERRED_REVIEW`
 **范围**：数据就绪、Benchmark Snapshot 就绪、Blind 隔离与运行时 ACL、模型环境准备  
 **明确边界**：本计划不生产 Gold、不读取 Blind Gold、不运行模型、不运行训练。
+**治理例外**：项目负责人已批准候选逐条复核延期；见 `C1_01_AI_Review_Deferral_Decision_V0.1.md`。
 
 ## 1. 目标与非目标
 
@@ -30,6 +31,7 @@ Blind Benchmark（再次经授权）
 - 不创建、导出、查看或复制 `blind_test_gold`；
 - 不调用 Teacher API，不下载或运行 Student/Base Model；
 - 不在 Gate-B 未通过前解锁 Base Model、Fine-tune 或 Blind Benchmark。
+- 不把 `COMPLETE_WITH_DEFERRED_REVIEW` 解释为候选样本已复核或数据质量已 PASS。
 
 ## 2. 依赖图
 
@@ -75,7 +77,7 @@ Gate-B Readiness Review
 | 02 数据 | `83aff9a`；已纳入 `67948a8`，Seed SHA、Schema、29/29、Manifest 8/8 已签署 | Gate-A 输入基线可用 | 尚无 Gate-B 正式 Snapshot、Train/Dev/Benchmark 候选清单和签署包 |
 | 03 算法 | `4019011`、`a720a03`；Protocol/lock/Harness 已冻结 | 协议可用 | 未发现模型环境提交；需提交 Qwen 环境、adapter、tokenizer、framework、硬件和复现清单 |
 | 04 评测 | `3bea201`、`bf151ba`；Gate-A 复验与治理规则已冻结 | Contract Ready | 未发现真实 Snapshot、隔离评测器部署证明、Runtime ACL Probe、审计日志 |
-| 01 业务 | `0751558` 与最终冻结记录 | 语义冻结 | 仅处理新增业务冲突，不重新打开既有语义 |
+| 01 业务 | `0751558`、最终冻结记录与 AI Review Deferral Decision | 语义冻结；候选逐条复核工作项按 Owner 决策关闭并延期 | 1 条已完成 Codex 暂代复核；402 条保持待复核；专家二审待团队入驻 |
 
 > 以上“未发现”表示当前候选分支和已盘点分支没有可核验的对应交付物，不代表其他工作区不可存在；收到新提交后必须重新登记来源、哈希和责任人。
 
@@ -100,12 +102,16 @@ Gate-B 工作只能在以下条件全部成立时进入正式 Readiness Review�
 - 环境：Qwen Student/Base 环境、revision、tokenizer、framework、generation config、硬件和代码提交可复现；
 - 治理：02、03、04 和项目负责人完成 Gate-B Readiness Review，明确 `benchmark_ready` 与下一步授权，不把计划状态写成运行结果。
 
+项目负责人批准的延期只允许 Gate-B 准备工作继续。402 条待复核候选完成专家全量回归、6 个解析阻塞文档完成修复或正式隔离裁决之前，数据质量与正式训练准入不得判定为 PASS。
+
 ## 7. 里程碑与授权顺序
 
 | 阶段 | 交付 | Owner | 当前状态 | 授权结果 |
 |---|---|---|---|---|
 | B0 | Gate-B 计划、Checklist、模型选择、验收矩阵 | 项目总控 | 本提交 | 仅建立计划 |
-| B1 | 数据候选包、Snapshot 组装材料、leakage/pair 报告 | 02 + 04 | NOT_STARTED | 仍不运行模型 |
+| B1 | 数据候选包、Snapshot 组装材料、leakage/pair 报告 | 02 + 04 | IN_PROGRESS | 仅候选工程；仍不运行模型 |
+| B1-R | 候选逐条 Codex 暂代复核 | 01 + PM | COMPLETE_WITH_DEFERRED_REVIEW | 1 条已复核；402 条不改变状态与标签 |
+| B1-E | 人工专家二审与全量回归 | 专家团队 + 01/02/04 | DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING | 未完成前不得形成数据质量或训练准入 PASS |
 | B2 | Runtime ACL、隔离评测器、审计日志 | 04 | NOT_STARTED | 仍不运行模型 |
 | B3 | Qwen 环境与 adapter 可复现清单 | 03 | NOT_STARTED | 仍不运行模型 |
 | B4 | Gate-B Readiness Review | PM + 02/03/04 | BLOCKED_BY_B1_B2_B3 | 未通过则保持 BLOCKED |
@@ -134,12 +140,20 @@ Gate-B 工作只能在以下条件全部成立时进入正式 Readiness Review�
 | 模型 revision 不可复现 | Base/Student 比较失真 | 03 | pin revision、tokenizer、framework、硬件和 config | OPEN |
 | Benchmark 规模/覆盖不足 | Gate-B 不能代表目标能力 | 04/02 | 预注册 sample count、切片、pair、coverage 和最小门槛 | OPEN |
 | Gate-B 结论倒灌 Gate-A | 冻结链被静默修改 | PM | 版本/hash 变化新建候选，不改冻结资产 | OPEN |
+| 复核工作项关闭被误读为样本已复核 | 未审核标签进入训练或评测 | PM/01/02 | 决策记录、延期台账、状态与数量分离 | CONTROLLED / OPEN |
+| 专家二审延期 | 边界样本、HOLD 与冲突无法形成正式裁决 | 专家团队/01 | 入驻后先高风险，再分层抽样，最后 402 条全量回归 | DEFERRED |
 
 ## 9. 当前判定
 
 ```text
-GATE_B_READINESS = PLANNING
+GATE_B_READINESS = PREPARATION_WITH_DEFERRED_REVIEW
+CODEX_REVIEW_TASK = COMPLETE_WITH_DEFERRED_REVIEW
+EXPERT_REVIEW = DEFERRED_UNTIL_EXPERT_TEAM_ONBOARDING
+REVIEWED_CANDIDATES = 1
+PENDING_CANDIDATES = 402
+PARSER_BLOCKED_DOCUMENTS = 6
 BENCHMARK_READY = FALSE
+TRAINING_AUTHORIZED = FALSE
 BASE_MODEL = BLOCKED
 FINE_TUNE = BLOCKED
 BLIND_BENCHMARK = BLOCKED
