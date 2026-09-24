@@ -199,6 +199,7 @@ def environment_lock(output_dir: Path) -> dict[str, Any]:
         "captured_at": now(),
         "python": {"executable": sys.executable, "version": platform.python_version()},
         "platform": platform.platform(),
+        "pip_freeze": command_output([sys.executable, "-m", "pip", "freeze"]),
         "evaluator_mode": "QA_ONLY_SYNTHETIC_NO_MODEL",
         "trust_remote_code": False,
         "local_files_only": True,
