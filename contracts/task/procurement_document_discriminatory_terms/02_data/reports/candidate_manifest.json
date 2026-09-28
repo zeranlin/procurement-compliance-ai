@@ -1,0 +1,13 @@
+{
+  "benchmark_ready": false,
+  "gold_eligible": false,
+  "held_unit_file_path": "/private/tmp/procurement-discriminatory-terms-02/real_held_review_units.jsonl",
+  "held_unit_file_sha256": "aa93d94440da96752dce243e09d299632b3cd8860e9fad823827e584a69cfedd",
+  "real_ai_silver_ids": [],
+  "real_hold_unit_ids": [
+    "UNIT-4392ba9594a6-255",
+    "UNIT-4392ba9594a6-1498"
+  ],
+  "synthetic_fixture_path": "/Users/linzeran/.codex/worktrees/7561/procurement-compliance-ai/contracts/task/procurement_document_discriminatory_terms/02_data/fixtures/synthetic_review_events.jsonl",
+  "training_authorized": false
+}

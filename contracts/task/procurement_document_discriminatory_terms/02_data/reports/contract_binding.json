@@ -1,0 +1,59 @@
+{
+  "00_interface_reverification": "BUSINESS_INTERFACE_REWORK_PASS_REPORTED_BY_CONTROL",
+  "basis_7_4": null,
+  "basis_7_4_status": "待原始附件核实",
+  "bindings": [
+    {
+      "name": "采购文件设置差别歧视条款业务需求说明书_V0.3.md",
+      "sha256": "e91b2688c829e7898638f1629faa7b0e62d92fa965a1fbfdf061b6862149e223",
+      "source_path": "/Users/linzeran/.codex/worktrees/5853/procurement-compliance-ai/docs/governance/采购文件设置差别歧视条款业务需求说明书_V0.3.md",
+      "version": "V0.3"
+    },
+    {
+      "name": "采购文件设置差别歧视条款专项模型审查单元输入规范_V0.2.md",
+      "sha256": "48430a70f214397c3d4197b612fd49fe5cfe4cf4ec78ab01f1573c5c9cf0dfb1",
+      "source_path": "/Users/linzeran/.codex/worktrees/5853/procurement-compliance-ai/docs/governance/采购文件设置差别歧视条款专项模型审查单元输入规范_V0.2.md",
+      "version": "V0.2"
+    },
+    {
+      "name": "01_规则范围与来源核验_V0.1.md",
+      "sha256": "44b66482baafed50d3910c1776b814c33aa51c9bf23a5610807462b92b3e08c7",
+      "source_path": "/Users/linzeran/.codex/worktrees/e8b9/procurement-compliance-ai/contracts/task/procurement_document_discriminatory_terms/01_business/01_规则范围与来源核验_V0.1.md",
+      "version": "V0.1"
+    },
+    {
+      "name": "02_六十四点可执行审查规则卡_V0.1.md",
+      "sha256": "43db9af4fd3b8cb7f6f6fe63ce8ff5f4d80fc8f92ef2806d9994751579fdc438",
+      "source_path": "/Users/linzeran/.codex/worktrees/e8b9/procurement-compliance-ai/contracts/task/procurement_document_discriminatory_terms/01_business/02_六十四点可执行审查规则卡_V0.1.md",
+      "version": "V0.1"
+    },
+    {
+      "name": "03_专项模型输出规范_V0.1.md",
+      "sha256": "36aa072f742dfcfa28dfa508407679e7609d97b6e39d13bee09a80541af81313",
+      "source_path": "/Users/linzeran/.codex/worktrees/e8b9/procurement-compliance-ai/contracts/task/procurement_document_discriminatory_terms/01_business/03_专项模型输出规范_V0.1.md",
+      "version": "V0.1"
+    },
+    {
+      "name": "04_标注与疑难裁决手册_V0.1.md",
+      "sha256": "4edb0641e173041862f966c02a255436915dd5c3a8594fb98ea0325b17a2e594",
+      "source_path": "/Users/linzeran/.codex/worktrees/e8b9/procurement-compliance-ai/contracts/task/procurement_document_discriminatory_terms/01_business/04_标注与疑难裁决手册_V0.1.md",
+      "version": "V0.1"
+    },
+    {
+      "name": "05_业务验收案例与覆盖矩阵_V0.1.md",
+      "sha256": "12ae402acdc4db2814569a186eeb40f75bf6d6ae6b60b78a4bc6bc56a9e6e1a7",
+      "source_path": "/Users/linzeran/.codex/worktrees/e8b9/procurement-compliance-ai/contracts/task/procurement_document_discriminatory_terms/01_business/05_业务验收案例与覆盖矩阵_V0.1.md",
+      "version": "V0.1"
+    },
+    {
+      "name": "06_Codex自动复核与移交_V0.1.md",
+      "sha256": "a46b0c624acdf5d845c94950dcfe77ddb9072d070b76179342d2293d370ea4e5",
+      "source_path": "/Users/linzeran/.codex/worktrees/e8b9/procurement-compliance-ai/contracts/task/procurement_document_discriminatory_terms/01_business/06_Codex自动复核与移交_V0.1.md",
+      "version": "V0.1"
+    }
+  ],
+  "business_two_pass_history_complete": false,
+  "legacy_c1_01_labels_adopted": false,
+  "rule_registry_sha256": "92bc1d14f7da71f0291a05701414afef9b8a87ca996125354c0b80781d28d415",
+  "source_status": "V0.3_TRANSCRIPTION_ONLY_ORIGINAL_ATTACHMENT_UNCHECKED"
+}

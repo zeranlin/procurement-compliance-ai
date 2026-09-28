@@ -1,0 +1,19 @@
+{
+  "event_count": 13,
+  "events_sha256": "5ead02d77a1f73910f57a100aaef4263ec015b1097148acd6386bdc2c8ef720f",
+  "held_unit_errors": [],
+  "held_units_sha256": "aa93d94440da96752dce243e09d299632b3cd8860e9fad823827e584a69cfedd",
+  "ledger_sha256": "aff454b226028fe484d4eb6e9f56e69ed7b23811a8ecbd428b3f2ccb5ed02526",
+  "real_ai_silver_count": 0,
+  "real_held_units": 2,
+  "schema_and_event_errors": [],
+  "source_count": 168,
+  "source_errors": [],
+  "status": "PASS",
+  "status_counts": {
+    "发现": 3,
+    "未发现": 3,
+    "需要补充材料": 5
+  },
+  "synthetic_case_count": 9
+}

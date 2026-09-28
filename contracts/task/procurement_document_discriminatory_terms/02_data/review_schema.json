@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "采购文件设置差别歧视条款审查单元数据契约 V0.1",
+  "$defs": {
+    "source_anchor": {
+      "type": "object",
+      "required": ["project", "document", "section", "unit"],
+      "properties": {
+        "project": {"type": "object", "required": ["name", "object", "category", "purchaser_region", "performance_region"], "properties": {"name": {"type": "string"}, "object": {"type": "string"}, "category": {"type": "string"}, "purchaser_region": {"type": "string"}, "performance_region": {"type": "string"}}, "additionalProperties": false},
+        "document": {"type": "object", "required": ["type", "published_at", "version", "effective"], "properties": {"type": {"type": "string"}, "published_at": {"type": ["string", "null"]}, "version": {"type": "string"}, "effective": {"type": ["boolean", "null"]}}, "additionalProperties": false},
+        "section": {"type": "object", "required": ["heading_path", "kind"], "properties": {"heading_path": {"type": "array", "items": {"type": "string"}}, "kind": {"type": "string"}}, "additionalProperties": false},
+        "unit": {"type": "object", "required": ["text", "source"], "properties": {"text": {"type": "string", "minLength": 1}, "source": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+        "project_id": {"type": "string"}, "document_id": {"type": "string"}, "unit_id": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object", "required": ["text", "document_version", "source", "start", "end_exclusive"],
+      "properties": {"text": {"type": "string", "minLength": 1}, "document_version": {"type": "string"}, "source": {"type": "string", "minLength": 1}, "start": {"type": "integer", "minimum": 0}, "end_exclusive": {"type": "integer", "minimum": 1}, "source_text": {"type": "string", "minLength": 1}, "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+      "additionalProperties": false
+    },
+    "fact": {
+      "type": "object", "required": ["fact", "source", "valid_at"],
+      "properties": {"fact": {"type": "string", "minLength": 1}, "source": {"type": "string", "minLength": 1}, "valid_at": {"type": "string", "minLength": 1}}, "additionalProperties": false
+    },
+    "request": {
+      "type": "object", "required": ["request_id", "code", "specific_material", "blocks_rule_element", "why_needed", "source_scope", "requested_valid_time"],
+      "properties": {"request_id": {"type": "string", "minLength": 1}, "code": {"enum": ["NEED_EFFECTIVE_VERSION", "NEED_SECTION_CONTEXT", "NEED_TABLE_ROW", "NEED_CONSEQUENCE", "NEED_PROOF_MATERIAL", "NEED_REFERENCE", "NEED_PROJECT_FACT", "NEED_EXTERNAL_BASIS"]}, "specific_material": {"type": "string", "minLength": 1}, "blocks_rule_element": {"type": "string", "minLength": 1}, "why_needed": {"type": "string", "minLength": 1}, "source_scope": {"type": "string", "minLength": 1}, "requested_valid_time": {"type": "string", "minLength": 1}}, "additionalProperties": false
+    },
+    "model_input": {
+      "type": "object", "required": ["task", "source_anchor", "evidence"],
+      "properties": {
+        "task": {"type": "object", "required": ["mode"], "properties": {"mode": {"enum": ["discover", "judge"]}, "rule_id": {"type": "string", "pattern": "^[1-7]\\.[1-7]\\.[1-9][0-9]*$"}}, "additionalProperties": false},
+        "source_anchor": {"$ref": "#/$defs/source_anchor"}, "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      }, "additionalProperties": false
+    },
+    "candidate": {"type": "object", "required": ["rule_id", "candidate_evidence", "why_candidate", "missing_elements"], "properties": {"rule_id": {"type": "string"}, "candidate_evidence": {"$ref": "#/$defs/evidence"}, "why_candidate": {"type": "string"}, "missing_elements": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false},
+    "discover": {"type": "object", "required": ["candidate_rule_ids", "possible_out_of_scope", "discovery_coverage", "retrieval_requests"], "properties": {"candidate_rule_ids": {"type": "array", "items": {"$ref": "#/$defs/candidate"}}, "possible_out_of_scope": {"type": "boolean"}, "discovery_coverage": {"const": "CURRENT_UNIT_ONLY"}, "retrieval_requests": {"type": "array", "items": {"$ref": "#/$defs/request"}}}, "additionalProperties": false},
+    "element": {"type": "object", "required": ["result", "evidence"], "properties": {"result": {"enum": ["met", "not_met", "unknown"]}, "evidence": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false},
+    "judgment": {
+      "type": "object", "required": ["rule_id", "status", "source_stage", "actual_stages", "effective_requirement", "subject", "condition", "timing", "competitive_effect", "evidence", "verified_facts", "element_check", "reason", "requests", "basis_map_status", "basis_text", "case_type", "review_authority"],
+      "properties": {
+        "rule_id": {"type": "string"}, "status": {"enum": ["发现", "未发现", "需要补充材料"]}, "source_stage": {"type": "array", "items": {"type": "string"}}, "actual_stages": {"type": "array", "items": {"type": "string"}}, "effective_requirement": {"type": ["boolean", "string"], "enum": [true, false, "unknown"]}, "subject": {"type": "string"}, "condition": {"type": "string"}, "timing": {"type": "string"}, "competitive_effect": {"type": "string"}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}, "verified_facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}}, "element_check": {"type": "object", "minProperties": 5, "additionalProperties": {"$ref": "#/$defs/element"}}, "reason": {"type": "string", "minLength": 1}, "requests": {"type": "array", "items": {"$ref": "#/$defs/request"}}, "basis_map_status": {"type": "string"}, "basis_text": {"type": ["string", "null"]}, "case_type": {"type": ["string", "null"]}, "review_authority": {"const": "CODEX_AI_BUSINESS_SILVER"}
+      }, "additionalProperties": false
+    },
+    "scope_review": {
+      "type": "object", "required": ["source_anchor", "status", "rule_id", "case_type", "scope_reason", "checked_scope", "evidence", "review_authority"],
+      "properties": {"source_anchor": {"$ref": "#/$defs/source_anchor"}, "status": {"const": "不在本专项范围"}, "rule_id": {"type": "null"}, "case_type": {"type": "null"}, "scope_reason": {"type": "string", "minLength": 1}, "checked_scope": {"type": "string", "minLength": 1}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}, "review_authority": {"const": "CODEX_AI_BUSINESS_SILVER"}}, "additionalProperties": false
+    },
+    "review_event": {
+      "type": "object", "required": ["case_id", "data_kind", "source_id", "model_input", "review_revision", "discovery", "judgments", "scope_review", "search_log", "pass_one", "pass_two", "disagreement", "resolved_request_ids"],
+      "properties": {"case_id": {"type": "string"}, "data_kind": {"enum": ["SYNTHETIC", "REAL_AI_SILVER", "REAL_HOLD"]}, "source_id": {"type": ["string", "null"]}, "model_input": {"$ref": "#/$defs/model_input"}, "review_revision": {"type": "integer", "minimum": 1}, "discovery": {"$ref": "#/$defs/discover"}, "judgments": {"type": "array", "items": {"$ref": "#/$defs/judgment"}}, "scope_review": {"oneOf": [{"$ref": "#/$defs/scope_review"}, {"type": "null"}]}, "search_log": {"type": "array", "items": {"type": "object", "required": ["request_id", "searched_scope", "result"], "properties": {"request_id": {"type": "string"}, "searched_scope": {"type": "string"}, "result": {"type": "string"}}, "additionalProperties": false}}, "pass_one": {"type": "object"}, "pass_two": {"type": "object"}, "disagreement": {"type": ["string", "null"]}, "resolved_request_ids": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false
+    }
+  },
+  "$ref": "#/$defs/review_event"
+}

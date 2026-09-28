@@ -1,0 +1,14 @@
+{
+  "blind_gold_accessed": false,
+  "check_status": "NOT_APPLICABLE_NO_ELIGIBLE_REAL_SAMPLES",
+  "cross_split_exact_duplicate_violations": [],
+  "cross_split_near_duplicate_violations": [],
+  "cross_split_project_family_violations": [],
+  "cross_split_version_violations": [],
+  "dev_count": 0,
+  "eligible_real_count": 0,
+  "held_source_count": 168,
+  "held_unit_count": 2,
+  "split_method": "PROJECT_FAMILY_AND_VERSION_GROUP_WHEN_ELIGIBLE",
+  "train_count": 0
+}
